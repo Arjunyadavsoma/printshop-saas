@@ -1,0 +1,29 @@
+{
+  "name": "@platform/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain models, adapter interfaces, and the pure pricing engine for PrintShop SaaS.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain/index.ts",
+    "./interfaces": "./src/interfaces/index.ts",
+    "./pricing": "./src/pricing/index.ts",
+    "./errors": "./src/errors/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "zod": "^4.0.2"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "typescript": "^5"
+  }
+}

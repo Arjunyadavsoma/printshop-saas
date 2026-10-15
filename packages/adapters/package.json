@@ -1,0 +1,19 @@
+{
+  "name": "@platform/adapters",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Concrete implementations of the @platform/core adapter interfaces.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

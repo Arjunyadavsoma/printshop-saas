@@ -1,0 +1,64 @@
+# Local development services for PrintShop SaaS.
+# These exist so you can run the whole stack without depending on free-tier
+# cloud limits during dev. In production each is swapped for its managed
+# equivalent via *_PROVIDER env vars — see ARCHITECTURE.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: printshop
+      POSTGRES_PASSWORD: printshop
+      POSTGRES_DB: printshop
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U printshop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    # S3-compatible local storage so R2 isn't required in dev.
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: printshop
+      MINIO_ROOT_PASSWORD: printshop123
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    # Local SMTP capture so the EmailAdapter doesn't hit Resend in dev.
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # web UI
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
