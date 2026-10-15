@@ -5,6 +5,7 @@ export * from './storage/r2.adapter';
 export * from './cache/in-memory.adapter';
 export * from './cache/upstash.adapter';
 export * from './realtime/in-memory.adapter';
+export * from './realtime/socketio-relay.adapter';
 export * from './queue/in-memory.adapter';
 export * from './email/stub.adapter';
 export * from './sms/stub.adapter';

@@ -154,3 +154,39 @@ Stage Summary:
 - Phase 4 customer web app fully shipped and verified. 53 tests pass, eslint clean, no runtime errors.
 - The customer flow is genuinely end-to-end: scan (shop load) → upload (drag-drop, pdf-lib page count) → configure (live pricing from the real engine) → pay (UPI deep-link + QR) → status (token + polling → ready).
 - Ready for Phase 5 (shop dashboard: WebSocket order queue, per-file print triggers, QR + sticker PDF, analytics, settings).
+
+---
+Task ID: 5
+Agent: orchestrator (main)
+Task: Phase 5 — Shop Dashboard. socket.io mini-service (JWT auth, per-shop rooms, HTTP /emit relay), SocketIoRelayRealtimeAdapter concrete, WebSocket-driven order queue, per-file print + mark collected, analytics (recharts), QR + sticker PDF, settings editor.
+
+Work Log:
+- Installed socket.io + socket.io-client.
+- Built mini-services/realtime-service/ (a bun project, port 3003 ws + 3004 emit): socket.io server (path '/') for browser dashboards + a plain-HTTP POST /emit relay for the Next.js RealtimeAdapter. JWT (HS256) verify on the 'auth' event → joins room shop:<shopId>. /emit authenticates with REALTIME_EMIT_SECRET, broadcasts {channel,event,payload} to the room. Smoke-tested: boots on both ports.
+- SocketIoRelayRealtimeAdapter (packages/adapters): publish() POSTs {channel,event,payload} to the mini-service's /emit (http://127.0.0.1:3004, best-effort, 2s timeout). subscribe() is a no-op stub (this adapter is publish-only; browser dashboards subscribe via the socket.io CLIENT). Honours the adapter pattern — swap in-memory → socketio is one env line.
+- Container: REALTIME_PROVIDER=socketio (default) → SocketIoRelayRealtimeAdapter; =memory → InMemoryRealtimeAdapter (tests). The print service's publish (job.printing/job.completed/order.ready) now relays to the dashboard; added order.paid publish to the webhook service.
+- Dashboard shell (src/components/phase5/shop-dashboard.tsx): auto-seed+login on mount, useRealtime(token, onEvent) connects via io('/?XTransformPort=3003'), bumps refreshKey on any shop event → queue refetches. Live connection badge (connected/authenticating/offline-polling). Tabs: Queue | Analytics | QR | Settings.
+- useRealtime hook: socket.io client, emits 'auth' with the JWT on connect, listens for order.paid/order.ready/job.printing/job.completed/order.collected. Best-effort: if the mini-service is down, the queue's 4s poll is the fallback.
+- DashboardQueue: GET /shops/me/orders (live, refreshes on refreshKey bump + polls 4s fallback). Each card: token, status badge, total, files. Per-file "Print" (POST .../print, status=paid) + "Mark collected" (POST .../complete, status=ready). Cancellation guard on the effect.
+- DashboardAnalytics: GET /shops/me/analytics → revenue/order-count stats + recharts (PieChart by status, BarChart popular settings, BarChart orders-by-hour).
+- DashboardQR: GET /shops/me/qr (PNG + SVG data URLs) + GET /shops/me/sticker (printable A4 with 6 QR stickers, pdf-lib). Download buttons for PNG/SVG/sticker-PDF.
+- DashboardSettings: GET /shops/me → pricing-config sliders (bw/color/duplex/bulk/min) + UPI/credentials editor + agent list (GET /shops/me/agents). PATCH to save.
+- New routes: GET /shops/me/agents (lists printAgent rows, tenant-scoped), GET /shops/me/sticker (pdf-lib A4 sticker sheet, fixed widthOfTextAtSize API).
+- Updated useApiClient to memoize its return object (useMemo) so consumers' useEffect deps are stable — without this, the api object was new every render, causing effect cleanups to cancel in-flight fetches (the queue never updated).
+- Wired ShopDashboard into / page (after CustomerApp). Hero badge → PHASE 5 · DASHBOARD; Roadmap marks Phase 5 done, Phase 6 (print agent) next.
+
+Bugs found & fixed during self-verification:
+- The sticker PDF used bold.widthOfText (wrong API) → 500; fixed to widthOfTextAtSize(text, size).
+- useApiClient returned a new object every render → DashboardQueue's useEffect [api, refreshKey] re-ran constantly, each cleanup cancelling the in-flight fetch's setState → the queue never showed orders even though the push landed. Fixed by memoizing the api object (useMemo).
+- GET /shops/me/orders read limit/offset/status from ctx.params (path params) but they're QUERY params, and ctx.params was undefined for the static route → "Cannot read properties of undefined (reading 'limit')", returning [] always. Fixed to read from req.nextUrl.searchParams. (This was the real reason the queue appeared empty — the orders route was broken, not the realtime.)
+- react-hooks/set-state-in-effect + react-hooks/refs lint: refactored the queue effect (cancellation guard) + moved the onEvent ref update into an effect.
+
+End-to-end verified via Agent Browser (one call, both servers alive throughout):
+realtime mini-service up (3003 ws + 3004 emit) → dashboard "realtime connected" (socket.io + JWT auth OK) → created+priced+checked-out+paid an order via curl → phonepe simulate fires order.paid → mini-service relays → dashboard queue shows token J3SP7M ("YES — pushed to queue", queue card present) → print handler runs → publishes order.ready → dashboard last-event badge = "order.ready". No console errors. 977KB screenshot.
+Sticker route returns a real 6.7KB PDF. Agents route returns [] (no agents registered — Phase 6). Analytics + QR + settings routes all 200.
+
+Stage Summary:
+- Phase 5 shop dashboard fully shipped and verified. The order queue is genuinely WebSocket-driven (socket.io mini-service + JWT-authed per-shop rooms + relay adapter); events push the instant a customer pays or a file prints.
+- 53 tests pass, eslint clean, both the Next.js dev server and the realtime mini-service run together.
+- Architecture invariant holds: the print/webhook services publish through the RealtimeAdapter interface; swapping socket.io for Supabase Realtime/Ably is one env line. The dashboard subscribes via the socket.io client (browser), decoupled from the server-side adapter.
+- Ready for Phase 6 (print agent: CLI daemon, WebSocket + disk queue, pdf-to-printer, Windows .exe).

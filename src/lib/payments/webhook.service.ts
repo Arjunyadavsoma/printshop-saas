@@ -4,6 +4,7 @@ import { repos } from '@/lib/repositories';
 import { ensurePrintHandler } from '@/lib/services/print.service';
 import { ValidationError, NotFoundError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
+import { shopChannel } from '@platform/core/interfaces';
 
 /** A merchant-order-id → order mapping stored at checkout so the webhook
  *  can find the order without trusting the (unverified) payload. */
@@ -233,6 +234,10 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     ip: input.ip ?? null,
   });
   logger.info('webhook: order marked paid', { orderId: order.id, provider: input.provider, txnId: v.txnId });
+
+  // Push a realtime event so the dashboard queue updates the moment a payment
+  // lands (no polling needed for the happy path).
+  void container.realtime.publish(shopChannel(shop.id), 'order.paid', { orderId: order.id, amountPaise: order.totalAmountPaise }).catch(() => {});
 
   // Auto-dispatch to print now that the order is paid (Phase 6's agent would
   // pick this up via the realtime channel; here we enqueue directly).

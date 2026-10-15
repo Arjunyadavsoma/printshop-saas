@@ -25,7 +25,7 @@ export function Hero() {
       <div className="absolute inset-0 -z-10 opacity-[0.04] [background-image:radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:22px_22px]" />
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 4 · CUSTOMER APP</Badge>
+          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 5 · DASHBOARD</Badge>
           <Badge variant="secondary">Production-grade SaaS</Badge>
           <Badge variant="outline">India-first</Badge>
         </div>
@@ -39,13 +39,13 @@ export function Hero() {
         </p>
         <div className="mt-6 flex flex-wrap gap-3 text-sm">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
-            <CheckCircle2 className="h-4 w-4" /> 53 tests passing (35 pricing + 11 repo + 7 payments)
+            <CheckCircle2 className="h-4 w-4" /> 53 tests + socket.io realtime
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
-            <CheckCircle2 className="h-4 w-4" /> 3 payment adapters w/ real signature crypto
+            <CheckCircle2 className="h-4 w-4" /> WebSocket-driven queue + analytics
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 font-medium text-rose-700 ring-1 ring-rose-200">
-            <CheckCircle2 className="h-4 w-4" /> Idempotent webhooks, audit-before-process
+            <CheckCircle2 className="h-4 w-4" /> QR stickers, settings, agent mgmt
           </span>
         </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 export interface LogEntry {
   method: string;
@@ -70,5 +70,8 @@ export function useApiClient() {
 
   const resetLog = useCallback(() => setLog([]), []);
 
-  return { token, setToken, log, request, resetLog };
+  // Memoise the returned object so consumers' useEffect deps ([api, ...]) are
+  // stable across renders (only changing when token does). Without this, the
+  // object is new every render → effect cleanups cancel in-flight fetches.
+  return useMemo(() => ({ token, setToken, log, request, resetLog }), [token, log, request, resetLog]);
 }

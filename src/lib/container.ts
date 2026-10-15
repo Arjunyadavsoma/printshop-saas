@@ -30,6 +30,7 @@ import {
   StubSmsAdapter,
   StubLoggerAdapter,
   UpiDeepLinkPaymentAdapter,
+  SocketIoRelayRealtimeAdapter,
 } from '@platform/adapters';
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
 import { JsonConsoleLogger } from '@/lib/logger/json-logger.adapter';
@@ -92,8 +93,15 @@ function buildContainer(): Container {
   // Cache — in-memory (Upstash wiring is config-only).
   const cache: CacheAdapter = new InMemoryCacheAdapter();
 
-  // Realtime — in-memory pub/sub (Supabase Realtime wiring is config-only).
-  const realtime: RealtimeAdapter = new InMemoryRealtimeAdapter();
+  // Realtime — socket.io relay (pushes to the dashboard mini-service on :3004)
+  // when REALTIME_PROVIDER=socketio; else in-memory for tests/single-process.
+  const realtime: RealtimeAdapter =
+    env('REALTIME_PROVIDER', 'socketio') === 'memory'
+      ? new InMemoryRealtimeAdapter()
+      : new SocketIoRelayRealtimeAdapter(
+          { emitUrl: env('REALTIME_EMIT_URL', 'http://127.0.0.1:3004/emit'), emitSecret: env('REALTIME_EMIT_SECRET', 'dev-emit-secret') },
+          (msg, ctx) => logger.debug(msg, ctx),
+        );
 
   // Queue — in-memory, processes jobs immediately.
   const queue: QueueAdapter = new InMemoryQueueAdapter();
