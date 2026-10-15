@@ -1,7 +1,7 @@
 import type { PaymentProvider } from '@platform/core/domain';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { ensurePrintHandler } from '@/lib/services/print.service';
+import { ensurePrintHandler, dispatchToAgent } from '@/lib/services/print.service';
 import { ValidationError, NotFoundError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
 import { shopChannel } from '@platform/core/interfaces';
@@ -262,6 +262,8 @@ async function enqueuePaidOrderPrint(orderId: string, shopId: string): Promise<v
   for (const f of pending) {
     const job = await repos.printJobs.create({ shopId, fileId: f.id });
     await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
+    // Push to the agent (it claims + prints + reports status when online).
+    await dispatchToAgent(shopId, job.id, f.id);
   }
   if (pending.length > 0) {
     await repos.orders.update(orderId, { status: 'printing' });

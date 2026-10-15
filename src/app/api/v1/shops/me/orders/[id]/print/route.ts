@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { getContainer } from '@/lib/container';
-import { ensurePrintHandler } from '@/lib/services/print.service';
+import { ensurePrintHandler, dispatchToAgent } from '@/lib/services/print.service';
 import { ok } from '@/lib/api/envelope';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
@@ -32,6 +32,9 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   for (const f of pending) {
     const job = await repos.printJobs.create({ shopId: shop.id, fileId: f.id });
     await queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId: shop.id });
+    // Push to the agent (if one is online, it claims + prints; the in-process
+    // handler skips when an agent is online).
+    await dispatchToAgent(shop.id, job.id, f.id);
     jobs.push({ jobId: job.id, fileId: f.id });
   }
   await repos.audit.log({

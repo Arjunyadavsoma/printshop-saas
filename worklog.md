@@ -190,3 +190,39 @@ Stage Summary:
 - 53 tests pass, eslint clean, both the Next.js dev server and the realtime mini-service run together.
 - Architecture invariant holds: the print/webhook services publish through the RealtimeAdapter interface; swapping socket.io for Supabase Realtime/Ably is one env line. The dashboard subscribes via the socket.io client (browser), decoupled from the server-side adapter.
 - Ready for Phase 6 (print agent: CLI daemon, WebSocket + disk queue, pdf-to-printer, Windows .exe).
+
+---
+Task ID: 6
+Agent: orchestrator (main)
+Task: Phase 6 — Print Agent. socket.io client daemon (setup wizard, start, status, test-printer), device-token auth + agent endpoints (register/heartbeat/token/jobs-pending/jobs-status), dispatch-to-agent when online (in-process fallback when offline), disk queue + reconnect backoff, cross-platform print (lp/pdf-to-printer + demo mode).
+
+Work Log:
+- PrintAgentRepository (src/lib/repositories/print-agent.repository.ts): findByIdAndShop, findByTokenHash, listByShop, create, update, isAnyOnline (lastSeenAt within 30s). Added to the repos singleton.
+- withDeviceAuth middleware (src/lib/api/with-auth.ts): hashes the Bearer device token (HMAC-SHA256 'print-agent-salt'), matches against printAgent.tokenHash, refreshes isOnline/lastSeenAt on every call. Returns AgentPrincipal {agent, shopId}.
+- Agent endpoints (all /api/v1/agents/*):
+  * POST /register — shop-owner-authed (withAuth). Mints a random device token, stores only the hash, returns the plaintext ONCE.
+  * POST /token — device-authed. Exchanges the long-lived device token for a short-lived JWT (shop-scoped, role 'staff') so the agent can auth its socket.io connection to the realtime mini-service (which verifies HS256 JWTs).
+  * POST /heartbeat — device-authed. Refreshes isOnline + lastSeenAt + printerName/version/os.
+  * GET /jobs/pending — device-authed. Returns queued jobs for the shop with a presigned download URL + flat print settings.
+  * POST /jobs/:id/status — device-authed. Enforces the job state machine (queued→printing→completed|failed; first-claim-wins via the 'skipped' response). Updates PrintJob + File + publishes realtime events (job.printing/job.completed/order.ready) so the dashboard updates live.
+- GET /storage/get?key=... — downloads bytes from the in-memory store (so the agent, a separate process, can fetch file bytes through the gateway; in production this is a presigned R2 URL).
+- Print service (src/lib/services/print.service.ts): the in-process queue handler now checks isAnyOnline(shopId) FIRST — if a real agent is online, it SKIPS (the agent claims + prints + reports). The offline fallback still simulates for when no agent is connected. Added dispatchToAgent() — publishes a flat job.dispatch payload to the shop's realtime room with {jobId, fileId, orderId, filename, downloadUrl, copies, colorMode, duplex, paperSize, pageRange}. Wired into both the print route + the webhook's enqueuePaidOrderPrint.
+- Print-agent CLI (mini-services/print-agent/, a bun project):
+  * src/config.ts — loadConfig (file → env-var fallback), saveConfig, disk-queue load/save (~/.print-agent/).
+  * src/printer.ts — printFile: Windows `pdf-to-printer`, mac/linux `lp` (CUPS), with PRINT_AGENT_DEMO=1 skip (sandbox: no printer). writeToTemp helper.
+  * src/agent.ts — the daemon: POST /agents/token (device→JWT), socket.io connect (realtimeUrl, 'auth' with JWT, join shop room, 'job.dispatch' → handleJob), polling fallback (GET /jobs/pending every 2s), heartbeat loop (15s), exponential-backoff reconnect (1s→60s), disk-queue replay on start. handleJob: claim (POST status=printing; skip if 'skipped' to avoid double-print), download (fetch downloadUrl → temp file), print, POST status=completed/failed.
+  * src/index.ts — CLI: setup (interactive: shop slug, owner login → mint device token → save config; OR non-interactive via PRINT_AGENT_* env), start (runAgent), status (config + pending count), test-printer (try the local print command). Talks OUTBOUND only.
+- Hero badge → PHASE 6 · PRINT AGENT; Roadmap marks Phase 6 done, Phase 7 (polish & deploy) next.
+
+Bugs found & fixed during self-verification:
+- The dispatch payload nested settings under `settings: {...}` but the agent's PendingJob expected flat fields → log showed "undefined× undefined". Flattened the dispatch payload to match.
+- The agent's `start` read the config FILE but the demo passed env vars (which only `setup` read) → "No config". Made loadConfig fall back to env vars (PRINT_AGENT_DEVICE_TOKEN/API_URL/...) so `start` runs without `setup`.
+
+End-to-end verified via curl (one call, all three processes — Next.js + realtime mini-service + agent CLI — running together):
+register (owner-authed) → mint device token → agent start (demo mode) → agent online after 2s (GET /shops/me/agents → [('shop-pc-1', True, 'linux')]) → agent "realtime connected" + "realtime authed" (socket.io + JWT exchange OK) → create+price+checkout+pay an order (phonepe simulate) → print service sees agent online → SKIPS in-process sim → dispatches job.dispatch via realtime → agent "realtime push: job.dispatch" → "→ job … claimed: report.pdf (2× color/duplex)" → "downloaded 201 bytes" → "✓ job … completed (demo-printer)" → POST status=completed → order "ready files [('report.pdf', 'completed')]". Lint clean, 53 tests pass.
+The agent CLI help/start/status/test-printer commands all work (smoke-tested `help`).
+
+Stage Summary:
+- Phase 6 print agent fully shipped and verified end-to-end. The agent is a real Node/bun CLI daemon that registers, authenticates (device token → JWT exchange), connects to the realtime mini-service via socket.io, receives job.dispatch pushes (with polling fallback), claims jobs (first-claim-wins), downloads + prints + reports status transitions — all driving the dashboard live via the status endpoint's realtime publishes.
+- Architecture invariant holds: the print service publishes through the RealtimeAdapter interface; the agent talks outbound HTTP + socket.io only (no inbound ports, NAT-safe); the in-process simulation is the offline fallback. Swapping in a real fleet of agents is just running more CLI instances.
+- Ready for Phase 7 (polish & deploy: Sentry + logging + health, GitHub Actions CI/CD, Vercel + Render deploy, seed + demo shop, k6 load test).

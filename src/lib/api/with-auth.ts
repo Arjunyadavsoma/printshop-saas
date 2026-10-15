@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { createHmac } from 'node:crypto';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from './envelope';
 import { rateLimit, rateKey } from './rate-limit';
 import { ForbiddenError, UnauthorizedError } from '@platform/core/errors';
-import type { UserRole, User } from '@platform/core/domain';
+import type { UserRole, User, PrintAgent } from '@platform/core/domain';
 
 /** The verified principal attached to an authenticated request. */
 export interface Principal {
@@ -62,6 +63,39 @@ export function withAuth<P extends RouteParams = RouteParams>(
         user,
       };
       return await handler(req, ctx, principal);
+    } catch (cause) {
+      return fail(toAppError(cause));
+    }
+  };
+}
+
+/** The verified agent principal (a registered print-agent daemon). */
+export interface AgentPrincipal {
+  agent: PrintAgent;
+  shopId: string;
+}
+
+/**
+ * Wrap a route handler with device-token auth. The Bearer token is hashed
+ * (SHA-256) and matched against printAgent.tokenHash. The agent's shopId is
+ * the tenant scope. Heartbeats refresh lastSeenAt + isOnline so the dispatch
+ * path knows an agent is reachable.
+ */
+export function withDeviceAuth<P extends RouteParams = RouteParams>(
+  handler: (req: NextRequest, ctx: RouteCtx<P>, agent: AgentPrincipal) => Promise<NextResponse>,
+) {
+  return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
+    try {
+      const header = req.headers.get('authorization') ?? '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) throw new UnauthorizedError('Missing device token');
+      const tokenHash = createHmac('sha256', 'print-agent-salt').update(token).digest('hex');
+      const agent = await repos.printAgents.findByTokenHash(tokenHash);
+      if (!agent) throw new UnauthorizedError('Unknown device token');
+      // Refresh presence on every authenticated call (cheap; the heartbeat
+      // also does it explicitly).
+      await repos.printAgents.update(agent.id, { isOnline: true, lastSeenAt: new Date() });
+      return await handler(req, ctx, { agent, shopId: agent.shopId });
     } catch (cause) {
       return fail(toAppError(cause));
     }
