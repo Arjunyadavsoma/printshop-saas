@@ -34,11 +34,14 @@ import {
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
 import { JsonConsoleLogger } from '@/lib/logger/json-logger.adapter';
 import { JwtAuthAdapter } from '@/lib/auth/jwt-auth.adapter';
+import { PaymentAdapterRegistry } from '@/lib/payments/registry';
 
 export interface Container {
   db: DatabaseAdapter;
   storage: StorageAdapter;
   payment: PaymentAdapter;
+  /** Per-shop provider routing — the checkout/webhook flows use this. */
+  paymentRegistry: PaymentAdapterRegistry;
   realtime: RealtimeAdapter;
   cache: CacheAdapter;
   queue: QueueAdapter;
@@ -99,8 +102,10 @@ function buildContainer(): Container {
   const email: EmailAdapter = new StubEmailAdapter();
   const sms: SMSAdapter = new StubSmsAdapter();
 
-  // Payments — UPI deep-link (fully implemented, zero-onboarding).
+  // Payments — a registry of all providers. The checkout/webhook flows route
+  // to the shop's configured provider; `payment` is the default (UPI).
   const payment: PaymentAdapter = new UpiDeepLinkPaymentAdapter();
+  const paymentRegistry = new PaymentAdapterRegistry();
 
   // Auth — JWT (HS256) + PBKDF2.
   const auth: AuthAdapter = new JwtAuthAdapter(
@@ -117,6 +122,7 @@ function buildContainer(): Container {
     db: database,
     storage,
     payment,
+    paymentRegistry,
     realtime,
     cache,
     queue,

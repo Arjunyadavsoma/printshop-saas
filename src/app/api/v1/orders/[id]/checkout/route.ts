@@ -4,8 +4,9 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
+import { rememberPaymentSession } from '@/lib/payments/webhook.service';
 
-/** POST /api/v1/orders/:id/checkout — create a UPI payment intent. */
+/** POST /api/v1/orders/:id/checkout — create a payment intent (provider = shop's). */
 export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req, ctx) => {
   try {
     const { id } = await ctx.params;
@@ -27,11 +28,22 @@ export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req
     }
 
     const container = getContainer();
-    const intent = await container.payment.createPaymentIntent({
+    // Route to the shop's configured provider via the registry.
+    const adapter = container.paymentRegistry.get(shop.paymentProvider);
+    const intent = await adapter.createPaymentIntent({
       orderId: order.id,
       amountPaise: order.totalAmountPaise,
       shopUpiId: shop.upiId,
       shopCredentials: shop.paymentCredentials,
+    });
+
+    // Remember the merchantOrderId → order mapping so the (later) webhook can
+    // find the order + shop's credentials without trusting the payload.
+    await rememberPaymentSession(intent.merchantOrderId, {
+      orderId: order.id,
+      shopId: shop.id,
+      amountPaise: order.totalAmountPaise,
+      provider: shop.paymentProvider,
     });
 
     await repos.audit.log({
@@ -40,15 +52,17 @@ export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req
       action: 'order.checkout',
       entityType: 'order',
       entityId: order.id,
-      metadata: { amountPaise: order.totalAmountPaise, provider: intent.provider },
+      metadata: { amountPaise: order.totalAmountPaise, provider: intent.provider, merchantOrderId: intent.merchantOrderId },
       ip: req.headers.get('x-forwarded-for') ?? null,
     });
 
     return ok({
       orderId: order.id,
+      merchantOrderId: intent.merchantOrderId,
       amountPaise: intent.amountPaise,
       currency: intent.currency,
       provider: intent.provider,
+      checkoutUrl: intent.checkoutUrl,
       upiUri: intent.upiUri,
       qrPayload: intent.qrPayload,
       expiresAt: intent.expiresAt,

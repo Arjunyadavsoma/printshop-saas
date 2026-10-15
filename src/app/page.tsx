@@ -6,12 +6,14 @@ import { Deliverables } from '@/components/phase1/deliverables';
 import { Roadmap } from '@/components/phase1/roadmap';
 import { SiteFooter } from '@/components/phase1/site-footer';
 import { BackendExplorer } from '@/components/phase2/backend-explorer';
+import { PaymentsExplorer } from '@/components/phase3/payments-explorer';
 
 export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Hero />
       <main className="flex-1">
+        <PaymentsExplorer />
         <BackendExplorer />
         <PricingCalculator />
         <ArchitectureExplorer />

@@ -6,7 +6,6 @@ export { FileRepository } from './file.repository';
 export { AuditLogRepository } from './audit-log.repository';
 export { PrintJobRepository } from './print-job.repository';
 
-import { getContainer } from '@/lib/container';
 import { ShopRepository } from './shop.repository';
 import { UserRepository } from './user.repository';
 import { OrderRepository } from './order.repository';
@@ -14,12 +13,14 @@ import { FileRepository } from './file.repository';
 import { AuditLogRepository } from './audit-log.repository';
 import { PrintJobRepository } from './print-job.repository';
 
-/** Lazy singleton repos — one per container. Routes import these. */
+/** Lazy singleton repos — one per table. Routes import these. The adapter is
+ *  resolved lazily from the container on each call, so setContainerForTesting
+ *  (in tests) re-routes these to an in-memory db. */
 export const repos = {
-  shops: new ShopRepository(getContainer().db, 'shop'),
-  users: new UserRepository(getContainer().db, 'user'),
-  orders: new OrderRepository(getContainer().db, 'order'),
-  files: new FileRepository(getContainer().db, 'printFile'),
-  audit: new AuditLogRepository(getContainer().db, 'auditLog'),
-  printJobs: new PrintJobRepository(getContainer().db, 'printJob'),
+  shops: new ShopRepository('shop'),
+  users: new UserRepository('user'),
+  orders: new OrderRepository('order'),
+  files: new FileRepository('printFile'),
+  audit: new AuditLogRepository('auditLog'),
+  printJobs: new PrintJobRepository('printJob'),
 };

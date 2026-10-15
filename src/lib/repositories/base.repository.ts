@@ -1,16 +1,22 @@
 import type { DatabaseAdapter, Document, Filter } from '@platform/core/interfaces';
+import { getContainer } from '@/lib/container';
 
 /**
- * Base repository — the ONLY layer that calls into the {@link DatabaseAdapter}.
+ * Base repository — the ONLY layer that calls into a {@link DatabaseAdapter}.
  * Routes and services depend on the typed per-model repositories, never on the
  * adapter directly. This is the structural guarantee that every query is
  * parameterised (no SQL injection) and tenant-scoped.
+ *
+ * The adapter is resolved lazily from the container on every call (not
+ * captured at construction) so that tests can inject an in-memory container
+ * via setContainerForTesting and have the singleton `repos` pick it up.
  */
 export class BaseRepository<T extends Record<string, unknown>> {
-  constructor(
-    protected readonly adapter: DatabaseAdapter,
-    protected readonly table: string,
-  ) {}
+  constructor(protected readonly table: string) {}
+
+  protected get adapter(): DatabaseAdapter {
+    return getContainer().db;
+  }
 
   protected async findOne(filter: Filter): Promise<T | null> {
     return this.adapter.findOne<T>(this.table, filter);

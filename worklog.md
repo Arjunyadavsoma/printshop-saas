@@ -91,3 +91,38 @@ Stage Summary:
 - Phase 2 backend fully shipped and verified end-to-end. 46 tests pass, eslint clean, dev server serves GET / 200 and all /api/v1/* routes return correct JSON envelopes.
 - Architecture invariant holds: routes import repos, repos import the DatabaseAdapter interface, the composition root is the only place concretes are constructed. Swapping Prisma→Postgres or UPI→PhonePe is a one-line env change.
 - Ready for Phase 3 (payments: PhonePe/Paytm concretes + webhook signature verification + idempotency).
+
+---
+Task ID: 3
+Agent: orchestrator (main)
+Task: Phase 3 — Payments. PhonePe X-VERIFY (SHA-256 HMAC) + Paytm CHECKSUMHASH (AES-128-CBC + SHA-256) adapters with REAL signature crypto, idempotent webhook handlers (audit-before-process), PaymentAdapterRegistry for per-shop provider routing, integration tests with signed payloads, dev simulate routes for visible round-trips, PaymentsExplorer UI on /.
+
+Work Log:
+- Split the Phase-2 payment adapters into 3 files in packages/adapters/src/payment/: phonepe.adapter.ts (real X-VERIFY: sha256(base64(body)+path+salt)###idx, constant-time compare, base64-payload decode), paytm.adapter.ts (real CHECKSUMHASH: AES-128-CBC over sha256(sorted params+'|'+merchantKey), base64; HTML response page), upi-deeplink.adapter.ts (UPI deep-link, extracted from the old combined file). Exported generatePaytmChecksum for the simulate route to sign.
+- PaymentAdapterRegistry (src/lib/payments/registry.ts): holds all 3 concretes, routes by PaymentProvider. Adding Razorpay/Cashfree later = register + one env line.
+- Container: added paymentRegistry (alongside the default `payment` for back-compat). All 3 adapters registered.
+- webhook.service.ts (processWebhook): the spec's §6 pipeline — (1) audit-log the raw payload BEFORE processing, (2) extract the untrusted merchantOrderId → lookupPaymentSession (stored at checkout via rememberPaymentSession, keyed by merchantOrderId in the CacheAdapter, 10-min TTL), (3) load shop → credentials, (4) adapter.handleWebhook (REAL crypto verify), (5) idempotency check (pay:done:<txnId> in cache, 24h), (6) validate amount + tenant + state transition, (7) flip order to paid (paymentTxnId has a UNIQUE constraint = final replay guard; a duplicate throws → caught → idempotent), (8) mark processed + audit, then auto-dispatch to print.
+- Refactored BaseRepository to resolve the adapter lazily from the container (get adapter() { return getContainer().db; }) instead of capturing it at construction — so tests can setContainerForTesting(in-memory) and the singleton repos pick it up. Updated the repos factory + Phase-2 repo tests accordingly.
+- Webhook routes: POST /payments/phonepe/webhook (X-VERIFY), POST /payments/paytm/callback (CHECKSUMHASH, renders HTML). Both unauthenticated but signature-verified + idempotent.
+- Dev simulate routes: POST /payments/dev/phonepe/simulate + /paytm/simulate — sign a payload with the shop's dev key and feed it through the REAL processWebhook pipeline (sign→verify→idempotent-flip) in-process.
+- Updated checkout route to route via the registry to the shop's configured provider + rememberPaymentSession(merchantOrderId, {orderId,shopId,amountPaise,provider}).
+- Seeded the demo shop with dev paymentCredentials (phonepe salt + paytm merchant key from env w/ dev defaults); back-compat refresh for Phase-2-seeded shops.
+- vitest.config.ts regex aliases already handle @platform/*; payments.test.ts uses setContainerForTesting(InMemory) so the singleton repos resolve to the in-memory db.
+- Integration tests (src/lib/payments/payments.test.ts, 7 tests): PhonePe valid sig → order paid; PhonePe tampered → 401 + order stays awaiting_payment; PhonePe idempotency (same txnId twice → #2 no-op); PhonePe wrong salt index → 401; PhonePe FAILED state → order stays awaiting_payment; Paytm valid checksum → order paid + HTML; Paytm tampered amount → checksum fails → 401. ALL 7 PASS. Total 53 tests (35 pricing + 11 repo + 7 payments).
+- Phase 3 PaymentsExplorer UI on /: provider switcher (PhonePe/Paytm), "Create priced order" (valid minimal PDF → pdf-lib parses 1 page → priced ₹10.80 → checkout), "Simulate webhook #1/#2" buttons that exercise the real sign→verify→idempotent round-trip, round-trip detail card, live request-log console.
+- Updated Hero badge → PHASE 3 · PAYMENTS, badges → 53 tests + 3 payment adapters + idempotent webhooks; Roadmap marks Phase 3 done, Phase 4 (customer web app) next.
+
+Bugs found & fixed during self-verification:
+- PhonePe X-VERIFY: initially double-base64'd (btoa(rawBody)) — fixed to sign the base64 payload directly (sha256(rawBody + path + salt)).
+- The Phase-2 `repos` singleton captured the db adapter at construction → setContainerForTesting wouldn't re-route it → refactored BaseRepository to lazy resolution.
+- UI's prepareOrder used an invalid PDF blob → confirm set needs_review → checkout failed → "session expired" on simulate. Fixed to a valid minimal 1-page PDF (pdf-lib parses → pageCount=1).
+- Idempotency banner misfired on error responses → tightened to require statusCode<300.
+
+End-to-end verified via curl through the gateway (one call):
+order create → upload → confirm(pdf-lib:1 page) → patch(₹10.80) → checkout → PhonePe #1 [200 applied=True "order marked paid via phonepe (txn …)"] → PhonePe #2 [200 applied=False "order already in status 'printing' (idempotent)"] → Paytm [200 applied=False html=True] → tampered phonepe (wrong salt) [HTTP 401]. Final order status → printing→ready.
+Agent Browser verified the UI: authed → Create priced order (order f516392c · awaiting_payment) → Simulate #1 ("marked paid") → Simulate #2 (idempotent no-op) → order badge → ready. No console errors. 982KB screenshot.
+
+Stage Summary:
+- Phase 3 payments fully shipped and verified end-to-end with REAL signature crypto (no SDK stubs — the verification math runs). 53 tests pass, eslint clean.
+- Architecture invariant holds: the webhook service + routes import only the PaymentAdapter interface + the registry; swapping PhonePe→Razorpay is register + env. Per-shop provider routing via the shop's paymentCredentials.
+- Ready for Phase 4 (customer web app: /[shopSlug] route, drag-drop upload UI, live pricing, checkout handoff, status polling).

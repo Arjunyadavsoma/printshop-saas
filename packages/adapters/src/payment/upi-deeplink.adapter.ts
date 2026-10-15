@@ -2,46 +2,19 @@ import type {
   PaymentAdapter,
   PaymentIntent,
   PaymentVerification,
-  RefundResult,
   RefundInput,
+  RefundResult,
   WebhookInput,
   WebhookResult,
 } from '@platform/core/interfaces';
 import type { PaymentProvider } from '@platform/core/domain';
 
 /**
- * PhonePe adapter (recommended primary).
- *
- * PHASE-1 STATUS: skeleton — interface complete, SDK wiring lands in Phase 3.
- * Signature verification via client.validateCallback() must happen before any
- * state transition; every webhook is logged to audit_logs first.
- */
-export class PhonePePaymentAdapter implements PaymentAdapter {
-  readonly provider: PaymentProvider = 'phonepe';
-  constructor(
-    private readonly config: { saltKey: string; saltIndex: string; env: 'prod' | 'sandbox' },
-  ) {}
-
-  async createPaymentIntent(): Promise<PaymentIntent> {
-    throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
-  }
-  async verifyPayment(): Promise<PaymentVerification> {
-    throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
-  }
-  async handleWebhook(_input: WebhookInput): Promise<WebhookResult> {
-    throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
-  }
-  async refund(_input: RefundInput): Promise<RefundResult> {
-    throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
-  }
-}
-
-/**
- * UPI deep-link adapter (zero-onboarding fallback).
+ * UPI deep-link adapter — the "zero onboarding" fallback.
  *
  * Generates a `upi://pay?...` URI from the shopkeeper's own VPA. On desktop,
  * render the payload as an NPCI-compliant QR. Confirmation is via polling
- * the PSP status API (Phase 3).
+ * the PSP status API (Phase 3) or the dev mark-paid route in the demo.
  */
 export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
   readonly provider: PaymentProvider = 'googlepay';
@@ -51,6 +24,7 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     orderId: string;
     amountPaise: number;
     shopUpiId: string;
+    shopCredentials: Record<string, unknown>;
   }): Promise<PaymentIntent> {
     const params = new URLSearchParams({
       pa: input.shopUpiId,
@@ -73,8 +47,13 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     };
   }
 
-  async verifyPayment(): Promise<PaymentVerification> {
+  async verifyPayment(input: {
+    merchantOrderId: string;
+    shopCredentials: Record<string, unknown>;
+  }): Promise<PaymentVerification> {
     // Real confirmation: poll the PSP status API / parse SMS. Phase 3.
+    void input.shopCredentials;
+    void input.merchantOrderId;
     return {
       paid: false,
       txnId: null,
@@ -84,10 +63,14 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
       raw: null,
     };
   }
-  async handleWebhook(): Promise<WebhookResult> {
+
+  /** UPI deep-link has no server-side webhook — status comes via poll. */
+  async handleWebhook(_input: WebhookInput): Promise<WebhookResult> {
     return { ok: false, verification: null, statusCode: 404 };
   }
-  async refund(): Promise<RefundResult> {
-    return { refundId: 'n/a', amountPaise: 0, status: 'failed' };
+
+  async refund(_input: RefundInput, _shopCredentials: Record<string, unknown>): Promise<RefundResult> {
+    // UPI has no server-side refund; the shopkeeper refunds manually.
+    return { refundId: 'n/a', amountPaise: _input.amountPaise, status: 'failed' };
   }
 }

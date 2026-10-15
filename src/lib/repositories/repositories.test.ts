@@ -1,11 +1,25 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { InMemoryDatabaseAdapter } from '@platform/adapters';
+import {
+  InMemoryDatabaseAdapter,
+  InMemoryCacheAdapter,
+  InMemoryStorageAdapter,
+  InMemoryRealtimeAdapter,
+  InMemoryQueueAdapter,
+  StubEmailAdapter,
+  StubSmsAdapter,
+  StubLoggerAdapter,
+  UpiDeepLinkPaymentAdapter,
+} from '@platform/adapters';
 import { ShopRepository } from './shop.repository';
 import { UserRepository } from './user.repository';
 import { OrderRepository } from './order.repository';
 import { NotFoundError } from '@platform/core/errors';
 import type { Shop, ShopPricingConfig } from '@platform/core/domain';
 import { createDefaultPricingConfig } from '@platform/core/domain';
+import { setContainerForTesting } from '@/lib/container';
+import type { Container } from '@/lib/container';
+import { PaymentAdapterRegistry } from '@/lib/payments/registry';
+import { JwtAuthAdapter } from '@/lib/auth/jwt-auth.adapter';
 
 let db: InMemoryDatabaseAdapter;
 let shops: ShopRepository;
@@ -36,9 +50,26 @@ function makeShop(overrides: Partial<Shop> = {}): Shop {
 
 beforeEach(() => {
   db = new InMemoryDatabaseAdapter();
-  shops = new ShopRepository(db, 'shop');
-  users = new UserRepository(db, 'user');
-  orders = new OrderRepository(db, 'order');
+  const cache = new InMemoryCacheAdapter();
+  // Repos resolve the adapter lazily from the container, so set a fully
+  // in-memory container for the test.
+  const container: Container = {
+    db,
+    storage: new InMemoryStorageAdapter(),
+    payment: new UpiDeepLinkPaymentAdapter(),
+    paymentRegistry: new PaymentAdapterRegistry(),
+    realtime: new InMemoryRealtimeAdapter(),
+    cache,
+    queue: new InMemoryQueueAdapter(),
+    email: new StubEmailAdapter(),
+    sms: new StubSmsAdapter(),
+    logger: new StubLoggerAdapter(),
+    auth: new JwtAuthAdapter({ accessSecret: 'a', refreshSecret: 'b', accessTtlSeconds: 900, refreshTtlSeconds: 2592000 }, cache),
+  };
+  setContainerForTesting(container);
+  shops = new ShopRepository('shop');
+  users = new UserRepository('user');
+  orders = new OrderRepository('order');
 });
 
 describe('ShopRepository', () => {

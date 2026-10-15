@@ -9,4 +9,6 @@ export * from './queue/in-memory.adapter';
 export * from './email/stub.adapter';
 export * from './sms/stub.adapter';
 export * from './logger/stub.adapter';
-export * from './payment/payment.adapters';
+export * from './payment/phonepe.adapter';
+export * from './payment/paytm.adapter';
+export * from './payment/upi-deeplink.adapter';
