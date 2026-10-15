@@ -31,6 +31,8 @@ import {
   StubLoggerAdapter,
   UpiDeepLinkPaymentAdapter,
   SocketIoRelayRealtimeAdapter,
+  R2StorageAdapter,
+  UpstashCacheAdapter,
 } from '@platform/adapters';
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
 import { JsonConsoleLogger } from '@/lib/logger/json-logger.adapter';
@@ -110,13 +112,23 @@ function buildContainer(): Container {
   const database: DatabaseAdapter =
     env('DATABASE_PROVIDER', 'prisma') === 'memory' ? new InMemoryDatabaseAdapter() : new PrismaDatabaseAdapter(db);
 
-  // Storage — in-memory in the demo (R2 wiring is Phase-2-pending infra).
-  // The InMemoryStorageAdapter is extended with real put()/getBytes() so the
-  // full upload→parse→print flow works end-to-end without a cloud bucket.
-  const storage = new InMemoryStorageAdapter();
+  // Storage — selected by STORAGE_PROVIDER (default: memory for dev).
+  // Set STORAGE_PROVIDER=r2 in production (requires R2 credentials).
+  const storage: StorageAdapter =
+    env('STORAGE_PROVIDER', 'memory') === 'r2' ? new R2StorageAdapter({
+      accountId: env('R2_ACCOUNT_ID'),
+      accessKeyId: env('R2_ACCESS_KEY_ID'),
+      secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
+      bucket: env('R2_BUCKET'),
+    }) : new InMemoryStorageAdapter();
 
-  // Cache — in-memory (Upstash wiring is config-only).
-  const cache: CacheAdapter = new InMemoryCacheAdapter();
+  // Cache — selected by CACHE_PROVIDER (default: memory for dev).
+  // Set CACHE_PROVIDER=redis in production (requires Upstash REST URL + token).
+  const cache: CacheAdapter =
+    env('CACHE_PROVIDER', 'memory') === 'redis' ? new UpstashCacheAdapter({
+      url: env('REDIS_URL'),
+      token: env('REDIS_TOKEN'),
+    }) : new InMemoryCacheAdapter();
 
   // Realtime — socket.io relay (pushes to the dashboard mini-service on :3004)
   // when REALTIME_PROVIDER=socketio; else in-memory for tests/single-process.
