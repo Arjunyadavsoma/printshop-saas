@@ -27,7 +27,13 @@ export function ensurePrintHandler(): void {
       if (await repos.printAgents.isAnyOnline(shopId)) {
         return; // the agent claims + prints + reports via the status endpoint
       }
-      // Offline fallback: simulate printing in-process.
+      // In production: jobs stay 'queued' until an agent picks them up.
+      // The in-process simulation is a DEV-ONLY fallback so the demo works
+      // without a running agent.
+      if (process.env.NODE_ENV === 'production') {
+        return; // no agent online + production = job stays queued
+      }
+      // Dev-only offline fallback: simulate printing in-process.
       await repos.printJobs.update(jobId, { status: 'printing', agentId: 'in-process', startedAt: new Date() });
       await repos.files.update(fileId, { status: 'printing' });
       await publish(shopId, 'job.printing', { jobId, fileId });

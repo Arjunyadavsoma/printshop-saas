@@ -201,3 +201,22 @@ export function setContainerForTesting(c: Container): void {
   (globalThis as unknown as { __printshopContainer?: Container }).__printshopContainer = c;
   _container = c;
 }
+
+/**
+ * On startup (non-test), recover stale print jobs. Moves any job stuck in
+ * 'printing' for >5 min to 'needs_review' (shopkeeper must review — no
+ * automatic duplicate printing). Called lazily on the first container init.
+ */
+let staleRecovered = false;
+export async function recoverStaleJobsOnStartup(): Promise<void> {
+  if (staleRecovered) return;
+  staleRecovered = true;
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    const { recoverStaleJobs } = await import('@/lib/services/durable-queue');
+    const count = await recoverStaleJobs();
+    if (count > 0) console.log(`[startup] recovered ${count} stale print job(s) → needs_review`);
+  } catch {
+    // Non-fatal — the queue recovery is best-effort.
+  }
+}

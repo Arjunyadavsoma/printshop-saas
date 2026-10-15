@@ -21,6 +21,7 @@ const ALLOWED: Record<string, PrintJobStatus[]> = {
   printing: ['completed', 'failed'],
   completed: [],
   failed: ['printing'], // allow a retry
+  needs_review: [], // shopkeeper must manually re-queue or complete
 };
 
 /**

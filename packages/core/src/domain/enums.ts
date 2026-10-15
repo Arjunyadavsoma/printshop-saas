@@ -66,13 +66,14 @@ export const FILE_STATUSES: readonly FileStatus[] = [
 ] as const;
 
 /** Print job lifecycle (agent-facing). */
-export type PrintJobStatus = 'queued' | 'assigned' | 'printing' | 'completed' | 'failed';
+export type PrintJobStatus = 'queued' | 'assigned' | 'printing' | 'completed' | 'failed' | 'needs_review';
 export const PRINT_JOB_STATUSES: readonly PrintJobStatus[] = [
   'queued',
   'assigned',
   'printing',
   'completed',
   'failed',
+  'needs_review',
 ] as const;
 
 /** Colour mode for a print job. */
