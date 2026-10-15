@@ -163,6 +163,11 @@ function buildContainer(): Container {
     cache,
   );
 
+  // Payment credential encryption key — fail-fast in production.
+  if (process.env.NODE_ENV === 'production' && !process.env.PAYMENT_ENCRYPTION_KEY) {
+    throw new Error('FATAL: PAYMENT_ENCRYPTION_KEY is required in production for credential encryption at rest.');
+  }
+
   const container: Container = {
     db: database,
     storage,

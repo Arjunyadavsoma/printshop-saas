@@ -1,6 +1,7 @@
 import type { Shop, ShopPricingConfig, PaymentProvider, SubscriptionTier } from '@platform/core/domain';
 import { BaseRepository } from './base.repository';
 import { NotFoundError } from '@platform/core/errors';
+import { encryptCredentials, decryptCredentials } from '@/lib/crypto/credential-encryption';
 
 /** Raw Prisma row shape for the Shop model. */
 interface ShopRow {
@@ -22,8 +23,17 @@ interface ShopRow {
   updatedAt: Date;
 }
 
-/** Maps a raw DB row to the domain Shop aggregate. */
+/** Maps a raw DB row to the domain Shop aggregate. Decrypts payment credentials. */
 function toDomain(row: ShopRow): Shop {
+  let paymentCredentials: Record<string, unknown>;
+  try {
+    // Try decrypting (production path — encrypted at rest).
+    paymentCredentials = row.paymentCredentials && row.paymentCredentials.startsWith('v1:')
+      ? decryptCredentials(row.paymentCredentials)
+      : JSON.parse(row.paymentCredentials || '{}'); // dev fallback (plain JSON)
+  } catch {
+    paymentCredentials = {}; // decryption failed — return empty (fail-safe)
+  }
   return {
     id: row.id,
     name: row.name,
@@ -31,7 +41,7 @@ function toDomain(row: ShopRow): Shop {
     ownerUserId: row.ownerUserId,
     upiId: row.upiId,
     paymentProvider: row.paymentProvider as PaymentProvider,
-    paymentCredentials: JSON.parse(row.paymentCredentials || '{}'),
+    paymentCredentials,
     pricingConfig: JSON.parse(row.pricingConfig || '{}') as ShopPricingConfig,
     address: row.address,
     phone: row.phone,
@@ -44,13 +54,21 @@ function toDomain(row: ShopRow): Shop {
   };
 }
 
-/** Prepares a domain Shop (or partial) for insert/update — JSON-stringifies. */
+/** Prepares a domain Shop (or partial) for insert/update — encrypts creds + JSON-stringifies. */
 function toRow(input: Partial<Shop>): Partial<ShopRow> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
-    if (k === 'paymentCredentials') out[k] = v ? JSON.stringify(v) : undefined;
-    else if (k === 'pricingConfig') out[k] = v ? JSON.stringify(v) : undefined;
-    else out[k] = v;
+    if (k === 'paymentCredentials') {
+      if (v && Object.keys(v as Record<string, unknown>).length > 0) {
+        out[k] = encryptCredentials(v as Record<string, unknown>); // encrypt at rest
+      } else {
+        out[k] = undefined;
+      }
+    } else if (k === 'pricingConfig') {
+      out[k] = v ? JSON.stringify(v) : undefined;
+    } else {
+      out[k] = v;
+    }
   }
   return out as Partial<ShopRow>;
 }

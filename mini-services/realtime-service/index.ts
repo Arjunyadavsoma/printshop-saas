@@ -76,10 +76,14 @@ function verifyJwt(token: string): JwtClaims | null {
 }
 
 // --- socket.io server (browser dashboards) ---
+// CORS: restrict to configured origins in production; allow all in dev.
+const CORS_ORIGINS = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+  : '*'; // dev default
 const wsHttp = createServer();
 const io = new Server(wsHttp, {
   path: '/',
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: { origin: CORS_ORIGINS, methods: ['GET', 'POST'] },
   pingTimeout: 60000,
   pingInterval: 25000,
 });

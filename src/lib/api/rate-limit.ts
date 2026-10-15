@@ -26,8 +26,21 @@ export async function rateLimit(
   return { remaining: limit - count };
 }
 
-/** Build a rate-limit key from the request + scope. */
+/**
+ * Derive the client IP. Behind a trusted proxy (default — the Caddy
+ * gateway), reads X-Forwarded-For. If TRUSTED_PROXY is not set in
+ * production, falls back to 'unknown' (fails open on rate limiting rather
+ * than trusting a spoofable header directly exposed).
+ */
 export function rateKey(req: Request, scope: string): string {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  let ip = 'unknown';
+  const trustedProxy = process.env.TRUSTED_PROXY;
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) {
+    if (process.env.NODE_ENV !== 'production' || trustedProxy) {
+      // Dev: always trust XFF (behind the gateway). Prod: trust only if configured.
+      ip = xff.split(',')[0]!.trim();
+    }
+  }
   return `rl:${scope}:${ip}`;
 }
