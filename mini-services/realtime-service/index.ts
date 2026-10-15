@@ -20,6 +20,28 @@ const PORT_WS = 3003;
 const PORT_EMIT = 3004;
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me';
 const EMIT_SECRET = process.env.REALTIME_EMIT_SECRET ?? 'dev-emit-secret';
+const MAX_EMIT_BODY = 64 * 1024; // 64 KB — events are small payloads
+
+// Fail-fast in production if the secrets are still the dev defaults.
+if (process.env.NODE_ENV === 'production') {
+  const DEV = new Set(['dev-access-secret-change-me', 'dev-emit-secret']);
+  if (!process.env.JWT_ACCESS_SECRET || DEV.has(process.env.JWT_ACCESS_SECRET)) {
+    console.error('FATAL: JWT_ACCESS_SECRET is missing or still the dev default.');
+    process.exit(1);
+  }
+  if (!process.env.REALTIME_EMIT_SECRET || DEV.has(process.env.REALTIME_EMIT_SECRET)) {
+    console.error('FATAL: REALTIME_EMIT_SECRET is missing or still the dev default.');
+    process.exit(1);
+  }
+}
+
+/** Timing-safe comparison that handles unequal-length inputs (doesn't throw). */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 interface JwtClaims {
   sub: string;
@@ -94,12 +116,23 @@ const emitHttp = createServer(async (req: IncomingMessage, res: ServerResponse) 
     return;
   }
   const secret = req.headers['x-emit-secret'];
-  if (!secret || typeof secret === 'string' && !timingSafeEqual(Buffer.from(secret), Buffer.from(EMIT_SECRET))) {
+  if (typeof secret !== 'string' || !safeEqual(secret, EMIT_SECRET)) {
     res.writeHead(401).end('unauthorized');
     return;
   }
+  // Bounded body read (prevents memory exhaustion).
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
+  let total = 0;
+  try {
+    for await (const c of req) {
+      total += c.length;
+      if (total > MAX_EMIT_BODY) { res.writeHead(413).end('body too large'); return; }
+      chunks.push(c as Buffer);
+    }
+  } catch {
+    res.writeHead(400).end('read error');
+    return;
+  }
   let body: { channel?: string; event?: string; payload?: unknown };
   try {
     body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -107,12 +140,21 @@ const emitHttp = createServer(async (req: IncomingMessage, res: ServerResponse) 
     res.writeHead(400).end('invalid json');
     return;
   }
-  if (!body.channel || !body.event) {
+  if (!body.channel || !body.event || typeof body.channel !== 'string' || typeof body.event !== 'string') {
     res.writeHead(400).end('missing channel/event');
     return;
   }
-  io.to(body.channel).emit(body.event, body.payload ?? null);
-  res.writeHead(200).end('ok');
+  // Only allow shop-channel broadcasts (prevents spoofing system/internal rooms).
+  if (!body.channel.startsWith('shop:')) {
+    res.writeHead(403).end('channel not allowed');
+    return;
+  }
+  try {
+    io.to(body.channel).emit(body.event, body.payload ?? null);
+    res.writeHead(200).end('ok');
+  } catch {
+    res.writeHead(500).end('emit error');
+  }
 });
 
 wsHttp.listen(PORT_WS, () => console.log(`[realtime] socket.io on :${PORT_WS}`));

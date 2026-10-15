@@ -1,21 +1,36 @@
 import { type NextRequest } from 'next/server';
 import { getContainer } from '@/lib/container';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
+import { verifyCapability, MAX_UPLOAD_BYTES } from '@/lib/storage/capability';
+import { requireDev } from '@/lib/api/require-dev';
 
 /**
- * PUT /api/v1/storage/put — in-process upload receiver for the in-memory
- * storage adapter. In production this route does NOT exist: the presigned URL
- * points directly at R2/S3 and the API server never sees the bytes. It exists
- * here so the full upload→confirm→parse→print flow works without a cloud
- * bucket.
+ * PUT /api/v1/storage/put — in-process upload receiver. Verifies a signed
+ * storage capability (HMAC + expiry + key-format) before accepting bytes,
+ * and enforces a 25 MB body limit. In production this route does NOT exist:
+ * the presigned URL points directly at R2/S3.
  */
 export async function PUT(req: NextRequest): Promise<Response> {
   try {
-    const url = new URL(req.url);
-    const key = url.searchParams.get('key');
-    const ct = url.searchParams.get('ct') ?? 'application/octet-stream';
-    if (!key) return fail(toAppError(new Error('missing key')));
-    const bytes = new Uint8Array(await req.arrayBuffer());
+    const guard = requireDev();
+    if (guard) return guard;
+    // Verify the signed capability (prevents arbitrary-key overwrites).
+    const key = verifyCapability(req.nextUrl.searchParams, 'PUT');
+    if (!key) return fail(toAppError(new Error('invalid or expired upload capability')));
+
+    const ct = req.nextUrl.searchParams.get('ct') ?? 'application/octet-stream';
+
+    // Read the body with a size limit (prevents memory exhaustion).
+    const contentLength = Number(req.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_UPLOAD_BYTES) {
+      return fail(toAppError(new Error(`upload too large (max ${MAX_UPLOAD_BYTES} bytes)`)));
+    }
+    const buf = await req.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    if (bytes.length > MAX_UPLOAD_BYTES) {
+      return fail(toAppError(new Error(`upload too large (max ${MAX_UPLOAD_BYTES} bytes)`)));
+    }
+
     const storage = getContainer().storage;
     if (typeof (storage as unknown as { put?: unknown }).put !== 'function') {
       return fail(toAppError(new Error('storage backend does not support direct put')));

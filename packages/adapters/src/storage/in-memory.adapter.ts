@@ -1,4 +1,11 @@
 import type { StorageAdapter, PresignOptions } from '@platform/core/interfaces';
+import { createHmac } from 'node:crypto';
+
+/** Sign a storage capability (HMAC-SHA256). */
+function sign(key: string, method: string, exp: number): string {
+  const secret = process.env.STORAGE_CAPABILITY_SECRET ?? 'dev-storage-capability-secret';
+  return createHmac('sha256', secret).update(`${method}|${key}|${exp}`).digest('hex');
+}
 
 /** In-memory storage — stores blobs as a Map of key→{bytes, contentType}. */
 export class InMemoryStorageAdapter implements StorageAdapter {
@@ -6,18 +13,24 @@ export class InMemoryStorageAdapter implements StorageAdapter {
   private objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
 
   /**
-   * The "presigned" upload URL points at the in-process PUT receiver
-   * (`/api/v1/storage/put`), so the full upload→confirm→parse flow works
-   * end-to-end without a cloud bucket. In production this URL would point
-   * directly at R2/S3 — the API server never proxies file bytes.
+   * The "presigned" upload URL is a relative path to the in-process PUT
+   * receiver with an HMAC signature + expiry — verified by /storage/put.
+   * In production, R2/S3 generate their own signed presigned URLs.
    */
   async getPresignedUploadUrl(opts: PresignOptions): Promise<string> {
-    const exp = opts.expiresInSeconds ?? 300;
-    return `/api/v1/storage/put?key=${encodeURIComponent(opts.key)}&ct=${encodeURIComponent(opts.contentType)}&exp=${exp}`;
+    const exp = Math.floor(Date.now() / 1000) + (opts.expiresInSeconds ?? 300);
+    const sig = sign(opts.key, 'PUT', exp);
+    const params = new URLSearchParams({
+      key: opts.key, exp: String(exp), sig, ct: opts.contentType,
+    });
+    return `/api/v1/storage/put?${params.toString()}`;
   }
 
   async getPresignedDownloadUrl(key: string, expiresInSeconds = 900): Promise<string> {
-    return `/api/v1/storage/get?key=${encodeURIComponent(key)}&exp=${expiresInSeconds}`;
+    const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const sig = sign(key, 'GET', exp);
+    const params = new URLSearchParams({ key, exp: String(exp), sig });
+    return `/api/v1/storage/get?${params.toString()}`;
   }
 
   async delete(key: string): Promise<void> {

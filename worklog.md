@@ -296,3 +296,36 @@ End-to-end verified:
 
 Stage Summary:
 - The codebase is production-hardened: dev-only routes are guarded (404 in prod), secrets fail-fast, the full typecheck/lint/test gate is green, and a DEPLOY.md runbook covers Vercel + Render + the print-agent + monitoring. The actual deploy (clicking "deploy" on Vercel/Render) needs the user's credentials + a Postgres DB — the runbook is the step-by-step.
+
+---
+Task ID: security-audit
+Agent: orchestrator (main)
+Task: Production hardening audit + critical security remediation (per the §1-16 mandate). Reconnaissance → audit → fix critical/high issues with real code → regression tests → verify.
+
+Work Log:
+- RECONNAISSANCE: Read the actual source of the security-critical files (storage/put, storage/get, realtime-service, rate-limit, container, auth adapter). Found 3 CRITICAL + 3 HIGH issues. All verified against the real code, not assumptions.
+- CRITICAL C1 FIXED: /storage/put + /storage/get were UNAUTHENTICATED (anyone could read/overwrite any customer PDF). Implemented HMAC-signed storage capabilities (src/lib/storage/capability.ts): InMemoryStorageAdapter now signs presigned URLs with HMAC-SHA256(method|key|expiry, STORAGE_CAPABILITY_SECRET); /storage/put + /storage/get verify the signature (constant-time), expiry, and key-format (shops/<uuid>/orders/<uuid>/<uuid> regex). Added 7 regression tests. Verified: unsigned PUT → rejected, unsigned GET → rejected, valid signed → 200.
+- CRITICAL C2 FIXED: Dev payment simulators (/dev/orders/:id/mark-paid, /payments/dev/*/simulate, /dev/seed) could mark production orders paid. requireDev() guard already applied in the previous production-hardening step; verified the guard is enforced server-side (not just UI).
+- CRITICAL C3 FIXED: Dev secret defaults (JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, REALTIME_EMIT_SECRET) could silently ship to production. requireSecret() already in the container; added the same fail-fast check to the realtime mini-service (mini-services/realtime-service/index.ts).
+- HIGH H1 FIXED: Realtime /emit relay timingSafeEqual(Buffer.from(secret), Buffer.from(EMIT_SECRET)) THREW on unequal-length input → unhandled error. Added safeEqual() with length check.
+- HIGH H2 FIXED: Realtime /emit relay unbounded request body → memory exhaustion. Added 64KB body limit (MAX_EMIT_BODY).
+- HIGH H3 FIXED: Realtime /emit relay accepted any channel → could broadcast to system rooms. Channel must now start with 'shop:'.
+- MEDIUM M1: Rate limiter trusts X-Forwarded-For blindly (behind the Caddy gateway this is correct — the gateway sets it from the real remote IP). Documented in the audit + DEPLOY.md.
+- MEDIUM M2: CORS on the realtime service is origin:'*' (needed for the dev gateway). Documented — restrict in prod.
+- MEDIUM M3: Payment credentials stored as plain JSON (not libsodium-encrypted at rest). Documented — the adapter interfaces are ready for the encryption boundary.
+- KNOWN LIMITATIONS documented: UPI deep-link doesn't verify payment (correct per the prompt), in-memory storage/cache/queue (adapter-swappable), SQLite (Postgres-ready), no subscription billing, stubs for email/SMS, production build blocked by the sandbox.
+- docs/PRODUCTION_AUDIT.md: full audit with severity, affected files, evidence, impact, remediation, verification results.
+
+Verification:
+- tsc --noEmit: 0 errors ✅
+- eslint: clean ✅
+- vitest: 60/60 pass (35 pricing + 11 repo + 7 payments + 7 storage-capability) ✅
+- Storage capability: valid signed PUT 200, unsigned PUT rejected, unsigned GET rejected ✅
+- Dev routes: 200 in dev (requireDev passes), 404 in production (requireDev returns 404) ✅
+- Realtime: safeEqual length-checked, 64KB body limit, shop: channel validation ✅
+
+Stage Summary:
+- 3 CRITICAL + 3 HIGH security vulnerabilities found by actual code inspection and FIXED with real code changes + regression tests.
+- 60 tests pass, tsc 0 errors, lint clean.
+- The remaining items (Postgres, R2, Redis, BullMQ, subscription billing, email/SMS) are adapter-swappable (the interfaces + skeletons exist) but need real infrastructure/credentials to wire — clearly documented as limitations, not claimed as done.
+- Production build (bun run build) is blocked by the sandbox; tsc --noEmit (0 errors) is the closest verification.
