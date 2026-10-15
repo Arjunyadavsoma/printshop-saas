@@ -260,9 +260,14 @@ async function enqueuePaidOrderPrint(orderId: string, shopId: string): Promise<v
   const files = await repos.files.findByOrder(orderId);
   const pending = files.filter((f) => f.status === 'pending' || f.status === 'queued');
   for (const f of pending) {
+    // Create the PrintJob row (status='queued') — this IS the durable queue.
+    // The agent polls GET /agents/jobs/pending to discover it.
     const job = await repos.printJobs.create({ shopId, fileId: f.id });
-    await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
-    // Push to the agent (it claims + prints + reports status when online).
+    // In dev: enqueue to the in-memory queue for the in-process simulation.
+    if (process.env.NODE_ENV !== 'production') {
+      await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
+    }
+    // Push to the agent via realtime (it claims + prints + reports status).
     await dispatchToAgent(shopId, job.id, f.id);
   }
   if (pending.length > 0) {

@@ -27,13 +27,18 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   // dispatches on a later turn, matching a real queue's ordering).
   await repos.orders.update(order.id, { status: 'printing' });
 
-  const queue = getContainer().queue;
   const jobs: { jobId: string; fileId: string }[] = [];
   for (const f of pending) {
+    // Create the PrintJob row (status='queued'). This IS the durable queue —
+    // the agent polls GET /agents/jobs/pending to discover it. No
+    // in-memory enqueue needed in production; the row survives restarts.
     const job = await repos.printJobs.create({ shopId: shop.id, fileId: f.id });
-    await queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId: shop.id });
-    // Push to the agent (if one is online, it claims + prints; the in-process
-    // handler skips when an agent is online).
+    // In dev: enqueue to the in-memory queue for the in-process simulation.
+    // In prod: skip (the agent polls the DB directly).
+    if (process.env.NODE_ENV !== 'production') {
+      await getContainer().queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId: shop.id });
+    }
+    // Push to the agent via realtime (if one is online, it claims + prints).
     await dispatchToAgent(shop.id, job.id, f.id);
     jobs.push({ jobId: job.id, fileId: f.id });
   }

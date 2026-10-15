@@ -66,10 +66,14 @@ export class PrismaDatabaseAdapter implements DatabaseAdapter {
 
   async update<T = Document>(table: string, filter: Filter, patch: Document): Promise<T[]> {
     const delegate = this.delegate(table);
-    await delegate.updateMany({ where: filter, data: patch });
-    // Return the updated rows so the caller doesn't need a second round-trip
-    // semantics-wise; Prisma's updateMany doesn't RETURN, so we re-query.
-    return (await delegate.findMany({ where: filter })) as T[];
+    const result = await delegate.updateMany({ where: filter, data: patch });
+    if (result.count === 0) return [];
+    // Re-query by id (NOT the full filter, which may no longer match after
+    // the patch changed a filter field — e.g., filter={id, status:'queued'}
+    // + patch={status:'printing'} → the row is no longer status='queued').
+    // Using just {id} finds the updated row correctly.
+    const idFilter = filter.id ? { id: filter.id } : filter;
+    return (await delegate.findMany({ where: idFilter })) as T[];
   }
 
   async delete(table: string, filter: Filter): Promise<number> {

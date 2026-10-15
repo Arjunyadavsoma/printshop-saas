@@ -4,25 +4,14 @@ import { withDeviceAuth } from '@/lib/api/with-auth';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
-import { NotFoundError, ValidationError } from '@platform/core/errors';
+import { NotFoundError } from '@platform/core/errors';
 import { shopChannel } from '@platform/core/interfaces';
-import type { PrintJobStatus } from '@platform/core/domain';
 
 const StatusSchema = z.object({
   status: z.enum(['printing', 'completed', 'failed']),
   lastError: z.string().max(500).optional(),
   printerName: z.string().max(200).optional(),
 });
-
-/** Allowed job status transitions (the agent drives these). */
-const ALLOWED: Record<string, PrintJobStatus[]> = {
-  queued: ['printing', 'failed'],
-  assigned: ['printing', 'failed'],
-  printing: ['completed', 'failed'],
-  completed: [],
-  failed: ['printing'], // allow a retry
-  needs_review: [], // shopkeeper must manually re-queue or complete
-};
 
 /**
  * POST /api/v1/agents/jobs/:id/status — device-token-authed. The agent reports
@@ -38,21 +27,36 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
     const job = await repos.printJobs.findByIdAndShop(id, shopId);
     if (!job) throw new NotFoundError('Job not found');
 
-    const allowed = ALLOWED[job.status] ?? [];
-    if (!allowed.includes(body.status)) {
-      return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — cannot move to '${body.status}' (already claimed?)` });
-    }
-
     const now = new Date();
     const container = getContainer();
     const channel = shopChannel(shopId);
 
     if (body.status === 'printing') {
-      await repos.printJobs.update(id, { status: 'printing', agentId: agent.id, startedAt: now });
+      // ATOMIC CLAIM: conditional update WHERE id AND status='queued'.
+      // Only one concurrent agent's update will affect a row; the loser
+      // gets an empty result → skipped. This is atomic at the DB level
+      // (UPDATE ... WHERE id=? AND status='queued' — row-level locking).
+      const claimed = await container.db.update(
+        'printJob',
+        { id, shopId, status: 'queued' },
+        { status: 'printing', agentId: agent.id, startedAt: now },
+      );
+      if (claimed.length === 0) {
+        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — already claimed by another agent` });
+      }
       await repos.files.update(job.fileId, { status: 'printing' });
       await publish(channel, 'job.printing', { jobId: id, fileId: job.fileId });
     } else if (body.status === 'completed') {
-      await repos.printJobs.update(id, { status: 'completed', completedAt: now });
+      // Idempotent: conditional update WHERE id AND status='printing'.
+      // If the job is already 'completed' (duplicate ack), this is a no-op.
+      const updated = await container.db.update(
+        'printJob',
+        { id, shopId, status: 'printing' },
+        { status: 'completed', completedAt: now },
+      );
+      if (updated.length === 0) {
+        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — not in 'printing' state (duplicate ack or already completed)` });
+      }
       await repos.files.update(job.fileId, { status: 'completed', printedAt: now });
       await publish(channel, 'job.completed', { jobId: id, fileId: job.fileId });
       await maybeMarkOrderReady(job.fileId, shopId, channel);
