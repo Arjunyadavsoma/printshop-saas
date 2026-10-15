@@ -1,17 +1,23 @@
 import type { StorageAdapter, PresignOptions } from '@platform/core/interfaces';
 
-/** In-memory storage — stores blobs as a Map of key→Uint8Array. */
+/** In-memory storage — stores blobs as a Map of key→{bytes, contentType}. */
 export class InMemoryStorageAdapter implements StorageAdapter {
   readonly provider = 'memory';
   private objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
 
+  /**
+   * The "presigned" upload URL points at the in-process PUT receiver
+   * (`/api/v1/storage/put`), so the full upload→confirm→parse flow works
+   * end-to-end without a cloud bucket. In production this URL would point
+   * directly at R2/S3 — the API server never proxies file bytes.
+   */
   async getPresignedUploadUrl(opts: PresignOptions): Promise<string> {
-    // A "presigned" URL is just a marker the test client PUTs to.
-    return `mem://upload/${opts.key}?expires=${opts.expiresInSeconds ?? 300}`;
+    const exp = opts.expiresInSeconds ?? 300;
+    return `/api/v1/storage/put?key=${encodeURIComponent(opts.key)}&ct=${encodeURIComponent(opts.contentType)}&exp=${exp}`;
   }
 
   async getPresignedDownloadUrl(key: string, expiresInSeconds = 900): Promise<string> {
-    return `mem://download/${key}?expires=${expiresInSeconds}`;
+    return `/api/v1/storage/get?key=${encodeURIComponent(key)}&exp=${expiresInSeconds}`;
   }
 
   async delete(key: string): Promise<void> {
@@ -27,8 +33,15 @@ export class InMemoryStorageAdapter implements StorageAdapter {
     return o ? { size: o.bytes.length, contentType: o.contentType } : null;
   }
 
-  /** Test-only helper: pretend a client uploaded bytes for `key`. */
-  putForTest(key: string, bytes: Uint8Array, contentType = 'application/octet-stream'): void {
+  /** Extension beyond the StorageAdapter interface: store uploaded bytes. */
+  async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
     this.objects.set(key, { bytes, contentType });
   }
+
+  /** Extension beyond the StorageAdapter interface: fetch the raw bytes. */
+  async getBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    const o = this.objects.get(key);
+    return o ? { bytes: o.bytes, contentType: o.contentType } : null;
+  }
 }
+

@@ -24,10 +24,10 @@ const PHASES: Phase[] = [
   {
     n: 2,
     title: 'Backend core',
-    items: ['Fastify skeleton + plugins', 'Lucia auth + JWT + roles', 'Repository layer', 'Order + file endpoints', 'Presigned uploads + page parse'],
-    status: 'next',
+    items: ['Composition root + adapter wiring', 'JWT + PBKDF2 auth + role middleware', 'Repository layer (only DB touchpoint)', '20+ REST routes with Zod validation', 'Presigned uploads + pdf-lib page parse'],
+    status: 'done',
   },
-  { n: 3, title: 'Payments', items: ['PhonePe / Paytm / UPI concretes', 'Webhook signature + idempotency', 'Integration tests'], status: 'locked' },
+  { n: 3, title: 'Payments', items: ['PhonePe / Paytm / UPI concretes', 'Webhook signature + idempotency', 'Integration tests'], status: 'next' },
   { n: 4, title: 'Customer web app', items: ['/[shopSlug] route', 'Drag-drop upload UI', 'Live pricing', 'Checkout handoff', 'Status polling'], status: 'locked' },
   { n: 5, title: 'Shop dashboard', items: ['WebSocket order queue', 'Per-file print triggers', 'QR + sticker PDF', 'Analytics', 'Settings'], status: 'locked' },
   { n: 6, title: 'Print agent', items: ['CLI daemon + setup wizard', 'WebSocket + disk queue', 'pdf-to-printer', 'Windows .exe via pkg'], status: 'locked' },
@@ -39,8 +39,8 @@ export function Roadmap() {
     <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
       <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">7-phase build order</h2>
       <p className="mt-2 max-w-3xl text-muted-foreground">
-        Per the spec, we stop after Phase 1 and wait for review. Here’s the full roadmap so you can
-        see where each deliverable lives in the bigger picture.
+        Phases 1 and 2 are shipped and verified in-browser. Up next is Phase 3 (payments). Here’s the full roadmap so
+        you can see where each deliverable lives in the bigger picture.
       </p>
 
       <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

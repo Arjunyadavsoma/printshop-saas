@@ -10,15 +10,18 @@ export class InMemoryQueueAdapter implements QueueAdapter {
   async enqueue<T>(queue: string, payload: T): Promise<string> {
     const id = crypto.randomUUID();
     this.enqueued.push({ id, queue, payload, runAt: new Date() });
-    await this.dispatch(queue, payload);
+    // Dispatch asynchronously (setTimeout 0) so enqueue returns immediately,
+    // matching real queue semantics — the producer isn't blocked by the
+    // consumer, and the handler's state transitions happen in their own turn.
+    setTimeout(() => void this.dispatch(queue, payload).catch(() => {}), 0);
     return id;
   }
 
   async schedule<T>(queue: string, payload: T, runAt: Date): Promise<string> {
     const id = crypto.randomUUID();
     this.enqueued.push({ id, queue, payload, runAt });
-    const delay = Math.max(0, runAt.getTime() - Date.now());
-    setTimeout(() => void this.dispatch(queue, payload), delay);
+    const delayMs = Math.max(0, runAt.getTime() - Date.now());
+    setTimeout(() => void this.dispatch(queue, payload).catch(() => {}), delayMs);
     return id;
   }
 
