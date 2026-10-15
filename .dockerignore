@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+*.log
+dev.log
+.env*
+coverage
+tests
+skills
+examples
+download
+upload
+tool-results
+.claude
+.z-ai-config
