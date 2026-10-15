@@ -1,0 +1,60 @@
+# Render deploy config (spec §32) — the API + the realtime mini-service + the
+# print-agent as three Render services on the free tier. The web apps deploy to
+# Vercel (see vercel.json).
+# Deploy with: `render deploy --config render.yaml` or via the Render dashboard.
+services:
+  - type: web
+    name: printshop-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: bun install --frozen-lockfile && bun run db:generate
+    startCommand: bun ./node_modules/.bin/next start -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PROVIDER
+        value: prisma
+      - key: DATABASE_URL
+        sync: false # set in the Render dashboard
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: REALTIME_EMIT_SECRET
+        generateValue: true
+      - key: REALTIME_PROVIDER
+        value: socketio
+      - key: REALTIME_EMIT_URL
+        value: http://127.0.0.1:3004/emit
+      - key: APP_BASE_URL
+        value: https://printshop-api.onrender.com
+    healthCheckPath: /api/v1/health
+
+  - type: web
+    name: printshop-realtime
+    runtime: node
+    plan: free
+    buildCommand: cd mini-services/realtime-service && bun install --frozen-lockfile
+    startCommand: cd mini-services/realtime-service && bun index.ts
+    envVars:
+      - key: JWT_ACCESS_SECRET
+        sync: false # same as the API
+      - key: REALTIME_EMIT_SECRET
+        sync: false # same as the API
+
+  - type: worker
+    name: printshop-agent-demo
+    runtime: node
+    plan: free
+    buildCommand: cd mini-services/print-agent && bun install --frozen-lockfile
+    startCommand: cd mini-services/print-agent && bun src/index.ts start
+    envVars:
+      - key: PRINT_AGENT_DEMO
+        value: "1"
+      - key: PRINT_AGENT_API_URL
+        value: https://printshop-api.onrender.com
+      - key: PRINT_AGENT_REALTIME_URL
+        value: https://printshop-realtime.onrender.com
+      - key: PRINT_AGENT_DEVICE_TOKEN
+        sync: false # minted via POST /agents/register, set here

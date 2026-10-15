@@ -2,10 +2,30 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createHmac } from 'node:crypto';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { ok, fail, toAppError } from './envelope';
+import { ok, fail, toAppError, requestId, logRequest } from './envelope';
 import { rateLimit, rateKey } from './rate-limit';
 import { ForbiddenError, UnauthorizedError } from '@platform/core/errors';
 import type { UserRole, User, PrintAgent } from '@platform/core/domain';
+
+/** Time + log a handler call, set the X-Request-Id response header. */
+async function timed<P>(
+  req: NextRequest,
+  fn: () => Promise<NextResponse>,
+): Promise<NextResponse> {
+  const rid = requestId(req);
+  const path = req.nextUrl.pathname;
+  const start = Date.now();
+  let res: NextResponse;
+  try {
+    res = await fn();
+  } catch (cause) {
+    res = fail(toAppError(cause));
+  }
+  const dur = Date.now() - start;
+  logRequest(getContainer().logger, req.method, path, res.status, dur, rid);
+  try { res.headers.set('x-request-id', rid); } catch { /* immutable in some cases */ }
+  return res;
+}
 
 /** The verified principal attached to an authenticated request. */
 export interface Principal {
@@ -34,8 +54,8 @@ export function withAuth<P extends RouteParams = RouteParams>(
   allowedRoles?: UserRole[],
 ) {
   return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
+    const container = getContainer();
     try {
-      const container = getContainer();
       const header = req.headers.get('authorization') ?? '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new UnauthorizedError('Missing bearer token');
@@ -62,9 +82,13 @@ export function withAuth<P extends RouteParams = RouteParams>(
         email: user.email,
         user,
       };
-      return await handler(req, ctx, principal);
+      return await timed(req, () => handler(req, ctx, principal));
     } catch (cause) {
-      return fail(toAppError(cause));
+      const res = fail(toAppError(cause));
+      const rid = requestId(req);
+      logRequest(container.logger, req.method, req.nextUrl.pathname, res.status, 0, rid);
+      try { res.headers.set('x-request-id', rid); } catch {}
+      return res;
     }
   };
 }
@@ -95,7 +119,7 @@ export function withDeviceAuth<P extends RouteParams = RouteParams>(
       // Refresh presence on every authenticated call (cheap; the heartbeat
       // also does it explicitly).
       await repos.printAgents.update(agent.id, { isOnline: true, lastSeenAt: new Date() });
-      return await handler(req, ctx, { agent, shopId: agent.shopId });
+      return await timed(req, () => handler(req, ctx, { agent, shopId: agent.shopId }));
     } catch (cause) {
       return fail(toAppError(cause));
     }
@@ -112,7 +136,7 @@ export function withRateLimit<P extends RouteParams = RouteParams>(
   return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
     try {
       await rateLimit(getContainer().cache, rateKey(req, scope), limit, windowSeconds);
-      return await handler(req, ctx);
+      return await timed(req, () => handler(req, ctx));
     } catch (cause) {
       return fail(toAppError(cause));
     }

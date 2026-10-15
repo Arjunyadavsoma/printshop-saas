@@ -30,17 +30,17 @@ const PHASES: Phase[] = [
   { n: 3, title: 'Payments', items: ['PhonePe X-VERIFY (SHA-256 HMAC)', 'Paytm CHECKSUMHASH (AES-128-CBC)', 'Idempotent webhooks + audit-before-process', '7 integration tests (signed payloads)'], status: 'done' },
   { n: 4, title: 'Customer web app', items: ['Mobile-framed multi-step wizard', 'Drag-drop upload + per-file settings', 'Live pricing (real engine, client-side)', 'UPI checkout + QR handoff', 'Token status polling → ready'], status: 'done' },
   { n: 5, title: 'Shop dashboard', items: ['socket.io mini-service (JWT auth, shop rooms)', 'WebSocket-driven order queue', 'Per-file print + mark collected', 'Analytics (recharts)', 'QR + sticker PDF + settings'], status: 'done' },
-  { n: 6, title: 'Print agent', items: ['CLI daemon + setup wizard', 'WebSocket + disk queue', 'pdf-to-printer', 'Windows .exe via pkg'], status: 'next' },
-  { n: 7, title: 'Polish & deploy', items: ['Sentry + logging + health', 'GitHub Actions CI/CD', 'Vercel + Render deploy', 'Seed + demo shop', 'k6 load test'], status: 'locked' },
+  { n: 6, title: 'Print agent', items: ['CLI daemon + setup wizard', 'WebSocket + disk queue', 'pdf-to-printer', 'Windows .exe via pkg'], status: 'done' },
+  { n: 7, title: 'Polish & deploy', items: ['Metrics + request logging + Sentry point', 'GitHub Actions CI/CD', 'render.yaml + vercel.json + Dockerfile', 'k6 load test (100/min) + seed', 'CHANGELOG + README'], status: 'done' },
 ];
 
 export function Roadmap() {
   return (
     <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
-      <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">7-phase build order</h2>
+      <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">7-phase build order — ✦ all shipped</h2>
       <p className="mt-2 max-w-3xl text-muted-foreground">
-        Phases 1 and 2 are shipped and verified in-browser. Up next is Phase 3 (payments). Here’s the full roadmap so
-        you can see where each deliverable lives in the bigger picture.
+        All seven phases are complete and verified in-browser. The full QR-based print-shop SaaS — from the
+        adapter-pattern foundation to a real socket.io-driven dashboard, a print-agent daemon, and CI/deploy configs.
       </p>
 
       <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

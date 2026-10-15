@@ -46,9 +46,27 @@ export function toAppError(cause: unknown): AppError {
     return new ValidationError('Invalid request', { issues: cause.issues });
   }
   if (cause instanceof Error) {
+    captureSentry(cause); // spec §11: error tracking
     return new AppError(cause.message, 'INTERNAL_ERROR', 500);
   }
   return new AppError('Unknown error', 'INTERNAL_ERROR', 500);
+}
+
+/**
+ * Sentry integration point. In production, replace this stub with
+ * `import * as Sentry from '@sentry/node'; Sentry.init({ dsn: SENTRY_DSN })`
+ * in the container, and `Sentry.captureException(err)` here. No-op without a
+ * DSN — the architecture's error surface is the AppError → envelope path, so
+ * wiring Sentry is a one-line swap.
+ */
+function captureSentry(err: Error): void {
+  const dsn = process.env.SENTRY_DSN;
+  if (!dsn) return; // no-op in dev
+  // Production: Sentry.captureException(err);
+  // For the demo, log so the integration point is observable.
+  try {
+    console.error(JSON.stringify({ level: 'sentry', message: 'captured error', error: err.message, stack: err.stack?.slice(0, 200) }));
+  } catch { /* swallow */ }
 }
 
 /** Convenience: run an async handler, envelope the result, normalise errors. */
@@ -63,6 +81,28 @@ export async function handle<T>(
   } catch (cause) {
     return fail(toAppError(cause));
   }
+}
+
+/**
+ * Structured request log (spec §11). Called by the auth/rate-limit wrappers on
+ * every request completion. Generates (or honours) an X-Request-Id and logs
+ * {method, path, status, durationMs, requestId} as JSON for log aggregation
+ * (Axiom/Logtail). The id is also returned on the response header for
+ * end-to-end traceability.
+ */
+export function requestId(req: { headers: Headers }): string {
+  return req.headers.get('x-request-id') ?? crypto.randomUUID();
+}
+
+export function logRequest(
+  logger: { info: (m: string, c?: Record<string, unknown>) => void },
+  method: string,
+  path: string,
+  status: number,
+  durationMs: number,
+  rid: string,
+): void {
+  logger.info('request', { method, path, status, durationMs, requestId: rid });
 }
 
 export {

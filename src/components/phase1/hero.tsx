@@ -25,7 +25,7 @@ export function Hero() {
       <div className="absolute inset-0 -z-10 opacity-[0.04] [background-image:radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:22px_22px]" />
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 5 · DASHBOARD</Badge>
+          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 7 · DEPLOY ✦ ALL 7 DONE</Badge>
           <Badge variant="secondary">Production-grade SaaS</Badge>
           <Badge variant="outline">India-first</Badge>
         </div>
@@ -39,13 +39,13 @@ export function Hero() {
         </p>
         <div className="mt-6 flex flex-wrap gap-3 text-sm">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
-            <CheckCircle2 className="h-4 w-4" /> 53 tests + socket.io realtime
+            <CheckCircle2 className="h-4 w-4" /> 53 tests + 7 phases shipped
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
-            <CheckCircle2 className="h-4 w-4" /> WebSocket-driven queue + analytics
+            <CheckCircle2 className="h-4 w-4" /> metrics + CI + deploy configs
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 font-medium text-rose-700 ring-1 ring-rose-200">
-            <CheckCircle2 className="h-4 w-4" /> QR stickers, settings, agent mgmt
+            <CheckCircle2 className="h-4 w-4" /> live load-test runner
           </span>
         </div>
 

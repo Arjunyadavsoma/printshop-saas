@@ -77,19 +77,34 @@ bun install
 # 2. (optional) bring up local Postgres + Redis + MinIO + Mailpit
 docker compose up -d
 
-# 3. Run the pricing test suite (35 tests)
-cd packages/core && bunx vitest run && cd ../..
+# 3. Run the test suite (53 tests: pricing + repo + payments)
+bunx vitest run
 
 # 4. Start the web app
 bun run dev
 #   → open the Preview Panel on the right (port 3000)
+
+# 5. (optional) start the realtime mini-service for the WebSocket dashboard
+cd mini-services/realtime-service && bun --hot index.ts &
+
+# 6. (optional) start a print-agent daemon (demo mode — no real printer)
+cd mini-services/print-agent && PRINT_AGENT_DEMO=1 bun src/index.ts start
+
+# 7. (optional) seed the demo shop standalone
+bun run scripts/seed.ts
+
+# 8. (optional) load test (needs k6 installed)
+k6 run load-test.js --env BASE_URL=http://localhost:81
 ```
 
-The `/` route shows:
-- the architecture diagram above, live;
-- the **adapter swap matrix** (every interface + its concretes);
-- a **working pricing calculator** that calls the real `priceFile()` engine and
-  renders the line-item breakdown.
+The `/` route shows **all seven phases live**:
+- the **customer phone** (Phase 4) — mobile-framed upload→pay→status wizard;
+- the **shop dashboard** (Phase 5) — WebSocket-driven queue + analytics + QR + settings;
+- the **payments explorer** (Phase 3) — real PhonePe/Paytm signature verification round-trips;
+- the **backend explorer** (Phase 2) — drive the full API lifecycle;
+- the **observability & deploy** panel (Phase 7) — live health/metrics + a load-test runner;
+- the **pricing calculator** (Phase 1) — calls the real `priceFile()` engine;
+- the architecture diagram + adapter swap matrix.
 
 ---
 
@@ -111,17 +126,28 @@ A full worked example (Supabase → self-hosted Postgres) is in
 
 ---
 
-## Build order (the 7-phase plan)
+## Build order — ✦ all 7 phases shipped
 
-This repo implements **Phase 1** only. The remaining phases land in order:
+| # | Phase | Status |
+| --- | --- | --- |
+| 1 | Foundation — core, utils, adapters interfaces, pricing engine, docker | ✅ |
+| 2 | Backend core — composition root, JWT+PBKDF2 auth, repository layer, 20+ REST routes, presigned uploads | ✅ |
+| 3 | Payments — PhonePe X-VERIFY + Paytm CHECKSUMHASH (real crypto), idempotent webhooks, 7 integration tests | ✅ |
+| 4 | Customer web app — mobile-framed upload→pay→status wizard, live pricing, UPI QR | ✅ |
+| 5 | Shop dashboard — socket.io mini-service, WebSocket-driven queue, analytics, QR + sticker PDF, settings | ✅ |
+| 6 | Print agent — CLI daemon (setup/start/status/test-printer), device-token auth, disk queue, reconnect backoff | ✅ |
+| 7 | Polish & deploy — /metrics + request logging + Sentry point, GitHub Actions CI, render.yaml + vercel.json + Dockerfile, k6 load test, seed, CHANGELOG | ✅ |
 
-1. ✅ **Foundation** — core, utils, adapters interfaces, pricing engine, docker
-2. ⏳ Backend core — Fastify, auth, repository layer, order/file endpoints
-3. ⏳ Payments — PhonePe/Paytm/UPI concretes, webhooks, idempotency
-4. ⏳ Customer web app — upload UI, live pricing, checkout, status polling
-5. ⏳ Shop dashboard — WebSocket queue, print triggers, QR, analytics, settings
-6. ⏳ Print agent — CLI daemon, WS client, pdf-to-printer, .exe packaging
-7. ⏳ Polish & deploy — Sentry, CI/CD, Vercel/Render, seed script, load test
+## Deploy
+
+- **Web** (`/`): Vercel — `vercel.json` (security headers, BOM region). `vercel --prod`.
+- **API + realtime + agent**: Render — `render.yaml` (three free-tier services). `render deploy --config render.yaml`.
+- **Docker**: `docker build -t printshop-api .` (multi-stage Dockerfile).
+- **CI**: `.github/workflows/ci.yml` runs typecheck + lint + test on every push; on `main`, pushes the Prisma schema to staging + seeds.
+- **Load test**: `k6 run load-test.js --env BASE_URL=…` (targets 100 orders/min, p95 < 2s).
+- **Sentry**: set `SENTRY_DSN` — the integration point in `toAppError` becomes live (swap the stub for `@sentry/node`).
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for the per-phase history.
 
 ---
 

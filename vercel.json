@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "next",
+  "buildCommand": "bun run build",
+  "installCommand": "bun install --frozen-lockfile",
+  "regions": ["bom1"],
+  "env": {
+    "APP_BASE_URL": "https://printshop-saas.vercel.app",
+    "DATABASE_PROVIDER": "prisma",
+    "REALTIME_PROVIDER": "socketio",
+    "NEXT_PUBLIC_API_BASE": "/api/v1"
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

@@ -226,3 +226,37 @@ Stage Summary:
 - Phase 6 print agent fully shipped and verified end-to-end. The agent is a real Node/bun CLI daemon that registers, authenticates (device token → JWT exchange), connects to the realtime mini-service via socket.io, receives job.dispatch pushes (with polling fallback), claims jobs (first-claim-wins), downloads + prints + reports status transitions — all driving the dashboard live via the status endpoint's realtime publishes.
 - Architecture invariant holds: the print service publishes through the RealtimeAdapter interface; the agent talks outbound HTTP + socket.io only (no inbound ports, NAT-safe); the in-process simulation is the offline fallback. Swapping in a real fleet of agents is just running more CLI instances.
 - Ready for Phase 7 (polish & deploy: Sentry + logging + health, GitHub Actions CI/CD, Vercel + Render deploy, seed + demo shop, k6 load test).
+
+---
+Task ID: 7
+Agent: orchestrator (main)
+Task: Phase 7 — Polish & Deploy. /metrics endpoint, request-id + structured request logging, Sentry integration point, GitHub Actions CI, render.yaml + vercel.json + Dockerfile, scripts/seed.ts, k6 load-test.js, CHANGELOG, Phase 7 UI (health/metrics + live load-test runner + deploy-config preview), README enhancement. ✦ ALL 7 PHASES COMPLETE.
+
+Work Log:
+- GET /api/v1/metrics (src/app/api/v1/metrics/route.ts): platform-wide aggregations — orders/min (last 60s), total orders, payment success rate, revenue, avg + p95 print time (from printJob startedAt→completedAt), active agents (heartbeated <30s). Public, rate-limited.
+- Request-id + structured request logging: added requestId() + logRequest() helpers in envelope.ts; a timed() wrapper in with-auth.ts that every wrapper (withAuth/withRateLimit/withDeviceAuth) uses — generates/honours X-Request-Id, times the handler, logs {method, path, status, durationMs, requestId} via the JsonConsoleLogger, sets the X-Request-Id response header. End-to-end traceability for Axiom/Logtail.
+- Sentry integration point: captureSentry() in toAppError — no-op without SENTRY_DSN; documented as a one-line swap for @sentry/node in production. The architecture's error surface is the AppError → envelope path, so wiring Sentry touches one function.
+- .github/workflows/ci.yml: on push/PR — bun install → tsc --noEmit → eslint → vitest run; on main, pushes the Prisma schema to staging + seeds.
+- render.yaml: three Render free-tier services (printshop-api web, printshop-realtime web, printshop-agent-demo worker) with env-var wiring + health check.
+- vercel.json: Next.js deploy config with security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy), BOM region.
+- Dockerfile: multi-stage (deps → build → runner) on oven/bun:1.
+- scripts/seed.ts: standalone seeder (calls seedDemoData) — `bun run scripts/seed.ts`.
+- load-test.js: k6 script — ramping 1→10 VUs over 2min, targets 100 orders/min, thresholds (order_create_ok >99%, p95 <2s, fail <1%), prints a summary. `k6 run load-test.js --env BASE_URL=…`.
+- CHANGELOG.md: full 7-phase history (Keep-a-Changelog format).
+- Phase 7 UI (src/components/phase7/observability-deploy.tsx): three cards — Health (live status/db-ready/provider, polled 5s), Metrics (orders/min, totals, pay-success, avg print, revenue, agents), Live load test (20/50/100-req buttons that fire real concurrent POST /shops/quickprint/orders and report RPS + ok/fail + p95 + wall). Plus a deploy-config preview card listing the on-disk files (ci.yml, render.yaml, vercel.json, Dockerfile, load-test.js, seed.ts).
+- README enhanced: 8-step quickstart (incl. realtime mini-service + print-agent + seed + k6), the `/` route now shows all 7 phases live, a 7-phase status table (all ✅), and a Deploy section (Vercel/Render/Docker/CI/k6/Sentry).
+- Hero badge → "PHASE 7 · DEPLOY ✦ ALL 7 DONE"; Roadmap: all 7 phases done; badges updated (53 tests + 7 phases shipped / metrics + CI + deploy / live load-test runner).
+
+Bugs found & fixed during self-verification:
+- k6 script: `data.metrics['http_req_duration'].['p(95)']` had a stray `.` before `[` (parse error) → rewrote the summary with safe optional-chaining guards.
+- k6 script: anonymous default export → lint warning → named it `loadTest`.
+- The load-test runner's `value={<strong>{ok}</strong> / <strong>{fail}</strong>}` — the `/` between two JSX elements in an attribute-expression context was parsed as the DIVISION OPERATOR (element / element = NaN), so the card showed "ok / fail NaN" even though the actual values were ok=20/fail=0 (confirmed via console.log). Fixed by wrapping in a React fragment `<><strong>…</strong> / <strong>…</strong></>`.
+
+End-to-end verified (one call, fresh .next):
+- curl /health → "ok"; /ready → ready=True, db=prisma; /metrics → orders/min 0 initially → 5 after creating 5 orders (throughput tracking ✓); POST /shops/quickprint/orders returns X-Request-Id header (e.g. b1bf0b9d-…) ✓.
+- Agent Browser: observability section renders; health card shows "db ready YES"; metrics card shows orders/min + totals + pay-success + agents; "20 req" load-test button → RPS 16, ok / fail 20 / 0, p95 1228ms, wall 1258ms (all 20 concurrent create-order requests succeeded). No errors. 1.27MB screenshot.
+- Lint clean, 53 tests pass, all 7 phases shipped + verified.
+
+Stage Summary:
+- ✦ ALL 7 PHASES COMPLETE. The full QR-based print-shop SaaS — adapter-pattern foundation → backend core → payments (real crypto) → customer web app → shop dashboard (WebSocket) → print-agent daemon → polish & deploy — is shipped and verified end-to-end in the browser.
+- 53 tests pass (35 pricing + 11 repo + 7 payments), eslint clean, the dev server + realtime mini-service + print-agent CLI all run together, and the / route demonstrates every phase live.

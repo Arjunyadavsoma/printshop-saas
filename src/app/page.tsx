@@ -9,6 +9,7 @@ import { BackendExplorer } from '@/components/phase2/backend-explorer';
 import { PaymentsExplorer } from '@/components/phase3/payments-explorer';
 import { CustomerApp } from '@/components/phase4/customer-app';
 import { ShopDashboard } from '@/components/phase5/shop-dashboard';
+import { ObservabilityDeploy } from '@/components/phase7/observability-deploy';
 
 export default function HomePage() {
   return (
@@ -19,6 +20,7 @@ export default function HomePage() {
         <ShopDashboard />
         <PaymentsExplorer />
         <BackendExplorer />
+        <ObservabilityDeploy />
         <PricingCalculator />
         <ArchitectureExplorer />
         <AdapterMatrix />
