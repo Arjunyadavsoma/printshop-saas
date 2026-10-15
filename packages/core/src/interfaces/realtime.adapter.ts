@@ -11,7 +11,8 @@
 
 export type RealtimeHandler = (payload: unknown) => void | Promise<void>;
 
-export interface Subscription {
+/** The handle returned by subscribe() — call unsubscribe() to stop receiving. */
+export interface RealtimeSubscription {
   /** Stop receiving events for this subscription. */
   unsubscribe(): Promise<void>;
 }
@@ -23,7 +24,7 @@ export interface RealtimeAdapter {
   publish(channel: string, event: string, payload: unknown): Promise<number>;
 
   /** Listen for an event on a channel. Returns a handle to unsubscribe. */
-  subscribe(channel: string, event: string, handler: RealtimeHandler): Promise<Subscription>;
+  subscribe(channel: string, event: string, handler: RealtimeHandler): Promise<RealtimeSubscription>;
 
   /** Optional presence: how many subscribers are live on a channel. */
   presenceCount?(channel: string): Promise<number>;

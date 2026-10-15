@@ -56,6 +56,31 @@ function env(key: string, fallback = ''): string {
   return process.env[key] ?? fallback;
 }
 
+/** The dev-default secrets that must NOT ship to production. */
+const DEV_DEFAULTS = new Set([
+  'dev-access-secret-change-me',
+  'dev-refresh-secret-change-me',
+  'dev-emit-secret',
+]);
+
+/**
+ * Fail-fast in production if a required secret is missing or still the dev
+ * default. Better to refuse to boot than to run with guessable secrets.
+ */
+function requireSecret(key: string): string {
+  const v = process.env[key];
+  if (!v || DEV_DEFAULTS.has(v)) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `FATAL: ${key} is missing or still the dev default — set a strong secret before deploying.`,
+      );
+    }
+    // In dev, fall back to the documented default.
+    return v || DEV_DEFAULTS.values().next().value!;
+  }
+  return v;
+}
+
 let _container: Container | null = null;
 
 /**
@@ -99,7 +124,7 @@ function buildContainer(): Container {
     env('REALTIME_PROVIDER', 'socketio') === 'memory'
       ? new InMemoryRealtimeAdapter()
       : new SocketIoRelayRealtimeAdapter(
-          { emitUrl: env('REALTIME_EMIT_URL', 'http://127.0.0.1:3004/emit'), emitSecret: env('REALTIME_EMIT_SECRET', 'dev-emit-secret') },
+          { emitUrl: env('REALTIME_EMIT_URL', 'http://127.0.0.1:3004/emit'), emitSecret: requireSecret('REALTIME_EMIT_SECRET') },
           (msg, ctx) => logger.debug(msg, ctx),
         );
 
@@ -115,11 +140,11 @@ function buildContainer(): Container {
   const payment: PaymentAdapter = new UpiDeepLinkPaymentAdapter();
   const paymentRegistry = new PaymentAdapterRegistry();
 
-  // Auth — JWT (HS256) + PBKDF2.
+  // Auth — JWT (HS256) + PBKDF2. Secrets fail-fast in production.
   const auth: AuthAdapter = new JwtAuthAdapter(
     {
-      accessSecret: env('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
-      refreshSecret: env('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
+      accessSecret: requireSecret('JWT_ACCESS_SECRET'),
+      refreshSecret: requireSecret('JWT_REFRESH_SECRET'),
       accessTtlSeconds: Number(env('ACCESS_TOKEN_TTL_SECONDS', '900')),
       refreshTtlSeconds: Number(env('REFRESH_TOKEN_TTL_SECONDS', '2592000')),
     },

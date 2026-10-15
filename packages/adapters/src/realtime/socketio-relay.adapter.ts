@@ -1,4 +1,4 @@
-import type { RealtimeAdapter, Subscription } from '@platform/core/interfaces';
+import type { RealtimeAdapter, RealtimeSubscription } from '@platform/core/interfaces';
 
 /**
  * Socket.io relay concrete for the {@link RealtimeAdapter} interface.
@@ -44,7 +44,7 @@ export class SocketIoRelayRealtimeAdapter implements RealtimeAdapter {
    * server-side adapter. So subscribe() here is a no-op stub (the adapter is
    * publish-only in this process; the mini-service owns the fan-out).
    */
-  async subscribe(): Promise<Subscription> {
+  async subscribe(): Promise<RealtimeSubscription> {
     return { unsubscribe: async () => {} };
   }
 

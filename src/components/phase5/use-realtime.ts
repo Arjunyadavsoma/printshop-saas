@@ -39,7 +39,7 @@ export function useRealtime(token: string | null, onEvent: (event: string, paylo
     });
     socket.on('disconnect', () => setState((s) => ({ ...s, connected: false, authed: false })));
     socket.on('auth-ok', () => setState((s) => ({ ...s, authed: true })));
-    socket.on('auth-error', () => socket.disconnect(true));
+    socket.on('auth-error', () => socket.disconnect());
 
     const events = ['order.paid', 'order.ready', 'job.printing', 'job.completed', 'order.collected'];
     for (const ev of events) {

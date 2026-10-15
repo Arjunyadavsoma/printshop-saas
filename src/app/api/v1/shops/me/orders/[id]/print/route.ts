@@ -28,7 +28,7 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   await repos.orders.update(order.id, { status: 'printing' });
 
   const queue = getContainer().queue;
-  const jobs = [];
+  const jobs: { jobId: string; fileId: string }[] = [];
   for (const f of pending) {
     const job = await repos.printJobs.create({ shopId: shop.id, fileId: f.id });
     await queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId: shop.id });

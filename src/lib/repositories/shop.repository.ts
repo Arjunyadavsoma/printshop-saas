@@ -46,10 +46,13 @@ function toDomain(row: ShopRow): Shop {
 
 /** Prepares a domain Shop (or partial) for insert/update — JSON-stringifies. */
 function toRow(input: Partial<Shop>): Partial<ShopRow> {
-  const out: Partial<ShopRow> = { ...input };
-  if (input.paymentCredentials) out.paymentCredentials = JSON.stringify(input.paymentCredentials);
-  if (input.pricingConfig) out.pricingConfig = JSON.stringify(input.pricingConfig);
-  return out;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (k === 'paymentCredentials') out[k] = v ? JSON.stringify(v) : undefined;
+    else if (k === 'pricingConfig') out[k] = v ? JSON.stringify(v) : undefined;
+    else out[k] = v;
+  }
+  return out as Partial<ShopRow>;
 }
 
 export class ShopRepository extends BaseRepository<ShopRow> {

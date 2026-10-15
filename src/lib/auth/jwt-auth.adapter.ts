@@ -73,7 +73,7 @@ export class JwtAuthAdapter implements AuthAdapter {
       ['deriveBits'],
     );
     const bits = await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
+      { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations },
       keyMaterial,
       KEY_LENGTH_BYTES * 8,
     );

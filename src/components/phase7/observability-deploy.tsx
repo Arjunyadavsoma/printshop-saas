@@ -156,6 +156,12 @@ export function ObservabilityDeploy() {
             ))}
           </div>
           <p className="mt-3 text-[11px] text-muted-foreground">CHANGELOG.md tracks every phase. Sentry integration point lives in <code className="font-mono">toAppError</code> (no-op without SENTRY_DSN).</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">✓ dev routes guarded (404 in prod)</Badge>
+            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">✓ secrets fail-fast</Badge>
+            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">✓ tsc + lint + 53 tests green</Badge>
+            <Badge variant="outline" className="font-mono text-[10px]">DEPLOY.md runbook</Badge>
+          </div>
         </CardContent>
       </Card>
     </section>

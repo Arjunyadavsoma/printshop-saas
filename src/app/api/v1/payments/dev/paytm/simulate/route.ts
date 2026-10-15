@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
+import { requireDev } from '@/lib/api/require-dev';
 import { NotFoundError } from '@platform/core/errors';
 import { processWebhook } from '@/lib/payments/webhook.service';
 import { generatePaytmChecksum } from '@platform/adapters';
@@ -20,6 +21,8 @@ const SimulateSchema = z.object({
  * Paytm would render back to the customer.
  */
 export const POST = withRateLimit('paytm-simulate', 20, 60, async (req, _ctx) => {
+  const guard = requireDev();
+  if (guard) return guard;
   try {
     const body = SimulateSchema.parse(await req.json());
     const order = await repos.orders.findById(body.orderId);

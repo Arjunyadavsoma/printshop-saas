@@ -71,6 +71,9 @@ async function testPrinter(): Promise<void> {
   else console.log(`✗ print failed: ${result.error} (set PRINT_AGENT_DEMO=1 to skip)`);
 }
 
+// Minimal type for Bun.prompt (the runtime provides it; tsc without bun-types doesn't know).
+declare const Bun: { prompt: (msg: string) => Promise<string> };
+
 async function prompt(label: string, def: string): Promise<string> {
   const v = await Bun.prompt(`${label} [${def}]:`);
   return (v && v.trim()) || def;

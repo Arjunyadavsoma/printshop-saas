@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
+import { requireDev } from '@/lib/api/require-dev';
 import { NotFoundError } from '@platform/core/errors';
 import { processWebhook } from '@/lib/payments/webhook.service';
 
@@ -28,6 +29,8 @@ async function sha256Hex(s: string): Promise<string> {
  * idempotency in action.
  */
 export const POST = withRateLimit('phonepe-simulate', 20, 60, async (req, _ctx) => {
+  const guard = requireDev();
+  if (guard) return guard;
   try {
     const body = SimulateSchema.parse(await req.json());
     const order = await repos.orders.findById(body.orderId);

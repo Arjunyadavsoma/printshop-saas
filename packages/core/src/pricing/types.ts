@@ -26,7 +26,7 @@ export interface PricingResult {
 }
 
 /** Internal: a bag of the raw numbers before rounding/min-order enforcement. */
-interface PricingBreakdown {
+export interface PricingBreakdown {
   baseRatePaise: number;
   totalPages: number;
   grossPaise: number;

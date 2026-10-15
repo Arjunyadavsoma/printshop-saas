@@ -11,7 +11,7 @@ import { getContainer } from '@/lib/container';
  * captured at construction) so that tests can inject an in-memory container
  * via setContainerForTesting and have the singleton `repos` pick it up.
  */
-export class BaseRepository<T extends Record<string, unknown>> {
+export class BaseRepository<T extends object> {
   constructor(protected readonly table: string) {}
 
   protected get adapter(): DatabaseAdapter {

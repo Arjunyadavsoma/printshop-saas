@@ -1,4 +1,5 @@
-import type { PaymentAdapter, PaymentProvider } from '@platform/core/interfaces';
+import type { PaymentAdapter } from '@platform/core/interfaces';
+import type { PaymentProvider } from '@platform/core/domain';
 import { PhonePePaymentAdapter, PaytmPaymentAdapter, UpiDeepLinkPaymentAdapter } from '@platform/adapters';
 import { AdapterError } from '@platform/core/errors';
 

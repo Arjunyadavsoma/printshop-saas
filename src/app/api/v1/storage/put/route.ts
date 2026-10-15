@@ -17,10 +17,10 @@ export async function PUT(req: NextRequest): Promise<Response> {
     if (!key) return fail(toAppError(new Error('missing key')));
     const bytes = new Uint8Array(await req.arrayBuffer());
     const storage = getContainer().storage;
-    if (typeof (storage as { put?: unknown }).put !== 'function') {
+    if (typeof (storage as unknown as { put?: unknown }).put !== 'function') {
       return fail(toAppError(new Error('storage backend does not support direct put')));
     }
-    await (storage as { put: (k: string, b: Uint8Array, c: string) => Promise<void> }).put(key, bytes, ct);
+    await (storage as unknown as { put: (k: string, b: Uint8Array, c: string) => Promise<void> }).put(key, bytes, ct);
     return ok({ key, size: bytes.length });
   } catch (cause) {
     return fail(toAppError(cause));

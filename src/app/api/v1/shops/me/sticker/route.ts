@@ -38,7 +38,7 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
       page.drawText('Scan to print', { x: x + (150 - font.widthOfTextAtSize('Scan to print', 9)) / 2, y: y - 30, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
     }
     const bytes = await doc.save();
-    return new NextResponse(bytes, {
+    return new NextResponse(bytes as unknown as BodyInit, {
       headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${shop.slug}-stickers.pdf"` },
     });
   } catch (cause) {

@@ -88,7 +88,7 @@ export async function runAgent(): Promise<void> {
   const diskJobs = loadDiskQueue();
   if (diskJobs.length > 0) {
     console.log(`replaying ${diskJobs.length} disk-queued job(s)`);
-    for (const j of diskJobs) { void handleJob(config, j as PendingJob); }
+    for (const j of diskJobs) { void handleJob(config, j as unknown as PendingJob); }
     saveDiskQueue([]);
   }
 

@@ -36,7 +36,7 @@ function aesKey(merchantKey: string): Uint8Array {
 }
 
 async function importAesKey(merchantKey: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', aesKey(merchantKey), { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', aesKey(merchantKey) as BufferSource, { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
 }
 
 /** hex(sha256(utf8(s))) */
@@ -88,7 +88,7 @@ async function verifyPaytmChecksum(
   const key = await importAesKey(merchantKey);
   try {
     const dec = new Uint8Array(
-      await crypto.subtle.decrypt({ name: 'AES-CBC', iv: PAYTM_IV }, key, b64ToBytes(checksum)),
+      await crypto.subtle.decrypt({ name: 'AES-CBC', iv: PAYTM_IV as BufferSource }, key, b64ToBytes(checksum) as BufferSource),
     );
     const expected = new TextDecoder().decode(dec);
     return expected === hashHex;

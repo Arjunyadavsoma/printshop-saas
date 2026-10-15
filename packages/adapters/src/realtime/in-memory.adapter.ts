@@ -1,4 +1,4 @@
-import type { RealtimeAdapter, RealtimeHandler, Subscription } from '@platform/core/interfaces';
+import type { RealtimeAdapter, RealtimeHandler, RealtimeSubscription } from '@platform/core/interfaces';
 
 /** In-memory pub/sub — only useful within a single process. */
 export class InMemoryRealtimeAdapter implements RealtimeAdapter {
@@ -18,7 +18,7 @@ export class InMemoryRealtimeAdapter implements RealtimeAdapter {
     return n;
   }
 
-  async subscribe(channel: string, event: string, handler: RealtimeHandler): Promise<Subscription> {
+  async subscribe(channel: string, event: string, handler: RealtimeHandler): Promise<RealtimeSubscription> {
     let events = this.channels.get(channel);
     if (!events) {
       events = new Map();

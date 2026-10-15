@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
+import { requireDev } from '@/lib/api/require-dev';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
 
@@ -17,6 +18,8 @@ const MarkPaidSchema = z.object({
  * verification. Provided here so the demo can exercise the full lifecycle.
  */
 export const POST = withRateLimit<{ id: string }>('mark-paid', 20, 60, async (req, ctx) => {
+  const guard = requireDev();
+  if (guard) return guard;
   try {
     const { id } = await ctx.params;
     const order = await repos.orders.findById(id);

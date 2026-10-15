@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     page.drawText('Thank you! Files auto-deleted after collection.', { x, y: 60, size: 9, font, color: rgb(0.4, 0.4, 0.4) });
 
     const bytes = await doc.save();
-    return new NextResponse(bytes, {
+    return new NextResponse(bytes as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="receipt-${order.customerToken}.pdf"`,

@@ -36,9 +36,9 @@ export const POST = withRateLimit<{ id: string }>('confirm-file', 30, 60, async 
     }
 
     // Parse page count — pdf-lib for PDFs, 1 for images, null for Office.
-    const hasGetBytes = typeof (storage as { getBytes?: unknown }).getBytes === 'function';
+    const hasGetBytes = typeof (storage as unknown as { getBytes?: unknown }).getBytes === 'function';
     const bytes = hasGetBytes
-      ? await (storage as { getBytes: (k: string) => Promise<{ bytes: Uint8Array } | null> }).getBytes(body.storageKey).then((r) => r?.bytes ?? null)
+      ? await (storage as unknown as { getBytes: (k: string) => Promise<{ bytes: Uint8Array } | null> }).getBytes(body.storageKey).then((r) => r?.bytes ?? null)
       : null;
     const pageCount = await parsePageCount(body.mimeType, bytes);
     const needsReview = pageCount === null;

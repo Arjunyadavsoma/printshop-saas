@@ -14,14 +14,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const key = req.nextUrl.searchParams.get('key');
     if (!key) return fail(toAppError(new Error('missing key')));
     const storage = getContainer().storage;
-    if (typeof (storage as { getBytes?: unknown }).getBytes !== 'function') {
+    if (typeof (storage as unknown as { getBytes?: unknown }).getBytes !== 'function') {
       return fail(toAppError(new Error('storage backend does not support direct get')));
     }
-    const obj = await (storage as { getBytes: (k: string) => Promise<{ bytes: Uint8Array; contentType: string } | null> }).getBytes(key);
+    const obj = await (storage as unknown as { getBytes: (k: string) => Promise<{ bytes: Uint8Array; contentType: string } | null> }).getBytes(key);
     if (!obj) {
       return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'object not found (auto-deleted?)' } }, { status: 404 });
     }
-    return new NextResponse(obj.bytes, { headers: { 'Content-Type': obj.contentType, 'Cache-Control': 'no-store' } });
+    return new NextResponse(obj.bytes as unknown as BodyInit, { headers: { 'Content-Type': obj.contentType, 'Cache-Control': 'no-store' } });
   } catch (cause) {
     return fail(toAppError(cause));
   }
