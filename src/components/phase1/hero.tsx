@@ -25,7 +25,7 @@ export function Hero() {
       <div className="absolute inset-0 -z-10 opacity-[0.04] [background-image:radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:22px_22px]" />
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 3 · PAYMENTS</Badge>
+          <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">PHASE 4 · CUSTOMER APP</Badge>
           <Badge variant="secondary">Production-grade SaaS</Badge>
           <Badge variant="outline">India-first</Badge>
         </div>

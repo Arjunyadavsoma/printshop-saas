@@ -28,8 +28,8 @@ const PHASES: Phase[] = [
     status: 'done',
   },
   { n: 3, title: 'Payments', items: ['PhonePe X-VERIFY (SHA-256 HMAC)', 'Paytm CHECKSUMHASH (AES-128-CBC)', 'Idempotent webhooks + audit-before-process', '7 integration tests (signed payloads)'], status: 'done' },
-  { n: 4, title: 'Customer web app', items: ['/[shopSlug] route', 'Drag-drop upload UI', 'Live pricing', 'Checkout handoff', 'Status polling'], status: 'next' },
-  { n: 5, title: 'Shop dashboard', items: ['WebSocket order queue', 'Per-file print triggers', 'QR + sticker PDF', 'Analytics', 'Settings'], status: 'locked' },
+  { n: 4, title: 'Customer web app', items: ['Mobile-framed multi-step wizard', 'Drag-drop upload + per-file settings', 'Live pricing (real engine, client-side)', 'UPI checkout + QR handoff', 'Token status polling → ready'], status: 'done' },
+  { n: 5, title: 'Shop dashboard', items: ['WebSocket order queue', 'Per-file print triggers', 'QR + sticker PDF', 'Analytics', 'Settings'], status: 'next' },
   { n: 6, title: 'Print agent', items: ['CLI daemon + setup wizard', 'WebSocket + disk queue', 'pdf-to-printer', 'Windows .exe via pkg'], status: 'locked' },
   { n: 7, title: 'Polish & deploy', items: ['Sentry + logging + health', 'GitHub Actions CI/CD', 'Vercel + Render deploy', 'Seed + demo shop', 'k6 load test'], status: 'locked' },
 ];

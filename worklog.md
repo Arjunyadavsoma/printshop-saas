@@ -126,3 +126,31 @@ Stage Summary:
 - Phase 3 payments fully shipped and verified end-to-end with REAL signature crypto (no SDK stubs — the verification math runs). 53 tests pass, eslint clean.
 - Architecture invariant holds: the webhook service + routes import only the PaymentAdapter interface + the registry; swapping PhonePe→Razorpay is register + env. Per-shop provider routing via the shop's paymentCredentials.
 - Ready for Phase 4 (customer web app: /[shopSlug] route, drag-drop upload UI, live pricing, checkout handoff, status polling).
+
+---
+Task ID: 4
+Agent: orchestrator (main)
+Task: Phase 4 — Customer Web App. Mobile-framed multi-step wizard (shop → upload → pay → status) embedded in /, drag-drop multi-file upload with per-file settings, live pricing via the real priceFile() client-side, UPI checkout + QR handoff, token status polling → ready.
+
+Work Log:
+- Added GET /api/v1/dev/qr?data=<urlencoded> route (server-side qrcode → pngDataUrl) so the customer app can render a `upi://` payload as a scannable QR on desktop.
+- Built src/components/phase4/customer-app.tsx: a mobile-phone-framed wizard (stepper: Shop → Upload → Pay → Status).
+  * ShopStep: GET /shops/:slug → shop name, pricing grid, privacy note (auto-delete 60s/24h), "Start order" → POST /shops/:slug/orders → orderId+token → upload step.
+  * UploadStep: drag-drop zone + file picker (multi) + "add a demo file". For each file: upload-url → PUT (in-memory storage) → confirm (pdf-lib parses 1 page) → per-file row with copies/colour/duplex controls + live price. Each setting change calls priceFile() on the client for instant reprice AND PATCHes the server (server-authoritative). Sticky bottom bar shows order total + Pay.
+  * PayStep: POST checkout → upiUri + amountPaise; fetches /dev/qr to render the UPI QR; "Open in UPI app" link (window.location=upiUri on mobile); "I've paid — track my order" → POST /payments/dev/phonepe/simulate (real X-VERIFY webhook round-trip) → status step.
+  * StatusStep: big token number, polls GET /orders/:id/status every 1.5s, shows payment-confirmed → printing → ready → collected; "Start another order" restart.
+- Live pricing uses the REAL priceFile() from @platform/core/pricing imported client-side (same engine the backend uses) — instant reprice on every control change, no server round-trip needed for the preview.
+- Wired CustomerApp into / page (top, after Hero — it's the end-user experience). Updated Hero badge → PHASE 4 · CUSTOMER APP; Roadmap marks Phase 4 done, Phase 5 (shop dashboard) next.
+
+Bugs found & fixed during self-verification:
+- The customer app's demo-file blob needed to be a VALID minimal PDF (the earlier `%PDF-1.4 fake` made pdf-lib return null → needs_review). Reused the valid 1-page PDF string from Phase 3.
+- Agent-browser's `find text "I've paid"` broke my eval-based click helper (the apostrophe in "I've" produced a JS syntax error inside includes('...')). Switched to matching "track my order" (no apostrophe) — a test-automation quirk, not an app bug.
+
+End-to-end verified via Agent Browser (one call, server alive throughout, deterministic eval-clicks):
+shop loads ("QuickPrint Demo Shop") → Start order → upload step → add a demo file → file priced ₹5.00 (1 B&W page ₹2, min-order ₹5 applied) → Pay → UPI QR rendered → "I've paid" → phonepe simulate (real webhook) → status polling → final-status: ready + "Ready to collect!".
+Dev log: clean sequence — files POST 200 → files/:id PATCH 200 → checkout 200 → /dev/qr 200 → phonepe/simulate 200 → status polls (every ~1.5s) all 200. No errors/⨯. 916KB screenshot.
+
+Stage Summary:
+- Phase 4 customer web app fully shipped and verified. 53 tests pass, eslint clean, no runtime errors.
+- The customer flow is genuinely end-to-end: scan (shop load) → upload (drag-drop, pdf-lib page count) → configure (live pricing from the real engine) → pay (UPI deep-link + QR) → status (token + polling → ready).
+- Ready for Phase 5 (shop dashboard: WebSocket order queue, per-file print triggers, QR + sticker PDF, analytics, settings).
