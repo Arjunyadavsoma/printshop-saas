@@ -63,6 +63,30 @@ export class PrintJobRepository extends BaseRepository<PrintJobRow> {
     return rows.map(toDomain);
   }
 
+  /** Find ALL PrintJobs for a shop (any status). Used by tests + the
+   *  dashboard to show the full queue history. */
+  async findAllByShop(shopId: string, limit = 100): Promise<PrintJob[]> {
+    const rows = await this.findMany({ shopId }, { limit, order: ['createdAt', 'desc'] });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * Find any ACTIVE (queued or printing) PrintJob for a file. Used by
+   * enqueuePaidOrderPrint to ensure idempotent job creation — a retry after
+   * a process crash must NOT create a duplicate PrintJob for a file that
+   * already has one queued or printing.
+   *
+   * 'completed' and 'needs_review' jobs are excluded: a file that was
+   * previously printed and is being re-queued (e.g., shopkeeper manually
+   * reprints) SHOULD get a new PrintJob.
+   */
+  async findActiveByFile(fileId: string): Promise<PrintJob | null> {
+    const queued = await this.findOne({ fileId, status: 'queued' });
+    if (queued) return toDomain(queued);
+    const printing = await this.findOne({ fileId, status: 'printing' });
+    return printing ? toDomain(printing) : null;
+  }
+
   async update(id: string, patch: Partial<PrintJob>): Promise<void> {
     await this.updateWhere({ id }, patch as Partial<PrintJobRow>);
   }

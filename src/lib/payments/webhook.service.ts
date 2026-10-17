@@ -255,11 +255,25 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
   };
 }
 
-async function enqueuePaidOrderPrint(orderId: string, shopId: string): Promise<void> {
+export async function enqueuePaidOrderPrint(orderId: string, shopId: string): Promise<void> {
   const container = getContainer();
   const files = await repos.files.findByOrder(orderId);
   const pending = files.filter((f) => f.status === 'pending' || f.status === 'queued');
   for (const f of pending) {
+    // IDEMPOTENT JOB CREATION: if a PrintJob already exists for this file
+    // (queued or printing — from a previous webhook delivery / retry after
+    // a crash), do NOT create a duplicate. This is the "exactly-once
+    // paid-order/job creation" guarantee: the order flip is idempotent via
+    // UNIQUE(paymentTxnId), and job creation is idempotent via this check.
+    // A 'completed' or 'needs_review' job does NOT block — a shopkeeper
+    // manually re-queuing a file SHOULD get a new PrintJob.
+    const existing = await repos.printJobs.findActiveByFile(f.id);
+    if (existing) {
+      // A PrintJob already exists — re-dispatch (the agent may have missed
+      // the realtime event) but do NOT create a new job.
+      await dispatchToAgent(shopId, existing.id, f.id);
+      continue;
+    }
     // Create the PrintJob row (status='queued') — this IS the durable queue.
     // The agent polls GET /agents/jobs/pending to discover it.
     const job = await repos.printJobs.create({ shopId, fileId: f.id });

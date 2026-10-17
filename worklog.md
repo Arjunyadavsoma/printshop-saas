@@ -389,3 +389,31 @@ Stage Summary:
 - External: R2/Upstash/PhonePe/Paytm-sandbox/hosted-PG all BLOCKED on credentials
 - Final decision: READY FOR LIMITED PRIVATE PILOT (not public production — external integrations unverified)
 - YouPI-PG: decision preserved — NOT integrated
+
+---
+Task ID: final-pre-pilot-hardening
+Agent: orchestrator (main)
+Task: Final pre-pilot hardening — Gate A (audit + protect git working tree), Gate B (validate PostgreSQL production readiness). Treat historical test results as evidence, not proof.
+
+Work Log:
+- Gate A (working tree audit): git status was CLEAN (auto-commit 49a0bbd applied previous session's staged changes). Verified: .env, db/custom.db, prisma/db/migration.db, tmp/, tool-results/ all UNTRACKED (removed in 49a0bbd). .gitignore excludes *.db, /db/, /prisma/db/, /tmp/, /tool-results/, *.pdf, *.png, .env*. Secret-scan of git history: historical .env (commits fcbfb99, 24ef877) contained ONLY DATABASE_URL=file:... (local SQLite path — NOT a real secret). No high-entropy patterns (no sk_live/AKIA/ghp_/xox/private keys). The 3 files flagged for "URLs with credentials" are all placeholders (user:pass, <password>). No rotation needed. Accidental-deletion check: all 18 key source files + prisma schema/migrations + new scripts/tests/routes are tracked. E2E fixture: scripts/e2e-staging-flow.sh regenerates the test PDF via make-test-pdf.ts (line 29); tmp/test.pdf is gitignored but regenerable.
+- Gate B.1 (re-verify local gates): bun install exit 0, tsc --noEmit exit 0 (0 errors), lint exit 0, vitest run exit 0 (99/99 pass, 11 files) — current tree confirmed.
+- Gate B.2 (Prisma config + SQLite rejection): inspected schema.prisma (provider=sqlite dev), migration_lock.toml (sqlite), db.ts, container.ts validateDatabaseProvider(). Tested: prisma migrate deploy with a PG DATABASE_URL + the committed SQLite migration → REFUSED ("type datetime does not exist" — the SQLite DDL can't apply to PG). This is the SQLite-migration-on-PostgreSQL trap. Also confirmed: Prisma validates URL-against-provider at config time (sqlite schema + postgresql:// URL → "the URL must start with the protocol file:").
+- Gate B.2 fix: wrote scripts/pg-migrate-prod.sh — generates PG-native DDL via prisma migrate diff (temp copy with provider=postgresql), strips ?schema=public query param for psql, applies via psql, records baseline in _prisma_migrations. Verified: 8 tables, 21 indexes, 9 FKs, 1 baseline migration. Integration test passes 54/54 against the script-migrated DB.
+- Gate B.3 (tenant isolation): grep'd all repository queries. Shopkeeper routes use findByIdAndShop(id, shop.id) — BOTH id AND shopId filter. Customer routes use findById(id) — order ID is the capability token (UUID, 2^122 entropy, by design). The webhook uses findById(session.orderId) from the trusted server-side session + checks order.shopId !== shop.id (line 177). Dev routes guarded by requireDev(). No defect found — tenant isolation is enforced at the route layer + repository layer.
+- Gate B.4 (re-run real PG tests): integration 54/54 ✓, concurrency 23/23 ✓ (2 independent TCP processes), PG-unavailability 7/7 ✓ (app fails loudly 503/500, recovers), E2E 34/34 ✓ (full seed→upload→pay→claim→complete with real X-VERIFY crypto). All 118 real-PG assertions pass against the CURRENT working tree.
+- Gate B.5 (transaction boundaries + idempotency): found a HIGH-severity defect — enqueuePaidOrderPrint created a NEW PrintJob per call with no idempotency check. A concurrent duplicate webhook (that slipped through the cache check) or a retry after a crash would create DUPLICATE PrintJobs. Fix: added findActiveByFile(fileId) to PrintJobRepository (checks for 'queued' or 'printing' jobs — 'completed' and 'needs_review' don't block, so reprints get new jobs). Updated enqueuePaidOrderPrint to check before creating. Exported enqueuePaidOrderPrint for testability. Added print-job-idempotency.test.ts (5 tests: first-call creates 1, duplicate-retry creates 0, printing blocks, completed allows reprint, needs_review allows reprint). Also added findAllByShop method to PrintJobRepository (for the test + dashboard use). Fixed a TS error (findMany is protected → use findAllByShop).
+- Gate B.5 (db.ts log level): found a LOW-severity defect — db.ts used log: ['query'] even in production (noisy stdout, unnecessary log volume). Prisma parameterizes queries so no values leaked, but the structure was verbose. Fix: log: process.env === 'production' ? ['warn', 'error'] : ['query']. Fixed a TS error (readonly array → inline conditional without as const).
+- Final regression: tsc exit 0 (0 errors), lint exit 0, vitest exit 0 (104/104 pass, 12 files), next build exit 0 (39 routes). E2E 34/34 against real PG (using pg-migrate-prod.sh for schema). Agent Browser: page renders, 0 console errors, screenshot saved.
+- Documentation: updated docs/STAGING_TESTS.md (added production migration script section + the SQLite-migration trap warning + updated test count to 104 + added idempotency test to classification). Updated docs/PRODUCTION_READINESS.md (updated header + verification table + added 2 new defects to the findings table: idempotent PrintJob creation + db.ts log level + the SQLite migration trap).
+
+Stage Summary:
+- Gate A: PASS — working tree clean, sensitive files untracked, no secrets in history, no accidental deletions, E2E fixture self-generating
+- Gate B.1: PASS — tsc 0, lint 0, vitest 99/99 (re-verified on current tree)
+- Gate B.2: PASS + defect fixed — SQLite-migration-on-PostgreSQL trap documented + scripts/pg-migrate-prod.sh written (generates PG-native DDL, applies via psql, records baseline, verifies 8/21/9/1)
+- Gate B.3: PASS — tenant isolation enforced (shopkeeper routes findByIdAndShop, customer routes use order ID as capability token, webhook verifies shopId)
+- Gate B.4: PASS — 118 real-PG assertions pass (integration 54 + concurrency 23 + unavailability 7 + E2E 34)
+- Gate B.5: PASS + 2 defects fixed — idempotent PrintJob creation (5 regression tests) + db.ts log level (production: warn+error only)
+- Final: tsc 0, lint 0, vitest 104/104 (12 files), build 39 routes, E2E 34/34, Agent Browser renders 0 errors
+- NOT committed (per directive) — 5 modified files + 2 new files staged for review
+- YouPI-PG: decision preserved — NOT integrated

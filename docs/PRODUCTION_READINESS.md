@@ -1,33 +1,36 @@
 # Production Readiness Report — PrintShop SaaS
 
-> Final pre-pilot gate: 2026-10-17
+> Final pre-pilot hardening: 2026-10-17
 > State: **ready for limited private pilot** — real-infrastructure database,
-> concurrency, unavailability, and E2E paths verified (118 assertions against
+> concurrency, outage/recovery, and E2E paths verified (118 assertions against
 > real PostgreSQL 17); code-level risks resolved (R2 head(), dev-route
-> protection, webhook audit logging — 16 new regression tests); external
-> providers (R2, Upstash, PhonePe/Paytm sandbox, hosted PG) remain BLOCKED
-> on credentials. Public production MUST NOT be declared ready while
-> mandatory external integrations remain unverified.
+> protection, webhook audit logging, **idempotent PrintJob creation**, +
+> production migration script for the SQLite→PostgreSQL trap — 21 new
+> regression tests); external providers (R2, Upstash, PhonePe/Paytm sandbox,
+> hosted PG) remain BLOCKED on credentials. Public production MUST NOT be
+> declared ready while mandatory external integrations remain unverified.
 
 ---
 
-## 1. Verification Results — Actual Command Outputs (2026-10-17 final gate)
+## 1. Verification Results — Actual Command Outputs (2026-10-17 hardening gate)
 
 | Command | Exit code | Result |
 |---|---|---|
 | `bun install` | 0 | 980 installs, no changes |
 | `bunx tsc --noEmit` | 0 | 0 errors |
 | `bun run lint` | 0 | clean |
-| `bunx vitest run` | 0 | **99/99** pass (11 test files) |
+| `bunx vitest run` | 0 | **104/104** pass (12 test files) |
 | `NODE_ENV=production bun ./node_modules/.bin/next build` | 0 | passes (39 routes) |
 | Real PG integration test | 0 | **54/54** assertions |
 | Real PG concurrency test (2 independent TCP processes) | 0 | **23/23** assertions |
 | PG unavailability + recovery test | 0 | **7/7** assertions |
 | E2E flow against real PG | 0 | **34/34** assertions |
+| **Production migration script** (`pg-migrate-prod.sh`) | 0 | applies schema + records baseline + verifies |
 | pg_dump backup + restore | 0 | verified |
 | R2 head() regression test (mocked S3) | 0 | **7/7** assertions |
 | Webhook audit logging regression test | 0 | **4/4** assertions |
 | Dev-route protection regression test | 0 | **5/5** assertions |
+| **Idempotent PrintJob creation regression test** | 0 | **5/5** assertions |
 | Agent Browser page verification | 0 | renders, 0 errors |
 
 ### Staging infrastructure used
@@ -124,6 +127,9 @@ None.
 |---|---|---|---|
 | R2 `head()` swallowed ALL errors (403 indistinguishable from 404) — hid permission failures + provider outages | HIGH | Distinguish `NoSuchKey`/404 (return null) from 403/5xx/network (throw) | `packages/adapters/src/storage/r2.adapter.test.ts` (7 tests) |
 | `/dev/qr` route was missing the `requireDev()` guard — accessible in production | MEDIUM | Added `requireDev()` to `/dev/qr`; created production-legal `/api/v1/qr` route; updated customer app to use the production path | `src/lib/api/require-dev.test.ts` (5 tests, including static check of all dev routes) |
+| **`enqueuePaidOrderPrint` created a NEW PrintJob per call with no idempotency check — a retry (concurrent duplicate webhook / crash recovery) would create DUPLICATE PrintJobs** | **HIGH** | Added `findActiveByFile(fileId)` to the PrintJob repository; `enqueuePaidOrderPrint` now checks for an existing 'queued'/'printing' job before creating. 'completed' and 'needs_review' jobs do NOT block (a reprint gets a new job). | `src/lib/payments/print-job-idempotency.test.ts` (5 tests: first-call, duplicate-retry, printing-blocks, completed-allows-reprint, needs_review-allows-reprint) |
+| **Committed SQLite migration can't be applied to PostgreSQL (`DATETIME` doesn't exist in PG)** — `prisma migrate deploy` against PG fails | **HIGH (deployment blocker)** | Added `scripts/pg-migrate-prod.sh`: generates PG-native DDL via `prisma migrate diff`, applies via `psql`, records baseline in `_prisma_migrations`. Does NOT modify the repo's prisma config. Documented the trap + the fresh-migration alternative in STAGING_TESTS.md §1. | Verified: 8 tables, 21 indexes, 9 FKs, 1 baseline migration; integration test passes 54/54 against the script-migrated DB |
+| **`src/lib/db.ts` logged every SQL query even in production (`log: ['query']`)** — noisy stdout, unnecessary log volume | LOW | Changed to `log: process.env.NODE_ENV === 'production' ? ['warn', 'error'] : ['query']` — dev keeps query logging, production logs only warnings + errors. Prisma parameterizes queries so no values leaked, but the structure was unnecessarily verbose. | No regression test needed — the change is a one-liner; verified tsc + lint + build pass. |
 
 ### Defects found — not fixable without infrastructure
 

@@ -4,11 +4,14 @@
 > real infrastructure. Run each step with disposable test data and sandbox
 > credentials only. Clean up afterward.
 >
-> **Update 2026-10-17 (final pre-pilot gate):** Real PostgreSQL 17.11 staging
-> verified (54 integration + 23 concurrency + 7 PG-unavailability + 34 E2E =
-> 118 assertions). Code-level risks resolved (R2 head(), dev-route protection,
-> webhook audit logging). External providers (R2, Upstash, PhonePe/Paytm
-> sandbox) remain BLOCKED on credentials. See §11 for the classification table.
+> **Update 2026-10-17 (final pre-pilot hardening):** Real PostgreSQL 17.11
+> staging verified (54 integration + 23 concurrency + 7 PG-unavailability +
+> 34 E2E = 118 assertions). Code-level risks resolved (R2 head(), dev-route
+> protection, webhook audit logging, **idempotent PrintJob creation**).
+> Production migration script added (`scripts/pg-migrate-prod.sh`) —
+> bypasses the SQLite-migration-on-PostgreSQL trap. External providers
+> (R2, Upstash, PhonePe/Paytm sandbox) remain BLOCKED on credentials.
+> See §11 for the classification table.
 
 ## Prerequisites
 
@@ -65,13 +68,38 @@ ack idempotency, UNIQUE replay guard, stale→needs_review, pg_dump backup+resto
 
 ### Production migration workflow (NOT yet executed against hosted PG)
 
+**IMPORTANT — the SQLite migration trap:** The committed migration at
+`prisma/migrations/20261015172034_init/migration.sql` is SQLite-specific (uses
+`DATETIME`, SQLite boolean syntax). Running `prisma migrate deploy` against a
+PostgreSQL database with this migration **FAILS**:
+```
+ERROR: type "datetime" does not exist
+```
+because Prisma tries to apply the SQLite DDL to PostgreSQL.
+
+**The fix:** Use `scripts/pg-migrate-prod.sh` — it generates postgresql-native
+DDL via `prisma migrate diff` (from a temp copy of schema.prisma with
+`provider = "postgresql"`), applies it via `psql`, and records the baseline in
+`_prisma_migrations` so future `prisma migrate deploy` calls know the schema
+is already applied. This does NOT modify the repo's prisma config.
+
 ```bash
-# 1. Developer switches schema.prisma to postgresql + generates a migration
+# Production deploy (hosted PostgreSQL):
+export DATABASE_URL="postgresql://user:pass@host:5432/printshop"
+bash scripts/pg-migrate-prod.sh
+# → generates 214-line PG-native DDL, applies via psql, records baseline.
+# → verifies: 8 tables, 21 indexes, 9 FKs, 1 applied migration.
+# → subsequent prisma migrate deploy calls see the baseline as applied.
+```
+
+For a FRESH development PostgreSQL (generating a proper migration history):
+
+```bash
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/migrations/migration_lock.toml
+rm -rf prisma/migrations/20261015172034_init  # the SQLite migration
 DATABASE_URL="<dev_pg>" bunx prisma migrate dev --name init_postgres
-# 2. Staging/Prod: apply the reviewed migration
-DATABASE_URL="<staging_pg>" bunx prisma migrate deploy
-# 3. Verify: run scripts/postgres-integration.test.ts against the hosted DB.
+# Commit the generated migration. On prod: prisma migrate deploy.
 ```
 
 **Rollback:** Prisma migrations are forward-only. For rollback, restore from a
@@ -319,7 +347,7 @@ rate-limited, no DB, no secrets — safe for production).
 | `bun install` | ✅ PASS (exit 0) |
 | `bunx tsc --noEmit` | ✅ PASS (exit 0, 0 errors) |
 | `bun run lint` | ✅ PASS (exit 0, clean) |
-| `bunx vitest run` | ✅ PASS (exit 0, **99/99** tests across 11 files) |
+| `bunx vitest run` | ✅ PASS (exit 0, **104/104** tests across 12 files) |
 | `NODE_ENV=production next build` | ✅ PASS (exit 0, 39 routes) |
 | **Local PostgreSQL (PGlite / in-memory)** | |
 | Pricing engine (35 tests) | ✅ PASS |
@@ -334,8 +362,10 @@ rate-limited, no DB, no secrets — safe for production).
 | R2 head() distinguishes missing/permission/provider errors (7 tests) | ✅ PASS |
 | Webhook audit logging — no raw body/checksum/creds (4 tests) | ✅ PASS |
 | Dev-route protection — requireDev() + static check (5 tests) | ✅ PASS |
+| **Idempotent PrintJob creation** — no duplicate on retry (5 tests) | ✅ PASS |
 | **Real PostgreSQL 17.11 (user-space, disposable)** | |
 | Schema migration (DDL applied) | ✅ PASS (8 tables, 21 indexes, 9 FKs, 4 unique constraints) |
+| **Production migration script** (`scripts/pg-migrate-prod.sh`) | ✅ PASS (generates PG-native DDL, applies, records baseline, verifies) |
 | Integration test (54 assertions) | ✅ PASS |
 | Independent-connection concurrency (23 assertions, 2 TCP processes) | ✅ PASS |
 | PG unavailability + recovery (7 assertions) | ✅ PASS (app fails loudly, recovers) |
