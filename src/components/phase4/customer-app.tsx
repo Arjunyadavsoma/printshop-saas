@@ -131,8 +131,8 @@ export function CustomerApp() {
     const r = await api.request<{ data?: { upiUri?: string; qrPayload?: string; amountPaise?: number } }>('POST', `/api/v1/orders/${orderId}/checkout`);
     const c = r.data?.data;
     if (c?.upiUri) {
-      // Render the UPI payload as a QR (server-side via /dev/qr).
-      const qr = await api.request<{ data?: { pngDataUrl?: string } }>('GET', `/api/v1/dev/qr?data=${encodeURIComponent(c.upiUri)}`);
+      // Render the UPI payload as a QR (server-side via /api/v1/qr — production-legal).
+      const qr = await api.request<{ data?: { pngDataUrl?: string } }>('GET', `/api/v1/qr?data=${encodeURIComponent(c.upiUri)}`);
       setCheckout({ upiUri: c.upiUri, amountPaise: c.amountPaise, qrPng: qr.data?.data?.pngDataUrl });
       setStep('pay');
     }

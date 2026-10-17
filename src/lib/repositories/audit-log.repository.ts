@@ -55,4 +55,20 @@ export class AuditLogRepository extends BaseRepository<AuditLogRow> {
       createdAt: r.createdAt,
     }));
   }
+
+  /** Find audit entries by action name (used by tests to verify metadata). */
+  async findByAction(action: string, limit = 50): Promise<AuditLog[]> {
+    const rows = await this.findMany({ action }, { limit, order: ['createdAt', 'desc'] });
+    return rows.map((r) => ({
+      id: r.id,
+      shopId: r.shopId,
+      userId: r.userId,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      metadata: this.parseJson(r.metadata),
+      ip: r.ip,
+      createdAt: r.createdAt,
+    }));
+  }
 }

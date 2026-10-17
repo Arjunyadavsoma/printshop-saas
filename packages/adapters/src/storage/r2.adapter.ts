@@ -93,8 +93,27 @@ export class R2StorageAdapter implements StorageAdapter {
         size: res.ContentLength ?? 0,
         contentType: res.ContentType ?? 'application/octet-stream',
       };
-    } catch {
-      return null;
+    } catch (e: unknown) {
+      // Distinguish "object missing" (legitimate → null) from "permission /
+      // provider error" (must NOT be silently swallowed — those indicate a
+      // real problem the caller should know about).
+      //
+      // AWS S3 / R2 error shape: { name: string, $metadata: { httpStatusCode: number } }
+      //   NoSuchKey       (404) → object doesn't exist → return null
+      //   AccessDenied    (403) → permission failure → THROW (don't hide auth bugs)
+      //   ServiceUnavailable (503) / timeouts → THROW (caller should retry / alert)
+      //   NetworkError           → THROW
+      const err = e as { name?: string; $metadata?: { httpStatusCode?: number } };
+      const status = err?.$metadata?.httpStatusCode;
+      const name = err?.name ?? '';
+      // 404 / NoSuchKey = legitimate "not found" — return null.
+      if (name === 'NoSuchKey' || status === 404) {
+        return null;
+      }
+      // Everything else (403, 5xx, network) is a real error — re-throw so the
+      // caller (e.g., the file-register route) returns a 5xx instead of a
+      // misleading "file not found".
+      throw e;
     }
   }
 }

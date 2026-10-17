@@ -36,6 +36,25 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Local databases (NEVER commit — may contain customer data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/db/
+/prisma/db/
+
+# Disposable staging artifacts (regenerable via scripts/ — see docs/STAGING_TESTS.md)
+/tmp/
+
+# Tool output dumps
+/tool-results/
+
+# Test fixtures generated on demand (run scripts/make-test-pdf.ts)
+*.pdf
+
+# Screenshots from browser verification
+*.png
 
 # typescript
 *.tsbuildinfo

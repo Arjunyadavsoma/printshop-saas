@@ -25,12 +25,15 @@ set -uo pipefail
 source /home/z/my-project/scripts/pg-env.sh
 cd /home/z/my-project
 
-PASS=0; FAIL=0
-ok() { PASS=$((PASS+1)); echo "  ✓ $1"; }
-bad() { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
+# Regenerate the test PDF on demand (the fixture is NOT committed — see .gitignore).
+bun run scripts/make-test-pdf.ts >/dev/null 2>&1
 
 PDF=/home/z/my-project/tmp/test.pdf
 PDF_SIZE=$(stat -c%s "$PDF")
+
+PASS=0; FAIL=0
+ok() { PASS=$((PASS+1)); echo "  ✓ $1"; }
+bad() { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 
 echo "=== E2E Step 1: Dev seed (creates demo shop + owner) ==="
 SEED=$(curl -s -X POST http://localhost:3000/api/v1/dev/seed -H 'Content-Type: application/json' -d '{}')
