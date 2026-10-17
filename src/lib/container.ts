@@ -77,10 +77,75 @@ function requireSecret(key: string): string {
         `FATAL: ${key} is missing or still the dev default — set a strong secret before deploying.`,
       );
     }
-    // In dev, fall back to the documented default.
     return v || DEV_DEFAULTS.values().next().value!;
   }
   return v;
+}
+
+/**
+ * Fail-fast in production if STORAGE_PROVIDER is 'memory' or unset —
+ * customer documents would be stored in-process (lost on restart).
+ * In dev, memory storage is the default and is fine.
+ */
+function validateStorageProvider(): string {
+  const provider = env('STORAGE_PROVIDER', 'memory');
+  if (process.env.NODE_ENV === 'production' && provider === 'memory') {
+    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=r2.');
+  }
+  return provider;
+}
+
+/**
+ * Fail-fast in production if DATABASE_PROVIDER is 'memory' —
+ * the in-memory DB has no persistence.
+ * Also fail if DATABASE_URL points to a SQLite file in production.
+ */
+function validateDatabaseProvider(): string {
+  const provider = env('DATABASE_PROVIDER', 'prisma');
+  const url = env('DATABASE_URL', '');
+  if (process.env.NODE_ENV === 'production') {
+    if (provider === 'memory') {
+      throw new Error('FATAL: DATABASE_PROVIDER=memory in production — no persistence. Set DATABASE_PROVIDER=prisma with a PostgreSQL DATABASE_URL.');
+    }
+    if (url.startsWith('file:')) {
+      throw new Error('FATAL: DATABASE_URL is a SQLite file in production — use a PostgreSQL connection string (postgresql://...).');
+    }
+  }
+  return provider;
+}
+
+/**
+ * Fail-fast in production if CACHE_PROVIDER is 'memory' —
+ * rate limits, idempotency, and token revocation would be per-process
+ * (not shared across instances).
+ */
+function validateCacheProvider(): string {
+  const provider = env('CACHE_PROVIDER', 'memory');
+  if (process.env.NODE_ENV === 'production' && provider === 'memory') {
+    throw new Error('FATAL: CACHE_PROVIDER=memory in production — rate limits and idempotency are per-process. Set CACHE_PROVIDER=redis.');
+  }
+  return provider;
+}
+
+/**
+ * Validate the PAYMENT_ENCRYPTION_KEY format (must be 32 bytes base64).
+ */
+function validateEncryptionKey(): void {
+  const key = process.env.PAYMENT_ENCRYPTION_KEY;
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: PAYMENT_ENCRYPTION_KEY is required in production for credential encryption at rest.');
+    }
+    return; // dev: no key = use the dev default (Buffer.alloc(32, 0x41))
+  }
+  try {
+    const decoded = Buffer.from(key, 'base64');
+    if (decoded.length !== 32) {
+      throw new Error(`must be 32 bytes (got ${decoded.length})`);
+    }
+  } catch (e) {
+    throw new Error(`FATAL: PAYMENT_ENCRYPTION_KEY is invalid: ${(e as Error).message}. Generate with: openssl rand 32 | base64`);
+  }
 }
 
 let _container: Container | null = null;
@@ -105,6 +170,12 @@ export function getContainer(): Container {
 
 function buildContainer(): Container {
 
+  // ── Startup validation (fail-fast in production) ──
+  validateDatabaseProvider();
+  validateStorageProvider();
+  validateCacheProvider();
+  validateEncryptionKey();
+
   const logger: LoggerAdapter =
     env('LOGGER_PROVIDER', 'json') === 'stub' ? new StubLoggerAdapter() : new JsonConsoleLogger({ service: 'printshop-api' });
 
@@ -112,18 +183,17 @@ function buildContainer(): Container {
   const database: DatabaseAdapter =
     env('DATABASE_PROVIDER', 'prisma') === 'memory' ? new InMemoryDatabaseAdapter() : new PrismaDatabaseAdapter(db);
 
-  // Storage — selected by STORAGE_PROVIDER (default: memory for dev).
-  // Set STORAGE_PROVIDER=r2 in production (requires R2 credentials).
+  // Storage
+  const storageProvider = env('STORAGE_PROVIDER', 'memory');
   const storage: StorageAdapter =
-    env('STORAGE_PROVIDER', 'memory') === 'r2' ? new R2StorageAdapter({
+    storageProvider === 'r2' ? new R2StorageAdapter({
       accountId: env('R2_ACCOUNT_ID'),
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
       bucket: env('R2_BUCKET'),
     }) : new InMemoryStorageAdapter();
 
-  // Cache — selected by CACHE_PROVIDER (default: memory for dev).
-  // Set CACHE_PROVIDER=redis in production (requires Upstash REST URL + token).
+  // Cache
   const cache: CacheAdapter =
     env('CACHE_PROVIDER', 'memory') === 'redis' ? new UpstashCacheAdapter({
       url: env('REDIS_URL'),
@@ -162,11 +232,6 @@ function buildContainer(): Container {
     },
     cache,
   );
-
-  // Payment credential encryption key — fail-fast in production.
-  if (process.env.NODE_ENV === 'production' && !process.env.PAYMENT_ENCRYPTION_KEY) {
-    throw new Error('FATAL: PAYMENT_ENCRYPTION_KEY is required in production for credential encryption at rest.');
-  }
 
   const container: Container = {
     db: database,
