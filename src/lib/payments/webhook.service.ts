@@ -99,7 +99,7 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     action: `webhook.${input.provider}.received`,
     entityType: 'payment',
     entityId: 'pending',
-    metadata: { path: input.path, bodyPreview: input.rawBody.slice(0, 500) },
+    metadata: { path: input.path, contentLength: input.rawBody.length, provider: input.provider },
     ip: input.ip ?? null,
   });
 
