@@ -1,26 +1,68 @@
 # Production Readiness Report — PrintShop SaaS
 
-> Checked: 2026-10-17
-> State: pre-staging — code-level reliability complete; external infrastructure unverified
+> Verified: 2026-10-17
+> State: **ready for limited private pilot** — real-infrastructure database,
+> concurrency, and E2E paths verified; external providers (R2, Upstash,
+> PhonePe/Paytm sandbox) remain BLOCKED on credentials.
 
 ---
 
-## 1. Verification Results — Actual Command Outputs
+## 1. Verification Results — Actual Command Outputs (2026-10-17)
 
 | Command | Exit code | Result |
 |---|---|---|
-| `bun install` | 0 | 980 installs |
+| `bun install` | 0 | 980 installs, no changes |
 | `bunx tsc --noEmit` | 0 | 0 errors |
 | `bun run lint` | 0 | clean |
 | `bunx vitest run` | 0 | 83/83 pass (8 test files) |
 | `NODE_ENV=production bun ./node_modules/.bin/next build` | 0 | passes (38 routes + middleware) |
-| PGlite PostgreSQL atomic claim test | 0 | 6/6 assertions pass |
+| Real PostgreSQL integration test (54 assertions) | 0 | 54/54 pass against PostgreSQL 17.11 |
+| Real independent-connection concurrency test (23 assertions) | 0 | 23/23 pass (2 separate bun processes, LISTEN/NOTIFY race) |
+| E2E staging flow (34 assertions) | 0 | 34/34 pass against PostgreSQL 17 + real X-VERIFY crypto |
+| pg_dump backup + restore round-trip | 0 | verified against real PG 17 |
+
+### Staging infrastructure actually used
+
+A disposable PostgreSQL 17.11 server was installed in **user-space** (no
+root/sudo required — downloaded Debian 13 `.deb` packages and extracted them
+to `/tmp/pg-install/pgroot`). It runs on `127.0.0.1:5433` with `trust` auth
+on the loopback. This is a real PostgreSQL server (not PGlite, not SQLite,
+not in-memory) — the concurrency test uses 2 genuinely independent TCP
+connections from 2 separate `bun` worker processes.
+
+Setup script: `scripts/pg-env.sh`. Reproducible from §A of `docs/STAGING_TESTS.md`.
 
 ---
 
 ## 2. Classification by Verification Status
 
-### IMPLEMENTED AND TESTED (local — in-memory or PGlite PG SQL)
+### VERIFIED AGAINST REAL POSTGRESQL 17 STAGING INFRASTRUCTURE
+
+| Item | Test | Result |
+|---|---|---|
+| PostgreSQL migration (DDL applied to real PG 17) | `scripts/postgres-integration.test.ts` | ✅ 54/54 |
+| Schema integrity (8 tables, 21 indexes, 9 FKs, 4 unique business constraints) | psql `\dt` `\di` + FK query | ✅ verified |
+| Atomic job claim (real PG conditional UPDATE) | integration test §2 | ✅ verified |
+| Cross-tenant claim rejection (real PG) | integration test §3 | ✅ verified |
+| Duplicate completion ack idempotency (real PG) | integration test §4 | ✅ verified |
+| UNIQUE(paymentTxnId) replay guard (real PG) | integration test §5 | ✅ verified |
+| Stale printing → needs_review (real PG) | integration test §6 | ✅ verified |
+| needs_review blocks agent claim (real PG) | integration test §7 | ✅ verified |
+| pg_dump backup + restore round-trip (real PG) | integration test §8 | ✅ verified |
+| Two workers claim SAME job (2 independent TCP processes) | concurrency harness S1 | ✅ verified |
+| Two workers claim DIFFERENT jobs (2 independent TCP processes) | concurrency harness S2 | ✅ verified |
+| Cross-tenant claim (2 independent processes) | concurrency harness S3 | ✅ verified |
+| Duplicate completion ack (2 independent processes) | concurrency harness S4 | ✅ verified |
+| Worker disconnect + restart (2 independent processes) | concurrency harness S5 | ✅ verified |
+| Stale job → needs_review (2 independent processes) | concurrency harness S6 | ✅ verified |
+| E2E: seed → upload → pay → claim → complete | `scripts/e2e-staging-flow.sh` | ✅ 34/34 |
+| Credential encryption (AES-256-GCM, v1: prefix in DB) | E2E step 1 | ✅ verified in real PG |
+| Real X-VERIFY payment signature (sha256 + constant-time) | E2E step 11 (dev simulate uses real crypto) | ✅ verified |
+| Webhook idempotency (UNIQUE + cache, real PG) | E2E step 17 (duplicate simulate) | ✅ verified |
+| Audit log: received event has NO raw body | E2E step 13 | ✅ verified |
+| App logs: no UTR / raw body / CHECKSUMHASH / creds | security scan of dev.log | ✅ verified |
+
+### VERIFIED LOCALLY (in-memory / PGlite — NOT real-infrastructure)
 
 | Item | Test | Result |
 |---|---|---|
@@ -32,53 +74,31 @@
 | Durable queue + stale recovery (5 tests) | vitest | ✅ 5/5 |
 | Atomic claim (in-memory, 4 tests) | vitest | ✅ 4/4 |
 | Container startup validation (8 tests) | vitest | ✅ 8/8 |
-| Atomic claim (PGlite PostgreSQL SQL) | inline node | ✅ 6/6 |
-| Cross-tenant claim rejection (PGlite) | inline node | ✅ PASS |
-| Duplicate completion ack idempotent (PGlite) | inline node | ✅ PASS |
-| Stale job → needs_review (PGlite) | inline node | ✅ PASS |
-| needs_review blocks claim (PGlite) | inline node | ✅ PASS |
-| Backup + restore (PGlite) | inline node | ✅ PASS |
-| Payment UNIQUE constraint (PGlite) | inline node | ✅ PASS |
 | Dev routes 404 in production | code inspection | ✅ verified |
 | Production secrets fail-fast | code inspection | ✅ verified |
 | Security headers middleware | production build | ✅ compiles |
-| Webhook body not logged in audit | code fix | ✅ fixed (was logging 500 chars of raw body) |
-
-### IMPLEMENTED BUT NOT EXTERNALLY TESTED
-
-| Item | Status | Prerequisite |
-|---|---|---|
-| R2 storage adapter (real @aws-sdk/client-s3) | code complete, untested | R2 credentials |
-| Upstash Redis adapter (real @upstash/redis) | code complete, untested | Upstash URL + token |
-| PhonePe X-VERIFY webhook (real crypto) | code complete, tested with dev-signed payloads | PhonePe sandbox credentials |
-| Paytm CHECKSUMHASH webhook (real crypto) | code complete, tested with dev-signed payloads | Paytm sandbox credentials |
-| Prisma migrate deploy against PostgreSQL | DDL generated, tested against PGlite | Hosted PostgreSQL connection |
-| Two independent TCP connections concurrent claim | SQL verified against PGlite (single-conn) | Hosted PostgreSQL + 2 psql sessions |
-| Full end-to-end flow (register → upload → pay → print) | logic tested in-memory | All real infra |
-| Agent disconnect + restart recovery | logic tested in-memory | Hosted PostgreSQL + running app + agent |
-| Production build on Vercel/Render | build passes locally (exit 0) | Deploy account |
 
 ### BLOCKED — Missing Credentials or Infrastructure
 
 | Item | Missing prerequisite | Exact action needed |
 |---|---|---|
-| Hosted PostgreSQL migration | PostgreSQL connection string | Create Supabase/Neon project → set DATABASE_URL → prisma migrate deploy |
-| Concurrent TCP worker claims | Hosted PostgreSQL + 2 connections | 2 psql sessions calling the same UPDATE simultaneously |
-| R2 upload/download/deletion | R2 account ID + access key + secret + bucket | Configure STORAGE_PROVIDER=r2 + credentials |
-| Upstash Redis set/get/incr/expiry | Upstash REST URL + token | Configure CACHE_PROVIDER=redis + credentials |
-| PhonePe sandbox end-to-end | PhonePe sandbox salt key + merchant ID | Configure PHONEPE_SALT_KEY + test webhook |
-| Paytm sandbox end-to-end | Paytm merchant key + merchant ID | Configure PAYTM_MERCHANT_KEY + test callback |
-| Full hosted staging flow | All of the above | Complete all prerequisites |
+| Hosted PostgreSQL migration (Supabase/Neon) | PostgreSQL connection string | Create Supabase/Neon project → set DATABASE_URL → `prisma migrate deploy` → run `scripts/postgres-integration.test.ts` against it |
+| R2 upload/download/deletion | R2 account ID + access key + secret + bucket | Set `STORAGE_PROVIDER=r2` + credentials → run E2E flow |
+| Upstash Redis set/get/incr/expiry + concurrency | Upstash REST URL + token | Set `CACHE_PROVIDER=redis` + credentials → verify rate limiting + idempotency + outage handling |
+| PhonePe sandbox end-to-end | PhonePe sandbox salt key + merchant ID | Set `PHONEPE_SALT_KEY` + merchant ID → complete sandbox payment → verify webhook |
+| Paytm sandbox end-to-end | Paytm merchant key + merchant ID | Set `PAYTM_MERCHANT_KEY` + merchant ID → complete sandbox payment → verify callback |
+| Production build on Vercel/Render | Deploy account | Push to Vercel/Render → verify build + smoke endpoints |
+| Full hosted staging flow (all real infra) | All of the above | Complete all prerequisites, then run the E2E against hosted infra |
 
 ### NOT TESTED
 
 | Item | Reason |
 |---|---|
-| PostgreSQL backup/restore via pg_dump | No hosted PostgreSQL |
-| R2 missing-credential failure at runtime | Can verify code (constructor throws) but not runtime fetch failure |
-| Upstash connectivity failure at runtime | Can verify code (constructor throws) but not runtime REST failure |
-| Payment sandbox webhook signature verification against real PSP | No sandbox credentials |
-| Full customer-to-payment-to-print-agent workflow | Requires all infra |
+| R2 missing-credential runtime failure | Can verify code (constructor throws) but not runtime REST failure |
+| Upstash connectivity runtime failure | Can verify code (constructor throws) but not runtime REST failure |
+| PhonePe sandbox webhook against real PSP | No sandbox credentials — dev simulate uses real crypto but not the real PSP network |
+| Paytm sandbox callback against real PSP | Same as above |
+| Full customer-to-payment-to-print-agent workflow on hosted infra | Requires all hosted infra (PG + R2 + Upstash + PSP sandbox) |
 
 ### FAILED
 
@@ -88,17 +108,18 @@ None.
 
 ## 3. Reliability Audit Findings
 
-### Defects found and fixed
+### Defects found and fixed during this staging validation
 
 | Defect | Severity | Fix | Test |
 |---|---|---|---|
-| Webhook service stored raw webhook body (500 chars) in audit_logs metadata — could contain UTR, CHECKSUMHASH, transaction IDs | HIGH | Changed to store only `{path, contentLength, provider}` — no body content | Code fix verified |
+| Dev simulate route used `order.id` as `merchantTransactionId`, but checkout stores the session under a fresh `merchantOrderId` UUID — the simulate route could never find the session after a real checkout | HIGH (broke E2E) | Added optional `merchantOrderId` body param to the simulate route; it now accepts the value returned by checkout (which is what PhonePe would echo back) | E2E step 11 now returns `applied=true` |
 
 ### Defects found — not fixable without infrastructure
 
 | Defect | Severity | Status |
 |---|---|---|
-| Readiness probe uses `__readiness_probe__` channel for realtime — relay returns 403 (rejected) but adapter returns 1 (success). This is correct behavior (relay is reachable) but slightly misleading. | LOW | Not a real defect — the probe correctly tests relay reachability. No customer events are triggered (relay rejects the channel). |
+| R2 `head()` swallows all errors (403 indistinguishable from 404) | LOW | Acceptable for "does it exist?" but could hide auth failures. Verify with real R2 creds. |
+| `needs_review` audit-log "paid" event stores `utr` (UPI UTR) for reconciliation | LOW (by design) | This is the audit TRAIL's purpose — reconciliation requires the UTR to match bank statements. NOT in app logs. If deemed too sensitive, hash/truncate + store full value in a separate secure vault. |
 
 ---
 
@@ -115,57 +136,98 @@ None.
 | Multi-tenant | ❌ Observers are per-deployment |
 | Security | ❌ Full SMS access, Gmail inbox access, WhatsApp ToS violation |
 
-See `docs/UPI_YOUPI_FEASIBILITY.md` for the full audit.
+See `docs/UPI_YOUPI_FEASIBILITY.md` for the full audit. **Decision preserved:
+YouPI-PG is NOT integrated into PrintShop.**
 
 ---
 
 ## 5. Final Assessment
 
-### PrintShop: **Ready for private staging**
+### PrintShop: **READY FOR LIMITED PRIVATE PILOT**
 
-The codebase passes all local gates (tsc, lint, 83 tests, production build). The atomic claim SQL is verified against real PostgreSQL (PGlite WASM). All production safety controls are implemented and tested:
-- Dev routes guarded
-- Secrets fail-fast
-- Storage HMAC-signed
-- Payment idempotent (UNIQUE constraint + cache)
-- Credential encryption (AES-256-GCM)
-- Durable queue (PrintJob table + needs_review recovery)
-- Atomic claiming (conditional UPDATE WHERE status='queued')
-- Tenant isolation (shopId in every query)
-- Security headers (CSP middleware)
-- Readiness checks (DB + storage + cache + realtime with timeouts)
+The codebase passes all local gates (tsc, lint, 83 vitest tests, production
+build) AND, as of 2026-10-17, the real-infrastructure database paths are
+verified against a disposable PostgreSQL 17.11 server:
 
-**NOT production-ready** — hosted PostgreSQL migration, concurrent TCP claims, R2, Upstash, and payment sandbox remain BLOCKED on credentials/infrastructure.
+- **Schema migration**: 8 tables, 21 indexes, 9 FKs, 4 unique business
+  constraints — all applied cleanly to real PostgreSQL.
+- **Atomic job claiming**: verified with 2 genuinely independent TCP
+  connections (separate bun worker processes, synchronised via LISTEN/NOTIFY).
+  Exactly one worker wins a claim for a given job; cross-tenant claims fail;
+  duplicate acks are idempotent; stale jobs move to `needs_review` (NO
+  automatic reprint).
+- **E2E production flow**: 34/34 assertions pass — shop registration (with
+  AES-256-GCM encrypted credentials) → JWT login → order creation → real PDF
+  upload via HMAC-signed capability → page-count parsing → price computation
+  → checkout → REAL X-VERIFY payment signature (sha256 + constant-time
+  compare) → order marked paid → PrintJob created → agent claims (atomic
+  conditional UPDATE) → agent completes → duplicate simulate is idempotent.
+- **Security posture**: zero UTR / raw webhook body / CHECKSUMHASH /
+  credentials / personal data in application logs. Audit log stores the
+  minimum necessary for reconciliation (txnId + utr in the "paid" event only).
+
+**NOT production-ready** — the following remain BLOCKED on credentials:
+
+1. **Hosted PostgreSQL** (Supabase/Neon) — the user-space PG 17 verifies the
+   SQL but not the hosted connection / connection pooling / network latency.
+2. **Cloudflare R2** — adapter code is complete and fail-closed; needs real
+   credentials to verify upload/download/delete + tenant isolation + capability
+   expiry.
+3. **Upstash Redis** — adapter code is complete and fail-closed (throws on
+   outage, no silent fallback); needs real credentials to verify atomic incr
+   under concurrency + expiry + outage handling.
+4. **PhonePe/Paytm sandbox** — adapter code uses real crypto (sha256 X-VERIFY
+   + constant-time compare for PhonePe, AES-128-CBC CHECKSUMHASH for Paytm);
+   the dev simulate route exercises the REAL verification pipeline with real
+   crypto, but does NOT test the actual PSP network (HTTP call to PhonePe's
+   API, real redirect flow, real webhook delivery).
+5. **Production deployment** (Vercel/Render) — build passes locally; needs a
+   deploy account to verify the hosted runtime.
 
 ### YouPI-PG: **Blocked by licensing and insufficient evidence**
 
-No LICENSE file. Amount-only attribution. Single-active-slot constraint. SMS/Gmail parsing for verification. Not suitable for a multi-tenant SaaS.
+No LICENSE file. Amount-only attribution. Single-active-slot constraint.
+SMS/Gmail parsing for verification. Not suitable for a multi-tenant SaaS.
+**Decision preserved: NOT integrated.**
 
 ### Remaining blockers (priority order)
 
-1. **Hosted PostgreSQL** — set up Supabase/Neon → migrate → verify schema
-2. **Concurrent TCP claims** — 2 psql sessions → verify atomic UPDATE
-3. **R2 credentials** — upload/download/delete test
-4. **Upstash credentials** — set/get/incr/expiry test
-5. **Payment sandbox** — PhonePe/Paytm sandbox webhook test
-6. **Full staging** — end-to-end flow with all real infra
+1. **Hosted PostgreSQL** — set up Supabase/Neon → `prisma migrate deploy` →
+   run `scripts/postgres-integration.test.ts` + `scripts/concurrency-harness.test.ts`
+   against it.
+2. **R2 credentials** — set `STORAGE_PROVIDER=r2` + creds → run the E2E flow.
+3. **Upstash credentials** — set `CACHE_PROVIDER=redis` + creds → verify rate
+   limiting + idempotency + outage handling.
+4. **PhonePe/Paytm sandbox** — set sandbox creds → complete a real sandbox
+   payment → verify the real webhook.
+5. **Production deploy** — push to Vercel/Render → smoke `/health` `/ready`
+   → verify dev routes return 404.
 
 ### Exact commands for local verification
 
 ```bash
 cd /home/z/my-project
 
-bun install                                              # exit 0
-bunx tsc --noEmit                                        # exit 0, 0 errors
-bun run lint                                             # exit 0, clean
-bunx vitest run                                          # exit 0, 83/83 pass
-NODE_ENV=production bun ./node_modules/.bin/next build   # exit 0
+# Regression suite (all exit 0)
+bun install
+bunx tsc --noEmit
+bun run lint
+bunx vitest run                                          # 83/83 pass
+NODE_ENV=production bun ./node_modules/.bin/next build
 
-# PGlite PostgreSQL atomic claim
-node -e "..." # (inline script — 6 assertions pass)
+# Real PostgreSQL staging (requires the user-space PG 17 from §A of STAGING_TESTS.md)
+source scripts/pg-env.sh
+# Apply the schema:
+psql -d printshop_staging -v ON_ERROR_STOP=1 -f tmp/pg_migration.sql
+# Integration test (54 assertions):
+bun run scripts/postgres-integration.test.ts
+# Concurrency test (23 assertions, 2 independent TCP processes):
+bun run scripts/concurrency-harness.test.ts
+# E2E flow (34 assertions, requires the app running against PostgreSQL):
+bash scripts/e2e-staging-flow.sh
 ```
 
-### Minimum staging checklist
+### Minimum staging checklist for production
 
 ```
 [ ] NODE_ENV=production
@@ -174,8 +236,8 @@ node -e "..." # (inline script — 6 assertions pass)
     STORAGE_CAPABILITY_SECRET, PAYMENT_ENCRYPTION_KEY (base64, 32 bytes)
 [ ] schema.prisma: provider = "postgresql"
 [ ] DATABASE_URL → PostgreSQL (Supabase/Neon)
-[ ] DATABASE_URL=<pg> bunx prisma migrate dev --name init
-[ ] DATABASE_URL=<pg> bunx prisma migrate deploy
+[ ] DATABASE_URL=<pg> bunx prisma migrate dev --name init_postgres
+[ ] DATABASE_URL=<pg_prod> bunx prisma migrate deploy
 [ ] STORAGE_PROVIDER=r2 + R2 credentials
 [ ] CACHE_PROVIDER=redis + Upstash URL + token
 [ ] REALTIME_PROVIDER=socketio + REALTIME_EMIT_URL
@@ -185,9 +247,11 @@ node -e "..." # (inline script — 6 assertions pass)
 [ ] Smoke: curl …/api/v1/health → {"status":"ok"}
 [ ] Smoke: curl …/api/v1/ready → {"ready":true}
 [ ] Smoke: curl -X POST …/api/v1/dev/seed → 404
-[ ] Verify: 2 agents → create job → both claim → only one wins
+[ ] Verify: 2 agents → create job → both claim → only one wins (concurrency-harness.test.ts)
 [ ] Verify: kill agent mid-print → wait 5min → needs_review
 [ ] Verify: credential encryption → shop registration → DB paymentCredentials starts with "v1:"
+[ ] Verify: duplicate webhook → idempotent (applied=false on 2nd call)
+[ ] Verify: app logs have NO UTR / raw body / CHECKSUMHASH / credentials
 [ ] Deploy web → Vercel; realtime → Render; agent → shop PC
 [ ] k6 run load-test.js --env BASE_URL=<staging_url>
 ```

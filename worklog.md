@@ -329,3 +329,32 @@ Stage Summary:
 - 60 tests pass, tsc 0 errors, lint clean.
 - The remaining items (Postgres, R2, Redis, BullMQ, subscription billing, email/SMS) are adapter-swappable (the interfaces + skeletons exist) but need real infrastructure/credentials to wire — clearly documented as limitations, not claimed as done.
 - Production build (bun run build) is blocked by the sandbox; tsc --noEmit (0 errors) is the closest verification.
+
+---
+Task ID: staging-validation
+Agent: orchestrator (main)
+Task: Execute private staging validation of PrintShop — PostgreSQL migration, independent-connection concurrency, E2E flow, security review, and documentation. Do NOT add features or integrate YouPI-PG.
+
+Work Log:
+- Read prior worklog, prisma/schema.prisma (SQLite), migrations (single SQLite migration 20261015172034_init), .env (only SQLite DATABASE_URL), webhook.service.ts (audit-log fix already in place: received event stores only {path, contentLength, provider}, no raw body).
+- Step 7 (regression): ran bun install (exit 0), bunx tsc --noEmit (exit 0), bun run lint (exit 0), bunx vitest run (exit 0, 83/83 pass), NODE_ENV=production bun ./node_modules/.bin/next build (exit 0). All 5 gates pass.
+- Installed real PostgreSQL 17.11 in user-space (no root): downloaded 22 Debian 13 .deb packages, extracted to /tmp/pg-install/pgroot, initdb'd a cluster, started on 127.0.0.1:5433 with trust auth (loopback-only, disposable). Created printshop_staging database. Saved env at scripts/pg-env.sh.
+- Step 1 (PostgreSQL migration): generated PostgreSQL DDL via `prisma migrate diff --from-empty --to-schema-datamodel tmp/schema.pg.prisma --script`. Applied to real PG 17. Verified 8 tables, 21 indexes, 9 FKs, 4 unique business constraints. Wrote scripts/postgres-integration.test.ts (54 assertions) using the `pg` driver. ALL 54 PASS against real PostgreSQL 17.11 — schema integrity, atomic claim, cross-tenant rejection, duplicate ack idempotency, UNIQUE replay guard, stale→needs_review, needs_review blocks claim, pg_dump backup+restore.
+- Step 2 (independent-connection concurrency): wrote scripts/concurrent-worker.ts (standalone bun process, own pg.Pool, own TCP connection, LISTEN/NOTIFY synchronisation) + scripts/completion-worker.ts + scripts/concurrency-harness.test.ts (orchestrates 2+ genuinely independent processes via LISTEN/NOTIFY race). ALL 23 PASS — S1 same-job claim (exactly one wins), S2 different-jobs (both win), S3 cross-tenant (fails), S4 duplicate completion ack (exactly one succeeds), S5 worker disconnect+restart (can't re-claim), S6 stale→needs_review (fresh worker can't claim). This is REAL independent-connection concurrency, NOT PGlite's single-connection.
+- Steps 3/4/5 (R2/Upstash/Payment sandbox): BLOCKED on credentials. Reviewed adapter code: R2StorageAdapter (fail-closed constructor, presigned URLs, head() swallows errors — LOW concern), UpstashCacheAdapter (fail-closed, throws on outage — no silent fallback), PhonePePaymentAdapter (real sha256 X-VERIFY via Web Crypto, constant-time compare, utr extracted but only stored in audit-log paid event), PaytmPaymentAdapter (real CHECKSUMHASH AES-128-CBC). Dev simulate routes are production-guarded (requireDev() returns 404) and use REAL crypto (not fake success).
+- Step 6 (E2E flow): temporarily switched schema.prisma to postgresql, regenerated Prisma client, started dev server against real PostgreSQL. Found + fixed a real defect: the dev simulate route used order.id as merchantTransactionId, but checkout stores the session under a fresh merchantOrderId UUID — added optional merchantOrderId body param. Wrote scripts/make-test-pdf.ts (pdf-lib, 963-byte 1-page PDF) + scripts/e2e-staging-flow.sh (34 assertions). ALL 34 PASS against real PostgreSQL 17: seed (AES-256-GCM encrypted credentials, v1: prefix) → JWT login → agent register + heartbeat (online, sim skipped) → order → upload URL (HMAC capability) → real PDF upload → file register (page count = 1) → print settings (price = 500 paise) → checkout (merchantOrderId stored) → dev simulate (REAL X-VERIFY, applied=true) → order paid→printing, paymentTxnId set, paidAt set, PrintJob created as 'queued' → audit log verified → agent discovers pending job → atomic claim → complete → duplicate simulate idempotent. Restored schema.prisma + .env to SQLite, regenerated Prisma client. Re-ran regression: 83/83 still pass.
+- Step 10 (security review): scanned dev.log — ZERO occurrences of utr, raw webhook body (merchantTransactionId/base64), CHECKSUMHASH, payment credentials (saltKey/merchantKey/secretAccessKey), customer phone. Only txnId (PSP transaction ID for support) is logged. Audit log "received" event stores {path, contentLength, provider}; "paid" event stores {txnId, utr, amountPaise} — this is the canonical reconciliation record (utr needed to match bank statements), NOT the application log.
+- Documentation: rewrote docs/STAGING_TESTS.md (10 sections + classification table, all evidence captured) and docs/PRODUCTION_READINESS.md (5 sections, final assessment: READY FOR LIMITED PRIVATE PILOT, YouPI-PG decision preserved: NOT integrated).
+
+Stage Summary:
+- Regression: bun install ✓, tsc ✓, lint ✓, vitest 83/83 ✓, next build ✓
+- Real PostgreSQL 17.11 installed in user-space (no root), running on 127.0.0.1:5433
+- Step 1: 54/54 integration assertions pass against real PG 17 (schema, atomic claim, cross-tenant, idempotency, UNIQUE guard, stale recovery, backup+restore)
+- Step 2: 23/23 concurrency assertions pass with 2 genuinely independent TCP processes (LISTEN/NOTIFY race — NOT PGlite single-connection)
+- Step 6: 34/34 E2E assertions pass against real PG 17 (full seed→upload→pay→claim→complete flow with real X-VERIFY crypto)
+- Step 10: zero UTR/raw-body/CHECKSUMHASH/credentials/personal data in app logs
+- Steps 3/4/5: BLOCKED on R2/Upstash/PhonePe-Paytm-sandbox credentials (adapter code reviewed, fail-closed)
+- Defect fixed: dev simulate route merchantOrderId mismatch (broke E2E)
+- Final assessment: PrintShop READY FOR LIMITED PRIVATE PILOT (not production-ready — hosted PG, R2, Upstash, PSP sandbox remain BLOCKED on credentials)
+- YouPI-PG: decision preserved — NOT integrated (licensing + security + multi-tenant blockers)
+- Artifacts: scripts/pg-env.sh, scripts/postgres-integration.test.ts, scripts/concurrent-worker.ts, scripts/completion-worker.ts, scripts/concurrency-harness.test.ts, scripts/make-test-pdf.ts, scripts/e2e-staging-flow.sh, tmp/pg_migration.sql, tmp/schema.pg.prisma, docs/STAGING_TESTS.md (rewritten), docs/PRODUCTION_READINESS.md (rewritten)

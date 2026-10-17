@@ -11,6 +11,12 @@ const SimulateSchema = z.object({
   orderId: z.string().uuid(),
   /** 'paid' | 'failed' — the state to simulate. */
   outcome: z.enum(['paid', 'failed']).default('paid'),
+  /**
+   * Optional: the merchantOrderId returned by /checkout. PhonePe echoes this
+   * back as merchantTransactionId in the webhook. If omitted, the simulate
+   * route falls back to orderId (legacy dev behaviour).
+   */
+  merchantOrderId: z.string().uuid().optional(),
 });
 
 /** hex(sha256(s)) via Web Crypto. */
@@ -47,9 +53,10 @@ export const POST = withRateLimit('phonepe-simulate', 20, 60, async (req, _ctx) 
     const payload = {
       data: {
         merchantId: creds.merchantId ?? 'DEMO',
-        // merchantTransactionId matches the merchantOrderId stored at checkout
-        // (the demo uses orderId as merchantOrderId).
-        merchantTransactionId: order.id,
+        // merchantTransactionId MUST match the merchantOrderId stored at
+        // checkout (that's the key the webhook looks up). Accept it as an
+        // optional body param; fall back to orderId for legacy dev tests.
+        merchantTransactionId: body.merchantOrderId ?? order.id,
         transactionId: txnId,
         amount: order.totalAmountPaise,
         state: body.outcome === 'paid' ? 'COMPLETED' : 'FAILED',
