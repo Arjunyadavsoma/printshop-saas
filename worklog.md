@@ -1187,3 +1187,89 @@ To bring production to the verified state, the operator must explicitly authoriz
 After all 5 steps complete successfully, the deployment is READY FOR AN AUTHORIZED PILOT (UPI deep-link + manual shopkeeper verification scope). PhonePe/Paytm + global rate limiting remain blocked on paid infrastructure decisions (Upstash Redis + PSP sandbox credentials) that are NOT required for the pilot launch.
 
 No destructive migrations performed. No customer data altered. No real payments made. The 138 prior tests were NOT weakened — 10 new tests added (148 total). The cache TTL fix is narrow (only the `incr()` method changed).
+
+---
+Task ID: controlled-deployment-pilot-readiness
+Agent: orchestrator (senior release engineer)
+Task: Controlled deployment + pilot readiness verification. Authorization boundary: push + DB migration require separate explicit authorization. Inspect repository, run local checks, STOP at boundaries, report state.
+
+Work Log:
+- Section 1+2 — Verify known state + authorization boundaries:
+  - Branch: `main`. HEAD: `2b20aa5` (a benign auto-commit on top of `326b0d7` — contains only `worklog.md` 125-line append from the previous turn).
+  - Working tree: CLEAN (no uncommitted changes, no untracked files except dev server artifacts).
+  - Commits ahead of `origin/main`: 5 (`6f71a62` + `424eeaa` + `e26e152` + `326b0d7` + `2b20aa5`). Commits behind: 0.
+  - All 4 expected commits present: `6f71a62` (race-safe code), `424eeaa` (worklog + dev.pid mtime), `e26e152` (worklog + dev.pid untrack), `326b0d7` (cache fix). The new `2b20aa5` is a benign worklog append.
+  - `.zscripts/dev.pid` NOT tracked in HEAD (verified via `git ls-files` — empty result). Satisfies "Do not include `.zscripts/dev.pid` in the release".
+  - Secrets/generated-files scan of `origin/main..HEAD` diff: NO actual secrets found. The grep caught only false positives (test-file dummy secrets `'a'`/`'b'`, documentation references to `REDIS_URL`/`REDIS_TOKEN` as config names). No `.env` in diff. No `.db`/`.sqlite`/`.log`/`node_modules`/`.next/`/`dist/`/`.png`/`.jpg`/`.pdf` in diff.
+
+- Section 3 — Safe local release checks (ALL PASS):
+  1. ✓ `git status` clean.
+  2. ✓ Reviewed all 5 commits + combined diff (15 files changed, 1873 insertions, 29 deletions). The diff includes: 2 new docs (RATE_LIMITING.md, REALTIME_AND_STATE.md), 1 modified migration (pg-constraints.sql), 1 modified schema (schema.prisma), 2 modified routes (files/route.ts, orders/route.ts), 1 modified activity route (added userId), 1 modified cache adapter (in-memory.adapter.ts — the TTL fix), 1 new cache test (in-memory.adapter.test.ts), 1 new constrained-memory adapter (test fixture), 1 new errors helper, 1 new order-token concurrency test (13 tests), 1 modified order repository (createWithUniqueToken method), worklog.md updates, and the dev.pid untracking.
+  3. ✓ `.zscripts/dev.pid` NOT tracked.
+  4. ✓ `bunx tsc --noEmit` exit 0 — 0 errors.
+  5. ✓ `bun run lint` exit 0 — 0 warnings, 0 errors.
+  6. ✓ `bunx vitest run` — 16 test files, 148/148 tests pass (138 prior + 10 new cache regression tests).
+  7. ✓ Cache TTL regression tests cover the specific case "incrementing an existing key without extending or erasing its original expiry": the test "incr PRESERVES the existing TTL — the rate-limit window does not reset" sets a 60s TTL, increments after 10s elapsed, advances to 59s elapsed (key still present — TTL NOT erased), advances past 60s (key expires — TTL NOT extended). The "repeated incr preserves the TTL across many increments" test does 19 incrs and verifies the original 60s window survives. The "rate-limit simulation" test verifies 20 allowed, 21st rejected, window resets after 60s.
+  8. ✓ `prisma/pg-constraints.sql` reviewed — duplicate preflight (`DO $$ ... HAVING COUNT(*) > 1 ... RAISE EXCEPTION`), partial unique-index definition (`CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL`), failure behavior (RAISE EXCEPTION aborts the migration, does NOT silently corrupt or delete). Idempotent (`DROP INDEX IF EXISTS` then `CREATE`).
+  9. ✓ Order creation retry logic verified — `createWithUniqueToken()` in `src/lib/repositories/order.repository.ts` catches `isUniqueConstraintError` (P2002/23505/SQLITE_CONSTRAINT_UNIQUE), checks `uniqueViolationFields` to retry ONLY on tokenNumber collisions (any other error is rethrown), uses MAX_ATTEMPTS=8 (bounded), falls back to NULL tokenNumber after exhaustion (no order lost — the customer references the order by customerToken which is always non-null). Retries use a fresh order UUID per attempt (defensive — a stale INSERT can't create a duplicate order).
+  10. ✓ Payment status vs order-processing status independent — `verify-payment` route sets `status: 'paid'` + `paymentTxnId` + `paymentUtr` + `paidAt` (separate fields from `order.status`). The `/start` and `/ready` routes transition `status` only (paid→printing→ready) via `canTransitionOrder` guard; they do NOT touch `paymentTxnId`/`paymentUtr`/`paidAt` — these persist across transitions. End-to-end verified in the previous turn's smoke test: order went paid→printing→ready, re-fetched and confirmed paymentTxnId/paymentUtr/paidAt all still set.
+
+- Section 4 — Push boundary: STOPPED. This prompt does NOT contain explicit push authorization. Per Section 2's rule ("A prior request to prepare deployment is not itself authorization to push"), I did NOT push. Proposed command for the operator:
+    ```bash
+    git push origin main
+    ```
+    Pushes 5 commits, triggers Vercel rebuild. No secrets, no .env, no generated files in the diff. Working tree clean.
+
+- Section 5 — Neon read-only preflight: NOT PERFORMED. Neon credentials NOT available locally (the .env has only the SQLite dev URL; the Neon production DATABASE_URL is stored on Vercel as a secret). Per Section 2's rule, I did NOT retrieve production secrets from Vercel. The 3 read-only preflight commands are provided for the operator (verify database identity, list existing indexes, check for duplicate non-null tokens). Expected: 0 duplicate rows. If ANY rows → STOP and remediate (do NOT delete customer orders).
+
+- Section 6 — Database migration authorization boundary: STOPPED. This prompt does NOT contain explicit production-database-write authorization. Migration summary provided (target: neondb/public; SQL: DROP IF EXISTS + pre-flight DO block + CREATE UNIQUE INDEX; no tables touched, no rows touched, idempotent, low operational risk, Neon supports PITR for rollback). Proposed command for the operator (ONLY after authorization + clean preflight):
+    ```bash
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql
+    ```
+    Do NOT use `scripts/pg-migrate-prod.sh` against the existing Neon DB.
+
+- Section 7 — Deployed smoke tests: NOT RUN. The deployed Vercel preview is on the PREVIOUS deploy (built before `6f71a62`). Running smoke tests against it would test the OLD code. Local smoke tests (28/28 from the previous turn, still valid — no code changes since) confirm the new code works against the local dev server.
+
+- Section 8 — Infrastructure + remaining limitations:
+  - Upstash Redis: NOT configured (CACHE_PROVIDER=memory on Vercel).
+  - Rate limiting scope: PER-INVOCATION on Vercel (not global). The cache TTL fix only addresses the in-memory adapter's bug; it does NOT make rate limiting global. DB UNIQUE constraints remain the authoritative guards.
+  - Webhook deduplication: TWO-LAYER (cache fast-path + DB UNIQUE authoritative). DB constraint catches duplicates even if cache is wiped between invocations.
+  - PhonePe/Paytm sandbox: NOT exercised with real provider responses. 7 vitest tests use REAL crypto against fixture payloads (SIMULATED).
+  - Production Supabase UPI QR upload: NOT tested end-to-end (would need shopkeeper credentials for production Vercel).
+  - The in-memory TTL fix is NOT a substitute for distributed rate limiting — it only ensures the per-process counter expires correctly. For global rate limiting, Upstash Redis is still required (paid — not authorized).
+
+Stage Summary:
+- Git: branch `main`, HEAD `2b20aa5`, 5 commits ahead of `origin/main` (4 expected + 1 worklog append), 0 behind. Working tree clean. `.zscripts/dev.pid` NOT tracked. No secrets in diff. PUSH STATUS: NOT PUSHED (no explicit authorization).
+- Checks: tsc 0 errors, lint 0 warnings, vitest 148/148 pass (138 + 10 new cache regression tests). Production build NOT run (forbidden by sandbox rules). All 10 cache TTL regression tests pass — specifically covering "incr preserves the original expiry, doesn't extend, doesn't erase."
+- Vercel: deployed commit is from BEFORE `6f71a62` (built at timestamp 1792707647 ~20:40 UTC; my code commit is at ~21:05 UTC). Preview is alive (HTTP 200, Neon 1261ms, Supabase 463ms) but runs the OLD code without race-safe order-token allocation OR cache TTL fix. Deployment status: PREVIOUS DEPLOY.
+- Neon: target identity NOT verified (no local credentials). Duplicate check NOT run. Index status: `Order_shop_tokenNumber_unique` NOT applied (the existing Neon schema has only the ordinary `Order_shopId_tokenNumber_idx` from the previous deploy). Migration status: NOT APPLIED (no authorization).
+- Smoke tests: LOCAL 28/28 pass (from previous turn, still valid — no code changes since). DEPLOYED: NOT RUN (preview still on old code).
+- Security/payment: shop-scoped auth on all `/api/v1/shops/me/*` endpoints (via `withAuth` + `repos.shops.getByOwner`); verify-payment has explicit `['owner']` role enforcement. Customer payment claims NEVER auto-mark paid (no customer-facing claim endpoint exists — the customer pays via UPI QR / UPI deeplink; the webhook fires or the shopkeeper manually verifies). Manual verification requires authorized shopkeeper. Webhook deduplication is TWO-LAYER (cache fast-path + DB UNIQUE authoritative). Payment fields (paymentTxnId, paymentUtr, paidAt) are separate from order.status and persist across status transitions. Customer documents private (Supabase private bucket + presigned URLs). storageKey namespace validation blocks cross-order attack.
+- Remaining blockers:
+    1. Push to GitHub not authorized (operator: `git push origin main`).
+    2. Neon migration not authorized (operator: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql` after read-only preflight).
+    3. PhonePe/Paytm sandbox credentials still missing (only simulated).
+    4. Upstash Redis still not configured (rate limiting per-invocation on Vercel; DB UNIQUE guards dangerous races).
+    5. Production UPI QR upload flow against deployed Supabase still untested end-to-end.
+- Next action: The operator must explicitly authorize:
+    (a) `git push origin main` (pushes 5 commits, triggers Vercel rebuild with race-safe code + cache fix).
+    (b) After Vercel rebuild + read-only preflight (0 duplicates), `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql` (applies the partial unique index).
+    (c) After migration, verify the index with the catalog query (Section 6).
+    (d) Re-run the 28 smoke tests against the DEPLOYED Vercel preview (now with new code) + verify rate-limit window reset on the deployed app.
+
+Classification of each result:
+- LOCALLY VERIFIED:
+  - Git state (5 commits, clean tree, no secrets, dev.pid untracked)
+  - tsc 0 errors, lint 0 warnings, vitest 148/148
+  - Cache TTL regression tests (10 new, cover the specific "incr preserves expiry" case)
+  - pg-constraints.sql reviewed (8 criteria pass)
+  - Order creation retry logic (catches P2002, retries only on tokenNumber, falls back to NULL safely)
+  - Payment vs order status independence (separate fields, persist across transitions)
+  - 28/28 local smoke tests (from previous turn, still valid)
+  - Dev server (local) healthy
+- PUSHED: NOT YET (no explicit push authorization)
+- DEPLOYED AND VERIFIED: NOT YET (preview still on previous code; no push)
+- DATABASE MIGRATION AUTHORIZED AND VERIFIED: NOT YET (no explicit DB-write authorization)
+- READY FOR AN AUTHORIZED PILOT: NOT YET — the deployed race-safe code, database uniqueness constraint, and required deployed smoke tests have NOT all been verified. The local code is verified, but production has neither the new code (push not authorized) nor the new index (migration not authorized).
+
+No destructive migrations performed. No customer data altered. No real payments made. No production configuration changed without authorization. No force-push, no reset, no amend, no unrelated refactoring. The 148 tests were NOT weakened.
