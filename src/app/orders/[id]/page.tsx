@@ -13,6 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { PdfPreview } from '@/components/portal/pdf-preview';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
 import type {
@@ -23,6 +24,8 @@ import {
   CheckCircle2, RefreshCw, CreditCard, QrCode, ShieldCheck, Info,
   Home, Download, XCircle,
 } from 'lucide-react';
+
+// Also need Label + ToggleGroup already imported above
 
 // ──────────────────────────── API response shapes ────────────────────────────
 
@@ -129,6 +132,10 @@ interface LocalFile {
   uploadError: string | null;
   dirty: boolean; // local edits not yet saved to server
   patching: boolean;
+  /** The raw File object for client-side preview (only available before page refresh) */
+  rawFile?: File | null;
+  /** Pages selected for printing (1-indexed). Null = all pages. */
+  selectedPages?: number[] | null;
 }
 
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
@@ -270,8 +277,12 @@ export default function OrderFlowPage() {
   const clientEstimate = useCallback((f: LocalFile): number => {
     if (!shop) return f.pricePaise;
     try {
+      // Use selectedPages count if available, else pageCount
+      const effectivePages = f.selectedPages && f.selectedPages.length > 0
+        ? f.selectedPages.length
+        : f.pageCount || 1;
       const input: PricingInput = {
-        pages: f.pageCount || 1,
+        pages: effectivePages,
         copies: f.copies,
         colorMode: f.colorMode,
         paperSize: f.paperSize,
@@ -312,6 +323,8 @@ export default function OrderFlowPage() {
         uploadError: null,
         dirty: false,
         patching: false,
+        rawFile: file,
+        selectedPages: null,
       };
       setFiles((prev) => [...prev, placeholder]);
 
@@ -421,7 +434,26 @@ export default function OrderFlowPage() {
     if (patch.colorMode !== undefined) body.colorMode = patch.colorMode;
     if (patch.paperSize !== undefined) body.paperSize = patch.paperSize;
     if (patch.duplex !== undefined) body.duplex = patch.duplex;
-    if (patch.pageRange !== undefined) body.pageRange = patch.pageRange === '' ? null : patch.pageRange;
+    // Convert selectedPages array to pageRange string (e.g., [1,2,3,5,6] → "1-3,5-6")
+    if (patch.selectedPages !== undefined) {
+      const pages = patch.selectedPages;
+      if (pages === null || pages.length === 0) {
+        body.pageRange = null;
+      } else {
+        // Compress to ranges: [1,2,3,5,6] → "1-3,5-6"
+        const sorted = [...pages].sort((a, b) => a - b);
+        const ranges: string[] = [];
+        let start = sorted[0], end = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+          if (sorted[i] === end + 1) { end = sorted[i]; }
+          else { ranges.push(start === end ? `${start}` : `${start}-${end}`); start = end = sorted[i]; }
+        }
+        ranges.push(start === end ? `${start}` : `${start}-${end}`);
+        body.pageRange = ranges.join(',');
+      }
+    } else if (patch.pageRange !== undefined) {
+      body.pageRange = patch.pageRange === '' ? null : patch.pageRange;
+    }
 
     const r = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
       'PATCH',
@@ -713,7 +745,7 @@ function UploadStep(props: {
           <CardTitle className="flex items-center gap-2 text-lg">
             <UploadCloud className="h-5 w-5 text-amber-600" /> Step 1 · Upload your files
           </CardTitle>
-          <CardDescription>PDFs, JPG, PNG, or Word docs up to 25MB each.</CardDescription>
+          <CardDescription>PDF, images, Word, Excel, PowerPoint, and more — up to 25MB each.</CardDescription>
         </CardHeader>
         <CardContent>
           <div
@@ -736,12 +768,12 @@ function UploadStep(props: {
             <input
               ref={props.fileInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,image/jpeg,image/png,application/pdf"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.ods,.odp,.rtf,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.tex"
               multiple
               className="hidden"
               onChange={props.onPick}
             />
-            <p className="mt-2 text-[11px] text-muted-foreground">Max 25MB per file.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">PDF, images, Office docs, text — max 25MB per file.</p>
           </div>
           {props.uploadError && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
@@ -807,23 +839,96 @@ function ConfigureStep(props: {
 }) {
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FileText className="h-5 w-5 text-amber-600" /> Step 2 · Configure print settings
-          </CardTitle>
-          <CardDescription>
-            Set copies, colour, paper, and duplex per file. The price updates live using the shop&apos;s pricing engine.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {props.files.map((f) => (
-              <FileCard key={f.fileId} file={f} shop={props.shop} onUpdate={props.onUpdate} onRemove={() => {}} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {props.files.map((f) => (
+        <Card key={f.fileId}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-5 w-5 text-amber-600" />
+              <span className="truncate">{f.filename}</span>
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* PDF Preview with page selection */}
+            {f.rawFile && (
+              <PdfPreview
+                file={f.rawFile}
+                mimeType={f.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/*'}
+                pageCount={f.pageCount || null}
+                onSelectionChange={(selectedPages) => {
+                  props.onUpdate(f.fileId, { selectedPages, dirty: true });
+                }}
+              />
+            )}
+
+            {/* Print settings */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <Label className="text-xs">Copies</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={f.copies}
+                  onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Math.min(500, Number(e.target.value) || 1)), dirty: true })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Colour</Label>
+                <ToggleGroup
+                  type="single"
+                  value={f.colorMode}
+                  onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode, dirty: true })}
+                  className="mt-1"
+                >
+                  <ToggleGroupItem value="bw" className="text-xs">B&W</ToggleGroupItem>
+                  <ToggleGroupItem value="color" className="text-xs">Colour</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              <div>
+                <Label className="text-xs">Paper</Label>
+                <select
+                  value={f.paperSize}
+                  onChange={(e) => props.onUpdate(f.fileId, { paperSize: e.target.value as PaperSize, dirty: true })}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                >
+                  <option value="a4">A4</option>
+                  <option value="a3">A3</option>
+                  <option value="letter">Letter</option>
+                  <option value="legal">Legal</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Sides</Label>
+                <ToggleGroup
+                  type="single"
+                  value={f.duplex ? 'duplex' : 'simplex'}
+                  onValueChange={(v) => props.onUpdate(f.fileId, { duplex: v === 'duplex', dirty: true })}
+                  className="mt-1"
+                >
+                  <ToggleGroupItem value="simplex" className="text-xs">Single</ToggleGroupItem>
+                  <ToggleGroupItem value="duplex" className="text-xs">Double</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+            </div>
+
+            {/* Price display */}
+            <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                {f.selectedPages && f.selectedPages.length < f.pageCount
+                  ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
+                  : `${f.pageCount || '?'} pages × ${f.copies} copies`}
+              </span>
+              <span className="text-lg font-bold text-foreground">
+                {formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
 
       <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
