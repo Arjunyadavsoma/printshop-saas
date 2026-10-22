@@ -1340,3 +1340,88 @@ Stage Summary:
 Classification: DEPLOYED AND VERIFIED — the intended commit (f35bac1, containing 6f71a62 race-safe code + 326b0d7 cache fix) is confirmed active and the checks pass.
 
 Next step (per the user's prompt): Neon read-only preflight — but ONLY after this report. The Neon preflight requires production DB credentials which are NOT available locally (stored on Vercel only). The operator must run the 3 read-only preflight commands (verify database identity, list existing indexes, check for duplicate non-null tokens) before the migration can be authorized + applied.
+
+---
+Task ID: neon-read-only-preflight
+Agent: orchestrator (senior database release engineer)
+Task: Step 3 — Neon production database read-only preflight. Run 3 queries (database identity, index list, duplicate-token check) against the correct existing Neon DB. Do not print secrets, retrieve from Vercel, or run any writes.
+
+Work Log:
+- 1. Locate the correct database safely:
+  - Inspected local `.env`: `DATABASE_URL=file:/home/z/my-project/db/custom.db` — this is the SQLite DEV database, NOT the production Neon DB. Per the rules, I did NOT treat the local SQLite as Neon.
+  - Checked for Neon CLI tools: `neon` CLI NOT installed; `psql` NOT installed (though `apt-get` is available — I could install `postgresql-client`, but even with psql I'd still need the Neon connection string which contains the password, a secret I don't have and won't extract from Vercel).
+  - Checked for `.neon/` project link: NOT present (no Neon CLI project linked locally).
+  - Checked for Neon env vars: `NEON_API_KEY` NOT set; `NEON_DATABASE_URL` NOT set; `PGHOST`/`PGUSER`/`PGDATABASE` NOT set. The only `DATABASE_URL` set is the SQLite dev URL.
+  - Per the rules, I did NOT retrieve production secrets from Vercel to bypass missing local credentials.
+  - Per the rules, I did NOT assume the local SQLite database is the production Neon database.
+  - Per the rules, I did NOT run migrations, seed scripts, application mutations, or any SQL that changes data or schema.
+
+- Documented Neon identifiers (NON-SECRET, from previous worklog — for the operator to verify in the Neon console):
+  - Project ID: `snowy-bonus-94821464` (per previous worklog — treat as a claim, verify in the Neon console)
+  - Branch: `production` (per previous worklog — verify)
+  - Database name: `neondb` (per previous worklog — verify via Query A)
+  - Schema: `public` (expected, verify via Query A)
+  - Connection host: `ep-snowy-paper-a1vdnqw0-pooler.ap-southeast-1.aws.neon.tech` (per previous worklog — I will NOT print the full connection string; the host name alone is a non-secret identifier)
+  - These identifiers are NOT secrets — they're project/branch/database names visible in the Neon console. The operator should verify them in the Neon console before running the preflight.
+
+- 2. Query A — Verify database identity: NOT RUN.
+  ```sql
+  SELECT current_database(), current_schema();
+  ```
+  Expected (per previous reports): `neondb`, `public`.
+
+- 3. Query B — Inspect existing Order indexes: NOT RUN.
+  ```sql
+  SELECT indexname, indexdef
+  FROM pg_indexes
+  WHERE schemaname = current_schema()
+    AND tablename = 'Order';
+  ```
+  Expected (per previous reports):
+  - `Order_paymentTxnId_key` (UNIQUE on paymentTxnId — webhook replay guard, from previous deploy)
+  - `Order_shopId_status_idx` (ordinary index on shopId+status — query performance)
+  - `Order_customerToken_idx` (ordinary index on customerToken — customer-status poll)
+  - `Order_shopId_tokenNumber_idx` (ordinary index on shopId+tokenNumber — from the PREVIOUS deploy's `@@index([shopId, tokenNumber])`. My commit `6f71a62` changed this to `@@unique([shopId, tokenNumber])` which would generate `Order_shopId_tokenNumber_key`, but that schema change has NOT been applied to the existing Neon DB — the deployed Vercel code uses Prisma's runtime schema inference, not a fresh migration. The existing Neon schema still has the OLD ordinary index.)
+  - `Order_shop_tokenNumber_unique` should NOT exist yet (the migration to add it has not been applied).
+  The operator should verify these expectations against the actual query results.
+
+- 4. Query C — Check for duplicate non-null tokens: NOT RUN.
+  ```sql
+  SELECT "shopId", "tokenNumber", COUNT(*)
+  FROM "Order"
+  WHERE "tokenNumber" IS NOT NULL
+  GROUP BY "shopId", "tokenNumber"
+  HAVING COUNT(*) > 1;
+  ```
+  Expected: zero rows. If ANY rows are returned → STOP. Do NOT apply the migration. Do NOT delete orders or silently change token numbers. Report the duplicate groups with only the necessary identifiers (`shopId`, `tokenNumber`, `COUNT(*)`) — avoid exposing customer personal data (customerPhone, notes, etc.).
+
+- 5. Safety and execution rules — ALL COMPLIED:
+  - These three queries are read-only. I did NOT run them because access to the intended database is NOT available from this sandbox.
+  - I did NOT attempt to extract credentials from Vercel.
+  - I did NOT fabricate results.
+  - I did NOT execute `prisma/pg-constraints.sql` during this task.
+  - I did NOT use `scripts/pg-migrate-prod.sh` against the existing Neon database.
+  - I did NOT treat prior migration review as authorization to execute it.
+
+Stage Summary:
+- Access method used: NONE — could not access the Neon DB from this sandbox. Local `.env` has only the SQLite dev URL; no `psql`/`neon` CLI; no Neon env vars; no `.neon/` project link. Per the rules, I did NOT extract production secrets from Vercel.
+- Database/schema identity result: NOT RUN. The operator must run Query A in the Neon SQL Editor.
+- Existing token-index findings: NOT RUN. The operator must run Query B in the Neon SQL Editor.
+- Duplicate-token query result: NOT RUN. The operator must run Query C in the Neon SQL Editor.
+- Errors/target-identification uncertainty: The only "uncertainty" is that I cannot independently verify the previous worklog's Neon identifiers (project `snowy-bonus-94821464`, branch `production`, database `neondb`) — they are previous-agent claims. The operator should verify them in the Neon console before running the preflight.
+- Preflight classification: BLOCKED — credentials/access unavailable.
+- Explicit statement: NO database writes or migrations were performed. The 3 read-only queries were NOT executed because I have no Neon access from this sandbox. I did NOT touch the production database in any way.
+
+How to run the preflight (for the operator):
+1. Open the Neon console: https://console.neon.tech
+2. Select the project (per previous worklog: `snowy-bonus-94821464` — verify this is the correct project).
+3. Select the branch (per previous worklog: `production` — verify this is the branch the Vercel preview's `DATABASE_URL` points to).
+4. Open the SQL Editor for that branch.
+5. Run Query A (`SELECT current_database(), current_schema();`). Verify the result is `neondb, public`.
+6. Run Query B (the pg_indexes query). Verify the existing indexes match the expected list above. Confirm `Order_shop_tokenNumber_unique` does NOT exist yet.
+7. Run Query C (the duplicate-check query). Verify it returns ZERO rows.
+8. If all 3 queries pass → report the preflight as PASS and STOP. Request separate explicit production-database migration authorization before applying `prisma/pg-constraints.sql`.
+9. If Query A returns an unexpected database/schema → STOP and report.
+10. If Query C returns ANY duplicate rows → STOP. Do NOT apply the migration. Do NOT delete orders. Report the duplicate groups (shopId, tokenNumber, COUNT only).
+
+Do NOT declare the migration safe to execute until the actual preflight results are available. Even after a clean preflight, stop and request separate explicit production-database migration authorization before applying the migration.
