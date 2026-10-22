@@ -27,9 +27,24 @@ export class InMemoryCacheAdapter implements CacheAdapter {
   }
 
   async incr(key: string): Promise<number> {
+    // Read the current value via get() — this handles the expired-key
+    // case (deletes the entry + returns null if expired) so an incr on
+    // an expired key correctly starts a fresh counter at 1.
     const current = Number((await this.get(key)) ?? '0');
     const next = current + 1;
-    await this.set(key, String(next));
+    // Preserve the existing TTL — calling set() without a TTL arg would
+    // reset `expiresAt` to null, causing the rate-limit counter to never
+    // expire within the running process. Read the current entry (which
+    // get() has already validated as non-expired, or undefined if the key
+    // was just created/expired) and write the incremented value back with
+    // the SAME expiresAt. The caller is responsible for setting the TTL
+    // on a fresh key via expire() (e.g. the rate-limit code does
+    // `if (count === 1) await cache.expire(key, windowSeconds)`).
+    const existing = this.store.get(key);
+    this.store.set(key, {
+      value: String(next),
+      expiresAt: existing?.expiresAt ?? null,
+    });
     return next;
   }
 
