@@ -89,6 +89,24 @@ export class ShopRepository extends BaseRepository<ShopRow> {
     return row ? toDomain(row) : null;
   }
 
+  /** List active shops (public discovery). Does NOT return credentials. */
+  async listActive(limit = 20, offset = 0): Promise<Shop[]> {
+    const rows = await this.findMany(
+      { isActive: true },
+      { limit, offset, order: ['createdAt', 'desc'] },
+    );
+    return rows.map(toDomain);
+  }
+
+  /** List ALL shops (admin only). Includes inactive. */
+  async listAll(limit = 100, offset = 0): Promise<Shop[]> {
+    const rows = await this.findMany(
+      {},
+      { limit, offset, order: ['createdAt', 'desc'] },
+    );
+    return rows.map(toDomain);
+  }
+
   /** Get-or-throw helper for routes. */
   async getByOwner(ownerUserId: string): Promise<Shop> {
     const shop = await this.findByOwner(ownerUserId);

@@ -47,6 +47,12 @@ export class PrintAgentRepository extends BaseRepository<PrintAgentRow> {
     return rows.map(toDomain);
   }
 
+  /** List ALL agents (admin only). */
+  async listAll(limit = 200): Promise<PrintAgent[]> {
+    const rows = await this.findMany({}, { limit, order: ['createdAt', 'desc'] });
+    return rows.map(toDomain);
+  }
+
   async create(input: { shopId: string; name: string; tokenHash: string }): Promise<PrintAgent> {
     const now = new Date();
     const row = await this.insertOne({

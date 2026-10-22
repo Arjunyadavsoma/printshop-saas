@@ -68,8 +68,27 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     return rows.map(toDomain);
   }
 
+  /** List ALL orders across all shops (admin only). */
+  async listAll(opts: { status?: string; limit?: number; offset?: number } = {}): Promise<Order[]> {
+    const filter: Record<string, unknown> = {};
+    if (opts.status) filter.status = opts.status;
+    const rows = await this.findMany(filter, {
+      limit: opts.limit ?? 50,
+      offset: opts.offset ?? 0,
+      order: ['createdAt', 'desc'],
+    });
+    return rows.map(toDomain);
+  }
+
   async countByShop(shopId: string, status?: OrderStatus): Promise<number> {
     const filter: Record<string, unknown> = { shopId };
+    if (status) filter.status = status;
+    return this.countWhere(filter);
+  }
+
+  /** Count ALL orders (admin only). */
+  async countAll(status?: string): Promise<number> {
+    const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
     return this.countWhere(filter);
   }

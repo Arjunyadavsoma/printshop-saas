@@ -18,8 +18,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const container = getContainer();
 
     const user = await repos.users.verifyCredentials(body.email, body.password, container.auth);
-    if (!user.shopId) {
-      // Admins (no shop) can't log in via the shop-owner endpoint.
+    // Admins (role === 'admin') have no shopId — allow them to log in here so
+    // they can use the /admin portal. Shop-owner login still requires a shopId.
+    if (!user.shopId && user.role !== 'admin') {
       throw new UnauthorizedError('No shop associated with this account');
     }
 

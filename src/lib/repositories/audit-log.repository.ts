@@ -71,4 +71,20 @@ export class AuditLogRepository extends BaseRepository<AuditLogRow> {
       createdAt: r.createdAt,
     }));
   }
+
+  /** List recent audit entries across ALL shops (admin only). */
+  async listRecent(limit = 50): Promise<AuditLog[]> {
+    const rows = await this.findMany({}, { limit, order: ['createdAt', 'desc'] });
+    return rows.map((r) => ({
+      id: r.id,
+      shopId: r.shopId,
+      userId: r.userId,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      metadata: this.parseJson(r.metadata),
+      ip: r.ip,
+      createdAt: r.createdAt,
+    }));
+  }
 }
