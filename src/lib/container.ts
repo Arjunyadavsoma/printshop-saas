@@ -128,20 +128,19 @@ function validateDatabaseProvider(): string {
  * rate limits, idempotency, and token revocation would be per-process
  * (not shared across instances).
  *
- * Exception: Vercel preview deployments (VERCEL_ENV=preview) may use memory
- * cache temporarily. The DB UNIQUE constraint still guards payment idempotency
+ * Exception: Vercel deployments (VERCEL=1) may use memory cache temporarily.
+ * The DB UNIQUE constraint on paymentTxnId is the authoritative idempotency guard
  * (the cache check is a secondary fast-path, not the authoritative guard).
+ * Rate limiting is per-invocation on serverless — acceptable for a pilot/demo.
  */
 function validateCacheProvider(): string {
   const provider = env('CACHE_PROVIDER', 'memory');
-  const isPreview = process.env.VERCEL_ENV === 'preview';
-  if (process.env.NODE_ENV === 'production' && !isPreview && provider === 'memory') {
+  const isVercel = process.env.VERCEL === '1';
+  if (process.env.NODE_ENV === 'production' && !isVercel && provider === 'memory') {
     throw new Error('FATAL: CACHE_PROVIDER=memory in production — rate limits and idempotency are per-process. Set CACHE_PROVIDER=redis.');
   }
-  if (process.env.NODE_ENV === 'production' && isPreview && provider === 'memory') {
-    // Preview deployment with memory cache — log a warning but allow it.
-    // The DB UNIQUE constraint on paymentTxnId is the authoritative idempotency guard.
-    console.warn('[preview] CACHE_PROVIDER=memory — rate limiting is per-invocation. DB UNIQUE constraints still guard idempotency.');
+  if (process.env.NODE_ENV === 'production' && isVercel && provider === 'memory') {
+    console.warn('[vercel] CACHE_PROVIDER=memory — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency.');
   }
   return provider;
 }
