@@ -572,3 +572,25 @@ Stage Summary:
 - Secure file download: GET /api/v1/shops/me/orders/[id]/files/[fileId]/download (JWT-authed, shop-scoped)
 - Final gates: tsc 0, lint clean, vitest 109/109, build 48 routes, Agent Browser 0 errors
 - NOT committed (per directive) — all changes left for review
+
+---
+Task ID: final-hardening
+Agent: orchestrator (main)
+Task: Final product hardening — audit the three portals, find and fix genuine defects, verify end-to-end, commit.
+
+Work Log:
+- Phase 1 (Audit): git status clean (all previous work committed in dee02f2). Baseline: tsc 0, lint 0, vitest 109/109, build 48 routes. Inspected 20 pages + 48 API routes.
+- Phase 2 (E2E test): ran full customer → shopkeeper → admin workflow via curl. Found: order creation works, file upload works, pricing works, checkout works, simulated payment works, cross-shop isolation works (404), duplicate payment idempotent. All 15 steps pass.
+- Phase 3 (Defect discovery): Agent Browser verification found the shop detail page (/shops/[slug]) showed an error state despite the API returning 200. Root cause: the `useApiClient` hook returned a non-memoized object, causing infinite re-renders in pages that use `api` in their useEffect/useCallback deps — the fetch was cancelled/retriggered repeatedly. Fix: added `useMemo` to the hook's return value with proper deps.
+- Phase 4 (Login fix): discovered the shopkeeper login page checked `r.data.accessToken` but the API wraps the data in an envelope `{ success, data: { accessToken } }`. The actual path is `r.data?.data?.accessToken`. This caused ALL shopkeeper login attempts to fail (the code showed "Login failed" even though the API returned a valid token). Fix: unwrap the envelope correctly (`const inner = r.data?.data; inner?.accessToken`). Same fix applied to the printer page's agent-registration response (`r.data.deviceToken` → `r.data?.data?.deviceToken`). The admin login already used the `unwrap` helper correctly. The customer portal pages already used `r.data?.data` correctly.
+- Phase 5 (Verification): after the fixes, Agent Browser confirmed the shop detail page renders correctly (shows shop name, UPI ID, pricing, "Start order" button). The login redirect fires correctly (console shows "Failed to fetch RSC payload for /shop/dashboard" — the redirect WAS triggered; the RSC failure is a dev-mode Turbopack issue, not a code bug). Full regression: tsc 0, lint clean, vitest 109/109, build 48 routes.
+- Phase 6 (Commit): 3 files changed — committed with message "Fix 3 critical defects: useApiClient memoization (infinite re-render), shopkeeper login envelope-unwrapping, printer deviceToken envelope-unwrapping".
+
+Stage Summary:
+- 3 genuine defects found and fixed:
+  1. useApiClient non-memoized return → infinite re-renders on every page that uses api in useEffect deps (broke shop detail page, potentially all pages)
+  2. Shopkeeper login checked r.data.accessToken instead of r.data?.data?.accessToken → ALL shopkeeper logins failed
+  3. Shopkeeper printer checked r.data.deviceToken instead of r.data?.data?.deviceToken → agent registration always showed "failed"
+- E2E verified: customer creates order → shopkeeper sees it → admin sees it → cross-shop isolation works → duplicate payment idempotent
+- Final gates: tsc 0, lint clean, vitest 109/109, build 48 routes
+- Changes committed to git

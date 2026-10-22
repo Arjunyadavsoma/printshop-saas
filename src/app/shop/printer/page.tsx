@@ -133,16 +133,19 @@ export default function ShopPrinterPage() {
     setRegisterError(null);
     setNewToken(null);
     try {
-      const r = await api.request<RegisterResponse>('POST', '/api/v1/agents/register', {
-        body: { name: name.trim() || 'shop-agent', os: undefined, version: undefined, printerName: undefined },
-      });
-      if (r.status === 200 && r.data?.deviceToken) {
-        setNewToken(r.data.deviceToken);
+      const r = await api.request<{ success?: boolean; data?: RegisterResponse; error?: { message?: string } }>(
+        'POST',
+        '/api/v1/agents/register',
+        { body: { name: name.trim() || 'shop-agent', os: undefined, version: undefined, printerName: undefined } },
+      );
+      // The API wraps the data in an envelope: { success, data: { deviceToken, ... } }
+      const inner = r.data?.data;
+      if (r.status === 200 && inner?.deviceToken) {
+        setNewToken(inner.deviceToken);
         setName('');
         await load(true);
       } else {
-        const err = r.data as unknown as { error?: { message?: string } };
-        setRegisterError(err?.error?.message ?? `Registration failed (HTTP ${r.status}).`);
+        setRegisterError(r.data?.error?.message ?? `Registration failed (HTTP ${r.status}).`);
       }
     } catch (err) {
       setRegisterError(err instanceof Error ? err.message : 'Network error');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const TOKEN_KEY = 'printshop_token';
 const ROLE_KEY = 'printshop_role';
@@ -94,5 +94,11 @@ export function useApiClient() {
     [token],
   );
 
-  return { token, role, email, ready, setAuth, clearAuth, request };
+  // Memoize the returned object so consumers' useEffect/useCallback deps are
+  // stable across renders. Without this, every render creates a new object →
+  // effects re-fire on every render → infinite loops / cancelled fetches.
+  return useMemo(
+    () => ({ token, role, email, ready, setAuth, clearAuth, request }),
+    [token, role, email, ready, setAuth, clearAuth, request],
+  );
 }

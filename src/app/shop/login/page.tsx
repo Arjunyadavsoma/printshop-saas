@@ -53,20 +53,21 @@ export default function ShopLoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const r = await api.request<LoginResponse>('POST', '/api/v1/auth/login', {
-        body: { email, password },
-      });
-      if (r.status !== 200 || !r.data?.accessToken) {
-        const msg =
-          r.data && typeof r.data === 'object' && 'error' in r.data
-            ? String((r.data as { error?: { message?: string } }).error?.message ?? 'Login failed')
-            : 'Login failed — check your email and password.';
+      const r = await api.request<{ success?: boolean; data?: LoginResponse; error?: { message?: string } }>(
+        'POST',
+        '/api/v1/auth/login',
+        { body: { email, password } },
+      );
+      // The API wraps the data in an envelope: { success, data: { accessToken, user } }
+      const inner = r.data?.data;
+      if (r.status !== 200 || !inner?.accessToken) {
+        const msg = r.data?.error?.message ?? 'Login failed — check your email and password.';
         setError(msg);
         return;
       }
-      const accessToken = r.data.accessToken;
-      const role = r.data.user?.role ?? 'owner';
-      const emailVal = r.data.user?.email ?? email;
+      const accessToken = inner.accessToken;
+      const role = inner.user?.role ?? 'owner';
+      const emailVal = inner.user?.email ?? email;
       api.setAuth(accessToken, role, emailVal);
 
       // Route by role: admins go to the platform admin portal; owners stay here.
