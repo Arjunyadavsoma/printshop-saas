@@ -33,6 +33,7 @@ import {
   SocketIoRelayRealtimeAdapter,
   R2StorageAdapter,
   S3StorageAdapter,
+  DisabledStorageAdapter,
   UpstashCacheAdapter,
 } from '@platform/adapters';
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
@@ -89,13 +90,16 @@ function requireSecret(key: string): string {
  * In dev, memory storage is the default and is fine.
  *
  * Supported production providers:
- *   - 's3'  → S3StorageAdapter (Neon Object Storage, AWS S3, MinIO, etc.)
- *   - 'r2'  → R2StorageAdapter  (Cloudflare R2)
+ *   - 's3'       → S3StorageAdapter (Neon Object Storage, AWS S3, MinIO, etc.)
+ *   - 'r2'       → R2StorageAdapter  (Cloudflare R2)
+ *   - 'disabled' → DisabledStorageAdapter (uploads explicitly unavailable —
+ *                  the app runs but file upload/download returns a clear error.
+ *                  Use this when S3/R2 credentials are not yet verified.)
  */
 function validateStorageProvider(): string {
   const provider = env('STORAGE_PROVIDER', 'memory');
   if (process.env.NODE_ENV === 'production' && provider === 'memory') {
-    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=s3 or STORAGE_PROVIDER=r2.');
+    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=s3, STORAGE_PROVIDER=r2, or STORAGE_PROVIDER=disabled.');
   }
   return provider;
 }
@@ -123,11 +127,21 @@ function validateDatabaseProvider(): string {
  * Fail-fast in production if CACHE_PROVIDER is 'memory' —
  * rate limits, idempotency, and token revocation would be per-process
  * (not shared across instances).
+ *
+ * Exception: Vercel preview deployments (VERCEL_ENV=preview) may use memory
+ * cache temporarily. The DB UNIQUE constraint still guards payment idempotency
+ * (the cache check is a secondary fast-path, not the authoritative guard).
  */
 function validateCacheProvider(): string {
   const provider = env('CACHE_PROVIDER', 'memory');
-  if (process.env.NODE_ENV === 'production' && provider === 'memory') {
+  const isPreview = process.env.VERCEL_ENV === 'preview';
+  if (process.env.NODE_ENV === 'production' && !isPreview && provider === 'memory') {
     throw new Error('FATAL: CACHE_PROVIDER=memory in production — rate limits and idempotency are per-process. Set CACHE_PROVIDER=redis.');
+  }
+  if (process.env.NODE_ENV === 'production' && isPreview && provider === 'memory') {
+    // Preview deployment with memory cache — log a warning but allow it.
+    // The DB UNIQUE constraint on paymentTxnId is the authoritative idempotency guard.
+    console.warn('[preview] CACHE_PROVIDER=memory — rate limiting is per-invocation. DB UNIQUE constraints still guard idempotency.');
   }
   return provider;
 }
@@ -202,7 +216,8 @@ function buildContainer(): Container {
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
       bucket: env('R2_BUCKET'),
-    }) : new InMemoryStorageAdapter();
+    }) : storageProvider === 'disabled' ? new DisabledStorageAdapter()
+    : new InMemoryStorageAdapter();
 
   // Cache
   const cache: CacheAdapter =

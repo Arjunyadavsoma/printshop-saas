@@ -3,6 +3,7 @@ export * from './database/supabase.adapter';
 export * from './storage/in-memory.adapter';
 export * from './storage/r2.adapter';
 export * from './storage/s3.adapter';
+export * from './storage/disabled.adapter';
 export * from './cache/in-memory.adapter';
 export * from './cache/upstash.adapter';
 export * from './realtime/in-memory.adapter';
