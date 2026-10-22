@@ -932,3 +932,133 @@ Recommendation: NOT YET PRODUCTION-READY — the local code is verified and the 
 After authorization + execution + Vercel rebuild verification, the deployment would be production-ready for the pilot scope (UPI deep-link + manual shopkeeper verification). PhonePe/Paytm + global rate limiting remain blocked on paid infrastructure decisions (Upstash Redis + PSP sandbox credentials) that are NOT required for the pilot launch.
 
 No destructive migrations performed. No customer data altered. No real payments made. No production configuration changed without authorization. The 125 original tests were NOT weakened.
+
+---
+Task ID: authorized-deployment-verification
+Agent: orchestrator (main)
+Task: Authorized deployment, Neon migration, and live verification. Authorization boundary: inspect + test + prepare only. NO push, NO DB writes, NO promotion without explicit operator authorization.
+
+Work Log:
+- Phase 1 — Inspect current state:
+  - Branch: `main`. Working tree: CLEAN (after `git config core.fileMode false` to ignore the file-mode drift from the Write tool's umask).
+  - Commit history: HEAD = `424eeaa` (auto-commit, contains only `.zscripts/dev.pid` mtime change + worklog.md append from previous turn). Parent = `6f71a62` (the actual code changes: 12 files, 1260 insertions, 27 deletions).
+  - **STATE DISCREPANCY vs. the previous report**: the previous report said HEAD = `6f71a62`. The actual HEAD is now `424eeaa` (a new auto-commit landed after the previous report). Investigated `424eeaa` — it contains ONLY benign changes (dev.pid + worklog.md append), NO unrelated user changes, NO code changes. Explained the discrepancy before proceeding, per the user's instruction.
+  - Local vs origin/main: local is 2 commits ahead (`6f71a62` + `424eeaa`), 0 commits behind. Both unpushed.
+  - Files in `6f71a62` (the code commit): docs/RATE_LIMITING.md, docs/REALTIME_AND_STATE.md, prisma/pg-constraints.sql, prisma/schema.prisma, src/app/api/v1/orders/[id]/files/route.ts, src/app/api/v1/shops/[slug]/orders/route.ts, src/app/api/v1/shops/me/orders/[id]/activity/route.ts, src/lib/repositories/{constrained-memory.adapter.ts, errors.ts, order-token-concurrency.test.ts, order.repository.ts}, worklog.md. All intended changes, no unrelated code.
+  - Vercel deployment commit: built at timestamp 1792707647 (~Oct 22 20:40 UTC) — BEFORE my `6f71a62` (~21:05 UTC). The deployed preview is on the PREVIOUS deploy. Confirmed by `x-vercel-id: hkg1::84mj5-1792707647350-...` header.
+  - prisma/schema.prisma: `@@unique([shopId, tokenNumber])` on Order (verified).
+  - prisma/pg-constraints.sql: `Order_shop_tokenNumber_unique` partial unique index on `("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL` (verified).
+  - scripts/pg-migrate-prod.sh: generates plain `CREATE TABLE` (not `IF NOT EXISTS`) — UNSAFE for the existing Neon DB; would fail on the first CREATE TABLE.
+
+- Phase 2 — Review Neon migration (pg-constraints.sql) against the 8 criteria:
+  1. Targets existing PostgreSQL schema + correct table/column names: ✓ — table="Order", columns=("shopId", "tokenNumber"), all match the Prisma schema. PostgreSQL-specific (DO $$ blocks, partial index).
+  2. Does not recreate tables or drop existing data: ✓ — only `DROP INDEX IF EXISTS` (drops an index, not a table) + `CREATE UNIQUE INDEX`. No DROP TABLE, no ALTER TABLE, no DELETE.
+  3. Checks for duplicate non-null (shopId, tokenNumber) values before adding uniqueness: ✓ — `DO $$ ... SELECT COUNT(*) FROM (... HAVING COUNT(*) > 1) ... END $$;` block runs BEFORE the CREATE.
+  4. Stops safely if duplicate tokens exist: ✓ — `RAISE EXCEPTION 'Cannot create Order_shop_tokenNumber_unique: % ...' USING ERRCODE = 'unique_violation'` aborts the migration with a clear error naming the duplicate count.
+  5. Adds the intended unique index on (shopId, tokenNumber): ✓ — `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL`.
+  6. Handles existing null token values appropriately: ✓ — the `WHERE "tokenNumber" IS NOT NULL` clause excludes NULL rows entirely. Multiple NULL tokenNumbers coexist (legacy + fallback orders).
+  7. Can be safely rerun or detects an already-existing equivalent index: ✓ — `DROP INDEX IF EXISTS "Order_shop_tokenNumber_unique"` first, then `CREATE UNIQUE INDEX`. Idempotent.
+  8. Does not silently ignore an invalid or incorrectly defined existing index: ✓ — `DROP INDEX IF EXISTS` drops by NAME; if a same-named index with wrong definition exists, it's dropped and recreated correctly. If a DIFFERENTLY-named index with the same columns exists (e.g. prisma-generated `Order_shopId_tokenNumber_key`), both coexist — slightly wasteful but not incorrect, not a silent ignore.
+  - Schema agreement: ✓ — schema.prisma `@@unique([shopId, tokenNumber])` (full UNIQUE) ↔ pg-constraints.sql partial unique index. Both enforce the same invariant; PostgreSQL treats NULLs as distinct in UNIQUE constraints so the partial WHERE clause is functionally equivalent to the full UNIQUE for this case.
+  - Migration preflight: NOT performed against Neon — Neon credentials are NOT available locally (the .env has the SQLite dev URL only; the Neon production DATABASE_URL is stored on Vercel). Cannot perform read-only checks from this sandbox.
+  - What the operator must check (read-only) before applying the migration:
+    ```sql
+    -- 1. Confirm target database + schema:
+    SELECT current_database(), current_schema();  -- expect: neondb, public
+    -- 2. List existing indexes on the Order table (look for the OLD ordinary index):
+    SELECT indexname, indexdef FROM pg_indexes WHERE tablename='Order';
+    -- 3. Pre-flight duplicate check (MUST return 0 rows):
+    SELECT "shopId", "tokenNumber", COUNT(*)
+    FROM "Order" WHERE "tokenNumber" IS NOT NULL
+    GROUP BY "shopId", "tokenNumber"
+    HAVING COUNT(*) > 1;
+    ```
+    If step 3 returns ANY rows, STOP. Do NOT apply the migration. Remediate duplicates first (rename or NULL out — never DELETE customer orders).
+
+- Phase 3 — Prepare the GitHub push (release checks):
+  - `bunx tsc --noEmit`: exit 0 (cleaned up `tmp/e2e-final-verify.ts` which had top-level-await TS errors that polluted the result).
+  - `bun run lint`: exit 0, 0 warnings, 0 errors.
+  - `bunx vitest run`: 15 test files, 138/138 tests pass (125 original + 13 new order-token concurrency tests).
+  - Production build (`bun run build`): NOT RUN — the project sandbox rules forbid it (per the system prompt: "never use `bun run build`"). The dev server + tsc + lint + vitest cover everything except the production build artifact itself.
+  - Per the authorization boundary, NO push performed. Exact command for the operator:
+    ```bash
+    git push origin main
+    ```
+    This pushes 2 commits: `6f71a62` (code) + `424eeaa` (worklog + dev.pid). Pushing triggers a Vercel rebuild of the preview at https://printshop-saas-three.vercel.app.
+
+- Phase 4 — Verify Vercel deployment after push: SKIPPED — no push has occurred (no authorization). The deployed Vercel preview is on the PREVIOUS deploy (commit before `6f71a62`). The deployed /api/v1/ready returns HTTP 200 with healthy Neon + Supabase, but the deployed Order-creation route uses the OLD count-then-check-then-insert TOCTOU algorithm; the deployed Neon DB does NOT have the Order_shop_tokenNumber_unique partial unique index.
+
+- Phase 5 — Apply Neon migration only with authorization: SKIPPED — no DB-write authorization given. The migration file (pg-constraints.sql) has NOT been modified since Phase 2's review. The operator's safe command (after authorization + Phase 2 preflight passes):
+    ```bash
+    # Authorize + export DATABASE_URL (Neon pooled connection string), then:
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql
+    ```
+    `ON_ERROR_STOP=1` ensures any SQL failure (e.g. the pre-flight duplicate check raising) aborts the migration rather than silently continuing. Do NOT use `scripts/pg-migrate-prod.sh` against the existing Neon DB — it generates plain `CREATE TABLE` statements that would fail on existing tables.
+
+- Phase 6 — Verify production index: SKIPPED — no migration applied. The verification query for the operator (after Phase 5):
+    ```sql
+    SELECT indexname, indexdef
+    FROM pg_indexes
+    WHERE tablename = 'Order'
+      AND indexname = 'Order_shop_tokenNumber_unique';
+    -- Expected: CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order"
+    --           USING btree ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL
+    ```
+    Also verify: `SELECT COUNT(*) FROM "Order";` (must match pre-migration count — no rows lost); `SELECT COUNT(*) FROM "Order" WHERE "tokenNumber" IS NOT NULL;` (must match pre-migration count — no tokens renamed); `SELECT "shopId", "tokenNumber", COUNT(*) FROM "Order" WHERE "tokenNumber" IS NOT NULL GROUP BY "shopId", "tokenNumber" HAVING COUNT(*) > 1;` (must return 0 rows — no duplicates introduced).
+
+- Phase 7 — Live smoke tests (local dev server — has the new code):
+  Test accounts used: `owner@quickprint.demo`, `owner@copycenter.demo`, `admin@printshop.demo` (all password: `demo1234` — dedicated demo accounts). Test orders identified by `notes` containing "SMOKE7" + `customerPhone: +919999900000` (dedicated test phone). Cleanup: deleted ONLY SMOKE7-tagged orders (verified 9 test orders created + cleaned in run 1; 8 created + cleaned in run 2).
+  - 1. Registration + login: ✓ all 3 demo accounts log in with correct roles (owner/owner/admin).
+  - 2. Shop profile + settings: ✓ GET /api/v1/shops/me returns full shop with new fields (servicesJson, paymentInstructions, etc.).
+  - 3. Customer shop page + ordering QR: ✓ GET /api/v1/shops/quickprint works; GET /api/v1/shops/me/qr returns PNG data URL + customerUrl ending with `/<slug>` (the public shop page URL).
+  - 4. Order creation + token display: ✓ POST /api/v1/shops/quickprint/orders returns orderId + non-null tokenNumber + customerToken.
+  - 5. Order visible in correct dashboard: ✓ test order appears in owner@quickprint.demo's /api/v1/shops/me/orders with the correct token.
+  - 6. Cross-shop access denied: ✓ test order NOT in owner@copycenter.demo's dashboard; cross-shop verify-payment returns 404 (same error as a non-existent order — no cross-tenant leak).
+  - 7. Payment claims remain unverified until authorized confirmation: ✓ order created → status awaiting_payment → paidAt null (NOT auto-paid). The customer has NO endpoint to submit a payment claim; the shopkeeper must call verify-payment with `['owner']` role.
+  - 8. Payment + order-processing states remain independent: ✓ verify → paid → start → printing → ready → re-fetch shows paymentTxnId/paymentUtr/paidAt PRESERVED across status transitions (payment status is separate from order status).
+  - 9. Customer file access private: ✓ unauthenticated GET /api/v1/orders/:id/files returns 405 (no GET handler — only POST for file registration); authenticated download of non-existent file returns 404 (not 500 — no internal leak).
+  - 10. UPI QR upload endpoint: ✓ GET /api/v1/shops/me/upi-qr returns 404 (no QR uploaded yet) or 200 (if one exists). The actual upload flow against deployed Supabase Storage is UNTESTED in this session — would need a real image + the deployed provider credentials.
+  - Concurrency: ✓ 8 concurrent POST /api/v1/shops/quickprint/orders (Promise.all) → 8 unique non-null tokens (A012, A014, A016, A017, A018, A019, A022, A024). The gaps in the sequence (A013, A015, A020, A021, A023 missing) are the retry candidates that collided and were retried with higher sequence numbers — the expected race-safe behavior. Created in 928ms.
+  - **REAL BUG FOUND**: the InMemoryCacheAdapter's `incr()` method calls `set()` without a TTL, which RESETS `expiresAt` to null (never expires). After the rate-limit counter exceeds the limit (20/60s for create-order), it stays elevated forever in the local dev server's process — until the dev server restarts. On Vercel production, this is mitigated by short Lambda lifetimes (per-invocation cache), but it's a real bug worth fixing. NOT fixed in this session — it's a pre-existing issue, not introduced by my changes, and the user said "avoid unrelated refactoring".
+  - 27/29 smoke tests pass on first run; 2 failures were wrong test expectations (not app bugs): (a) the /status endpoint doesn't return a `paid` boolean field — it returns `paidAt: null` (the "is paid" indicator is `paidAt !== null`); (b) the /api/v1/orders/:id/files route only has POST (no GET handler) — returns 405, not 401. Corrected the test expectations; the corrected run passed 27/27 + the concurrency retry passed 8/8.
+  - Agent Browser smoke test: home page + customer shop page (shops/quickprint) both render correctly with sticky footer.
+
+- Phase 8 — Final report:
+  - Code and tests: ✓ LOCALLY VERIFIED — tsc 0 errors, lint 0 warnings, vitest 138/138 pass, Agent Browser renders customer pages.
+  - GitHub: ✗ NOT PUSHED — no explicit authorization. Operator command: `git push origin main` (pushes 6f71a62 + 424eeaa).
+  - Vercel: ✗ Deployed commit is from BEFORE 6f71a62 (built at timestamp 1792707647 ~20:40 UTC; my code commit is at ~21:05 UTC). The Vercel preview is alive (HTTP 200 on /, /api/v1/ready, /api/v1/shops) with healthy Neon (latency 1256ms) + Supabase (latency 412ms), but runs the OLD code without race-safe order-token allocation.
+  - Neon migration: ✗ NOT APPLIED — no DB-write authorization. The migration file (pg-constraints.sql) is reviewed and safe (additive + idempotent + pre-flight duplicate check).
+  - Unique index: ✗ NOT VERIFIED in the actual target database — no migration applied. The verification query is provided for the operator.
+  - Existing data preservation: ✓ LOCALLY VERIFIED — re-fetched orders after the concurrency test; all pre-existing order IDs remain. The migration script's pre-flight check aborts (does NOT delete/rewrite) if duplicates exist.
+  - Live smoke tests: ✓ PASSED (27/27 + concurrency 8/8) — locally verified against the dev server (which has the new code). Not tested against the deployed Vercel preview (no auth to push the new code).
+  - Payment integrations: ⚠ SIMULATED — PhonePe/Paytm webhook signature verification uses real crypto (sha256 + AES-128-CBC) against fixture payloads (7 vitest tests pass); real provider verification is UNTESTED (no sandbox credentials). UPI deep-link + manual shopkeeper verification are the production paths (no provider integration needed).
+  - Remaining limitations:
+    1. Push to GitHub not authorized (operator must run `git push origin main`).
+    2. Neon migration not authorized (operator must run `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql` after Phase 2 preflight).
+    3. PhonePe/Paytm sandbox credentials not configured (only simulated).
+    4. Upstash Redis not configured (rate limiting is per-invocation on Vercel; DB UNIQUE guards the dangerous races).
+    5. InMemoryCacheAdapter's `incr()` doesn't preserve TTL — pre-existing bug, NOT introduced by my changes, NOT fixed in this session (would be unrelated refactoring).
+    6. Production UPI QR upload flow against deployed Supabase not tested end-to-end (would need shopkeeper credentials for production).
+
+Stage Summary:
+- The local code is verified clean (tsc 0, lint 0, vitest 138/138, 27/27 smoke + 8/8 concurrency).
+- The Vercel preview is alive but on the PREVIOUS deploy (does NOT have my race-safe changes).
+- The Neon DB does NOT have the Order_shop_tokenNumber_unique partial unique index.
+- The migration script is reviewed + safe (additive + idempotent + pre-flight duplicate check aborts on collision).
+- No push, no migration, no production promotion performed — no explicit authorization given.
+- No destructive migrations. No customer data altered. No real payments made. The 138 tests were NOT weakened.
+
+Release decision: NOT YET READY FOR AN AUTHORIZED PILOT — the local code is verified race-safe + secure, BUT:
+- The deployed Vercel preview does NOT contain commit 6f71a62 (the race-safe order-token allocation).
+- The Neon DB does NOT have the Order_shop_tokenNumber_unique partial unique index.
+- The production migration has NOT been applied.
+
+To bring production to the verified state, the operator must explicitly authorize + execute:
+1. `git push origin main` (triggers Vercel rebuild with the race-safe code).
+2. After Vercel rebuild completes, run the Phase 2 preflight (read-only SELECTs against Neon).
+3. If the preflight returns 0 duplicates, apply the migration:
+   `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql`
+4. Run the Phase 6 verification query against Neon to confirm the index exists with the correct definition.
+5. Re-run the Phase 7 live smoke tests against the DEPLOYED Vercel preview (now with the new code) to confirm end-to-end behavior.
+
+After all 5 steps complete successfully, the deployment is READY FOR AN AUTHORIZED PILOT (UPI deep-link + manual shopkeeper verification scope). PhonePe/Paytm + global rate limiting remain blocked on paid infrastructure decisions (Upstash Redis + PSP sandbox credentials) that are NOT required for the pilot launch.
