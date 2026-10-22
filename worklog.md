@@ -1505,3 +1505,77 @@ Recommendation for the operator:
 5. The production storage (Supabase) remains healthy and active. There is NO urgency to switch to Neon S3 — it's a cost/feature tradeoff, not a blocker for the pilot launch.
 
 Explicit statement: No buckets created. No objects uploaded (PutObject returned 403). No production config changed. No credentials written to any file. No storage provider switch. The production Supabase storage is still healthy and active. The Neon S3 service is still not reachable behind the ELB — this is the same blocker as before, with different credentials.
+
+---
+Task ID: neon-preflight-executed
+Agent: orchestrator (senior database release engineer)
+Task: Step 3 (re-attempt) — Run the 3 read-only preflight queries against the Neon production DB. Operator provided the connection string. Do not print the connection string, write it to any file, or run any writes/migrations.
+
+Work Log:
+- Operator provided the Neon production DATABASE_URL connection string in chat. I used it as an inline env-var prefix for the preflight script — I did NOT write it to any file (.env, vercel.json, etc.) and did NOT echo it in any output. The password is NOT persisted.
+- Used the `pg` package (already in the project's dependencies: `"pg": "^8.23.1"`) via a Bun script — no `psql` installation needed (sudo not available in the sandbox).
+- The connection succeeded. SSL is active (sslmode=require). A deprecation warning printed about libpq SSL mode compatibility (informational only — the connection still worked).
+
+- Query A — Verify database identity (read-only SELECT):
+  - `SELECT current_database(), current_schema();`
+  - Result: `current_database: neondb`, `current_schema: public`
+  - ✓ Matches the expected identity (per previous worklog: project snowy-bonus-94821464, branch production, database neondb, schema public).
+
+- Query B — Inspect existing Order indexes (read-only SELECT):
+  - `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'Order';`
+  - Result: 5 indexes on the "Order" table:
+    1. `Order_pkey` — UNIQUE on `id` (primary key)
+    2. `Order_paymentTxnId_key` — UNIQUE on `paymentTxnId` (webhook replay guard — from previous deploy)
+    3. `Order_customerToken_idx` — ordinary on `customerToken` (customer status poll)
+    4. `Order_shopId_status_idx` — ordinary on `(shopId, status)` (dashboard queries)
+    5. `Order_shopId_tokenNumber_idx` — ordinary on `(shopId, tokenNumber)` (from the previous deploy's `@@index([shopId, tokenNumber])` — NOT unique)
+  - `Order_shop_tokenNumber_unique` does NOT exist yet → the migration will CREATE it.
+  - The old ordinary `Order_shopId_tokenNumber_idx` exists → it will coexist with the new partial unique index (slightly redundant but harmless — the migration doesn't drop it).
+
+- Query C — Check for duplicate non-null (shopId, tokenNumber) (read-only SELECT):
+  - `SELECT "shopId", "tokenNumber", COUNT(*) FROM "Order" WHERE "tokenNumber" IS NOT NULL GROUP BY "shopId", "tokenNumber" HAVING COUNT(*) > 1;`
+  - Result: **0 duplicate groups** (zero rows returned).
+  - ✓ The migration's pre-flight DO $$ block would NOT abort — the CREATE UNIQUE INDEX will succeed.
+
+- Bonus — Data integrity counts (read-only COUNT queries, for the operator's situational awareness):
+  - Total orders in the Order table: 6
+  - Orders with non-null tokenNumber: 1
+  - Orders with NULL tokenNumber: 5 (legacy/fallback orders — these are excluded from the partial unique index by the WHERE "tokenNumber" IS NOT NULL clause, so they coexist fine)
+  - No customer PII was printed (no customerPhone, no notes, no email — only shopId, tokenNumber, and counts).
+
+- What I did NOT do:
+  - Did NOT write the connection string to any file (.env, vercel.json, scripts, etc.).
+  - Did NOT persist the connection string to the shell environment (inline env-var prefix, scoped to the single bun command).
+  - Did NOT echo the connection string or password in any output.
+  - Did NOT run any writes (INSERT/UPDATE/DELETE).
+  - Did NOT run any schema changes (CREATE/DROP/ALTER).
+  - Did NOT run `prisma/pg-constraints.sql` (the migration is NOT applied — requires separate explicit authorization).
+  - Did NOT run `scripts/pg-migrate-prod.sh` (unsuitable for the existing Neon DB — generates plain CREATE TABLE that would fail on existing tables).
+  - Did NOT delete or modify any customer orders.
+  - Cleaned up the temp script (/tmp/neon-preflight.ts) after use.
+
+Stage Summary:
+- Access method used: Bun script with the `pg` package (v8.23.1) connecting to Neon via the operator-provided DATABASE_URL (inline env-var prefix — not written to any file).
+- Database/schema identity result: ✓ PASS — `current_database()=neondb`, `current_schema()=public` (matches expected).
+- Existing token-index findings: ✓ PASS — 5 indexes on the Order table. `Order_shop_tokenNumber_unique` does NOT exist yet (migration will create it). The old ordinary `Order_shopId_tokenNumber_idx` exists (will coexist — harmless).
+- Duplicate-token query result: ✓ PASS — 0 duplicate groups (zero rows). Migration is safe to apply.
+- Errors/target-identification uncertainty: NONE. The connection succeeded. The database identity matches. The duplicate check is clean.
+- Preflight classification: **PASS — zero duplicate groups and correct target confirmed.**
+- Explicit statement: NO database writes or migrations were performed. Only 3 read-only SELECT queries (+ 3 bonus COUNT queries for data integrity) were executed. The connection string was used inline and not persisted to any file or echoed in output.
+
+Next step (per the rules):
+- STOP. The preflight PASS does NOT authorize the migration.
+- Request separate explicit production-database migration authorization from the operator.
+- Only after explicit authorization, run:
+  ```bash
+  DATABASE_URL='<the Neon connection string>' psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql
+  ```
+  OR (since psql isn't installed locally) an equivalent via the pg package / the Neon SQL Editor:
+  - Open the Neon SQL Editor for project snowy-bonus-94821464, branch production
+  - Paste the contents of `prisma/pg-constraints.sql`
+  - Run it (it will DROP INDEX IF EXISTS + pre-flight duplicate check + CREATE UNIQUE INDEX)
+- After the migration, verify the index exists with the correct definition:
+  ```sql
+  SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'Order' AND indexname = 'Order_shop_tokenNumber_unique';
+  ```
+  Expected: `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" USING btree ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL`
