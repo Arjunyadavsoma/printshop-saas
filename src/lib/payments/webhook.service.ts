@@ -260,31 +260,69 @@ export async function enqueuePaidOrderPrint(orderId: string, shopId: string): Pr
   const files = await repos.files.findByOrder(orderId);
   const pending = files.filter((f) => f.status === 'pending' || f.status === 'queued');
   for (const f of pending) {
-    // IDEMPOTENT JOB CREATION: if a PrintJob already exists for this file
-    // (queued or printing — from a previous webhook delivery / retry after
-    // a crash), do NOT create a duplicate. This is the "exactly-once
-    // paid-order/job creation" guarantee: the order flip is idempotent via
-    // UNIQUE(paymentTxnId), and job creation is idempotent via this check.
-    // A 'completed' or 'needs_review' job does NOT block — a shopkeeper
-    // manually re-queuing a file SHOULD get a new PrintJob.
+    // IDEMPOTENT JOB CREATION — two-layer guard:
+    //
+    // Layer 1 (application, fast path): check findActiveByFile() before
+    // inserting. Handles the common case (sequential retry) without
+    // needing to catch a DB error.
+    //
+    // Layer 2 (database, race-safe): a PostgreSQL partial unique index
+    // (PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status
+    // IN ('queued','printing')) enforces that at most one ACTIVE job per
+    // file exists. If two concurrent calls both pass Layer 1 (both observe
+    // no active job) and both INSERT, the DB rejects the second with a
+    // unique constraint violation (Prisma P2002 / Postgres 23505). We catch
+    // it and treat the existing job as the winner (re-dispatch, no dup).
+    //
+    // 'completed' and 'needs_review' jobs do NOT block — a shopkeeper
+    // manually re-queuing a file SHOULD get a new PrintJob (the partial
+    // index's WHERE clause excludes these statuses).
     const existing = await repos.printJobs.findActiveByFile(f.id);
     if (existing) {
-      // A PrintJob already exists — re-dispatch (the agent may have missed
-      // the realtime event) but do NOT create a new job.
       await dispatchToAgent(shopId, existing.id, f.id);
       continue;
     }
-    // Create the PrintJob row (status='queued') — this IS the durable queue.
-    // The agent polls GET /agents/jobs/pending to discover it.
-    const job = await repos.printJobs.create({ shopId, fileId: f.id });
-    // In dev: enqueue to the in-memory queue for the in-process simulation.
-    if (process.env.NODE_ENV !== 'production') {
-      await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
+    try {
+      const job = await repos.printJobs.create({ shopId, fileId: f.id });
+      if (process.env.NODE_ENV !== 'production') {
+        await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
+      }
+      await dispatchToAgent(shopId, job.id, f.id);
+    } catch (e) {
+      // Layer 2: a concurrent call won the INSERT — treat as idempotent.
+      if (isUniqueConstraintError(e)) {
+        const winner = await repos.printJobs.findActiveByFile(f.id);
+        if (winner) {
+          await dispatchToAgent(shopId, winner.id, f.id);
+        }
+        // If winner is null here, the concurrent job was claimed + advanced
+        // past 'printing' between our INSERT-fail and this re-check — that's
+        // fine, the agent is already handling it.
+        continue;
+      }
+      throw e; // re-throw non-unique-constraint errors (real failures)
     }
-    // Push to the agent via realtime (it claims + prints + reports status).
-    await dispatchToAgent(shopId, job.id, f.id);
   }
   if (pending.length > 0) {
     await repos.orders.update(orderId, { status: 'printing' });
   }
+}
+
+/**
+ * Detect a unique-constraint violation from Prisma (P2002) or the raw
+ * PostgreSQL driver (code 23505). Used by enqueuePaidOrderPrint to handle
+ * the concurrent-INSERT race on the partial unique index.
+ */
+function isUniqueConstraintError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const err = e as { code?: string; message?: string };
+  // Prisma P2002 = unique constraint violation
+  if (err.code === 'P2002') return true;
+  // PostgreSQL SQLSTATE 23505 = unique_violation
+  if (err.code === '23505') return true;
+  // Fallback: check the message (some adapters surface it as a string)
+  if (typeof err.message === 'string') {
+    return /unique constraint/i.test(err.message) || /duplicate key/i.test(err.message);
+  }
+  return false;
 }

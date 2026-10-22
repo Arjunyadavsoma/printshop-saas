@@ -347,7 +347,7 @@ rate-limited, no DB, no secrets — safe for production).
 | `bun install` | ✅ PASS (exit 0) |
 | `bunx tsc --noEmit` | ✅ PASS (exit 0, 0 errors) |
 | `bun run lint` | ✅ PASS (exit 0, clean) |
-| `bunx vitest run` | ✅ PASS (exit 0, **104/104** tests across 12 files) |
+| `bunx vitest run` | ✅ PASS (exit 0, **109/109** tests across 13 files) |
 | `NODE_ENV=production next build` | ✅ PASS (exit 0, 39 routes) |
 | **Local PostgreSQL (PGlite / in-memory)** | |
 | Pricing engine (35 tests) | ✅ PASS |
@@ -362,12 +362,16 @@ rate-limited, no DB, no secrets — safe for production).
 | R2 head() distinguishes missing/permission/provider errors (7 tests) | ✅ PASS |
 | Webhook audit logging — no raw body/checksum/creds (4 tests) | ✅ PASS |
 | Dev-route protection — requireDev() + static check (5 tests) | ✅ PASS |
-| **Idempotent PrintJob creation** — no duplicate on retry (5 tests) | ✅ PASS |
+| **Idempotent PrintJob creation** — sequential + P2002-catching (6 tests) | ✅ PASS |
+| **Production SQL logging guard** — db.ts static check (4 tests) | ✅ PASS |
 | **Real PostgreSQL 17.11 (user-space, disposable)** | |
-| Schema migration (DDL applied) | ✅ PASS (8 tables, 21 indexes, 9 FKs, 4 unique constraints) |
-| **Production migration script** (`scripts/pg-migrate-prod.sh`) | ✅ PASS (generates PG-native DDL, applies, records baseline, verifies) |
+| Schema migration (DDL applied) | ✅ PASS (8 tables, 22 indexes, 9 FKs, 4 unique constraints + 1 partial unique) |
+| **Production migration script** (`scripts/pg-migrate-prod.sh`) | ✅ PASS (generates PG-native DDL, applies constraints, records baseline, verifies) |
+| **Partial unique index** (`PrintJob_active_file_unique`) | ✅ PASS (database-enforced idempotency invariant) |
+| **Second migration (diff approach)** | ✅ PASS (new column added, baseline intact, partial unique preserved) |
 | Integration test (54 assertions) | ✅ PASS |
 | Independent-connection concurrency (23 assertions, 2 TCP processes) | ✅ PASS |
+| **PrintJob concurrency invariant (19 assertions, 6 scenarios, 2-3 TCP)** | ✅ PASS (C1 same-file race, C2 different-files, C3 three-way race, C4 reprint-after-completed, C5 needs_review-allows-new, C6 printing-blocks) |
 | PG unavailability + recovery (7 assertions) | ✅ PASS (app fails loudly, recovers) |
 | E2E flow (34 assertions, real X-VERIFY crypto) | ✅ PASS |
 | pg_dump backup + restore | ✅ PASS |

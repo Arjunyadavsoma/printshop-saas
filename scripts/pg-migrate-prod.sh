@@ -103,9 +103,26 @@ echo "  ... (full DDL at $DDL_FILE)" >&2
 echo ""
 
 # ── 4. Apply the DDL via psql (idempotent — CREATE SCHEMA IF NOT EXISTS) ──
-echo "→ Applying DDL to $PSQL_URL ..."
+# NOTE: do NOT print $PSQL_URL — it may contain a password. Print a redacted form.
+SAFE_URL=$(echo "$PSQL_URL" | sed -E 's#://([^:]+):[^@]+@#://\1:***@#')
+echo "→ Applying DDL to $SAFE_URL ..."
 psql "$PSQL_URL" -v ON_ERROR_STOP=1 -q -f "$DDL_FILE"
 echo "  DDL applied."
+
+# ── 4b. Apply PostgreSQL-specific constraints (partial unique indexes) ──
+# Prisma can't express partial unique indexes in schema.prisma. This file
+# adds the database-enforced invariant: at most one ACTIVE (queued/printing)
+# PrintJob per file — prevents the check-then-insert TOCTOU race.
+CONSTRAINTS_FILE="$(cd "$(dirname "$0")/.." && pwd)/prisma/pg-constraints.sql"
+if [ -f "$CONSTRAINTS_FILE" ]; then
+  echo "→ Applying PostgreSQL-specific constraints (partial unique indexes) ..."
+  psql "$PSQL_URL" -v ON_ERROR_STOP=1 -q -f "$CONSTRAINTS_FILE"
+  echo "  Constraints applied."
+else
+  echo "⚠️  prisma/pg-constraints.sql not found — partial unique index NOT applied." >&2
+  echo "   The print-job idempotency invariant is NOT database-enforced." >&2
+  exit 1
+fi
 
 # ── 5. Record the baseline migration in _prisma_migrations ──
 # This is CRITICAL: without this row, a future `prisma migrate deploy` would
@@ -135,17 +152,21 @@ TABLES=$(psql "$PSQL_URL" -t -A -c "SELECT COUNT(*) FROM information_schema.tabl
 INDEXES=$(psql "$PSQL_URL" -t -A -c "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND tablename != '_prisma_migrations';")
 FKS=$(psql "$PSQL_URL" -t -A -c "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY' AND table_schema='public';")
 MIGRATIONS=$(psql "$PSQL_URL" -t -A -c "SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL;")
+# Verify the partial unique index exists (the idempotency guard)
+PARTIAL_UNIQUE=$(psql "$PSQL_URL" -t -A -c "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND indexname='PrintJob_active_file_unique';")
 
-echo "  Tables:       $TABLES (expected 8)"
-echo "  Indexes:      $INDEXES (expected 21)"
-echo "  Foreign keys: $FKS (expected 9)"
+echo "  Tables:            $TABLES (expected 8)"
+echo "  Indexes:           $INDEXES (expected 22 — 21 from DDL + 1 partial unique)"
+echo "  Foreign keys:      $FKS (expected 9)"
 echo "  Applied migrations: $MIGRATIONS (expected 1)"
+echo "  Partial unique idx: $PARTIAL_UNIQUE (expected 1 — PrintJob_active_file_unique)"
 
-if [ "$TABLES" = "8" ] && [ "$MIGRATIONS" -ge "1" ]; then
+if [ "$TABLES" = "8" ] && [ "$MIGRATIONS" -ge "1" ] && [ "$PARTIAL_UNIQUE" = "1" ]; then
   echo ""
   echo "✅ Production migration applied successfully."
   echo "   The DB is ready for PrintShop. Future prisma migrate deploy calls"
   echo "   will see the baseline as applied and will NOT re-apply it."
+  echo "   The partial unique index enforces the print-job idempotency invariant."
 else
   echo ""
   echo "⚠️  Migration applied but verification shows unexpected counts."

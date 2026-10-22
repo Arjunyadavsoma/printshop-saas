@@ -1,37 +1,42 @@
 # Production Readiness Report — PrintShop SaaS
 
-> Final pre-pilot hardening: 2026-10-17
-> State: **ready for limited private pilot** — real-infrastructure database,
-> concurrency, outage/recovery, and E2E paths verified (118 assertions against
-> real PostgreSQL 17); code-level risks resolved (R2 head(), dev-route
-> protection, webhook audit logging, **idempotent PrintJob creation**, +
-> production migration script for the SQLite→PostgreSQL trap — 21 new
-> regression tests); external providers (R2, Upstash, PhonePe/Paytm sandbox,
-> hosted PG) remain BLOCKED on credentials. Public production MUST NOT be
-> declared ready while mandatory external integrations remain unverified.
+> Concurrency + migration audit: 2026-10-22
+> State: **ready for limited private pilot** — the print-job idempotency
+> invariant is now **database-enforced** (partial unique index), verified
+> under genuine concurrent load (19 assertions across 6 scenarios, 2-3
+> independent TCP processes). The migration strategy is verified for both
+> initial deploy + subsequent schema changes. External providers (R2,
+> Upstash, PhonePe/Paytm sandbox, hosted PG) remain BLOCKED on credentials.
+> Public production MUST NOT be declared ready while mandatory external
+> integrations remain unverified.
 
 ---
 
-## 1. Verification Results — Actual Command Outputs (2026-10-17 hardening gate)
+## 1. Verification Results — Actual Command Outputs (2026-10-22 audit)
 
 | Command | Exit code | Result |
 |---|---|---|
 | `bun install` | 0 | 980 installs, no changes |
 | `bunx tsc --noEmit` | 0 | 0 errors |
 | `bun run lint` | 0 | clean |
-| `bunx vitest run` | 0 | **104/104** pass (12 test files) |
+| `bunx vitest run` | 0 | **109/109** pass (13 test files) |
 | `NODE_ENV=production bun ./node_modules/.bin/next build` | 0 | passes (39 routes) |
+| Fresh migration (`pg-migrate-prod.sh`) | 0 | 8 tables, 22 indexes, 9 FKs, 1 partial unique, 1 baseline |
 | Real PG integration test | 0 | **54/54** assertions |
-| Real PG concurrency test (2 independent TCP processes) | 0 | **23/23** assertions |
+| Real PG concurrency test (2 independent TCP) | 0 | **23/23** assertions |
+| **PrintJob concurrency invariant (2-3 independent TCP, 6 scenarios)** | 0 | **19/19** assertions |
 | PG unavailability + recovery test | 0 | **7/7** assertions |
 | E2E flow against real PG | 0 | **34/34** assertions |
-| **Production migration script** (`pg-migrate-prod.sh`) | 0 | applies schema + records baseline + verifies |
+| **Second migration (diff approach)** | 0 | new column added, baseline intact, partial unique preserved |
 | pg_dump backup + restore | 0 | verified |
 | R2 head() regression test (mocked S3) | 0 | **7/7** assertions |
 | Webhook audit logging regression test | 0 | **4/4** assertions |
 | Dev-route protection regression test | 0 | **5/5** assertions |
-| **Idempotent PrintJob creation regression test** | 0 | **5/5** assertions |
+| **Idempotent PrintJob creation regression test** | 0 | **6/6** assertions (incl. P2002-catching) |
+| **Production SQL logging guard** | 0 | **4/4** assertions (static check) |
 | Agent Browser page verification | 0 | renders, 0 errors |
+
+**Total: 109 unit tests + 137 real-PG assertions = 246 verified.**
 
 ### Staging infrastructure used
 
@@ -127,9 +132,10 @@ None.
 |---|---|---|---|
 | R2 `head()` swallowed ALL errors (403 indistinguishable from 404) — hid permission failures + provider outages | HIGH | Distinguish `NoSuchKey`/404 (return null) from 403/5xx/network (throw) | `packages/adapters/src/storage/r2.adapter.test.ts` (7 tests) |
 | `/dev/qr` route was missing the `requireDev()` guard — accessible in production | MEDIUM | Added `requireDev()` to `/dev/qr`; created production-legal `/api/v1/qr` route; updated customer app to use the production path | `src/lib/api/require-dev.test.ts` (5 tests, including static check of all dev routes) |
-| **`enqueuePaidOrderPrint` created a NEW PrintJob per call with no idempotency check — a retry (concurrent duplicate webhook / crash recovery) would create DUPLICATE PrintJobs** | **HIGH** | Added `findActiveByFile(fileId)` to the PrintJob repository; `enqueuePaidOrderPrint` now checks for an existing 'queued'/'printing' job before creating. 'completed' and 'needs_review' jobs do NOT block (a reprint gets a new job). | `src/lib/payments/print-job-idempotency.test.ts` (5 tests: first-call, duplicate-retry, printing-blocks, completed-allows-reprint, needs_review-allows-reprint) |
-| **Committed SQLite migration can't be applied to PostgreSQL (`DATETIME` doesn't exist in PG)** — `prisma migrate deploy` against PG fails | **HIGH (deployment blocker)** | Added `scripts/pg-migrate-prod.sh`: generates PG-native DDL via `prisma migrate diff`, applies via `psql`, records baseline in `_prisma_migrations`. Does NOT modify the repo's prisma config. Documented the trap + the fresh-migration alternative in STAGING_TESTS.md §1. | Verified: 8 tables, 21 indexes, 9 FKs, 1 baseline migration; integration test passes 54/54 against the script-migrated DB |
-| **`src/lib/db.ts` logged every SQL query even in production (`log: ['query']`)** — noisy stdout, unnecessary log volume | LOW | Changed to `log: process.env.NODE_ENV === 'production' ? ['warn', 'error'] : ['query']` — dev keeps query logging, production logs only warnings + errors. Prisma parameterizes queries so no values leaked, but the structure was unnecessarily verbose. | No regression test needed — the change is a one-liner; verified tsc + lint + build pass. |
+| **`enqueuePaidOrderPrint` used a check-then-insert (TOCTOU) race — two concurrent webhooks both observe no active job and both insert → DUPLICATE PrintJobs** | **HIGH** | Replaced the application-level check with a **database-enforced partial unique index** (`PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status IN ('queued','printing')` — added in `prisma/pg-constraints.sql`). `enqueuePaidOrderPrint` now catches the P2002/23505 unique violation and treats it as idempotent. Two-layer guard: fast-path check + DB-enforced invariant. | `src/lib/payments/print-job-idempotency.test.ts` (6 tests incl. P2002-catching) + `scripts/printjob-concurrency-harness.test.ts` (19 assertions across 6 concurrent scenarios with 2-3 independent TCP processes) |
+| **Committed SQLite migration can't be applied to PostgreSQL (`DATETIME` doesn't exist in PG)** — `prisma migrate deploy` against PG fails | **HIGH (deployment blocker)** | Added `scripts/pg-migrate-prod.sh`: generates PG-native DDL via `prisma migrate diff`, applies via `psql`, records baseline in `_prisma_migrations`. Does NOT modify the repo's prisma config. Documented the trap + the fresh-migration alternative in STAGING_TESTS.md §1. | Verified: 8 tables, 22 indexes, 9 FKs, 1 partial unique, 1 baseline migration; integration test passes 54/54; second-migration test (diff approach) passes — new column added, baseline intact. |
+| **`src/lib/db.ts` logged every SQL query even in production (`log: ['query']`)** — noisy stdout, unnecessary log volume | LOW | Changed to `log: process.env.NODE_ENV === 'production' ? ['warn', 'error'] : ['query']` — dev keeps query logging, production logs only warnings + errors. Prisma parameterizes queries so no values leaked, but the structure was unnecessarily verbose. | `src/lib/db.test.ts` (4 static-check assertions guarding against regression). |
+| **`pg-migrate-prod.sh` printed `$PSQL_URL` (could contain a password)** | LOW | Added `SAFE_URL` that redacts the password (`sed -E 's#://([^:]+):[^@]+@#://\1:***@#'`). The password is never printed. | Verified by code inspection — the echo uses `$SAFE_URL`, psql uses `$PSQL_URL`. |
 
 ### Defects found — not fixable without infrastructure
 

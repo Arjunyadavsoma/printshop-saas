@@ -166,4 +166,59 @@ describe('enqueuePaidOrderPrint — idempotent PrintJob creation', () => {
     expect(allJobs.some((j: { status: string }) => j.status === 'needs_review')).toBe(true);
     expect(allJobs.some((j: { status: string }) => j.status === 'queued')).toBe(true);
   });
+
+  it('catches a unique-constraint violation (P2002) from a concurrent INSERT and treats it as idempotent', async () => {
+    // Simulate the concurrent race: the application-level check (findActiveByFile)
+    // returns null, but the INSERT throws P2002 because a concurrent call won.
+    // The enqueuePaidOrderPrint function should catch the P2002, re-dispatch
+    // the existing job, and NOT throw.
+    //
+    // We can't test this with the in-memory adapter (it has no unique constraint),
+    // so we mock the PrintJobRepository.create to throw a P2002 on the FIRST call.
+    // The findActiveByFile check returns null (no job yet), then create throws P2002.
+    // enqueuePaidOrderPrint should catch it, call findActiveByFile again (now the
+    // "concurrent" job exists), and re-dispatch without throwing.
+    //
+    // Setup: pre-insert a PrintJob (simulating the concurrent winner) but DON'T
+    // have findActiveByFile find it on the first call. We do this by:
+    // 1. NOT having a queued/printing job initially (findActiveByFile returns null)
+    // 2. Mocking create to throw P2002
+    // 3. THEN inserting a queued job (simulating the concurrent winner)
+    // 4. enqueuePaidOrderPrint catches P2002, calls findActiveByFile again, finds the job
+    //
+    // Since the in-memory adapter doesn't throw P2002, we spy on the create method
+    // and make it throw a P2002-shaped error, then verify the function handles it.
+    const { printJobs } = repos;
+    const originalCreate = printJobs.create.bind(printJobs);
+    let createCallCount = 0;
+    // Monkey-patch create to throw P2002 on the first call, then call the original.
+    printJobs.create = async (input: { shopId: string; fileId: string }) => {
+      createCallCount++;
+      if (createCallCount === 1) {
+        // Simulate a concurrent winner — insert the job, then throw P2002
+        const job = await originalCreate(input);
+        // Now throw the P2002 to simulate the DB rejecting our INSERT
+        const err = Object.assign(new Error('Unique constraint failed on the fields: (`fileId`)'), {
+          code: 'P2002',
+        });
+        throw err;
+      }
+      return originalCreate(input);
+    };
+
+    // enqueuePaidOrderPrint should:
+    // 1. findActiveByFile → null (no job yet)
+    // 2. create → throws P2002 (but the job WAS created by the mock)
+    // 3. catch P2002 → findActiveByFile again → finds the job
+    // 4. re-dispatch (no throw, no duplicate)
+    await expect(enqueuePaidOrderPrint(orderId, shopId)).resolves.toBeUndefined();
+
+    // Verify: exactly 1 PrintJob was created (not 2)
+    const allJobs = await repos.printJobs.findAllByShop(shopId, 50);
+    expect(allJobs.length).toBe(1);
+    expect(allJobs[0].status).toBe('queued');
+
+    // Restore the original method
+    printJobs.create = originalCreate;
+  });
 });

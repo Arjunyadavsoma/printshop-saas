@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const DDL_PATH = resolve(import.meta.dir, '../tmp/pg_migration.sql');
+const CONSTRAINTS_PATH = resolve(import.meta.dir, '../prisma/pg-constraints.sql');
 
 function makePool(): Pool {
   if (!process.env.DATABASE_URL) {
@@ -55,6 +56,9 @@ async function resetSchema(pool: Pool): Promise<void> {
   await pool.query('CREATE SCHEMA public');
   const ddl = readFileSync(DDL_PATH, 'utf8');
   await pool.query(ddl);
+  // Apply the partial unique index (the database-enforced idempotency guard)
+  const constraints = readFileSync(CONSTRAINTS_PATH, 'utf8');
+  await pool.query(constraints);
 }
 
 async function seed(pool: Pool): Promise<void> {
@@ -134,7 +138,12 @@ async function main() {
 
   // ── 3. Cross-tenant claim rejection ──
   console.log('\n=== 3. Cross-tenant claim rejection ===');
-  await pool.query(`INSERT INTO "PrintJob" (id, "shopId", "fileId", status, attempts, "queuedAt", "createdAt", "updatedAt") VALUES ('job-2', 'shop-1', 'file-1', 'queued', 0, NOW(), NOW(), NOW())`);
+  // Seed a SEPARATE file for the cross-tenant test — the partial unique index
+  // (PrintJob_active_file_unique) would block a second active job for file-1
+  // (which already has job-1 in 'printing' state from section 2).
+  await pool.query(`INSERT INTO "PrintFile" (id, "orderId", "originalFilename", "storageKey", "mimeType", "sizeBytes", "pageCount", copies, "colorMode", "paperSize", duplex, "pricePaise", status, "createdAt", "updatedAt")
+    VALUES ('file-2', 'order-1', 'doc2.pdf', 'key-2', 'application/pdf', 100, 1, 1, 'bw', 'a4', false, 200, 'pending', NOW(), NOW())`);
+  await pool.query(`INSERT INTO "PrintJob" (id, "shopId", "fileId", status, attempts, "queuedAt", "createdAt", "updatedAt") VALUES ('job-2', 'shop-1', 'file-2', 'queued', 0, NOW(), NOW(), NOW())`);
   const cross = await pool.query(`UPDATE "PrintJob" SET status='printing', "agentId"='evil', "startedAt"=NOW() WHERE id='job-2' AND status='queued' AND "shopId"='shop-2' RETURNING id`);
   assert('cross-tenant claim returns 0 rows', cross.rows.length === 0);
   const job2 = await pool.query(`SELECT status, "agentId" FROM "PrintJob" WHERE id='job-2'`);
