@@ -73,3 +73,4 @@ server.log
 /skills/
 # PID files (runtime artifacts — should never be committed)
 *.pid
+.neon
