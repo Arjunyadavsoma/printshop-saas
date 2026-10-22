@@ -29,6 +29,11 @@ export function signedParams(key: string, method: 'PUT' | 'GET', expiresInSecond
 /**
  * Verify a storage capability from query params. Returns the key if valid,
  * null otherwise. Checks: signature (constant-time), expiry, key format.
+ *
+ * Two key formats are accepted:
+ *   1. Customer file uploads:  shops/<shopId>/orders/<orderId>/<fileId>
+ *   2. Shop UPI QR images:      shops/<shopId>/upi-qr/<slug>.<ext>
+ *      (set by the shopkeeper via POST /api/v1/shops/me/upi-qr)
  */
 export function verifyCapability(params: URLSearchParams, method: 'PUT' | 'GET'): string | null {
   const key = params.get('key');
@@ -45,8 +50,10 @@ export function verifyCapability(params: URLSearchParams, method: 'PUT' | 'GET')
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
-  // Validate the key format: must be shops/<shopId>/orders/<orderId>/<fileId>.
-  if (!/^shops\/[a-f0-9-]+\/orders\/[a-f0-9-]+\/[a-f0-9-]+$/.test(key)) return null;
+  // Validate the key format: either a customer-file key or a shop UPI-QR key.
+  const isFileKey = /^shops\/[a-f0-9-]+\/orders\/[a-f0-9-]+\/[a-f0-9-]+$/.test(key);
+  const isUpiQrKey = /^shops\/[a-f0-9-]+\/upi-qr\/[a-zA-Z0-9._-]+\.(png|jpe?g|webp)$/i.test(key);
+  if (!isFileKey && !isUpiQrKey) return null;
 
   return key;
 }

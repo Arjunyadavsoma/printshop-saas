@@ -1,13 +1,39 @@
+import { NextResponse, type NextRequest } from 'next/server';
 import QRCode from 'qrcode';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 
-/** GET /api/v1/shops/me/qr?format=png|svg — QR PNG data URL + SVG + customer URL. */
+/**
+ * GET /api/v1/shops/me/qr?format=png|svg&download=true|false
+ *
+ * The shop-ordering QR — encodes the shop's public URL so customers can scan
+ * it to start an order. Distinct from the shopkeeper-uploaded UPI payment QR
+ * (handled by /api/v1/shops/me/upi-qr).
+ *
+ *  ?format=png                → JSON envelope with a `pngDataUrl` (data: URL) — used by the settings page to render inline.
+ *  ?format=svg&download=true   → raw SVG file (Content-Type: image/svg+xml, Content-Disposition: attachment) — used to download the QR for print.
+ *  ?format=svg                 → JSON envelope with `svgString` + `pngDataUrl`.
+ *
+ * No persisted bytes — the QR is generated on demand from the public URL.
+ */
 export const GET = withAuth(async (req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
   const format = req.nextUrl.searchParams.get('format');
+  const download = req.nextUrl.searchParams.get('download') === 'true';
   const customerUrl = `${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/${shop.slug}`;
+
+  if (format === 'svg' && download) {
+    const svgString = await QRCode.toString(customerUrl, { type: 'svg', margin: 2 });
+    return new NextResponse(svgString, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Content-Disposition': `attachment; filename="${shop.slug}-qr.svg"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
 
   if (format === 'png') {
     const pngDataUrl = await QRCode.toDataURL(customerUrl, { margin: 2, width: 512 });

@@ -134,4 +134,42 @@ export class SupabaseStorageAdapter implements StorageAdapter {
       throw e;
     }
   }
+
+  /**
+   * Server-side direct upload (extension beyond the StorageAdapter interface).
+   *
+   * Used by routes that receive a file in the API process and store it without
+   * proxying through a client-presigned PUT (e.g. the shopkeeper's UPI QR
+   * image upload). The customer-facing upload path stays on the presigned-PUT
+   * flow (`getPresignedUploadUrl`) so the API server never proxies large
+   * customer file bytes.
+   */
+  async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    // upsert:true so re-uploading the same key (e.g. the shop refreshes their
+    // UPI QR) replaces the old object instead of erroring.
+    const { error } = await this.client
+      .storage
+      .from(this.bucket)
+      .upload(key, bytes as unknown as Blob, {
+        contentType,
+        upsert: true,
+      });
+    if (error) {
+      throw new Error(`Supabase put failed: ${error.message}`);
+    }
+  }
+
+  /** Server-side direct fetch (extension beyond the StorageAdapter interface). */
+  async getBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    const { data, error } = await this.client.storage.from(this.bucket).download(key);
+    if (error || !data) {
+      const msg = error?.message ?? '';
+      if (/not found|does not exist|404/i.test(msg)) return null;
+      throw new Error(`Supabase getBytes failed: ${msg || 'unknown'}`);
+    }
+    const arrayBuf = await (data as unknown as Blob).arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    const contentType = (data as unknown as { type?: string }).type ?? 'application/octet-stream';
+    return { bytes, contentType };
+  }
 }

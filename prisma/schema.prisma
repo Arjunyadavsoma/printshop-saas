@@ -34,6 +34,15 @@ model Shop {
   isActive              Boolean  @default(true)
   subscriptionTier      String   @default("free")
   subscriptionExpiresAt DateTime?
+  // New: shopkeeper-facing profile fields (all nullable — additive schema change).
+  description           String?
+  businessHours         String? // JSON-serialised { mon: {open,close}, ... }
+  logoUrl               String?
+  upiQrStorageKey       String? // storage key for the UPI QR image (private object)
+  servicesJson          String? // JSON list of selected print services (bw,color,scan,laminate,binding)
+  paymentPhone          String? // separate from business phone — used for UPI verification
+  paymentInstructions   String? // shown to customer at checkout
+  cashOnPickup          Boolean  @default(false)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -77,6 +86,9 @@ model Order {
   paidAt            DateTime?
   customerPhone     String?
   notes             String?
+  // New: human-friendly per-shop sequential token (e.g. "A104", "B205").
+  // Generated when the order is created; unique within the shop.
+  tokenNumber       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -85,6 +97,7 @@ model Order {
 
   @@index([shopId, status])
   @@index([customerToken])
+  @@index([shopId, tokenNumber])
 }
 
 model PrintFile {

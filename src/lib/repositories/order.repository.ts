@@ -15,6 +15,7 @@ interface OrderRow {
   paidAt: Date | null;
   customerPhone: string | null;
   notes: string | null;
+  tokenNumber: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +34,7 @@ function toDomain(row: OrderRow): Order {
     paidAt: row.paidAt,
     customerPhone: row.customerPhone,
     notes: row.notes,
+    tokenNumber: row.tokenNumber,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -86,6 +88,12 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     return this.countWhere(filter);
   }
 
+  /** Find an order by its per-shop token number (uniqueness check). */
+  async findByTokenNumber(shopId: string, tokenNumber: string): Promise<Order | null> {
+    const row = await this.findOne({ shopId, tokenNumber });
+    return row ? toDomain(row) : null;
+  }
+
   /** Count ALL orders (admin only). */
   async countAll(status?: string): Promise<number> {
     const filter: Record<string, unknown> = {};
@@ -98,6 +106,7 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     customerToken: string;
     customerPhone?: string | null;
     notes?: string | null;
+    tokenNumber?: string | null;
   }): Promise<Order> {
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -112,6 +121,7 @@ export class OrderRepository extends BaseRepository<OrderRow> {
       paidAt: null,
       customerPhone: input.customerPhone ?? null,
       notes: input.notes ?? null,
+      tokenNumber: input.tokenNumber ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as OrderRow);

@@ -19,6 +19,14 @@ interface ShopRow {
   isActive: boolean;
   subscriptionTier: string;
   subscriptionExpiresAt: Date | null;
+  description: string | null;
+  businessHours: string | null;
+  logoUrl: string | null;
+  upiQrStorageKey: string | null;
+  servicesJson: string | null;
+  paymentPhone: string | null;
+  paymentInstructions: string | null;
+  cashOnPickup: boolean | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +57,14 @@ function toDomain(row: ShopRow): Shop {
     isActive: row.isActive,
     subscriptionTier: row.subscriptionTier as SubscriptionTier,
     subscriptionExpiresAt: row.subscriptionExpiresAt,
+    description: row.description,
+    businessHours: row.businessHours,
+    logoUrl: row.logoUrl,
+    upiQrStorageKey: row.upiQrStorageKey,
+    servicesJson: row.servicesJson,
+    paymentPhone: row.paymentPhone,
+    paymentInstructions: row.paymentInstructions,
+    cashOnPickup: row.cashOnPickup ?? false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

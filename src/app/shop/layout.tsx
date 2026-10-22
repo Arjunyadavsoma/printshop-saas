@@ -75,7 +75,8 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   const [shopName, setShopName] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const isLoginPage = pathname === '/shop/login';
+  // Login + register pages render bare (no sidebar, no auth gate).
+  const isLoginPage = pathname === '/shop/login' || pathname === '/shop/register';
 
   // Auth gate: redirect to login unless we're already on it.
   useEffect(() => {

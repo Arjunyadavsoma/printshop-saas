@@ -88,6 +88,22 @@ export interface Shop {
   isActive: boolean;
   subscriptionTier: SubscriptionTier;
   subscriptionExpiresAt: Date | null;
+  /** New: free-text shop description shown on the public shop page. */
+  description: string | null;
+  /** New: JSON-serialised business hours, e.g. { mon: {open:"09:00", close:"21:00"}, ... }. */
+  businessHours: string | null;
+  /** New: public URL of the shop logo image (https). */
+  logoUrl: string | null;
+  /** New: storage key of the uploaded UPI QR image (private object). */
+  upiQrStorageKey: string | null;
+  /** New: JSON list of selected print services (bw,color,scan,laminate,binding). */
+  servicesJson: string | null;
+  /** New: separate phone for UPI verification (different from business phone). */
+  paymentPhone: string | null;
+  /** New: instructions shown to customer at checkout. */
+  paymentInstructions: string | null;
+  /** New: whether the shop accepts cash on pickup. */
+  cashOnPickup: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -107,6 +123,14 @@ export const ShopSchema = z.object({
   isActive: z.boolean(),
   subscriptionTier: z.enum(SUBSCRIPTION_TIERS as [SubscriptionTier, ...SubscriptionTier[]]),
   subscriptionExpiresAt: z.date().nullable(),
+  description: z.string().max(2000).nullable(),
+  businessHours: z.string().max(4000).nullable(),
+  logoUrl: z.string().url().nullable(),
+  upiQrStorageKey: z.string().max(500).nullable(),
+  servicesJson: z.string().max(2000).nullable(),
+  paymentPhone: z.string().max(20).nullable(),
+  paymentInstructions: z.string().max(2000).nullable(),
+  cashOnPickup: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

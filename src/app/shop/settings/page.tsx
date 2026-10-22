@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import {
   Card,
@@ -13,18 +13,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { formatINRFromPaise } from '@platform/utils';
-import type { ShopPricingConfig } from '@platform/core/domain';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Settings as SettingsIcon,
   RefreshCw,
@@ -38,7 +39,19 @@ import {
   CreditCard,
   Tag,
   Lock,
+  Clock,
+  Image as ImageIcon,
+  Upload,
+  Trash2,
+  Download,
+  Printer,
+  Copy,
+  CheckCircle2,
+  AlertCircle,
+  Info,
 } from 'lucide-react';
+import { formatINRFromPaise } from '@platform/utils';
+import type { ShopPricingConfig } from '@platform/core/domain';
 
 interface ShopInfo {
   id: string;
@@ -53,10 +66,20 @@ interface ShopInfo {
   isActive: boolean;
   subscriptionTier: string;
   subscriptionExpiresAt: string | null;
+  description: string | null;
+  businessHours: string | null;
+  logoUrl: string | null;
+  upiQrStorageKey: string | null;
+  hasUpiQr?: boolean;
+  servicesJson: string | null;
+  paymentPhone: string | null;
+  paymentInstructions: string | null;
+  cashOnPickup: boolean;
 }
 
 interface QrResponse {
   pngDataUrl: string;
+  svgString?: string;
   customerUrl: string;
   slug: string;
   shopName?: string;
@@ -73,25 +96,96 @@ const PRICING_ROWS: { key: keyof ShopPricingConfig; label: string }[] = [
   { key: 'color_legal_per_page', label: 'Colour · Legal per page' },
 ];
 
+const DAYS: { key: string; label: string }[] = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+const TIMEZONES = [
+  'Asia/Kolkata',
+  'Asia/Mumbai',
+  'Asia/Delhi',
+  'Asia/Calcutta',
+  'Asia/Karachi',
+  'Asia/Dhaka',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'UTC',
+];
+
+type DaySchedule = { open: string; close: string; closed: boolean };
+type BusinessHours = Record<string, DaySchedule>;
+
+function parseHours(json: string | null): BusinessHours {
+  const fallback: BusinessHours = {
+    mon: { open: '09:00', close: '21:00', closed: false },
+    tue: { open: '09:00', close: '21:00', closed: false },
+    wed: { open: '09:00', close: '21:00', closed: false },
+    thu: { open: '09:00', close: '21:00', closed: false },
+    fri: { open: '09:00', close: '21:00', closed: false },
+    sat: { open: '10:00', close: '20:00', closed: false },
+    sun: { open: '10:00', close: '16:00', closed: true },
+  };
+  if (!json) return fallback;
+  try {
+    const parsed = JSON.parse(json) as BusinessHours;
+    // Merge with defaults so a partial save doesn't lose fields.
+    const out: BusinessHours = { ...fallback };
+    for (const d of DAYS) {
+      if (parsed[d.key]) out[d.key] = { ...fallback[d.key], ...parsed[d.key] };
+    }
+    return out;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function ShopSettingsPage() {
   const api = useApiClient();
   const [shop, setShop] = useState<ShopInfo | null>(null);
+  const [qr, setQr] = useState<QrResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState('profile');
 
-  // Editable form state — only the safe PATCH-able fields.
+  // ── Profile form ──
   const [name, setName] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
   const [phone, setPhone] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
+  const [address, setAddress] = useState('');
+  const [timezone, setTimezone] = useState('Asia/Kolkata');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  // QR code preview (PNG data URL).
-  const [qr, setQr] = useState<QrResponse | null>(null);
+  // ── Business hours ──
+  const [hours, setHours] = useState<BusinessHours>(() => parseHours(null));
+  const [savingHours, setSavingHours] = useState(false);
+  const [hoursSaved, setHoursSaved] = useState(false);
+  const [hoursError, setHoursError] = useState<string | null>(null);
 
-  const load = async () => {
+  // ── Payment ──
+  const [upiId, setUpiId] = useState('');
+  const [paymentPhone, setPaymentPhone] = useState('');
+  const [paymentInstructions, setPaymentInstructions] = useState('');
+  const [cashOnPickup, setCashOnPickup] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentSaved, setPaymentSaved] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // ── UPI QR (uploaded image) ──
+  const [upiQrPreview, setUpiQrPreview] = useState<string | null>(null);
+  const [upiQrUploading, setUpiQrUploading] = useState(false);
+  const [upiQrError, setUpiQrError] = useState<string | null>(null);
+  const [upiQrHasImage, setUpiQrHasImage] = useState(false);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -103,9 +197,17 @@ export default function ShopSettingsPage() {
         const s = shopR.data.data;
         setShop(s);
         setName(s.name);
-        setUpiId(s.upiId);
-        setAddress(s.address);
+        setDescription(s.description ?? '');
+        setLogoUrl(s.logoUrl ?? '');
         setPhone(s.phone);
+        setAddress(s.address);
+        setTimezone(s.timezone || 'Asia/Kolkata');
+        setHours(parseHours(s.businessHours));
+        setUpiId(s.upiId);
+        setPaymentPhone(s.paymentPhone ?? '');
+        setPaymentInstructions(s.paymentInstructions ?? '');
+        setCashOnPickup(s.cashOnPickup);
+        setUpiQrHasImage(Boolean(s.upiQrStorageKey));
       } else if (shopR.status === 401) {
         setError('Session expired. Please log in again.');
       } else {
@@ -119,57 +221,235 @@ export default function ShopSettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [api]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
-  const save = async () => {
-    setSaving(true);
-    setFormError(null);
-    setSaved(false);
-    try {
-      const body: Record<string, string> = {};
-      if (name.trim() && name !== shop?.name) body.name = name.trim();
-      if (upiId.trim() && upiId !== shop?.upiId) body.upiId = upiId.trim();
-      if (address !== shop?.address) body.address = address;
-      if (phone !== shop?.phone) body.phone = phone;
-
-      if (Object.keys(body).length === 0) {
-        setFormError('No changes to save.');
-        return;
+  // Load the uploaded UPI QR preview (separate request — only when we have one).
+  useEffect(() => {
+    if (!shop?.upiQrStorageKey) {
+      setUpiQrPreview(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/shops/me/upi-qr', {
+          headers: { Authorization: `Bearer ${api.token ?? ''}` },
+        });
+        if (cancelled) return;
+        if (!res.ok) { setUpiQrPreview(null); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setUpiQrPreview(url);
+      } catch {
+        setUpiQrPreview(null);
       }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [shop?.upiQrStorageKey, api.token]);
 
+  // ── Save handlers ──
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    try {
+      const body: Record<string, unknown> = {
+        name: name.trim(),
+        description,
+        logoUrl: logoUrl.trim(),
+        phone,
+        address,
+        timezone,
+      };
       const r = await api.request<{ data?: ShopInfo; error?: { message?: string } }>(
         'PATCH',
         '/api/v1/shops/me',
         { body },
       );
-      if (r.status === 200 && r.data?.data) {
-        setShop(r.data.data);
-        setName(r.data.data.name);
-        setUpiId(r.data.data.upiId);
-        setAddress(r.data.data.address);
-        setPhone(r.data.data.phone);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
-      } else {
-        setFormError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+      if (r.status === 200 && r.data?.data) setShop(r.data.data);
+      else {
+        setProfileError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+        return;
       }
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 3000);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Network error');
+      setProfileError(err instanceof Error ? err.message : 'Network error');
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   };
 
+  const saveHours = async () => {
+    setSavingHours(true);
+    setHoursError(null);
+    setHoursSaved(false);
+    try {
+      const body = { businessHours: JSON.stringify(hours) };
+      const r = await api.request<{ data?: ShopInfo; error?: { message?: string } }>(
+        'PATCH',
+        '/api/v1/shops/me',
+        { body },
+      );
+      if (r.status !== 200) {
+        setHoursError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+        return;
+      }
+      setHoursSaved(true);
+      setTimeout(() => setHoursSaved(false), 3000);
+    } catch (err) {
+      setHoursError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setSavingHours(false);
+    }
+  };
+
+  const savePayment = async () => {
+    setSavingPayment(true);
+    setPaymentError(null);
+    setPaymentSaved(false);
+    try {
+      const body = {
+        upiId: upiId.trim(),
+        paymentPhone: paymentPhone.trim(),
+        paymentInstructions,
+        cashOnPickup,
+      };
+      const r = await api.request<{ data?: ShopInfo; error?: { message?: string } }>(
+        'PATCH',
+        '/api/v1/shops/me',
+        { body },
+      );
+      if (r.status !== 200) {
+        setPaymentError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+        return;
+      }
+      if (r.data?.data) setShop(r.data.data);
+      setPaymentSaved(true);
+      setTimeout(() => setPaymentSaved(false), 3000);
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  // ── UPI QR upload ──
+  const uploadQr = async (file: File) => {
+    setUpiQrUploading(true);
+    setUpiQrError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/v1/shops/me/upi-qr', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${api.token ?? ''}` },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUpiQrError(json?.error?.message ?? `Upload failed (HTTP ${res.status})`);
+        return;
+      }
+      setUpiQrHasImage(true);
+      // Refresh the shop record so upiQrStorageKey is current; the preview
+      // effect will re-fetch the image once the storage key changes.
+      await load();
+    } catch (err) {
+      setUpiQrError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setUpiQrUploading(false);
+    }
+  };
+
+  const removeQr = async () => {
+    setUpiQrUploading(true);
+    setUpiQrError(null);
+    try {
+      const res = await fetch('/api/v1/shops/me/upi-qr', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${api.token ?? ''}` },
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setUpiQrError(json?.error?.message ?? `Delete failed (HTTP ${res.status})`);
+        return;
+      }
+      setUpiQrHasImage(false);
+      setUpiQrPreview(null);
+      await load();
+    } catch (err) {
+      setUpiQrError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setUpiQrUploading(false);
+    }
+  };
+
+  // ── Shop QR download (PNG / SVG) ──
+  const downloadShopQr = async (format: 'png' | 'svg') => {
+    if (!shop) return;
+    const url = `/api/v1/shops/me/qr?format=${format}${format === 'svg' ? '&download=true' : ''}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${api.token ?? ''}` } });
+    if (!res.ok) return;
+    if (format === 'png' && qr?.pngDataUrl) {
+      // Use the already-loaded data URL (no second fetch).
+      const a = document.createElement('a');
+      a.href = qr.pngDataUrl;
+      a.download = `${shop.slug}-qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = `${shop.slug}-qr.${format === 'svg' ? 'svg' : 'png'}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
+  };
+
+  const copyUrl = async () => {
+    if (!qr?.customerUrl) return;
+    try {
+      await navigator.clipboard.writeText(qr.customerUrl);
+    } catch { /* ignore */ }
+  };
+
+  const printQr = () => {
+    if (!qr?.pngDataUrl) return;
+    const w = window.open('', '_blank', 'width=480,height=640');
+    if (!w) return;
+    w.document.write(`
+      <html><head><title>Print QR — ${shop?.name ?? 'Shop'}</title></head>
+      <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif">
+        <h1 style="margin:0 0 8px;font-size:24px">${shop?.name ?? 'Shop'}</h1>
+        <p style="margin:0 0 24px;color:#555">Scan to start an order</p>
+        <img src="${qr.pngDataUrl}" alt="QR" style="width:300px;height:300px" />
+        <p style="margin-top:24px;color:#555;font-size:12px">${qr.customerUrl}</p>
+      </body></html>
+    `);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
+  // ── Render ──
   if (loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-64" />
-        <Skeleton className="h-64" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -178,7 +458,7 @@ export default function ShopSettingsPage() {
     return (
       <Card className="border-rose-200 bg-rose-50">
         <CardHeader>
-          <CardTitle className="text-base text-rose-800">Couldn’t load shop settings</CardTitle>
+          <CardTitle className="text-base text-rose-800">Couldn't load shop settings</CardTitle>
           <CardDescription className="text-rose-700">{error}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -201,7 +481,7 @@ export default function ShopSettingsPage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Settings</h1>
             <p className="text-xs text-muted-foreground">
-              Edit your shop profile and download your customer-facing QR code.
+              Edit your shop profile, payment, and QR codes.
             </p>
           </div>
         </div>
@@ -212,226 +492,434 @@ export default function ShopSettingsPage() {
 
       {error && (
         <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="p-4 text-sm text-amber-800">
-            ⚠ {error}
-          </CardContent>
+          <CardContent className="p-4 text-sm text-amber-800">⚠ {error}</CardContent>
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Editable profile */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Store className="size-4 text-amber-600" />
-              Shop profile
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Changes here update what customers see when they scan your QR code.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="name">
-                <span className="flex items-center gap-1">
-                  <Store className="size-3.5" /> Shop name
-                </span>
-              </Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Print Shop"
-                disabled={saving}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="upiId">
-                <span className="flex items-center gap-1">
-                  <CreditCard className="size-3.5" /> UPI ID
-                </span>
-              </Label>
-              <Input
-                id="upiId"
-                value={upiId}
-                onChange={(e) => setUpiId(e.target.value)}
-                placeholder="myshop@okaxis"
-                disabled={saving}
-                pattern="^[\w.\-]+@[\w.\-]+$"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Customers pay directly to this UPI ID. 0% commission — money lands in your account
-                instantly.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="address">
-                <span className="flex items-center gap-1">
-                  <MapPin className="size-3.5" /> Address
-                </span>
-              </Label>
-              <Input
-                id="address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Shop 12, MG Road, Bengaluru"
-                disabled={saving}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="phone">
-                <span className="flex items-center gap-1">
-                  <Phone className="size-3.5" /> Phone
-                </span>
-              </Label>
-              <Input
-                id="phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91…"
-                disabled={saving}
-              />
-            </div>
-            {formError && (
-              <p className="text-sm text-rose-700">⚠ {formError}</p>
-            )}
-          </CardContent>
-          <CardFooter className="flex items-center gap-2">
-            <Button
-              onClick={() => void save()}
-              disabled={saving}
-              className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
-            >
-              {saving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : saved ? (
-                <Check className="size-4" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              {saving ? 'Saving…' : saved ? 'Saved' : 'Save changes'}
-            </Button>
-            <Badge variant="outline" className="gap-1">
-              <Tag className="size-3" /> tier: {shop.subscriptionTier}
-            </Badge>
-          </CardFooter>
-        </Card>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList className="flex w-full flex-wrap gap-1">
+          <TabsTrigger value="profile" className="gap-1.5">
+            <Store className="size-3.5" /> Profile
+          </TabsTrigger>
+          <TabsTrigger value="hours" className="gap-1.5">
+            <Clock className="size-3.5" /> Business Hours
+          </TabsTrigger>
+          <TabsTrigger value="payment" className="gap-1.5">
+            <CreditCard className="size-3.5" /> Payment
+          </TabsTrigger>
+          <TabsTrigger value="upi-qr" className="gap-1.5">
+            <ImageIcon className="size-3.5" /> UPI QR
+          </TabsTrigger>
+          <TabsTrigger value="shop-qr" className="gap-1.5">
+            <QrCode className="size-3.5" /> Shop QR
+          </TabsTrigger>
+        </TabsList>
 
-        {/* QR code preview */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <QrCode className="size-4 text-amber-600" />
-              Customer QR code
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Customers scan this to open your shop page, upload files, and pay.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center gap-3">
-            {qr?.pngDataUrl ? (
-              <img
-                src={qr.pngDataUrl}
-                alt={`QR code for ${shop.name}`}
-                className="size-44 rounded-md border border-border bg-white p-2"
-                width={176}
-                height={176}
-              />
-            ) : (
-              <div className="flex size-44 items-center justify-center rounded-md border border-dashed border-border bg-muted text-xs text-muted-foreground">
-                QR unavailable
+        {/* ── Profile tab ── */}
+        <TabsContent value="profile">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Store className="size-4 text-amber-600" /> Shop profile
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Changes here update what customers see when they scan your shop QR code.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="name">
+                  <span className="flex items-center gap-1"><Store className="size-3.5" /> Shop name</span>
+                </Label>
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} disabled={savingProfile} />
               </div>
-            )}
-            <div className="w-full space-y-1">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Customer URL
-              </p>
-              <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">
-                {qr?.customerUrl ?? `/${shop.slug}`}
-              </code>
-            </div>
-            <div className="w-full space-y-1">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Slug
-              </p>
-              <code className="block rounded bg-muted px-2 py-1.5 font-mono text-xs">
-                {shop.slug}
-              </code>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <a
-              href={qr?.pngDataUrl}
-              download={`${shop.slug}-qr.png`}
-              className="text-xs text-amber-700 underline-offset-2 hover:underline"
-            >
-              Download PNG →
-            </a>
-          </CardFooter>
-        </Card>
-      </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  disabled={savingProfile}
+                  placeholder="A short bio shown on your public shop page."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="logoUrl">
+                  <span className="flex items-center gap-1"><ImageIcon className="size-3.5" /> Logo URL</span>
+                </Label>
+                <Input
+                  id="logoUrl"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://…/logo.png"
+                  disabled={savingProfile}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Paste a public image URL. We don't host image uploads for the logo yet.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="phone">
+                    <span className="flex items-center gap-1"><Phone className="size-3.5" /> Business phone</span>
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91…"
+                    disabled={savingProfile}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger id="timezone"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {TIMEZONES.map((tz) => (
+                        <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="address">
+                  <span className="flex items-center gap-1"><MapPin className="size-3.5" /> Address</span>
+                </Label>
+                <Input
+                  id="address"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  disabled={savingProfile}
+                />
+              </div>
+              {profileError && <p className="text-sm text-rose-700">⚠ {profileError}</p>}
+            </CardContent>
+            <CardFooter className="flex items-center gap-2 border-t pt-4">
+              <Button
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+              >
+                {savingProfile ? <Loader2 className="size-4 animate-spin" /> : profileSaved ? <Check className="size-4" /> : <Save className="size-4" />}
+                {savingProfile ? 'Saving…' : profileSaved ? 'Saved' : 'Save changes'}
+              </Button>
+              <Badge variant="outline" className="gap-1">
+                <Tag className="size-3" /> tier: {shop.subscriptionTier}
+              </Badge>
+            </CardFooter>
+          </Card>
 
-      {/* Pricing config (read-only) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CreditCard className="size-4 text-amber-600" />
-            Pricing configuration
-          </CardTitle>
-          <CardDescription className="text-xs flex items-center gap-1.5">
-            <Lock className="size-3" />
-            Read-only — the pricing engine in <code className="font-mono">packages/core</code> is the
-            single source of truth. Changes here are made through code or the admin portal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="pl-4">Setting</TableHead>
-                <TableHead>Value (paise)</TableHead>
-                <TableHead>Per page (₹)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {PRICING_ROWS.map(({ key, label }) => {
-                const valuePaise = shop.pricingConfig[key] as number;
+          {/* Pricing read-only card — kept here so the settings page is one-stop. */}
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="size-4 text-amber-600" /> Pricing configuration
+              </CardTitle>
+              <CardDescription className="flex items-center gap-1.5 text-xs">
+                <Lock className="size-3" /> Read-only — the pricing engine in <code className="font-mono">packages/core</code> is the single source of truth.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                {PRICING_ROWS.map(({ key, label }) => {
+                  const valuePaise = shop.pricingConfig[key] as number;
+                  return (
+                    <div key={String(key)} className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="font-mono font-semibold">{formatINRFromPaise(valuePaise)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                <span className="text-emerald-800">Minimum order value</span>
+                <span className="font-mono font-semibold text-emerald-900">
+                  {formatINRFromPaise(shop.pricingConfig.min_order_value)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Business hours tab ── */}
+        <TabsContent value="hours">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="size-4 text-amber-600" /> Business hours
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Set your weekly schedule. Toggle a day off if you're closed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {DAYS.map((d) => {
+                const sched = hours[d.key];
                 return (
-                  <TableRow key={String(key)}>
-                    <TableCell className="pl-4 text-sm">{label}</TableCell>
-                    <TableCell className="font-mono text-sm">{valuePaise}</TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {formatINRFromPaise(valuePaise)}
-                    </TableCell>
-                  </TableRow>
+                  <div
+                    key={d.key}
+                    className={`flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between ${
+                      sched.closed ? 'border-border bg-muted/40' : 'border-border bg-card'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={!sched.closed}
+                        onCheckedChange={(checked) =>
+                          setHours((h) => ({ ...h, [d.key]: { ...h[d.key], closed: !checked } }))
+                        }
+                        aria-label={`Open on ${d.label}`}
+                      />
+                      <span className="text-sm font-medium">{d.label}</span>
+                      {sched.closed && <Badge variant="outline" className="text-[10px]">Closed</Badge>}
+                    </div>
+                    <div className={`flex items-center gap-2 ${sched.closed ? 'opacity-40' : ''}`}>
+                      <Input
+                        type="time"
+                        value={sched.open}
+                        onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], open: e.target.value } }))}
+                        disabled={sched.closed}
+                        className="w-28"
+                        aria-label={`${d.label} opening time`}
+                      />
+                      <span className="text-xs text-muted-foreground">to</span>
+                      <Input
+                        type="time"
+                        value={sched.close}
+                        onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], close: e.target.value } }))}
+                        disabled={sched.closed}
+                        className="w-28"
+                        aria-label={`${d.label} closing time`}
+                      />
+                    </div>
+                  </div>
                 );
               })}
-              <TableRow>
-                <TableCell className="pl-4 text-sm">Duplex discount (%)</TableCell>
-                <TableCell className="font-mono text-sm">{shop.pricingConfig.duplex_discount}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">applied to duplex jobs</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="pl-4 text-sm">Bulk threshold (pages)</TableCell>
-                <TableCell className="font-mono text-sm">{shop.pricingConfig.bulk_threshold}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">above this, bulk discount applies</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="pl-4 text-sm">Bulk discount (%)</TableCell>
-                <TableCell className="font-mono text-sm">{shop.pricingConfig.bulk_discount_pct}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">applied once threshold met</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="pl-4 text-sm">Minimum order value</TableCell>
-                <TableCell className="font-mono text-sm">{shop.pricingConfig.min_order_value}</TableCell>
-                <TableCell className="font-mono text-sm">
-                  {formatINRFromPaise(shop.pricingConfig.min_order_value)}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              {hoursError && <p className="text-sm text-rose-700">⚠ {hoursError}</p>}
+            </CardContent>
+            <CardFooter className="border-t pt-4">
+              <Button
+                onClick={() => void saveHours()}
+                disabled={savingHours}
+                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+              >
+                {savingHours ? <Loader2 className="size-4 animate-spin" /> : hoursSaved ? <Check className="size-4" /> : <Save className="size-4" />}
+                {savingHours ? 'Saving…' : hoursSaved ? 'Saved' : 'Save hours'}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+
+        {/* ── Payment tab ── */}
+        <TabsContent value="payment">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="size-4 text-amber-600" /> Payment settings
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Where customers pay you. The UPI ID is what they send money to.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="upiId">
+                  <span className="flex items-center gap-1"><CreditCard className="size-3.5" /> UPI ID</span>
+                </Label>
+                <Input
+                  id="upiId"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  placeholder="myshop@okaxis"
+                  disabled={savingPayment}
+                  pattern="^[\w.\-]+@[\w.\-]+$"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Customers pay directly to this UPI ID. 0% commission — money lands in your account instantly.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="paymentPhone">
+                  <span className="flex items-center gap-1"><Phone className="size-3.5" /> Payment phone (for UPI verification)</span>
+                </Label>
+                <Input
+                  id="paymentPhone"
+                  value={paymentPhone}
+                  onChange={(e) => setPaymentPhone(e.target.value)}
+                  placeholder="+91…"
+                  disabled={savingPayment}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Separate from the business phone — used only for verifying customer UPI payments.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="paymentInstructions">Payment instructions</Label>
+                <Textarea
+                  id="paymentInstructions"
+                  value={paymentInstructions}
+                  onChange={(e) => setPaymentInstructions(e.target.value)}
+                  rows={3}
+                  disabled={savingPayment}
+                  placeholder="e.g. Send screenshot of payment to WhatsApp +91…"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Shown to the customer after they tap "I've paid" in the order flow.
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-card p-3">
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="cashOnPickup" className="text-sm">Cash on pickup</Label>
+                  <span className="text-[10px] text-muted-foreground">
+                    Allow customers to pay in cash when they collect the order (you still need UPI configured for online payment).
+                  </span>
+                </div>
+                <Switch
+                  id="cashOnPickup"
+                  checked={cashOnPickup}
+                  onCheckedChange={setCashOnPickup}
+                  disabled={savingPayment}
+                />
+              </div>
+              {paymentError && <p className="text-sm text-rose-700">⚠ {paymentError}</p>}
+            </CardContent>
+            <CardFooter className="border-t pt-4">
+              <Button
+                onClick={() => void savePayment()}
+                disabled={savingPayment}
+                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+              >
+                {savingPayment ? <Loader2 className="size-4 animate-spin" /> : paymentSaved ? <Check className="size-4" /> : <Save className="size-4" />}
+                {savingPayment ? 'Saving…' : paymentSaved ? 'Saved' : 'Save payment'}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+
+        {/* ── UPI QR (uploaded image) tab ── */}
+        <TabsContent value="upi-qr">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ImageIcon className="size-4 text-amber-600" /> UPI Payment QR
+              </CardTitle>
+              <CardDescription className="flex items-center gap-1.5 text-xs">
+                <Info className="size-3" /> This is the PAYMENT QR — the one customers scan to send you money. Different from the shop-ordering QR (next tab).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-6">
+                <div className="flex size-44 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white p-2">
+                  {upiQrPreview ? (
+                    <img src={upiQrPreview} alt="UPI payment QR" className="size-full object-contain" />
+                  ) : upiQrHasImage ? (
+                    <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      Loading…
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-center text-xs text-muted-foreground">
+                      <ImageIcon className="size-6" />
+                      No QR uploaded yet
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Upload the QR image you generated from your UPI app (GPay/PhonePe/Paytm). Max 5 MB. PNG / JPG / WebP / SVG.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void uploadQr(f);
+                          e.target.value = '';
+                        }}
+                        disabled={upiQrUploading}
+                      />
+                      <span
+                        className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md bg-amber-600 px-4 text-sm font-medium text-white hover:bg-amber-600/90 ${
+                          upiQrUploading ? 'opacity-50' : ''
+                        }`}
+                      >
+                        {upiQrUploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                        {upiQrHasImage ? 'Replace QR' : 'Upload QR'}
+                      </span>
+                    </label>
+                    {upiQrHasImage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void removeQr()}
+                        disabled={upiQrUploading}
+                        className="gap-1.5"
+                      >
+                        <Trash2 className="size-4" /> Remove
+                      </Button>
+                    )}
+                  </div>
+                  {upiQrError && <p className="text-sm text-rose-700">⚠ {upiQrError}</p>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Shop QR (ordering) tab ── */}
+        <TabsContent value="shop-qr">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <QrCode className="size-4 text-amber-600" /> Shop Ordering QR
+              </CardTitle>
+              <CardDescription className="flex items-center gap-1.5 text-xs">
+                <Info className="size-3" /> Customers scan this to open your shop page, upload files, and pay. Generated automatically from your public URL.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
+              <div className="flex size-44 shrink-0 items-center justify-center rounded-md border border-border bg-white p-2">
+                {qr?.pngDataUrl ? (
+                  <img src={qr.pngDataUrl} alt={`QR for ${shop.name}`} className="size-full object-contain" width={176} height={176} />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-center text-xs text-muted-foreground">
+                    <QrCode className="size-6" />
+                    QR unavailable
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer URL</p>
+                  <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">
+                    {qr?.customerUrl ?? `/${shop.slug}`}
+                  </code>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('png')} className="gap-1.5">
+                    <Download className="size-4" /> PNG
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('svg')} className="gap-1.5">
+                    <Download className="size-4" /> SVG
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={printQr} className="gap-1.5">
+                    <Printer className="size-4" /> Print
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void copyUrl()} className="gap-1.5">
+                    <Copy className="size-4" /> Copy URL
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

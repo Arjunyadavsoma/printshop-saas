@@ -1,0 +1,1529 @@
+# MASTER BUILD PROMPT — PrintShop SaaS
+## Complete Shopkeeper Dashboard: Zero to Production-Ready Implementation
+
+### 1. Your role and mission
+
+Act as a senior full-stack engineer, SaaS architect, database engineer, UI/UX designer, security engineer, and QA specialist.
+
+Your task is to inspect, improve, and complete my existing PrintShop SaaS application by implementing a **fully functional, professional, mobile-first shopkeeper dashboard**.
+
+The application is already deployed on Vercel and connected to Supabase. The project is actively being developed, and the infrastructure may be upgraded in the future.
+
+**Do not rebuild the application from scratch. Do not replace the existing infrastructure. Inspect the codebase, preserve working functionality, and complete the missing features.**
+
+The primary goal is to allow an ordinary printing-shop owner in India to independently set up and operate their business through the dashboard without needing the platform administrator to manually configure the shop.
+
+The shopkeeper should be able to:
+
+1. Register and access their account.
+2. Create and configure their shop.
+3. Add business details, address, contact information, and opening hours.
+4. Configure printing services and prices.
+5. Upload their existing UPI payment QR image.
+6. Configure their UPI ID and payment contact details.
+7. Generate and download a unique QR code for their shop's ordering page.
+8. Receive customer orders with unique token numbers.
+9. See orders and payment statuses in the dashboard.
+10. Verify direct UPI payments or receive verified payment updates through an existing supported integration.
+11. Manage printing, pickup, cancellations, and completed orders.
+12. Manage staff, notifications, shop settings, and usage.
+13. Operate the shop without accessing another shop's information.
+
+Build actual working functionality, not mockups, placeholder forms, fabricated analytics, or buttons that do nothing.
+
+---
+
+# 2. Mandatory operating rules
+
+Before writing code:
+
+- Inspect the complete repository.
+- Identify the framework, routing, UI library, authentication, database, storage, API routes, background jobs, and existing tests.
+- Inspect the current Supabase connection and determine which Supabase capabilities are actually used.
+- Inspect the current Vercel configuration and build process.
+- Inspect existing shop, user, order, payment, pricing, staff, subscription, and file models.
+- Review the current Git working tree and preserve unrelated user changes.
+- Identify completed features, incomplete features, broken features, and missing features.
+- Produce a concise implementation plan, then start implementing.
+
+Do not ask me to manually recreate features that already exist in the repository.
+
+Do not replace the database, authentication provider, hosting, storage provider, or UI framework simply because you prefer a different technology.
+
+Do not reset databases, delete production records, overwrite unrelated changes, expose secrets, commit or push changes, or deploy to production without authorization.
+
+Do not report a feature as completed until its implementation has been inspected and tested.
+
+When a requirement is blocked by missing credentials, an unavailable service, or an incomplete external integration, implement the parts that can be completed safely and clearly document the remaining blocker.
+
+## Existing infrastructure
+
+Preserve the actual integrations discovered in the repository.
+
+- Hosting: existing Vercel deployment.
+- Database and related capabilities: existing Supabase integration, as confirmed by repository inspection.
+- Authentication: existing authentication implementation.
+- File storage: existing configured storage provider, after verifying that it supports persistent storage and appropriate access controls.
+- Payments: direct UPI and manual confirmation unless a verified payment integration already exists.
+
+Do not assume that a package being installed means its service is configured or working.
+
+---
+
+# 3. Product architecture and scope
+
+Build the shopkeeper experience as part of the existing application.
+
+The overall product has three connected areas:
+
+1. **Shopkeeper dashboard:** the main scope of this task.
+2. **Customer-facing shop page and ordering flow:** implement the necessary integration and existing capabilities; prepare the complete public experience if it is missing, following the phased priorities below.
+3. **Platform administrator dashboard:** reuse the existing administrator functionality and make only the changes necessary for shop onboarding, account status, and support.
+
+The shopkeeper dashboard must be usable independently of unfinished future features.
+
+Do not spend the entire implementation building a new storefront before the shopkeeper can configure the business and manage orders.
+
+## Critical QR distinction
+
+There are two separate QR codes.
+
+**A. Shop-ordering QR**
+
+- Unique to each shop.
+- Opens that shop's public ordering page.
+- Used by customers to browse shop details, services, prices, and place orders.
+- Generated by this platform.
+- Downloadable and printable by the shopkeeper.
+
+**B. UPI payment QR**
+
+- Belongs to the shopkeeper's payment account.
+- The shopkeeper can upload an existing QR image supplied by their bank or UPI app.
+- Used by customers to make payments directly to the shopkeeper.
+- Must not be confused with the shop-ordering QR.
+
+The two QR codes must have separate settings, previews, labels, storage references, and dashboard actions.
+
+Never substitute one QR code for the other.
+
+---
+
+# 4. Shopkeeper registration and onboarding
+
+Create a polished, mobile-first onboarding wizard.
+
+The onboarding must support saved progress, validation, clear navigation, and a final review before publication.
+
+## Step 1: Account
+
+Use the existing authentication system.
+
+Support:
+
+- Account registration.
+- Sign-in and sign-out.
+- Password reset if supported by the current authentication provider.
+- Email or phone verification where configured.
+- Session persistence.
+- Protected dashboard routes.
+- Appropriate unauthorized and expired-session states.
+
+Do not build a parallel authentication system.
+
+## Step 2: Business identity
+
+Collect:
+
+- Shop name.
+- Owner's full name.
+- Business type.
+- Shop logo.
+- Optional cover image.
+- Business description.
+- Preferred language.
+- Public shop URL slug.
+- Primary business phone.
+- Optional WhatsApp number.
+- Optional alternate contact number.
+- Optional business email.
+- Customer support contact.
+
+The shop name, owner name, primary contact, and required fields must be validated.
+
+The slug must be unique and normalized safely.
+
+If a slug changes later, preserve existing order references and handle old public URLs safely. Never silently transfer one shop's identity to another shop.
+
+## Step 3: Address
+
+Collect:
+
+- Country, default India.
+- State.
+- District.
+- City or town.
+- PIN code.
+- Locality.
+- Street.
+- Shop or building number.
+- Landmark.
+- Complete address.
+- Optional map link or coordinates.
+- Pickup instructions.
+- Optional accessibility and parking notes.
+
+Allow manual address entry without requiring a paid mapping API.
+
+Validate PIN-code format appropriately without claiming to verify the physical address.
+
+## Step 4: Business hours
+
+Allow the shopkeeper to configure each day's:
+
+- Opening time.
+- Closing time.
+- Closed-day status.
+- Optional break periods.
+- Holiday closures.
+- Temporary closures.
+- Special hours.
+
+Default timezone to Asia/Kolkata, while keeping the timezone configurable.
+
+Handle overnight hours correctly if supported.
+
+Use the configured schedule to inform customers; do not promise that a shop is currently open unless the application has enough accurate data to determine it.
+
+## Step 5: Services and capabilities
+
+Allow the shopkeeper to select and configure services such as:
+
+- Black-and-white printing.
+- Color printing.
+- Photocopying.
+- Document printing.
+- Photo printing.
+- Scanning.
+- Lamination.
+- Spiral binding.
+- Stapling and finishing.
+- Resume printing.
+- Project and assignment printing.
+- Document typing.
+- Custom services.
+
+Each service must support:
+
+- Name and description.
+- Enabled or disabled status.
+- Supported options.
+- Price configuration.
+- Minimum order requirements.
+- Estimated processing time, if configured.
+- Customer-facing availability.
+- Display order.
+
+The shopkeeper must be able to add, edit, duplicate, reorder, disable, and delete eligible custom services.
+
+Protect services already referenced by orders. Archive or disable them instead of destroying historical order information.
+
+---
+
+# 5. Professional shopkeeper dashboard layout
+
+Create a consistent dashboard shell using the existing UI framework.
+
+Provide:
+
+- Responsive sidebar or mobile navigation.
+- Shop identity and current shop status.
+- Page title and contextual actions.
+- Search where useful.
+- Notification access.
+- Account menu.
+- Loading, error, and empty states.
+- Clear form feedback.
+- Accessible labels and keyboard navigation.
+
+Recommended navigation:
+
+1. Overview
+2. Orders
+3. Payments
+4. Services & Pricing
+5. Payment Settings
+6. Shop Profile
+7. Shop QR Code
+8. Customers, if appropriate
+9. Staff
+10. Reports
+11. Notifications
+12. Settings
+13. Subscription & Usage
+14. Help & Support
+
+Reuse the existing design system and components where appropriate.
+
+Do not introduce unnecessary libraries or duplicate components.
+
+The dashboard must work on mobile, tablet, and desktop.
+
+Use a clean, professional visual hierarchy. Prioritize order token numbers, payment states, and actions requiring attention.
+
+---
+
+# 6. Dashboard overview
+
+Build a real overview page backed by authorized database records.
+
+Display relevant metrics:
+
+- New orders.
+- Orders awaiting acceptance.
+- Orders awaiting payment.
+- Payments awaiting verification.
+- Verified payments.
+- Orders being processed.
+- Orders ready for pickup.
+- Completed orders.
+- Today's order count.
+- Today's verified payment total.
+- Configured service count.
+- Shop publication status.
+- Storage or usage consumption when available.
+
+Requirements:
+
+- Calculate values from real records.
+- Apply shop ownership filters on the server.
+- Define the date range and timezone for daily statistics.
+- Avoid double-counting payments.
+- Exclude failed and unverified payment claims from verified payment totals.
+- Distinguish order totals from money actually received.
+- Do not invent revenue, customers, orders, or chart data.
+
+Add useful sections:
+
+- Latest orders.
+- Payments needing attention.
+- Orders ready for pickup.
+- Shop setup checklist.
+- Quick actions.
+- Recent activity.
+
+Each item must link to its real destination.
+
+---
+
+# 7. Business profile and public shop settings
+
+Create a complete Shop Profile page.
+
+Allow editing of:
+
+- Shop name.
+- Logo and cover image.
+- Business description.
+- Owner information.
+- Public contact details.
+- Address.
+- Business hours.
+- Available services.
+- Pickup instructions.
+- Cancellation policy.
+- Payment instructions.
+- Customer support details.
+- Public page slug.
+- Public visibility.
+
+Provide:
+
+- Save draft.
+- Preview public shop page.
+- Publish.
+- Unpublish where permitted.
+- Unsaved-changes warning.
+- Save success and error feedback.
+
+Clearly distinguish saved changes from published changes if the application supports draft publication.
+
+Do not publish unreviewed prices or private payment details automatically.
+
+Create a setup checklist showing completed and incomplete requirements.
+
+Do not block basic dashboard access just because optional information is missing.
+
+---
+
+# 8. Services and advanced pricing configuration
+
+Pricing is a core feature.
+
+Build a dedicated Services & Pricing management area.
+
+## Supported pricing dimensions
+
+Where applicable, support:
+
+- Paper size: A4, A3, A5, Legal, Letter, and custom sizes.
+- Color mode: black-and-white or color.
+- Sides: single-sided or double-sided.
+- Paper type.
+- GSM.
+- Page count.
+- Number of copies.
+- Number of physical sheets.
+- Per-page price.
+- Per-sheet price.
+- Per-copy price.
+- Per-document price.
+- Per-item price.
+- Fixed service fee.
+- Finishing fee.
+- Binding fee.
+- Lamination fee.
+- Minimum order charge.
+- Bulk quantity tiers.
+- Rush-order fee.
+- Setup fee.
+- Custom quotation.
+- Tax settings when applicable.
+
+Do not force every shop to configure every dimension.
+
+Provide a simple pricing editor for ordinary shopkeepers and an advanced editor for additional rules.
+
+## Pricing management
+
+Support:
+
+- Add and edit pricing rules.
+- Enable and disable rules.
+- Duplicate rules.
+- Delete rules when safe.
+- Search and filter.
+- Bulk editing where practical.
+- Customer-facing preview.
+- Conflict validation.
+- Clear unit labels.
+- Suggested starter prices that require explicit shopkeeper approval.
+
+Never publish invented prices automatically.
+
+## Calculation and order snapshots
+
+Calculate quotes on the server.
+
+- Use integer paise for monetary calculations.
+- Validate all quantities and pricing dimensions.
+- Define rounding rules.
+- Reject invalid or conflicting pricing configurations.
+- Never trust browser-submitted totals.
+- Store the price breakdown used for each confirmed order.
+- Preserve a snapshot of the applied pricing rules or pricing version.
+- Ensure subsequent price changes do not silently change existing orders.
+- Make the meaning of per-page, per-sheet, per-copy, and per-job prices clear.
+
+Use database transactions where needed to ensure that the quoted amount and order snapshot are consistent.
+
+---
+
+# 9. Payment settings and uploaded UPI QR
+
+Create a dedicated **Payments & UPI Settings** page.
+
+This page is mandatory and must work independently of the customer storefront.
+
+## UPI configuration
+
+Allow the shopkeeper to configure:
+
+- UPI ID / VPA.
+- Payee display name.
+- Payment contact phone number.
+- Optional WhatsApp payment contact.
+- Payment instructions.
+- Payment confirmation instructions.
+- Whether the UPI ID is publicly displayed.
+- Whether the payment phone number is publicly displayed.
+- Whether the UPI QR image is publicly displayed.
+- Cash at counter.
+- Cash on pickup.
+
+Use reasonable syntax validation for UPI IDs. Do not claim syntax validation verifies account ownership or payment capability.
+
+Never request UPI PINs, bank passwords, card PINs, or banking credentials.
+
+Keep the payment contact separate from the public business contact.
+
+## Existing UPI QR upload
+
+Provide a clearly labeled component:
+
+**Upload your shop's existing UPI payment QR code.**
+
+Support appropriate image formats such as PNG, JPEG, and WebP.
+
+Implement:
+
+- File picker.
+- Mobile upload support.
+- Image preview.
+- Replace image.
+- Remove image.
+- Upload progress.
+- Actual file-content and MIME validation.
+- File-size limits.
+- Clear error messages.
+- Save and cancel actions.
+- Customer-facing preview.
+- Download or print action where appropriate.
+
+Preserve the QR image's scannability.
+
+Do not regenerate, crop, recolor, or overwrite the QR contents during ordinary upload.
+
+Use the existing persistent storage provider after verifying that it works.
+
+Store metadata and storage references safely.
+
+For publicly displayed QR images, expose only the explicitly approved image. Do not make private customer documents or other uploads public.
+
+If storage fails, report the error and preserve the previous working image until the replacement has been safely stored.
+
+## Optional generated UPI QR
+
+If a reliable local QR library is available, allow optional generation of a static UPI payment QR from the shopkeeper's UPI ID and payee name.
+
+- No paid QR API.
+- Keep the generated QR separate from an uploaded bank/app QR.
+- Preview before saving.
+- Never overwrite an uploaded QR automatically.
+- Do not claim the generated QR verifies the account.
+- Do not assume payment completion can be inferred from scanning the QR.
+
+---
+
+# 10. Shop-specific ordering QR
+
+Each shop must have its own ordering QR code.
+
+Use the existing public route if one already exists. Otherwise, establish a stable route such as:
+
+`/shop/{shop-slug}`
+
+Generate a QR locally using an appropriate library.
+
+Provide:
+
+- QR preview.
+- Shop name and associated URL.
+- Download as PNG.
+- SVG download if safely supported.
+- Printable poster.
+- Copy public URL.
+- Open public page.
+- Regenerate only if needed.
+- Clear status if the shop is not published.
+
+The QR must point to the correct shop's public page.
+
+If the page is not yet available, make the dependency clear and do not pretend the QR opens a fully functional ordering experience.
+
+The QR should remain stable when practical. Do not regenerate it unnecessarily every time the dashboard renders.
+
+A shop's QR must never route customers to another shop due to a slug collision or incorrect mapping.
+
+---
+
+# 11. Order creation and unique token numbers
+
+Implement a reliable order and token system.
+
+Each order must have:
+
+- Permanent internal order ID.
+- Shop ID.
+- Human-friendly token number.
+- Creation timestamp.
+- Customer details necessary for the order.
+- Service selections.
+- Document references when applicable.
+- Printing instructions.
+- Price breakdown.
+- Total amount.
+- Payment records.
+- Payment status.
+- Order status.
+- Order timeline.
+
+## Token generation
+
+Generate token numbers on the server.
+
+Example display:
+
+- Token: `A104`
+- Internal reference: a separate permanent order ID.
+- Payment status: `Awaiting Verification`
+- Order status: `New`
+
+The format is illustrative. Follow existing project conventions where appropriate.
+
+Requirements:
+
+- Unique tokens for orders within the defined shop and numbering scope.
+- Database constraints to prevent collisions.
+- Transaction-safe allocation under concurrent requests.
+- Explicit behavior for daily or periodic token resets, if supported.
+- No dependence on a client-generated token.
+- No use of a token as the only authorization credential.
+- Preserve historical tokens and references.
+- Avoid revealing sequential internal database IDs unnecessarily.
+
+If a token allocation fails, handle it safely and do not create a partially saved order.
+
+---
+
+# 12. Complete order-management dashboard
+
+Create an Orders page with filters, search, and detailed order views.
+
+## Order categories
+
+Support the existing model's equivalents of:
+
+- New.
+- Awaiting acceptance.
+- Accepted.
+- Printing in progress.
+- Ready for pickup.
+- Completed.
+- Cancelled.
+
+Keep payment status independent of order status.
+
+## Order list
+
+Display:
+
+- Token number.
+- Order date and time.
+- Customer identifier.
+- Service summary.
+- Total amount.
+- Amount paid.
+- Remaining balance, if partial payments are supported.
+- Payment method.
+- Payment status.
+- Order status.
+- Action to view details.
+
+Include:
+
+- Search by token.
+- Date filters.
+- Payment filters.
+- Order-status filters.
+- Sorting.
+- Pagination for large datasets.
+- Useful empty states.
+
+## Order details
+
+Provide a complete order view containing:
+
+- Token and order reference.
+- Customer contact details, when authorized.
+- Uploaded documents and safe download actions.
+- Service and print settings.
+- Copies and page counts.
+- Pricing breakdown.
+- Order instructions.
+- Payment history.
+- Current payment status.
+- Current order status.
+- Activity timeline.
+- Cancellation details.
+- Pickup instructions.
+
+Use private, authorized file access.
+
+Do not expose document URLs that can be guessed or reused without authorization.
+
+## Status transitions
+
+Implement validated server-side transitions.
+
+Examples:
+
+- New → Accepted.
+- Accepted → Printing.
+- Printing → Ready for Pickup.
+- Ready for Pickup → Completed.
+
+Handle cancellation according to the configured policy and existing state.
+
+Do not permit arbitrary status changes by editing a request.
+
+Record status changes in the order timeline.
+
+---
+
+# 13. Payment verification workflow
+
+This is one of the most important parts of the application.
+
+Payment status and order status must be independent.
+
+## Payment statuses
+
+Support the existing equivalents of:
+
+- Pending.
+- Awaiting Verification.
+- Paid.
+- Failed.
+- Cancelled.
+- Refund Pending.
+- Refunded.
+- Partially Refunded, if supported.
+
+## Direct UPI workflow
+
+When customers pay directly to the shopkeeper's UPI account:
+
+1. The customer sees the shop's approved UPI QR or UPI ID.
+2. The customer makes the payment using their UPI app.
+3. The customer can submit a transaction reference if the workflow requires it.
+4. The order is shown in the dashboard with the correct token.
+5. The payment remains pending or awaiting verification until confirmed.
+6. The shopkeeper opens the payment details.
+7. The shopkeeper checks the actual receipt using their available bank or UPI records.
+8. The shopkeeper confirms or rejects the claim.
+9. The system records the result and audit details.
+10. The dashboard reflects the verified state after the database transaction succeeds.
+
+Customer-submitted screenshots and transaction IDs are claims, not independent proof of successful payment.
+
+## Payment verification actions
+
+Provide authorized actions such as:
+
+- Confirm payment received.
+- Reject payment claim.
+- Record transaction reference.
+- Record verified amount.
+- Add internal verification note.
+- View payment history.
+- Correct an earlier verification with a required reason and audit entry, where permitted.
+
+Confirmation must require explicit user action.
+
+Before marking a payment paid, validate that:
+
+- The order belongs to the current shop.
+- The actor has payment-verification permission.
+- The amount is valid.
+- The currency is correct.
+- The payment has not already been processed.
+- The transition is permitted.
+
+Do not let a shopkeeper mark another shop's payment as paid.
+
+## Automatic payment workflow
+
+Only implement automatic verification if a real, configured payment provider or supported verified notification mechanism exists.
+
+Validate server-side notification authenticity and the order, amount, currency, transaction reference, and event uniqueness.
+
+Use idempotency and transactions.
+
+Do not implement a fake webhook or simulate a provider's confirmation.
+
+Do not claim automated payment confirmation, settlement, or refunds without a working and tested integration.
+
+## Payment records
+
+Maintain a reliable payment history.
+
+Where supported, record:
+
+- Payment ID.
+- Order ID.
+- Shop ID.
+- Payment method.
+- Amount and currency.
+- Payment status.
+- Customer-provided reference.
+- Verified provider reference, where available.
+- Verification actor.
+- Verification timestamp.
+- Failure or rejection reason.
+- Refund history.
+- Audit events.
+
+Never store payment credentials or UPI PINs.
+
+---
+
+# 14. Dashboard behavior after payment
+
+Implement the following user experience exactly.
+
+### Case A: Order created, no payment claimed
+
+The order appears in the shopkeeper dashboard.
+
+Display:
+
+- Token number.
+- Order summary.
+- Amount due.
+- Payment status: Pending.
+- Order status: New.
+
+### Case B: Customer reports completing a direct UPI payment
+
+The order remains visible.
+
+Display:
+
+- Token number.
+- Claimed amount.
+- Customer-provided transaction reference, if supplied.
+- Payment status: Awaiting Verification.
+- Order status: New or its current valid status.
+- Action: Verify Payment.
+
+Do not hide this order while verification is pending.
+
+### Case C: Shopkeeper verifies the payment
+
+After the verification transaction succeeds, display:
+
+- Token number.
+- Payment status: Paid.
+- Verified amount.
+- Payment method.
+- Verification timestamp.
+- Verifier details, as permitted.
+- Current order status.
+
+Refresh dashboard summaries and payment queues.
+
+### Case D: Verified automatic payment notification
+
+If a configured payment provider verifies the transaction server-side, update the payment record and dashboard automatically after validating the event.
+
+### Case E: Payment rejected or failed
+
+Show the appropriate status, reason, and next action.
+
+Do not silently discard the payment claim or delete the order.
+
+### Case F: Order ready for pickup
+
+Show the token prominently so the shopkeeper can identify the job and hand it over to the correct customer.
+
+Do not automatically mark an order completed merely because payment has been verified.
+
+---
+
+# 15. Printing workflow and pickup management
+
+Create a practical workflow for everyday shop operations.
+
+Provide:
+
+- Accept order.
+- Review files and print settings.
+- Start printing.
+- Mark ready for pickup.
+- Mark completed.
+- Cancel when permitted.
+- Add internal notes.
+- Add pickup instructions.
+- View the token.
+- View payment status.
+- View amount due or outstanding balance, if applicable.
+
+If supported, provide a printable order slip containing:
+
+- Shop name.
+- Order token.
+- Date and time.
+- Service summary.
+- Printing settings.
+- Customer pickup identifier.
+- Payment status.
+- Amount and balance.
+
+Do not print sensitive customer details unnecessarily.
+
+If the shop uses an existing print-agent or printing integration, reuse it rather than inventing a second print system.
+
+Do not claim that files have physically printed just because the order status was changed.
+
+---
+
+# 16. Customer information and order tracking
+
+Collect only the information needed to process an order.
+
+Support appropriate fields such as:
+
+- Customer name or display name.
+- Contact number where required.
+- Optional email where useful.
+- Order instructions.
+- Pickup information.
+
+Do not require Aadhaar or residential address for ordinary print pickup.
+
+Prepare a secure customer order-confirmation and tracking experience.
+
+Customers must not be able to access another customer's order by guessing a token or order ID.
+
+Use an appropriate authenticated or securely scoped tracking mechanism.
+
+Display:
+
+- Token.
+- Order summary.
+- Payment instructions.
+- Payment status.
+- Order status.
+- Pickup instructions.
+
+Keep private internal notes hidden from customers.
+
+---
+
+# 17. Document and image storage
+
+Use the existing configured persistent storage provider.
+
+Before implementing file operations, verify that upload, retrieval, replacement, and deletion work with the actual deployed configuration.
+
+Requirements:
+
+- Validate file extension, actual MIME type, and content.
+- Enforce configured file-size limits.
+- Restrict supported document types.
+- Use safe generated storage names.
+- Keep customer documents private.
+- Use authorized download access or appropriately scoped signed URLs.
+- Avoid logging signed URLs or sensitive paths.
+- Track storage metadata and ownership.
+- Apply retention rules where configured.
+- Handle failed uploads and deletions safely.
+- Do not silently fall back to temporary local storage.
+
+Store the uploaded UPI QR separately from customer print documents.
+
+If persistent storage is unavailable, report the failure and disable the affected operation instead of pretending the upload succeeded.
+
+---
+
+# 18. Notifications and activity timeline
+
+Create a useful notification system using the existing mechanisms.
+
+Notify the shopkeeper about:
+
+- New order.
+- Customer payment claim.
+- Payment awaiting verification.
+- Payment verification result.
+- New order cancellation.
+- Order ready-for-pickup deadline, if configured.
+- Subscription or usage warning.
+- Shop publication or configuration issue.
+
+Provide:
+
+- In-app notifications.
+- Read/unread status.
+- Mark as read.
+- Relevant destination links.
+- Appropriate notification preferences.
+
+Email, WhatsApp, SMS, or push notifications must only be enabled where the necessary provider is actually configured.
+
+Do not claim a notification was delivered if only an internal record was created.
+
+For dashboard refreshes, reuse existing real-time subscriptions if available and reliable. Otherwise, implement a suitable refresh or polling mechanism.
+
+---
+
+# 19. Staff accounts and permissions
+
+If staff management is included in the existing architecture, complete it safely.
+
+Support role-based access such as:
+
+- Owner.
+- Manager.
+- Order-processing staff.
+- Payment-verification staff.
+
+Use explicit permissions for:
+
+- Editing shop settings.
+- Editing prices.
+- Managing orders.
+- Viewing customer details.
+- Downloading documents.
+- Confirming payments.
+- Managing staff.
+- Viewing reports.
+
+The shop owner retains control of the shop.
+
+Do not allow staff to change their own privileges.
+
+Do not give every staff member access to sensitive payment configuration by default.
+
+If the current authentication provider or project architecture cannot safely support invitations, document the dependency instead of implementing insecure account creation.
+
+---
+
+# 20. Reports and business insights
+
+Provide reports only from real, authorized data.
+
+Useful reports include:
+
+- Orders by date.
+- Orders by status.
+- Orders by service.
+- Verified payments by date.
+- Pending payment claims.
+- Cancelled orders.
+- Completed orders.
+- Average order value, if correctly calculated.
+- Service demand.
+- Usage and storage consumption.
+
+Distinguish:
+
+- Order value.
+- Claimed payment amount.
+- Verified money received.
+- Refunds.
+- Net verified receipts, when enough information exists to calculate them correctly.
+
+Do not present gross order value as actual received revenue.
+
+Use the existing charting library if available. Otherwise, a clear table may be sufficient.
+
+Add date filters and define the timezone and calculation rules.
+
+Provide CSV export if it can be implemented securely and consistently with the existing stack.
+
+---
+
+# 21. Subscription and usage settings
+
+Reuse the existing subscription model.
+
+Support appropriate states such as:
+
+- Trial.
+- Active.
+- Past Due.
+- Expired.
+- Suspended.
+
+Where applicable, enforce configurable limits for:
+
+- Orders.
+- Storage.
+- Maximum upload size.
+- Staff accounts.
+- Other existing plan features.
+
+Manual subscription administration is sufficient initially.
+
+Do not build recurring billing unless a real payment integration is configured and explicitly required.
+
+If a plan expires, preserve existing business records and provide clear explanations of which new operations are restricted.
+
+Do not allow client-side changes to bypass plan limits.
+
+---
+
+# 22. Shopkeeper settings
+
+Create a structured settings area with sections for:
+
+- Business profile.
+- Location.
+- Contact information.
+- Public visibility and privacy.
+- Business hours.
+- Services.
+- Pricing.
+- UPI and payment methods.
+- Order policies.
+- Staff and permissions.
+- Notifications.
+- Public shop page.
+- Ordering QR.
+- Data retention.
+- Subscription and usage.
+- Export and account management.
+
+Support safe saving, validation, confirmation, and error recovery.
+
+Audit important changes to:
+
+- Business identity.
+- Public URL.
+- Prices.
+- UPI ID.
+- UPI QR image.
+- Payment privacy settings.
+- Staff permissions.
+- Payment verification.
+- Order status.
+
+Do not expose private settings through public APIs.
+
+---
+
+# 23. Database integrity and tenant isolation
+
+Inspect the existing schema before changing it.
+
+Reuse current models and migrations whenever possible.
+
+Every shop-specific record must be associated with the correct shop, including:
+
+- Profile.
+- Contacts.
+- Address.
+- Opening hours.
+- Services.
+- Pricing rules.
+- QR metadata.
+- UPI settings.
+- Orders.
+- Documents.
+- Payment records.
+- Payment events.
+- Staff memberships.
+- Notifications.
+- Audit logs.
+- Subscription and usage records.
+
+Requirements:
+
+- Appropriate foreign keys.
+- Unique constraints.
+- Indexes for common queries.
+- Valid status transitions.
+- Transactional writes where needed.
+- Safe migrations.
+- Appropriate data retention.
+- Protection against cross-shop access.
+
+Enforce tenant authorization on the server, not just in the UI.
+
+If Supabase Row Level Security is part of the current architecture, review and test the applicable policies.
+
+Do not expose a privileged database or service-role credential to the browser.
+
+Do not create a second database or parallel authentication system.
+
+Preserve existing data and test migrations against a safe environment before production use.
+
+---
+
+# 24. Application security
+
+Implement and verify:
+
+- Server-side authentication and authorization.
+- Tenant isolation.
+- Input validation.
+- Safe database access.
+- CSRF protection where relevant to the authentication architecture.
+- Rate limiting for sensitive endpoints.
+- Safe file uploads.
+- Private document access.
+- Safe public shop data.
+- Payment status authorization.
+- Idempotent order creation.
+- Idempotent payment processing.
+- Secure token allocation.
+- Audit history.
+- Secret-safe logging.
+- Protection of administrative routes.
+- Appropriate error responses.
+
+Never trust:
+
+- Browser-supplied prices.
+- Browser-supplied shop ownership.
+- Browser-supplied payment status.
+- Client-generated order tokens.
+- Customer-submitted payment screenshots as proof of receipt.
+- Hidden UI controls as an authorization mechanism.
+
+Do not reveal whether another shop's private record exists when a user lacks access.
+
+---
+
+# 25. Performance and reliability
+
+Make the dashboard suitable for real shop operations.
+
+- Paginate large order lists.
+- Avoid fetching every order for summary cards.
+- Use indexes for frequently filtered fields.
+- Avoid unnecessary repeated database queries.
+- Use server-side pagination and filtering where appropriate.
+- Handle concurrent order and payment updates.
+- Provide clear loading states.
+- Prevent duplicate form submissions.
+- Preserve form values when a recoverable operation fails.
+- Use transactions for related financial and order changes.
+- Avoid unnecessary client-side dependencies.
+- Keep Vercel execution and database usage within the existing deployment's practical limits.
+
+Do not introduce paid infrastructure simply to complete ordinary dashboard functions.
+
+---
+
+# 26. UI quality requirements
+
+The finished application must look and behave like a professional SaaS product.
+
+Use:
+
+- Consistent typography and spacing.
+- Clear status labels.
+- Strong information hierarchy.
+- Mobile-friendly cards and tables.
+- Responsive navigation.
+- Search and filters.
+- Accessible forms.
+- Inline validation.
+- Confirmation dialogs for important actions.
+- Clear empty states.
+- Useful error recovery.
+- Save and cancel behavior.
+- Upload previews.
+- Helpful field descriptions.
+- Toasts or existing feedback components.
+- A coherent color system.
+- Loading skeletons where useful.
+
+Use consistent visual distinctions for:
+
+- Pending payment.
+- Awaiting verification.
+- Paid.
+- Failed.
+- New order.
+- Printing.
+- Ready for pickup.
+- Completed.
+- Cancelled.
+
+Do not rely on color alone to communicate status.
+
+Every visible button, menu, filter, form, and action must be functional.
+
+Do not leave TODO buttons, fake success messages, or static demo statistics in the production interface.
+
+---
+
+# 27. Testing and acceptance criteria
+
+Use the existing testing framework and add tests for the new functionality.
+
+## Onboarding and settings
+
+- Registration and authenticated dashboard access.
+- Shop profile creation and editing.
+- Unique slug validation.
+- Address and contact validation.
+- Business hours.
+- Service configuration.
+- Price-rule conflicts.
+- Draft saving and publishing.
+- Public/private field visibility.
+
+## QR codes
+
+- Different shops receive different ordering URLs.
+- Ordering QR points to the correct shop.
+- UPI QR upload preserves the original QR image.
+- Replacing or removing a QR works safely.
+- Private documents never become public because a payment QR is public.
+- The two QR codes remain separate.
+
+## Orders and tokens
+
+- Order creation.
+- Server-side price calculation.
+- Unique tokens under concurrent creation.
+- Duplicate order submission prevention.
+- Correct shop association.
+- Secure order details.
+- Correct dashboard counts.
+- Valid order status transitions.
+- Historical order snapshots remain unchanged when prices change.
+
+## Payments
+
+- Payment claim appears in the dashboard.
+- Customer claims do not automatically mark payments paid.
+- Authorized manual verification works.
+- Unauthorized verification fails.
+- Duplicate payment events are safely ignored.
+- Verified amounts match the order and currency.
+- Payment and order statuses remain independent.
+- Audit records are created.
+- Verified payment totals exclude unverified claims.
+
+## Tenant security
+
+- Shop A cannot access Shop B's orders.
+- Shop A cannot edit Shop B's settings.
+- Staff cannot access unauthorized features.
+- Customer documents cannot be retrieved by guessing IDs.
+- Public APIs do not expose private UPI contact information.
+- Customers cannot change payment statuses.
+- Platform administration remains role-protected.
+
+## Build and deployment
+
+Run the checks supported by the repository:
+
+- TypeScript type checking.
+- Lint.
+- Unit tests.
+- Integration tests.
+- Relevant end-to-end tests.
+- Production build.
+- Database migration validation.
+- Storage integration checks where configured.
+- Existing deployment smoke tests where authorized.
+
+Report the actual commands and outcomes.
+
+Do not replace a live integration test with a mock and claim the live integration was verified.
+
+Do not claim production deployment is successful merely because a local build passes.
+
+---
+
+# 28. Implementation sequence
+
+Work in small, coherent stages. Complete and verify each stage before moving to the next.
+
+## Phase 1 — Repository audit
+
+Inspect the existing application and document:
+
+- Current architecture.
+- Existing dashboard.
+- Existing shop models.
+- Existing order and payment workflows.
+- Existing QR support.
+- Existing authentication and storage.
+- Missing or broken features.
+- Relevant security and migration risks.
+
+Then begin implementation without waiting for unnecessary confirmation.
+
+## Phase 2 — Shopkeeper foundation
+
+Complete:
+
+- Authentication integration.
+- Shop ownership.
+- Onboarding.
+- Business profile.
+- Address.
+- Opening hours.
+- Dashboard navigation.
+- Save and publish workflow.
+
+## Phase 3 — Services and pricing
+
+Complete:
+
+- Service management.
+- Pricing-rule management.
+- Server-side quote calculation.
+- Price snapshots.
+- Validation and tests.
+
+## Phase 4 — UPI and QR settings
+
+Complete:
+
+- UPI ID.
+- Payment contact.
+- Privacy controls.
+- Existing UPI QR upload.
+- Upload replacement and removal.
+- Optional local UPI QR generation.
+- Separate shop-ordering QR.
+- Download and print actions.
+
+## Phase 5 — Order and token foundation
+
+Complete:
+
+- Order model integration.
+- Unique token allocation.
+- Shop ownership.
+- Server-side pricing.
+- Order details.
+- Status transitions.
+- Customer document handling.
+
+## Phase 6 — Payment workflow
+
+Complete:
+
+- Payment records.
+- Payment-verification queue.
+- Manual confirmation and rejection.
+- Audit history.
+- Duplicate-event protection.
+- Existing verified-provider integration, if available.
+
+## Phase 7 — Operational dashboard
+
+Complete:
+
+- Dashboard summary.
+- New orders.
+- Printing workflow.
+- Ready-for-pickup queue.
+- Notifications.
+- Search and filters.
+- Responsive order details.
+
+## Phase 8 — Reports and account settings
+
+Complete the useful reporting, staff, subscription, usage, and settings features supported by the existing architecture.
+
+Do not build unnecessary infrastructure or payment systems.
+
+## Phase 9 — Security and regression
+
+Run the tests, inspect authorization, verify tenant isolation, validate migrations, and fix regressions.
+
+## Phase 10 — Final verification
+
+Confirm the application builds and the implemented flows work using the actual configured integrations.
+
+Preserve the current Vercel and Supabase setup.
+
+Do not deploy to production without authorization.
+
+---
+
+# 29. Definition of done
+
+The shopkeeper dashboard is complete only when the applicable implemented flows work end to end.
+
+A shopkeeper can:
+
+1. Sign in securely.
+2. Create and edit their own shop.
+3. Configure business details, location, and hours.
+4. Add services and configure prices.
+5. Upload and manage their existing UPI QR image.
+6. Configure their UPI ID and payment contact privacy.
+7. View and download their separate shop-ordering QR.
+8. Receive orders associated with their shop.
+9. See a unique token for each order.
+10. See orders awaiting payment or payment verification.
+11. Verify direct UPI payments with an auditable action.
+12. See payment statuses update correctly.
+13. Process orders through printing and pickup.
+14. View useful, real dashboard metrics.
+15. Manage settings without accessing another shop's information.
+
+Additionally:
+
+- Existing data is preserved.
+- The application builds.
+- Relevant tests have been run.
+- Failed integrations are reported honestly.
+- No secret values are exposed.
+- No fake payment confirmation is implemented.
+- No fake analytics or nonfunctional controls remain in the implemented scope.
+
+Features that require a missing external provider must be explicitly documented as blocked, not falsely marked complete.
+
+---
+
+# 30. Required final report
+
+At the end, provide a clear implementation report containing:
+
+### Repository findings
+- Existing architecture and integrations.
+- Existing features reused.
+- Important limitations discovered.
+
+### Implementation
+- Features completed.
+- Files changed.
+- Database models and migrations changed.
+- New routes and server actions or API endpoints.
+- Dashboard navigation and workflows implemented.
+
+### Payment and QR behavior
+- How shop-specific ordering QR codes work.
+- How uploaded UPI QR images are stored and displayed.
+- How UPI IDs and payment contact numbers are protected.
+- How order tokens are generated.
+- How manual payment verification works.
+- Whether automatic verification is actually available.
+
+### Testing
+- Commands executed.
+- Test results.
+- Build results.
+- Security checks performed.
+- Integration checks that could not be completed.
+
+### Deployment
+- Confirmation that existing Vercel and Supabase configurations were preserved.
+- Whether a production deployment was performed or not.
+- Required environment variables, documented by name only.
+- Any required external setup.
+
+### Remaining work
+- Actual blockers.
+- Incomplete features.
+- Security concerns.
+- Recommended next steps.
+
+Do not claim success without evidence.
+
+---
+
+# Final instruction
+
+Start by inspecting the existing repository and report the feature gaps briefly. Then implement the dashboard systematically, using the existing application architecture.
+
+Prioritize a working shopkeeper experience over unnecessary refactoring.
+
+**The immediate priority is: shop setup → services and pricing → UPI configuration → shop-specific ordering QR → order tokens → payment verification → order processing dashboard.**
+
+Keep the customer storefront and future hosting migration compatible with this architecture, but do not let either distract from completing the shopkeeper dashboard.
+
+Preserve existing Vercel deployment, Supabase integration, user data, and unrelated code changes. Build real functionality, test it, and report precisely what works.

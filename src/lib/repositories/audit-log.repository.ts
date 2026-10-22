@@ -72,6 +72,25 @@ export class AuditLogRepository extends BaseRepository<AuditLogRow> {
     }));
   }
 
+  /** Find audit entries for a specific entity (e.g. an order). Tenant-scoped. */
+  async findByEntity(shopId: string, entityId: string, limit = 100): Promise<AuditLog[]> {
+    const rows = await this.findMany(
+      { shopId, entityId },
+      { limit, order: ['createdAt', 'desc'] },
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      shopId: r.shopId,
+      userId: r.userId,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      metadata: this.parseJson(r.metadata),
+      ip: r.ip,
+      createdAt: r.createdAt,
+    }));
+  }
+
   /** List recent audit entries across ALL shops (admin only). */
   async listRecent(limit = 50): Promise<AuditLog[]> {
     const rows = await this.findMany({}, { limit, order: ['createdAt', 'desc'] });

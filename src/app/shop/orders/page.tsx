@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { StatusBadge } from '@/components/portal/status-badge';
@@ -13,7 +13,9 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -29,6 +31,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { formatINRFromPaise } from '@platform/utils';
 import { ORDER_STATUSES, type OrderStatus } from '@platform/core/domain';
 import {
@@ -40,20 +53,71 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Check,
+  XCircle,
+  Printer as PrinterIcon,
+  PackageCheck,
 } from 'lucide-react';
 
 interface OrderRow {
   id: string;
   customerToken: string;
+  tokenNumber?: string | null;
   status: OrderStatus;
   totalAmountPaise: number;
   createdAt: string;
   paidAt: string | null;
+  customerPhone?: string | null;
 }
 
 const PAGE_SIZE = 20;
 
-type FilterValue = 'all' | OrderStatus;
+type StatusFilter = 'all' | OrderStatus;
+type PaymentFilter = 'all' | 'pending' | 'paid' | 'rejected' | 'refunded';
+type DateFilter = 'all' | 'today' | '7d' | '30d';
+
+function isToday(iso: string): boolean {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  } catch { return false; }
+}
+function withinDays(iso: string, days: number): boolean {
+  try {
+    const d = new Date(iso);
+    return Date.now() - d.getTime() <= days * 24 * 60 * 60 * 1000;
+  } catch { return false; }
+}
+
+function paymentStatus(o: OrderRow): PaymentFilter {
+  if (o.status === 'awaiting_payment') return 'pending';
+  if (o.paidAt) return 'paid';
+  if (o.status === 'cancelled') return 'rejected';
+  if (o.status === 'refunded') return 'refunded';
+  return 'paid';
+}
+
+function PaymentBadge({ status }: { status: PaymentFilter }) {
+  const cls =
+    status === 'paid' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
+    status === 'pending' ? 'border-zinc-200 bg-zinc-50 text-zinc-700' :
+    status === 'rejected' ? 'border-rose-200 bg-rose-50 text-rose-700' :
+    status === 'refunded' ? 'border-violet-200 bg-violet-50 text-violet-800' :
+    'border-border bg-card text-muted-foreground';
+  const label =
+    status === 'paid' ? 'Paid' :
+    status === 'pending' ? 'Pending' :
+    status === 'rejected' ? 'Rejected' :
+    status === 'refunded' ? 'Refunded' :
+    'Unknown';
+  return (
+    <Badge variant="outline" className={`text-[11px] ${cls}`}>
+      <span className="mr-1 inline-block size-1.5 rounded-full bg-current opacity-70" />
+      {label}
+    </Badge>
+  );
+}
 
 export default function ShopOrdersPage() {
   const api = useApiClient();
@@ -62,11 +126,19 @@ export default function ShopOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<FilterValue>('all');
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
 
-  const load = async (silent = false) => {
+  // Quick-action state
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
@@ -88,39 +160,105 @@ export default function ShopOrdersPage() {
     } finally {
       if (silent) setRefreshing(false); else setLoading(false);
     }
-  };
+  }, [api]);
 
   useEffect(() => {
     void load();
     const id = setInterval(() => void load(true), 20_000);
     return () => clearInterval(id);
-  }, []);
+  }, [load]);
 
-  // Client-side filter + search — we keep the server call simple (one big
-  // fetch) and let the shopkeeper slice it locally; 200 orders is small.
+  // Client-side filter + search + date filter.
   const filtered = useMemo(() => {
     let out = orders;
     if (statusFilter !== 'all') {
       out = out.filter((o) => o.status === statusFilter);
     }
+    if (paymentFilter !== 'all') {
+      out = out.filter((o) => paymentStatus(o) === paymentFilter);
+    }
+    if (dateFilter === 'today') out = out.filter((o) => isToday(o.createdAt));
+    else if (dateFilter === '7d') out = out.filter((o) => withinDays(o.createdAt, 7));
+    else if (dateFilter === '30d') out = out.filter((o) => withinDays(o.createdAt, 30));
+
     const q = search.trim().toLowerCase();
     if (q) {
       out = out.filter(
         (o) =>
           o.id.toLowerCase().includes(q) ||
-          o.customerToken.toLowerCase().includes(q),
+          o.customerToken.toLowerCase().includes(q) ||
+          (o.tokenNumber ?? '').toLowerCase().includes(q) ||
+          (o.customerPhone ?? '').toLowerCase().includes(q),
       );
     }
     return out;
-  }, [orders, statusFilter, search]);
+  }, [orders, statusFilter, paymentFilter, dateFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const paged = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
-  useEffect(() => {
-    setPage(0);
-  }, [statusFilter, search]);
+  useEffect(() => { setPage(0); }, [statusFilter, paymentFilter, dateFilter, search]);
+
+  // ── Quick actions ──
+  const quickVerify = async (orderId: string, action: 'verify' | 'reject') => {
+    setBusy(`${orderId}:${action}`);
+    setActionError(null);
+    try {
+      const r = await api.request<{ error?: { message?: string } }>(
+        'POST',
+        `/api/v1/shops/me/orders/${orderId}/verify-payment`,
+        { body: { action } },
+      );
+      if (r.status >= 400) {
+        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        return;
+      }
+      await load(true);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const quickStart = async (orderId: string) => {
+    setBusy(`${orderId}:start`);
+    setActionError(null);
+    try {
+      const r = await api.request<{ error?: { message?: string } }>(
+        'POST',
+        `/api/v1/shops/me/orders/${orderId}/start`,
+      );
+      if (r.status >= 400) {
+        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        return;
+      }
+      await load(true);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const quickReady = async (orderId: string) => {
+    setBusy(`${orderId}:ready`);
+    setActionError(null);
+    try {
+      const r = await api.request<{ error?: { message?: string } }>(
+        'POST',
+        `/api/v1/shops/me/orders/${orderId}/ready`,
+      );
+      if (r.status >= 400) {
+        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        return;
+      }
+      await load(true);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -142,80 +280,91 @@ export default function ShopOrdersPage() {
           disabled={refreshing}
           className="gap-1.5"
         >
-          {refreshing ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="size-4" />
-          )}
+          {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           Refresh
         </Button>
       </div>
 
       {/* Filters */}
       <Card className="border-border">
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-1.5">
-            <label htmlFor="search" className="text-xs font-medium text-muted-foreground">
-              Search by order ID or customer token
-            </label>
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="search" className="text-xs">Search</Label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 id="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="e.g. ABC123 or 3f2a…"
+                placeholder="token, order ID, or phone"
                 className="pl-9"
               />
             </div>
           </div>
-          <div className="space-y-1.5 sm:w-56">
-            <label htmlFor="status" className="text-xs font-medium text-muted-foreground">
-              Filter by status
-            </label>
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as FilterValue)}
-            >
-              <SelectTrigger id="status">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
+          <div className="space-y-1.5">
+            <Label htmlFor="status" className="text-xs">Order status</Label>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+              <SelectTrigger id="status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {ORDER_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s.replace(/_/g, ' ')}
-                  </SelectItem>
+                  <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="payment" className="text-xs">Payment</Label>
+            <Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v as PaymentFilter)}>
+              <SelectTrigger id="payment"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All payments</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="refunded">Refunded</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="date" className="text-xs">Date range</Label>
+            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+              <SelectTrigger id="date"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
+      {actionError && (
+        <Card className="border-rose-200 bg-rose-50">
+          <CardContent className="p-3 text-sm text-rose-700">⚠ {actionError}</CardContent>
+        </Card>
+      )}
+
       {/* List */}
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="text-base">Order queue</CardTitle>
           <CardDescription className="text-xs">
-            Click any order to view its files, download print-ready documents, and advance the
-            status through the lifecycle.
+            Click any order to view files, payment verification, status actions, and the activity timeline.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
           {loading ? (
             <div className="space-y-2 p-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : error ? (
             <div className="p-6 text-sm text-rose-700">
               {error}
               <div className="mt-3">
-                <Button variant="outline" size="sm" onClick={() => void load()}>
-                  Retry
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
               </div>
             </div>
           ) : paged.length === 0 ? (
@@ -235,45 +384,119 @@ export default function ShopOrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">Token</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Placed</TableHead>
-                  <TableHead>Paid</TableHead>
-                  <TableHead className="pr-4 text-right">View</TableHead>
+                  <TableHead className="pr-4 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paged.map((o) => (
-                  <TableRow key={o.id} className="cursor-pointer">
-                    <TableCell className="pl-4">
-                      <Link
-                        href={`/shop/orders/${o.id}`}
-                        className="font-mono font-semibold text-amber-700 hover:underline"
-                      >
-                        {o.customerToken}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={o.status} />
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {formatINRFromPaise(o.totalAmountPaise)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(o.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {o.paidAt ? new Date(o.paidAt).toLocaleString() : '—'}
-                    </TableCell>
-                    <TableCell className="pr-4 text-right">
-                      <Button asChild size="sm" variant="ghost" className="gap-1">
-                        <Link href={`/shop/orders/${o.id}`}>
-                          <FileText className="size-3.5" /> Open
+                {paged.map((o) => {
+                  const pstatus = paymentStatus(o);
+                  const canVerify = o.status === 'awaiting_payment';
+                  const canStart = o.status === 'paid';
+                  const canReady = o.status === 'printing';
+                  const idBusy = busy?.startsWith(`${o.id}:`) ?? false;
+                  return (
+                    <TableRow key={o.id} className="cursor-pointer">
+                      <TableCell className="pl-4">
+                        <Link
+                          href={`/shop/orders/${o.id}`}
+                          className="font-mono font-semibold text-amber-700 hover:underline"
+                        >
+                          {o.tokenNumber ?? o.customerToken}
                         </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {o.customerPhone ?? <span className="italic">—</span>}
+                      </TableCell>
+                      <TableCell><PaymentBadge status={pstatus} /></TableCell>
+                      <TableCell><StatusBadge status={o.status} /></TableCell>
+                      <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</TableCell>
+                      <TableCell className="pr-4">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {canVerify && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void quickVerify(o.id, 'verify')}
+                                disabled={idBusy}
+                                className="gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                title="Verify payment"
+                              >
+                                {busy === `${o.id}:verify` ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                                <span className="hidden sm:inline">Verify</span>
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={idBusy}
+                                    className="gap-1 border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    title="Reject payment"
+                                  >
+                                    {busy === `${o.id}:reject` ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Reject this payment?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Order {o.tokenNumber ?? o.customerToken} will be marked cancelled.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-rose-600 text-white hover:bg-rose-600/90"
+                                      onClick={(e) => { e.preventDefault(); void quickVerify(o.id, 'reject'); }}
+                                    >
+                                      Yes, reject
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </>
+                          )}
+                          {canStart && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void quickStart(o.id)}
+                              disabled={idBusy}
+                              className="gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                              title="Start printing"
+                            >
+                              {busy === `${o.id}:start` ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
+                              <span className="hidden sm:inline">Start</span>
+                            </Button>
+                          )}
+                          {canReady && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void quickReady(o.id)}
+                              disabled={idBusy}
+                              className="gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              title="Mark ready for pickup"
+                            >
+                              {busy === `${o.id}:ready` ? <Loader2 className="size-3.5 animate-spin" /> : <PackageCheck className="size-3.5" />}
+                              <span className="hidden sm:inline">Ready</span>
+                            </Button>
+                          )}
+                          <Button asChild size="sm" variant="ghost" className="gap-1">
+                            <Link href={`/shop/orders/${o.id}`}><FileText className="size-3.5" /> Open</Link>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
