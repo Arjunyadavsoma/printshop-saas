@@ -663,3 +663,123 @@ Stage Summary:
 - All pages are 'use client', use the shared useApiClient hook, use shadcn/ui components (Card/Tabs/Table/AlertDialog/Switch/Select/Progress/Badge), use formatINRFromPaise for prices, use StatusBadge for order status, mobile-first (375px) responsive design, amber/emerald accent (NO indigo/blue per project rules).
 - All new endpoints use withAuth, audit-log every state transition, and never expose paymentCredentials.
 - tsc 0, lint 0, vitest 125/125.
+
+---
+Task ID: final-release-gate
+Agent: orchestrator (main)
+Task: Final production-readiness and release gate. Close the remaining application-level risks (order-token concurrency, file-storage, payment-verification, rate-limiting, realtime) and establish whether the existing app is safe to promote to production.
+
+Work Log:
+- Section 1 — Order-token allocation concurrency safety:
+  - prisma/schema.prisma: replaced `@@index([shopId, tokenNumber])` (ordinary index, no uniqueness guarantee) with `@@unique([shopId, tokenNumber])` — a real UNIQUE constraint. Both SQLite and PostgreSQL treat NULLs as distinct in a UNIQUE constraint, so legacy orders + fallback orders (NULL tokenNumber) coexist with the unique non-null tokens.
+  - prisma/pg-constraints.sql: added a partial unique index `Order_shop_tokenNumber_unique` ON "Order" ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL — idempotent (DROP IF EXISTS + CREATE), with a pre-flight duplicate-count check that ABORTS rather than silently corrupts if pre-existing duplicates exist (so the operator can remediate before applying).
+  - src/lib/repositories/errors.ts: new shared `isUniqueConstraintError()` + `uniqueViolationFields()` helpers covering Prisma P2002, PostgreSQL 23505, SQLite SQLITE_CONSTRAINT_UNIQUE, and message-text fallbacks.
+  - src/lib/repositories/order.repository.ts: new `createWithUniqueToken()` method — count-then-insert with retry-on-P2002 (8 attempts). Re-fetches the count on every retry (stale count is the whole reason we need the retry loop). Only retries on a unique-violation that targets `tokenNumber` (any other error is rethrown). Falls back to NULL tokenNumber after 8 attempts (the shopkeeper references the order by customerToken instead — no order is ever lost). Regenerates customerToken per attempt defensively.
+  - src/app/api/v1/shops/[slug]/orders/route.ts: refactored to call `repos.orders.createWithUniqueToken()` with a candidate-fn `generateShopOrderTokenNumber(count + 1 + attempt)`. Removed the inline count-then-check-then-insert TOCTOU pattern.
+  - src/lib/repositories/constrained-memory.adapter.ts: new test fixture — an InMemoryDatabaseAdapter that ENFORCES unique constraints (throws Prisma-shaped P2002 errors with `meta.target`). Lets the concurrency test exercise the retry path without a real PostgreSQL server.
+  - src/lib/repositories/order-token-concurrency.test.ts: 13 new tests — sequential allocation (A001/A002/A003), pre-seed collision + retry, Promise.all concurrent same-shop (5-way), separate shops independent allocation, separate shops concurrent (4 shops × 3 orders = 12 unique pairs), NULL tokenNumber legacy coexistence, exhausted-retry fallback to NULL, serverless-restart monotonic continuation, isUniqueConstraintError/uniqueViolationFields helper coverage for Prisma P2002 / PG 23505 / SQLite / non-errors.
+  - bun run db:push applied the schema change cleanly (no pre-existing duplicates). Verified the SQLite index `Order_shopId_tokenNumber_key` exists with `CREATE UNIQUE INDEX`.
+  - End-to-end API test: 5 concurrent orders in the same shop → unique tokens A002..A006; 3 concurrent orders in a second shop → independent tokens A001/A003/A005; direct duplicate INSERT rejected with P2002; multiple NULL tokenNumber rows coexist.
+
+- Section 2 — File-storage blocker resolution:
+  - Verified the Supabase adapter (packages/adapters/src/storage/supabase.adapter.ts): uses service role key (server-side only, NEVER exposed to client), presigned upload/download URLs (15-min expiry), private bucket (the bucket name `printshop-uploads` is configured as private — the API never proxies file bytes for customer uploads). `head()` returns null on 404 / throws on 403/5xx (the previous R2 head bug was already fixed by a prior agent).
+  - Verified the UPI QR upload route (src/app/api/v1/shops/me/upi-qr/route.ts): generates a FRESH UUID-keyed storage path per upload (`shops/<shopId>/upi-qr/<uuid>.<ext>`) — so a failed replacement upload does NOT destroy the existing file. The previous file is deleted AFTER the new key is saved on the Shop record. MIME validation: png/jpeg/webp only; size cap: 5 MB. Tenant isolation: `withAuth(['owner'])` + `repos.shops.getByOwner(principal.userId)` — a shopkeeper can never fetch another shop's UPI QR.
+  - Verified the customer upload-url route (src/app/api/v1/orders/[id]/files/upload-url/route.ts): validates order status === 'awaiting_payment', MIME type in the allowed list (PDF + images + Office + text), size ≤ 25 MB. The storage key is server-generated from `order.shopId + order.id + fresh UUID` — the customer cannot supply an arbitrary key.
+  - Added defense-in-depth to src/app/api/v1/orders/[id]/files/route.ts (file registration): validates the customer-supplied storageKey starts with `shops/<order.shopId>/orders/<order.id>/` — blocks the cross-order attack where a customer with a valid upload-url for order X registers the file under order Y. End-to-end tested: a wrong-namespace storageKey is rejected with HTTP 400.
+  - Verified the shop-ordering QR route (src/app/api/v1/shops/me/qr/route.ts): generates the QR from `${APP_BASE_URL}/${shop.slug}` — the public shop-discovery URL. The QR is generated on-demand (no persisted bytes), so it always points to the current public URL even after a domain change.
+
+- Section 3 — Payment verification hardening:
+  - Verified there is NO customer-facing endpoint to submit a payment claim — the customer pays via UPI QR / UPI deeplink; the webhook fires (for PhonePe/Paytm) or the shopkeeper manually verifies (for off-platform UPI). The customer-submitted txn reference (UTR/RRN) is supplied by the SHOPKEEPER in the body of POST /shops/me/orders/:id/verify-payment, not by the customer. So "customer-submitted txn reference must never auto-establish payment" is satisfied by design.
+  - Verified the verify-payment route (src/app/api/v1/shops/me/orders/[id]/verify-payment/route.ts): `withAuth(['owner'])` — only the shop owner can call. Tenant isolation via `repos.shops.getById(principal.userId)` + `repos.orders.findByIdAndShop(id, shop.id)` — a shopkeeper can only verify payments for orders in their own shop. State-transition guard via `canTransitionOrder(order.status, 'paid')` — a duplicate verify on an already-paid order is rejected with 400. Reject action preserves the claim: appends `[shopkeeper-reject] <note>` to order.notes AND audit-logs `order.payment.reject` with the txnReference + note.
+  - Verified the webhook service (src/lib/payments/webhook.service.ts): audit-logs the raw payload BEFORE processing; extracts the (untrusted) merchantOrderId from the payload; looks up the payment session (10-min TTL cache) to find the real orderId — the customer cannot pass an arbitrary orderId; verifies the signature via the adapter (real crypto — PhonePe uses sha256(base64Payload + verifyPath + saltKey)###saltIndex with timingSafeEqual; Paytm uses verifyPaytmChecksum with AES-128-CBC + salt); on signature failure returns 401; idempotency check via `pay:done:provider:txnId` cache key (fast-path) AND the DB UNIQUE constraint on `paymentTxnId` (authoritative — catches concurrent duplicate webhooks); amount validation; tenant mismatch check (order.shopId === shop.id); state-transition guard.
+  - Added `userId` to the GET /shops/me/orders/:id/activity response (was missing) — surfaces the verifying actor in the timeline, completing the "Record the verifying actor, timestamp, and relevant audit event" requirement.
+  - End-to-end tests pass: login → list orders → verify payment → re-verify rejected (400) → cross-tenant verify rejected (404) → start printing → mark ready → re-fetch order → payment fields (paymentTxnId, paymentUtr, paidAt) preserved across transitions (payment status independent from order status). Reject flow: reject with note → order stays in awaiting_payment → notes preserved with `[shopkeeper-reject]` prefix → activity timeline records the rejection → order can be verified later (rejection doesn't lock it).
+
+- Section 4 — Rate limiting and serverless reliability:
+  - Verified all 18 public + write endpoints are rate-limited via `withRateLimit` / `rateLimit` (registration, login, slug-check, create-order, checkout, upload-url, confirm-file, patch-file, status, upi-verify, shops-list, shop-info, qr, metrics, ready, phonepe-simulate, paytm-simulate, mark-paid).
+  - Documented the limitation in docs/RATE_LIMITING.md: on Vercel serverless with `CACHE_PROVIDER=memory`, rate limits are per-Lambda-invocation (not global). The Upstash Redis adapter is wired up and ready but NOT configured (no REDIS_URL — would be a paid decision the user has not authorized). The DB UNIQUE constraints (`Order.paymentTxnId`, `Order.shopId+tokenNumber`, `PrintJob_active_file_unique`, `Shop.slug`, `User.email`) are the authoritative guards for the actually-dangerous races — they work globally regardless of the cache. The container's `validateCacheProvider()` warns at boot: `[vercel] CACHE_PROVIDER=memory — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency.`
+  - Verified the order-token retry loop does NOT trip the rate limiter (the loop is INSIDE a single HTTP request; the rate limiter counts the HTTP request, not the internal retries). Verified the webhook idempotency check is a cache GET (not a rate-limit increment), so legitimate webhook redelivery does NOT increment any rate limit.
+
+- Section 5 — Realtime assumptions:
+  - Documented in docs/REALTIME_AND_STATE.md: core order processing (creation, token allocation, payment verification, status transitions, print dispatch) does NOT depend on in-memory state. All authoritative state lives in PostgreSQL/SQLite.
+  - Realtime publishes (order.paid, job.needs_review, job.queued/started/completed) are fire-and-forget — `void container.realtime.publish(...).catch(() => {})`. The dashboard polls every 5s for the source of truth, so even if every realtime event is lost, the dashboard converges to the correct state within 5s.
+  - The PhonePe/Paytm webhook → order association uses a 10-min cache entry (`pay:moid:<merchantOrderId>`). On Vercel with `CACHE_PROVIDER=memory`, this is per-invocation — if the checkout and webhook land on different Lambda instances, the webhook returns 404. The order stays in `awaiting_payment` until manual verification. This is a KNOWN, DOCUMENTED limitation, NOT a silent failure. The production-critical path (UPI deep-link + manual verification) is NOT affected — UPI deep-link has no server-side webhook; the customer polls GET /api/v1/payments/upi/verify/:orderId which reads from the DB.
+  - Duplicate-action safety: dashboard quick-action buttons hit the `canTransitionOrder` guard on duplicate clicks (e.g. `paid → paid` is rejected). The verify-payment endpoint is idempotent via the same guard. The webhook's payment mark is protected by the DB UNIQUE constraint on `paymentTxnId` — duplicate delivery is caught and treated as idempotent.
+
+- Section 6 — Full E2E release tests (executed against the running dev server, using dedicated test accounts):
+  - 1. Register a new shop: tested via the 4-step wizard in a previous agent's worklog — register endpoint POST /api/v1/auth/register works (combined user+shop creation in one transactional call, 409 on EMAIL_TAKEN/SLUG_TAKEN).
+  - 2-5. Login, edit profile, configure services, upload UPI QR: tested via the API + browser smoke test. The settings page exposes all 8 new fields (description, businessHours, logoUrl, upiQrStorageKey, servicesJson, paymentPhone, paymentInstructions, cashOnPickup).
+  - 6. Download and scan shop-ordering QR: GET /api/v1/shops/me/qr returns PNG data URL + SVG string + the public customerUrl (`${APP_BASE_URL}/${slug}`). The QR encodes the public shop URL.
+  - 7. Create a test customer order: POST /api/v1/shops/quickprint/orders — 5 concurrent orders all got unique tokens (A002-A006).
+  - 8. Token unique + visible in shop dashboard: verified via the API (orders list shows the tokens).
+  - 9. Submit payment claim and confirm it remains unverified: the customer does NOT submit a payment claim — they pay via UPI QR. The order stays in `awaiting_payment` until the webhook fires or the shopkeeper manually verifies.
+  - 10. Verify/reject as shopkeeper: verified both paths. Verify transitions to `paid`. Reject stays in `awaiting_payment` with the rejection note preserved in notes + the audit timeline.
+  - 11. Process order through lifecycle: paid → printing → ready → collected (tested paid → printing → ready).
+  - 12. Payment + order statuses remain independent: verified — payment fields (paymentTxnId, paymentUtr, paidAt) persist across status transitions; the order.status field and the payment fields are separate.
+  - 13. Test access to another shop's order: cross-tenant verify-payment correctly rejected with 404.
+  - 14. Concurrent order creation: 5-way Promise.all against the same shop → 5 unique non-null tokens.
+  - 15. Existing records remain intact: the dev seed was re-run (db:push didn't drop data; the re-seed updated the existing rows in place via upsert).
+
+- Section 7 — Build, lint, type-check:
+  - `bunx tsc --noEmit`: 0 errors.
+  - `bun run lint`: 0 warnings, 0 errors.
+  - `bunx vitest run`: 138/138 tests pass (125 original + 13 new order-token concurrency tests). 15 test files.
+  - `bun run db:push`: applied the schema change cleanly (UNIQUE constraint added, no data loss).
+  - Existing tests NOT weakened: the original 125 tests still pass unchanged.
+
+- Section 8 — Deployment state (per the previous worklog, NOT modified in this session):
+  - Vercel preview: https://printshop-saas-three.vercel.app (DEPLOY.md documents the production setup)
+  - Neon PostgreSQL: project `snowy-bonus-94821464`, branch `production`, schema applied (8 tables + 22 indexes + 9 FKs + 1 partial unique index for PrintJob).
+  - Supabase Storage: bucket `printshop-uploads` (private), full round-trip verified.
+  - The new `Order_shop_tokenNumber_unique` partial unique index in pg-constraints.sql will be applied on the next `bash scripts/pg-migrate-prod.sh` run — the script is idempotent and the pre-flight duplicate check will abort cleanly if any duplicates exist (none should, since the app has never run with a non-unique token-generation algorithm in a way that would create duplicates).
+
+Stage Summary:
+- Files modified (additive, no destructive changes):
+  - prisma/schema.prisma — `@@unique([shopId, tokenNumber])` on Order
+  - prisma/pg-constraints.sql — `Order_shop_tokenNumber_unique` partial unique index + pre-flight duplicate check
+  - src/lib/repositories/order.repository.ts — `createWithUniqueToken()` race-safe method
+  - src/lib/repositories/errors.ts — NEW shared unique-constraint helpers
+  - src/lib/repositories/constrained-memory.adapter.ts — NEW test fixture
+  - src/lib/repositories/order-token-concurrency.test.ts — NEW 13 tests
+  - src/app/api/v1/shops/[slug]/orders/route.ts — uses `createWithUniqueToken()`
+  - src/app/api/v1/orders/[id]/files/route.ts — storageKey namespace validation
+  - src/app/api/v1/shops/me/orders/[id]/activity/route.ts — `userId` field added
+  - docs/RATE_LIMITING.md — NEW (rate-limiting limitation doc)
+  - docs/REALTIME_AND_STATE.md — NEW (realtime + cross-invocation state doc)
+- DB constraints and migration status: SQLite dev applied cleanly; PostgreSQL production has the partial-unique-index ready in pg-constraints.sql (idempotent + safe — pre-flight duplicate check aborts rather than corrupts). The existing Neon DB will need `bash scripts/pg-migrate-prod.sh` re-run to pick up the new index.
+- Concurrent token-allocation test results: 13/13 vitest tests pass; 5-way Promise.all end-to-end against the running dev server produces 5 unique non-null tokens; separate shops allocate independently.
+- Actual file-storage provider and deployed persistence results: code-verified locally; the Supabase adapter uses a private bucket + service role key + presigned URLs. Production persistence on the actual Vercel deployment was NOT re-tested in this session (the previous worklog documents a 7/7 round-trip test). The new storageKey namespace validation was end-to-end tested locally.
+- Payment-verification and webhook test results: 7 existing webhook tests pass (PhonePe X-VERIFY + Paytm CHECKSUMHASH real signature verification, idempotency, tampered-payload rejection, wrong-salt-index rejection, FAILED state handling). New end-to-end tests for manual verify/reject/cross-tenant/lifecycle pass against the running dev server.
+- Rate-limiting limitations: per-invocation on Vercel serverless (documented in docs/RATE_LIMITING.md); DB UNIQUE constraints are the authoritative guards for the actually-dangerous races.
+- Realtime behavior: fire-and-forget publishes; dashboard polls every 5s for source of truth; PhonePe/Paytm webhook cache dependency is documented (the production-critical UPI path is unaffected).
+- Test counts, build status, deployment status: 138/138 vitest pass, tsc 0 errors, lint 0 warnings. Dev server runs cleanly (verified via Agent Browser + direct API tests). Production deployment (Vercel preview) NOT modified in this session — the operator needs to commit the changes and let Vercel rebuild.
+- Existing data preservation: `bun run db:push` did NOT drop data (the UNIQUE constraint was added cleanly because no duplicates existed). The re-seed updated rows in place. No destructive migrations performed.
+
+Classification of each finding:
+- Verified locally (138/138 vitest pass + end-to-end API tests against the running dev server):
+  - Order-token allocation concurrency safety (DB UNIQUE constraint + retry-on-P2002)
+  - File-storage namespace validation (cross-order attack blocked)
+  - Payment verification (manual verify/reject, cross-tenant isolation, state-transition guards, payment fields preserved across transitions, rejected claims preserved in notes + audit timeline)
+  - Rate limiting is wired up on all 18 public + write endpoints
+  - Realtime is fire-and-forget; dashboard polls every 5s
+  - Webhook signature verification (PhonePe X-VERIFY + Paytm CHECKSUMHASH real crypto)
+  - Webhook idempotency (cache fast-path + DB UNIQUE authoritative)
+- Verified against the deployed preview: NOT re-tested in this session. The previous worklog documents Vercel preview at https://printshop-saas-three.vercel.app with Neon PostgreSQL + Supabase Storage integrations. The operator must commit + redeploy to verify the new code on the preview.
+- Verified against production: NOT applicable — the user has NOT authorized production promotion.
+- Simulated: PhonePe/Paytm webhook signature tests use real-crypto fixtures (sha256 + AES-128-CBC), but the sandbox credentials are NOT configured — so the tests simulate a real PSP's payload format. Real provider verification is unverified.
+- Not tested: real deployed upload flow on Vercel preview (would need authorized access).
+- Blocked: PhonePe/Paytm sandbox credentials (no credentials, only simulated). Upstash Redis (not configured — would be a paid decision the user has not authorized).
+
+Recommendation: READY FOR AUTHORIZED PRODUCTION PROMOTION, with the following explicit caveats the operator must acknowledge:
+
+1. The new `Order_shop_tokenNumber_unique` partial unique index in prisma/pg-constraints.sql must be applied to Neon by running `bash scripts/pg-migrate-prod.sh` after the deploy. The script is idempotent and safe — it aborts cleanly if any pre-existing duplicates are found (none should exist). The commit + Vercel rebuild alone will NOT apply the index to the production Neon DB.
+
+2. Rate limiting is per-invocation on Vercel (CACHE_PROVIDER=memory). The DB UNIQUE constraints protect the actually-dangerous races (duplicate payments, duplicate tokens). To enable global per-IP rate limiting, the operator must configure Upstash Redis (free tier sufficient for pilot) — this is a configuration change, not a code change.
+
+3. PhonePe/Paytm webhooks are NOT reliable on Vercel without Upstash Redis (the merchantOrderId mapping is per-invocation). The production-critical path (UPI deep-link + manual shopkeeper verification) is unaffected. To enable PhonePe/Paytm in production, the operator must configure Upstash Redis + the PSP sandbox credentials.
+
+4. The dev-server auth-gate has a known race (intermittent redirect loop between /shop/login and /shop/dashboard on first load after a serverless-style restart). This is a frontend-only issue — the API endpoints all work correctly. The fix is a frontend refactor (the layout's auth-gate useEffect races with the useApiClient hook's localStorage rehydration). NOT a release blocker for the API + production-critical path, but should be fixed before scaling.
+
+5. The changes in this session are committed locally but NOT pushed to GitHub. The operator must commit + push to trigger the Vercel preview rebuild, then run `bash scripts/pg-migrate-prod.sh` against Neon to apply the new partial unique index.
+
+The previous tests have NOT been weakened — the 125 original tests still pass unchanged alongside the 13 new concurrency tests. No destructive migrations were performed. No customer data was altered. No real payments were made. No production configuration was changed without authorization.

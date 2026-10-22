@@ -28,6 +28,23 @@ export const POST = withRateLimit<{ id: string }>('confirm-file', 30, 60, async 
     const body = ConfirmFileSchema.parse(await req.json());
     const storage = getContainer().storage;
 
+    // ── Defense-in-depth: the storageKey MUST be in this order's own
+    // namespace. Without this check, a customer who has a valid upload-url
+    // for order X could POST to /orders/Y/files with the storageKey from
+    // order X — the file record would be created under order Y but point at
+    // bytes in order X's namespace (cross-order attack within the same
+    // shop). The expected prefix is `shops/<shopId>/orders/<orderId>/<fileId>`.
+    // The prefix encodes the order's tenant, so this also blocks cross-shop
+    // attacks (the customer would need to know another shop's ID, which
+    // they don't — but defense-in-depth is cheap here). ──
+    const expectedPrefix = `shops/${order.shopId}/orders/${order.id}/`;
+    if (!body.storageKey.startsWith(expectedPrefix)) {
+      throw new ValidationError(
+        `storageKey must be in this order's namespace (expected prefix "${expectedPrefix}")`,
+        { receivedPrefix: body.storageKey.split('/').slice(0, 4).join('/') + '/' },
+      );
+    }
+
     // Verify the object actually landed in storage (HEAD).
     const head = await storage.head(body.storageKey);
     if (!head) throw new ValidationError('File not found in storage — did the upload complete?');

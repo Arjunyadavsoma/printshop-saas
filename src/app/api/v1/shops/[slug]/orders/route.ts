@@ -19,6 +19,32 @@ const CreateOrderSchema = z.object({
  *     customer to track their order anonymously.
  *   - tokenNumber: per-shop sequential number (A104) — used by the
  *     shopkeeper to call orders aloud ("order A104 is ready").
+ *
+ * ── Race-safe allocation strategy ──────────────────────────────────
+ * The tokenNumber is allocated via `repos.orders.createWithUniqueToken`,
+ * which:
+ *   1. Computes a candidate from `countByShop() + 1 + attempt`.
+ *   2. INSERTs with that candidate. The database's UNIQUE constraint on
+ *      (shopId, tokenNumber) — applied as a partial unique index in
+ *      prisma/pg-constraints.sql and as `@@unique` in schema.prisma —
+ *      rejects any concurrent double-allocation with P2002/23505.
+ *   3. On a unique-violation, regenerates the candidate (count + 1 +
+ *      next-attempt) and retries. The retry uses a fresh order id, so
+ *      a partially-applied INSERT cannot create a duplicate order.
+ *   4. After 8 attempts, falls back to NULL tokenNumber — the shopkeeper
+ *      references the order by customerToken instead. No order is ever
+ *      lost because of a token allocation failure.
+ *
+ * The customerToken uses a separate collision-retry loop (5 attempts)
+ * before the create — it's a 6-char random string from a 31-bit alphabet,
+ * so collisions are vanishingly rare. There is no DB UNIQUE constraint on
+ * customerToken (the spec doesn't require it), so the collision check is
+ * application-level only.
+ *
+ * Payment side effects (webhook → mark paid) happen LATER, are gated by
+ * the order's status transition guard (`canTransitionOrder`), and are
+ * independently idempotent via the `paymentTxnId` UNIQUE constraint.
+ * Retries here cannot double-charge.
  */
 export const POST = withRateLimit<{ slug: string }>('create-order', 20, 60, async (req, ctx) => {
   try {
@@ -28,7 +54,10 @@ export const POST = withRateLimit<{ slug: string }>('create-order', 20, 60, asyn
 
     const body = CreateOrderSchema.parse(await req.json());
 
-    // ── Generate a unique customer token (collision retry). ──
+    // ── Pre-flight collision check for customerToken (best-effort; the
+    // authoritative guard against duplicates is the random 31-bit space
+    // itself — ~2.4 billion tokens). The check-then-insert here is a
+    // fast path that avoids a wasteful INSERT when a collision is likely. ──
     let customerToken = generateOrderToken();
     for (let i = 0; i < 5; i++) {
       const existing = await repos.orders.listByShop(shop.id, { limit: 1 }).then((os) =>
@@ -38,30 +67,20 @@ export const POST = withRateLimit<{ slug: string }>('create-order', 20, 60, asyn
       customerToken = generateOrderToken();
     }
 
-    // ── Generate a per-shop sequential tokenNumber. The sequence is the
-    // count of existing orders in the shop + 1, which is monotonically
-    // increasing. On the (vanishingly rare) collision (e.g., a prior order
-    // was inserted between count and create), we retry with the next seq. ──
-    let tokenNumber: string | null = null;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const existingCount = await repos.orders.countByShop(shop.id);
-      const candidate = generateShopOrderTokenNumber(existingCount + 1 + attempt);
-      const clash = await repos.orders.findByTokenNumber(shop.id, candidate);
-      if (!clash) {
-        tokenNumber = candidate;
-        break;
-      }
-    }
-    // If every retry collided (extremely unlikely), fall back to null and the
-    // shopkeeper will reference the order by customerToken instead.
-
-    const order = await repos.orders.create({
-      shopId: shop.id,
-      customerToken,
-      customerPhone: body.customerPhone ?? null,
-      notes: body.notes ?? null,
-      tokenNumber,
-    });
+    // ── Race-safe order creation with per-shop sequential tokenNumber. ──
+    // The repository handles the count-then-insert + retry-on-P2002 loop.
+    // `tokenCandidate(count, attempt)` returns the candidate token for the
+    // given order count + retry attempt. The +attempt ensures that on retry
+    // we try the next slot (not the same one that just collided).
+    const order = await repos.orders.createWithUniqueToken(
+      shop.id,
+      {
+        customerToken,
+        customerPhone: body.customerPhone ?? null,
+        notes: body.notes ?? null,
+      },
+      (count, attempt) => generateShopOrderTokenNumber(count + 1 + attempt),
+    );
 
     await repos.audit.log({
       shopId: shop.id,
@@ -69,7 +88,7 @@ export const POST = withRateLimit<{ slug: string }>('create-order', 20, 60, asyn
       action: 'order.create',
       entityType: 'order',
       entityId: order.id,
-      metadata: { tokenNumber },
+      metadata: { tokenNumber: order.tokenNumber },
       ip: req.headers.get('x-forwarded-for') ?? null,
     });
 

@@ -28,6 +28,7 @@ export const GET = withAuth<{ id: string }>(async (_req, ctx, principal) => {
     entries: entries.map((e) => ({
       id: e.id,
       action: e.action,
+      userId: e.userId,
       entityType: e.entityType,
       entityId: e.entityId,
       metadata: e.metadata,

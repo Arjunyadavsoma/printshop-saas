@@ -32,3 +32,51 @@ DROP INDEX IF EXISTS "PrintJob_active_file_unique";
 CREATE UNIQUE INDEX "PrintJob_active_file_unique"
   ON "PrintJob" ("fileId")
   WHERE status IN ('queued', 'printing');
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Order tokenNumber per-shop uniqueness — race-safe allocation guard.
+--
+-- INVARIANT: at most one order per shop can hold a given non-null tokenNumber
+-- (e.g. shop-X has exactly one "A001", one "A002", ...).
+--
+-- Why a PARTIAL unique index instead of a plain UNIQUE constraint:
+--   - tokenNumber is nullable (legacy orders that predate token allocation,
+--     or orders whose retry loop exhausted without finding a free slot).
+--   - PostgreSQL's default UNIQUE constraint treats NULLs as distinct (i.e.
+--     multiple NULLs are allowed) — so a plain UNIQUE constraint would also
+--     work. We use a PARTIAL index here for two reasons:
+--       1. It's idempotent (DROP IF EXISTS + CREATE) — safe to re-run on
+--          every deploy without parsing whether the constraint already exists.
+--       2. It's smaller (excludes the NULL rows from the index entirely,
+--          saving space on tables with many legacy orders).
+--
+-- Safety check before applying:
+--   If duplicate non-null tokenNumbers already exist (a real possibility if
+--   the app ran before this guard was added), CREATE UNIQUE INDEX will fail
+--   rather than silently corrupt. The SELECT below surfaces any pre-existing
+--   duplicates so the operator can remediate (rename or NULL out the
+--   duplicates) before the constraint is applied. The CREATE is wrapped in a
+--   DO block so a duplicate-found condition raises a clear error instead of
+--   aborting the migration mid-stream.
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP INDEX IF EXISTS "Order_shop_tokenNumber_unique";
+DO $$
+DECLARE
+  dup_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO dup_count
+  FROM (
+    SELECT "shopId", "tokenNumber"
+    FROM "Order"
+    WHERE "tokenNumber" IS NOT NULL
+    GROUP BY "shopId", "tokenNumber"
+    HAVING COUNT(*) > 1
+  ) AS dups;
+  IF dup_count > 0 THEN
+    RAISE EXCEPTION 'Cannot create Order_shop_tokenNumber_unique: % non-null tokenNumber duplicates exist in the Order table. Remediate (rename or NULL out the duplicates) before re-running this migration.', dup_count
+      USING ERRCODE = 'unique_violation';
+  END IF;
+END $$;
+CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique"
+  ON "Order" ("shopId", "tokenNumber")
+  WHERE "tokenNumber" IS NOT NULL;

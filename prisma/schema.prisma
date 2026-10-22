@@ -97,7 +97,15 @@ model Order {
 
   @@index([shopId, status])
   @@index([customerToken])
-  @@index([shopId, tokenNumber])
+  // UNIQUE constraint on (shopId, tokenNumber) — at most one order per shop
+  // can hold any given non-null tokenNumber. NULL tokenNumbers (legacy orders
+  // that predate token allocation, or orders that exhausted the retry loop)
+  // are permitted in any quantity — both SQLite and PostgreSQL treat NULLs
+  // as distinct in a UNIQUE constraint, so the index does NOT block them.
+  // This is the authoritative race-safe guard: a concurrent double-INSERT
+  // with the same candidate token fails here (Prisma P2002 / PG 23505),
+  // which the order-creation route catches and retries with a new candidate.
+  @@unique([shopId, tokenNumber])
 }
 
 model PrintFile {
