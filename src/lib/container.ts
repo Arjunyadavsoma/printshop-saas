@@ -32,6 +32,7 @@ import {
   UpiDeepLinkPaymentAdapter,
   SocketIoRelayRealtimeAdapter,
   R2StorageAdapter,
+  S3StorageAdapter,
   UpstashCacheAdapter,
 } from '@platform/adapters';
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
@@ -86,11 +87,15 @@ function requireSecret(key: string): string {
  * Fail-fast in production if STORAGE_PROVIDER is 'memory' or unset —
  * customer documents would be stored in-process (lost on restart).
  * In dev, memory storage is the default and is fine.
+ *
+ * Supported production providers:
+ *   - 's3'  → S3StorageAdapter (Neon Object Storage, AWS S3, MinIO, etc.)
+ *   - 'r2'  → R2StorageAdapter  (Cloudflare R2)
  */
 function validateStorageProvider(): string {
   const provider = env('STORAGE_PROVIDER', 'memory');
   if (process.env.NODE_ENV === 'production' && provider === 'memory') {
-    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=r2.');
+    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=s3 or STORAGE_PROVIDER=r2.');
   }
   return provider;
 }
@@ -186,7 +191,13 @@ function buildContainer(): Container {
   // Storage
   const storageProvider = env('STORAGE_PROVIDER', 'memory');
   const storage: StorageAdapter =
-    storageProvider === 'r2' ? new R2StorageAdapter({
+    storageProvider === 's3' ? new S3StorageAdapter({
+      endpoint: env('AWS_ENDPOINT_URL_S3'),
+      accessKeyId: env('AWS_ACCESS_KEY_ID'),
+      secretAccessKey: env('AWS_SECRET_ACCESS_KEY'),
+      region: env('AWS_REGION', 'ap-southeast-1'),
+      bucket: env('AWS_S3_BUCKET'),
+    }) : storageProvider === 'r2' ? new R2StorageAdapter({
       accountId: env('R2_ACCOUNT_ID'),
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
