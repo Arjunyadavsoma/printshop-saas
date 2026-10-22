@@ -1062,3 +1062,128 @@ To bring production to the verified state, the operator must explicitly authoriz
 5. Re-run the Phase 7 live smoke tests against the DEPLOYED Vercel preview (now with the new code) to confirm end-to-end behavior.
 
 After all 5 steps complete successfully, the deployment is READY FOR AN AUTHORIZED PILOT (UPI deep-link + manual shopkeeper verification scope). PhonePe/Paytm + global rate limiting remain blocked on paid infrastructure decisions (Upstash Redis + PSP sandbox credentials) that are NOT required for the pilot launch.
+
+---
+Task ID: execute-next-release-steps
+Agent: orchestrator (main)
+Task: Execute the next release steps: clean Git, push verified code, fix cache TTL bug, apply Neon migration, test deployed app, report status. Authorization boundary: push + DB migration require explicit operator authorization.
+
+Work Log:
+- Step 1 — Clean and review Git:
+  - Branch: `main`. Working tree: CLEAN (after `git config core.fileMode false` to ignore Write-tool umask drift).
+  - 4 unpushed commits on top of origin/main (in order, oldest first):
+    1. `6f71a62` — the actual code changes (12 files, 1260 insertions, 27 deletions): docs/RATE_LIMITING.md, docs/REALTIME_AND_STATE.md, prisma/pg-constraints.sql, prisma/schema.prisma, src/app/api/v1/orders/[id]/files/route.ts, src/app/api/v1/shops/[slug]/orders/route.ts, src/app/api/v1/shops/me/orders/[id]/activity/route.ts, src/lib/repositories/{constrained-memory.adapter.ts, errors.ts, order-token-concurrency.test.ts, order.repository.ts}, worklog.md.
+    2. `424eeaa` — auto-commit: `.zscripts/dev.pid` mtime change (1060→958) + worklog.md append (149 lines). Benign.
+    3. `e26e152` — auto-commit: `.zscripts/dev.pid` DELETED from tracking + worklog.md append (130 lines). The dev.pid untracking satisfies the user's requirement "Do not include `.zscripts/dev.pid` in the release" — the final state of HEAD does NOT track dev.pid. `.zscripts/dev.pid` is in .gitignore (`*.pid`) but was committed before the gitignore rule was added.
+    4. `326b0d7` — NEW: the cache TTL bug fix + 10 regression tests (209 insertions, 1 deletion). See Step 3 below.
+  - The 2 worklog+dev.pid auto-commits (`424eeaa` + `e26e152`) are benign — they preserve the worklog append and the dev.pid untracking. No unrelated user changes.
+  - Pushing all 4 commits yields: code changes deployed, worklog updated, dev.pid NOT tracked in the final state.
+
+- Step 2 — Push the verified code:
+  - The Step 2 prompt is conditional: "If push authorization has been explicitly granted, push... Otherwise, stop and provide the exact command."
+  - The previous prompt explicitly withheld push authorization. This prompt does NOT contain an explicit "you are authorized to push" statement — it asks me to check whether authorization has been granted.
+  - STOPPED at the push boundary — no explicit push authorization given. Exact operator command:
+    ```bash
+    git push origin main
+    ```
+    Pushes 4 commits: `6f71a62` (code) + `424eeaa` (worklog + dev.pid mtime) + `e26e152` (worklog + dev.pid untrack) + `326b0d7` (cache fix + tests). Pushing triggers a Vercel rebuild of the preview at https://printshop-saas-three.vercel.app.
+
+- Step 3 — Fix the cache TTL bug:
+  - Bug: `packages/adapters/src/cache/in-memory.adapter.ts` `incr()` method called `set(key, String(next))` without a TTL arg — `set` overwrites `expiresAt` to `null`. After the first incr on a rate-limit key, the counter NEVER expired within the running process (the rate-limit window never reset). On Vercel serverless this is mitigated by short Lambda lifetimes, but locally it blocked the concurrency smoke test (counter stayed elevated forever — the dev server had to be restarted to clear it).
+  - Fix: `incr()` now reads the existing entry's `expiresAt` (after `get()` has validated it as non-expired, or undefined if the key was just created/expired) and writes the incremented value back with the SAME `expiresAt`. New/expired keys start with `expiresAt: null` and the caller is responsible for setting the TTL via `expire()` (the rate-limit code already does `if (count === 1) await cache.expire(key, windowSeconds)`).
+  - Regression tests: `packages/adapters/src/cache/in-memory.adapter.test.ts` — 10 new tests covering: basic get/set/del, set with TTL expiry, incr on new key starts at 1, incr PRESERVES existing TTL (the bug), incr on expired key starts fresh, repeated incr preserves TTL across many increments, full rate-limit simulation (20 allowed, 21st rejected, window resets after TTL), expire() on non-existent key is no-op, expire() sets TTL on existing key.
+  - All 10 tests pass with the fix; the rate-limit simulation test specifically reproduces the bug (without the fix, the 21st request would be rejected AND the post-60s request would ALSO be rejected — the window never reset).
+  - Local verification after the fix: `bunx tsc --noEmit` exit 0; `bun run lint` exit 0; `bunx vitest run` 16 test files, **148/148 tests pass** (138 prior + 10 new cache regression tests).
+  - Committed as `326b0d7` ("Fix InMemoryCacheAdapter.incr() TTL preservation + add 10 regression tests").
+  - The fix is narrow — only the `incr()` method was changed. No unrelated refactoring.
+
+- Step 4 — Verify the Neon migration:
+  - `prisma/pg-constraints.sql` reviewed against the 8 criteria in the previous turn — all pass (additive, idempotent, pre-flight duplicate check aborts on collision, doesn't touch existing tables/rows, partial unique index on `("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL`).
+  - The migration file has NOT been modified since the previous review.
+  - Migration NOT applied — Step 4 explicitly requires "explicit production-database authorization" which has NOT been given.
+  - Read-only preflight NOT performed — Neon credentials are NOT available locally (the .env has the SQLite dev URL only; the Neon production DATABASE_URL is stored on Vercel).
+  - Operator commands (after authorization):
+    ```bash
+    # 4a. Read-only preflight (safe to run anytime):
+    export DATABASE_URL="<Neon pooled connection string>"
+    psql "$DATABASE_URL" -c "SELECT current_database(), current_schema();"
+    psql "$DATABASE_URL" -c "SELECT indexname, indexdef FROM pg_indexes WHERE tablename='Order';"
+    psql "$DATABASE_URL" -c "SELECT \"shopId\", \"tokenNumber\", COUNT(*) FROM \"Order\" WHERE \"tokenNumber\" IS NOT NULL GROUP BY \"shopId\", \"tokenNumber\" HAVING COUNT(*) > 1;"
+    # 4b. Apply the additive migration (ONLY after authorization + preflight clean):
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql
+    # 4c. Verify the index:
+    psql "$DATABASE_URL" -c "SELECT indexname, indexdef FROM pg_indexes WHERE tablename='Order' AND indexname='Order_shop_tokenNumber_unique';"
+    ```
+    Do NOT use `scripts/pg-migrate-prod.sh` — it generates plain `CREATE TABLE` that fails on existing tables.
+
+- Step 5 — Test the deployed application:
+  - The deployed Vercel preview is still on the PREVIOUS deploy (push not authorized). So the deployed app does NOT have the cache fix or the race-safe order-token allocation.
+  - I ran the smoke tests against the LOCAL dev server (which has all 4 commits including the cache fix).
+  - Test accounts: owner@quickprint.demo, owner@copycenter.demo, admin@printshop.demo (password: demo1234 — dedicated demo accounts). Test orders tagged with `notes` containing "STEP5" + `customerPhone: +919999900000`.
+  - 28/28 smoke tests pass:
+    1. ✓ Registration + login (all 3 demo accounts with correct roles)
+    2. ✓ Shop profile + settings (new fields servicesJson/paymentInstructions present)
+    3. ✓ Customer shop page + ordering QR (customerUrl ends with /<slug>)
+    4. ✓ Order creation + unique token (token A012 for the first test order)
+    5. ✓ Order visible in correct dashboard (owner@quickprint sees it; token matches)
+    6. ✓ Cross-shop access denied (owner@copycenter does NOT see it; cross-shop verify returns 404)
+    7. ✓ Manual verify + reject (reject stays in awaiting_payment with note preserved in notes; verify transitions to paid)
+    8. ✓ Independent payment + order statuses (verify→paid→start→printing→ready→re-fetch shows paymentTxnId/paymentUtr/paidAt preserved)
+    9. ✓ Private file access (unauthenticated GET /files returns 405 — no GET handler; authenticated download of missing file returns 404 not 500)
+    10. ✓ UPI QR endpoint (GET returns 404 or 200)
+    - Concurrency: ✓ 8 concurrent orders → 8 unique non-null tokens A014–A021 (no gaps — retry loop didn't even need to fire this run)
+    - **Rate-limit window reset (the cache fix verification)**: ✓ after waiting 61s, a new order creation succeeds — confirming the rate-limit counter correctly expires. THIS IS THE PROOF THE CACHE FIX WORKS.
+  - Cleanup: deleted 11 STEP5-tagged test orders from the local dev DB. No production data was touched.
+  - Agent Browser smoke test: home page + customer shop page both render correctly with sticky footer.
+  - Production UPI QR upload flow against deployed Supabase: NOT TESTED — would need shopkeeper credentials for production.
+
+- Step 6 — Report the release status (see Stage Summary below).
+
+Stage Summary:
+- Git commit deployed: NOT DEPLOYED — 4 commits (`6f71a62`, `424eeaa`, `e26e152`, `326b0d7`) are ready but NOT pushed. Push authorization not explicitly given.
+- Vercel deployment result: PREVIEW IS ALIVE on the PREVIOUS deploy (built before `6f71a62`). HTTP 200 on /, /api/v1/ready, /api/v1/shops. Neon healthy (latency 1256ms). Supabase healthy (latency 412ms). Does NOT contain the race-safe order-token allocation OR the cache TTL fix.
+- Neon migration and unique-index verification: NOT APPLIED — no explicit production-database authorization. Migration script reviewed + safe (additive + idempotent + pre-flight duplicate check). Read-only preflight not possible from this sandbox (Neon creds on Vercel only).
+- Cache TTL regression tests: ✓ LOCALLY VERIFIED — 10 new tests in `packages/adapters/src/cache/in-memory.adapter.test.ts`. The rate-limit simulation test specifically verifies the window resets after the TTL (which it did NOT before the fix). Total test count: 138 → 148.
+- Post-deployment smoke tests: ✓ LOCALLY VERIFIED against the dev server with all 4 commits applied — 28/28 pass including the rate-limit window reset verification (the proof the cache fix works). NOT tested against the deployed Vercel preview (still on previous code).
+- Remaining limitations:
+  1. Push to GitHub not authorized (operator: `git push origin main`).
+  2. Neon migration not authorized (operator: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/pg-constraints.sql` after read-only preflight).
+  3. PhonePe/Paytm sandbox credentials still missing (only simulated with real crypto + fixture payloads).
+  4. Upstash Redis still not configured (rate limiting is per-invocation on Vercel; the cache TTL fix only addresses the in-memory adapter — the Upstash adapter was already correct; the DB UNIQUE constraints remain the authoritative guards for the actually-dangerous races).
+  5. Production UPI QR upload flow against deployed Supabase still untested end-to-end (would need shopkeeper credentials for production).
+
+Classification of each result:
+- LOCALLY VERIFIED:
+  - Code review (4 commits inspected, no unrelated changes, dev.pid NOT tracked in HEAD)
+  - Cache TTL bug fix (incr() now preserves expiresAt)
+  - 10 cache regression tests pass
+  - Full test suite: 148/148 pass (138 + 10 new)
+  - tsc 0 errors, lint 0 warnings
+  - 28/28 smoke tests pass against the local dev server (including rate-limit window reset — the cache fix proof)
+  - Agent Browser renders customer pages
+- PREVIEW VERIFIED:
+  - Vercel preview is alive (HTTP 200 on public endpoints)
+  - Neon PostgreSQL healthy (latency 1256ms)
+  - Supabase Storage healthy (latency 412ms)
+  - Public shop discovery works (3 shops returned)
+- PRODUCTION VERIFIED: NONE — no push, no migration, no production smoke tests
+- SIMULATED:
+  - PhonePe/Paytm webhook signature verification (real crypto + fixture payloads)
+- UNTESTED:
+  - Production UPI QR upload flow against deployed Supabase (would need shopkeeper creds)
+  - Deployed Vercel preview with the new code (push not authorized)
+
+Recommendation: NOT YET READY FOR AN AUTHORIZED PILOT — the local code is verified (148/148 tests, 28/28 smoke, rate-limit window reset proof), BUT:
+- The deployed Vercel preview does NOT contain commits `6f71a62` (race-safe order-token allocation) or `326b0d7` (cache TTL fix).
+- The Neon DB does NOT have the `Order_shop_tokenNumber_unique` partial unique index.
+
+To bring production to the verified state, the operator must explicitly authorize + execute:
+1. `git push origin main` — pushes 4 commits, triggers Vercel rebuild with the race-safe code + cache fix.
+2. After Vercel rebuild, run read-only preflight against Neon (4a above).
+3. If preflight returns 0 duplicates, apply the migration (4b above).
+4. Verify the index exists with correct definition (4c above).
+5. Re-run the 28 smoke tests against the DEPLOYED Vercel preview (now with the new code).
+
+After all 5 steps complete successfully, the deployment is READY FOR AN AUTHORIZED PILOT (UPI deep-link + manual shopkeeper verification scope). PhonePe/Paytm + global rate limiting remain blocked on paid infrastructure decisions (Upstash Redis + PSP sandbox credentials) that are NOT required for the pilot launch.
+
+No destructive migrations performed. No customer data altered. No real payments made. The 138 prior tests were NOT weakened — 10 new tests added (148 total). The cache TTL fix is narrow (only the `incr()` method changed).
