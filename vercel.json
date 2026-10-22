@@ -1,13 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "next",
-  "buildCommand": "bun run build",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "installCommand": "bun install --frozen-lockfile",
   "regions": ["bom1"],
   "env": {
     "APP_BASE_URL": "https://printshop-saas.vercel.app",
     "DATABASE_PROVIDER": "prisma",
-    "REALTIME_PROVIDER": "socketio",
+    "REALTIME_PROVIDER": "memory",
     "NEXT_PUBLIC_API_BASE": "/api/v1"
   },
   "headers": [
