@@ -57,10 +57,7 @@ export class SupabaseStorageAdapter implements StorageAdapter {
     }
 
     // The signed URL is in data.signedUrl — return it for the client to PUT to.
-    // We also need to return the token for the client to include in the upload.
-    // Supabase's createSignedUploadUrl returns { path, token, signedUrl }.
-    // The client uploads via PUT to the signedUrl.
-    return data.signedUrl ?? data.url ?? '';
+    return data.signedUrl;
   }
 
   async getPresignedDownloadUrl(key: string, expiresInSeconds = 900): Promise<string> {
