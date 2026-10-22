@@ -78,7 +78,8 @@ function toRow(input: Partial<Shop>): Partial<ShopRow> {
       if (v && Object.keys(v as Record<string, unknown>).length > 0) {
         out[k] = encryptCredentials(v as Record<string, unknown>); // encrypt at rest
       } else {
-        out[k] = undefined;
+        // The DB column is NOT NULL — store an encrypted empty object instead of undefined.
+        out[k] = encryptCredentials({});
       }
     } else if (k === 'pricingConfig') {
       out[k] = v ? JSON.stringify(v) : undefined;
