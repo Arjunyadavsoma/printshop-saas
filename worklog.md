@@ -1579,3 +1579,76 @@ Next step (per the rules):
   SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'Order' AND indexname = 'Order_shop_tokenNumber_unique';
   ```
   Expected: `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" USING btree ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL`
+
+---
+Task ID: neon-index-migration-applied
+Agent: orchestrator (senior database release engineer)
+Task: Step 4 — Apply the authorized partial unique index migration to the confirmed Neon PostgreSQL database. Fresh preflight, then ONLY the CREATE UNIQUE INDEX (skip DROP + DO $$), then verify.
+
+Work Log:
+- Operator explicit authorization: received. The authorization applies ONLY to this specific index migration. No unrelated schema changes, no data modifications, no production promotion.
+
+- Step 1 — Migration file inspection:
+  - File: `prisma/pg-constraints.sql` (from the current checked-out release commit `f35bac1`).
+  - The file contains 3 statements: (1) `DROP INDEX IF EXISTS "Order_shop_tokenNumber_unique"`, (2) `DO $$ ... pre-flight duplicate check ... END $$;`, (3) `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL;`.
+  - Per the operator's instruction: REMOVED the `DROP INDEX IF EXISTS` from the execution plan (unnecessary — the index didn't exist yet). SKIPPED the `DO $$ ... END $$` pre-flight block (redundant with the fresh read-only preflight run immediately before). EXECUTED ONLY the `CREATE UNIQUE INDEX` statement.
+  - Mismatch report: the reviewed file's DROP + DO $$ were skipped. Only the CREATE was executed. No file changes, no new commit. This is a runtime decision — the file on disk is unchanged.
+
+- Step 2 — Fresh read-only preflight (immediately before migration):
+  - Query A (database identity): `SELECT current_database(), current_schema();` → `neondb`, `public` ✓
+  - Query B (index existence check): `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'Order' AND indexname = 'Order_shop_tokenNumber_unique';` → 0 rows (index absent) ✓
+  - Query C (duplicate check): `SELECT "shopId", "tokenNumber", COUNT(*) FROM "Order" WHERE "tokenNumber" IS NOT NULL GROUP BY "shopId", "tokenNumber" HAVING COUNT(*) > 1;` → 0 rows (no duplicates) ✓
+  - All STOP conditions cleared: database/schema correct, index absent, no duplicates. Proceeded to migration.
+
+- Step 3 — Apply ONLY the CREATE UNIQUE INDEX (the single write):
+  - SQL executed: `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON "Order" ("shopId", "tokenNumber") WHERE "tokenNumber" IS NOT NULL;`
+  - Result: ✓ succeeded (no error).
+  - Only this ONE statement was executed. No DROP, no DELETE, no UPDATE, no INSERT, no ALTER TABLE, no CREATE TABLE, no seed, no reset.
+  - No transaction wrapper — `CREATE INDEX` is atomic in PostgreSQL (either the index is fully created or it's not; there's no partial state).
+  - The connection string was used inline (env-var prefix) — NOT written to any file, NOT echoed in output, NOT persisted to shell env.
+
+- Step 4 — Verify the result (read-only):
+  - Index existence: `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'Order' AND indexname = 'Order_shop_tokenNumber_unique';` → 1 row ✓
+  - Exact verified index definition (from `pg_indexes.indexdef`):
+    ```
+    CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON public."Order" USING btree ("shopId", "tokenNumber") WHERE ("tokenNumber" IS NOT NULL)
+    ```
+  - Manual definition verification (4 criteria via ILIKE):
+    - is UNIQUE?                      ✓
+    - uses btree?                     ✓
+    - has ("shopId", "tokenNumber")?  ✓
+    - has WHERE "tokenNumber" IS NOT NULL? ✓
+    - All 4 criteria met: ✓ VERIFIED
+    - Note: PostgreSQL's catalog view formats the definition with `public.` schema prefix + `USING btree` + parenthesized `WHERE` clause. These are standard PostgreSQL catalog formatting — semantically equivalent to the migration SQL.
+  - `pg_index` catalog check:
+    - `indisvalid = TRUE` — the index is VALID (not broken, not in repair state)
+    - `indisunique = TRUE` — the index ENFORCES uniqueness at the DB level
+  - Post-migration duplicate check: 0 rows ✓ (no duplicates exist, none introduced)
+  - Data integrity: total orders = 6 (UNCHANGED — no rows modified, no orders lost). Orders with non-null tokenNumber = 1 (unchanged from preflight). Orders with NULL tokenNumber = 5 (unchanged — NULL rows are excluded from the partial unique index, so they coexist fine).
+
+- What I did NOT do:
+  - Did NOT execute the `DROP INDEX IF EXISTS` (skipped per operator instruction — unnecessary).
+  - Did NOT execute the `DO $$ ... END $$` pre-flight block (skipped — redundant with the fresh preflight).
+  - Did NOT execute any DROP / DELETE / UPDATE / INSERT / ALTER TABLE / CREATE TABLE / seed / reset statements.
+  - Did NOT use `scripts/pg-migrate-prod.sh` (unsuitable for existing Neon DB).
+  - Did NOT write the connection string to any file (`.env`, `vercel.json`, scripts).
+  - Did NOT persist the connection string to the shell env (inline env-var prefix, scoped to the single command).
+  - Did NOT echo the connection string or password in any output.
+  - Did NOT print any customer PII (only `shopId`, `tokenNumber`, and aggregate counts).
+  - Did NOT retry on failure (none occurred — if it had, I would have STOPPED).
+  - Did NOT attempt rollback (none needed — the CREATE succeeded).
+  - Did NOT run deployed smoke tests, change Vercel settings, or perform any additional production writes (per the operator's instruction to stop after verification).
+  - Cleaned up the temp scripts after use.
+
+Stage Summary:
+- Target database/schema: `neondb` / `public` ✓ (verified via `current_database()` + `current_schema()`).
+- Fresh duplicate-preflight result: 0 duplicate groups ✓ (verified immediately before migration).
+- Index was already present or newly created? NEWLY CREATED (was absent in the fresh preflight; the CREATE succeeded; the post-migration verify confirms it exists).
+- Exact verified index definition: `CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique" ON public."Order" USING btree ("shopId", "tokenNumber") WHERE ("tokenNumber" IS NOT NULL)` — this is a UNIQUE btree partial index on `("shopId", "tokenNumber")` excluding NULL tokenNumber rows. `pg_index.indisvalid=TRUE`, `pg_index.indisunique=TRUE`.
+- Post-migration duplicate check result: 0 rows ✓ (no duplicates exist; none introduced by the migration).
+- Confirmation that no rows or unrelated schema objects were modified: total orders = 6 (UNCHANGED from preflight). Only ONE statement was executed (`CREATE UNIQUE INDEX`). No DROP, DELETE, UPDATE, INSERT, ALTER TABLE, CREATE TABLE, or other DDL. The existing ordinary index `Order_shopId_tokenNumber_idx` was NOT dropped (it coexists with the new unique partial index — harmless, slightly redundant).
+- Warnings: (a) a libpq SSL mode deprecation warning printed by the `pg` package (informational only — the connection still worked; `sslmode=require` is the documented Neon setting). (b) My initial verification regex was too strict (false negative on "definition correct") — the manual ILIKE-based check confirmed all 4 criteria. Neither warning affects the migration outcome.
+
+Classification: **MIGRATION VERIFIED ✓** — the index `Order_shop_tokenNumber_unique` exists with the correct definition (UNIQUE btree on `("shopId", "tokenNumber")` WHERE `"tokenNumber" IS NOT NULL`), is VALID (`indisvalid=TRUE`), ENFORCES uniqueness (`indisunique=TRUE`), and the duplicate check remains clean (0 rows).
+
+Stopping after verification. No deployed smoke tests, no Vercel settings changes, no additional production writes performed as part of this step. The next step will be deployed application smoke testing.
