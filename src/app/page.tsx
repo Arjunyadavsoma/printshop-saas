@@ -248,9 +248,9 @@ export default function HomePage() {
               <Store className="h-3.5 w-3.5" />
               Shopkeeper portal
             </Link>
-            <Link href="/admin/login" className="inline-flex items-center gap-1.5 hover:text-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Admin portal
+            <Link href="/" className="inline-flex items-center gap-1.5 hover:text-foreground">
+              <ArrowRight className="h-3.5 w-3.5" />
+              Customer app
             </Link>
             <span className="inline-flex items-center gap-1.5">
               <Github className="h-3.5 w-3.5" />

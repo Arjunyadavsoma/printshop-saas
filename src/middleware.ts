@@ -67,8 +67,13 @@ export function middleware(_req: NextRequest) {
   res.headers.set('Content-Security-Policy', csp);
   res.headers.set('X-Content-Type-Options', 'nosniff');
   res.headers.set('X-Frame-Options', 'DENY');
+  res.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // HSTS — enforce HTTPS for 2 years (includes subdomains). Vercel already
+  // sets this, but being explicit here ensures it's always present even
+  // if the Vercel config changes.
+  res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   return res;
 }
 
