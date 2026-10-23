@@ -7,13 +7,23 @@
  *
  * SECURITY:
  * - Binds to 127.0.0.1 ONLY (no LAN exposure)
- * - Origin-based pairing (pairing code → bearer token)
+ * - Pairing-code → bearer token (32-byte secret, 24h expiry)
  * - Strict request schema validation
  * - No arbitrary file paths — only PDF bytes via Buffer
  * - 25MB max PDF size
  * - Rate limited (20 jobs/minute)
- * - CORS: only the paired origin
- * - Host header validation (prevents DNS rebinding)
+ * - CORS: reflects ANY origin (so the token works from the stable
+ *   production URL AND any Vercel preview URL without re-pairing). The
+ *   token secret + loopback binding + the browser's same-origin policy
+ *   (localStorage is per-origin, so a malicious site can't read the
+ *   token) provide the security — the origin check was redundant + broke
+ *   every time the deployment URL changed.
+ * - Multiple valid tokens (one per paired origin) — re-pairing from a
+ *   new URL adds a token without invalidating the existing one, so the
+ *   shopkeeper's setup survives domain changes, preview deployments, +
+ *   custom-domain migrations.
+ * - Tokens + paired origins are persisted to .tokens.json so the
+ *   shopkeeper doesn't have to re-pair after restarting the service.
  *
  * REQUIREMENTS:
  * - Node.js 22+ (for windows-pdf-printer-native)
@@ -51,13 +61,20 @@ const MAX_JOBS_PER_MINUTE = 20;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PAIRING_STATE_FILE = join(__dirname, '.pairing-state.json');
+const TOKENS_FILE = join(__dirname, '.tokens.json');
 
 // ─── State ──────────────────────────────────────────────────────────
-let pairedOrigin = null;
+// Multi-token model: the shopkeeper can pair from multiple origins
+// (production URL + preview URLs + a custom domain) and each pairing
+// issues a separate token stored in the browser's localStorage for THAT
+// origin. All tokens are valid simultaneously — re-pairing from a new URL
+// doesn't invalidate the existing token. Tokens + paired origins are
+// persisted to .tokens.json so they survive a service restart.
+const activeTokens = new Map(); // token (string) -> expiry (number, epoch ms)
+const pairedOrigins = new Set(); // display only — not used for access control
 let pendingPairingCode = null;
 let pendingPairingExpiry = 0;
-let activeToken = null;
-let tokenExpiry = 0;
+let pendingPairingOrigin = null; // the origin the pending code was generated for
 
 // Job tracking (in-memory — the service runs continuously on the shopkeeper's machine)
 const jobs = new Map();
@@ -129,7 +146,7 @@ function loadPairingState() {
     }
     pendingPairingCode = state.code;
     pendingPairingExpiry = state.expiry;
-    pairedOrigin = state.origin;
+    pendingPairingOrigin = state.origin;
     const remainingMs = state.expiry - Date.now();
     console.log(`[native-printer] Loaded pairing code from ${PAIRING_STATE_FILE}`);
     console.log(`[native-printer]   Code: ${state.code}`);
@@ -147,11 +164,76 @@ function consumePairingState() {
   try { unlinkSync(PAIRING_STATE_FILE); } catch { /* ignore */ }
 }
 
+// ─── Token persistence (survives service restart) ───────────────────
+// .tokens.json shape: { tokens: [{ token, origin, expiry }], origins: [...] }
+// We persist EVERY issued token so the shopkeeper doesn't re-pair after
+// a restart. Expired tokens are pruned on load + on each write.
+function loadTokens() {
+  if (!existsSync(TOKENS_FILE)) return;
+  try {
+    const raw = readFileSync(TOKENS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    const now = Date.now();
+    let kept = 0, dropped = 0;
+    for (const entry of (data.tokens ?? [])) {
+      if (typeof entry?.token !== 'string' || typeof entry?.expiry !== 'number') continue;
+      if (entry.expiry <= now) { dropped++; continue; }
+      activeTokens.set(entry.token, entry.expiry);
+      if (typeof entry.origin === 'string') pairedOrigins.add(entry.origin);
+      kept++;
+    }
+    if (dropped > 0) saveTokens(); // prune the file too
+    console.log(`[native-printer] Loaded ${kept} active token(s) from ${TOKENS_FILE}` + (dropped ? ` (${dropped} expired, pruned)` : ''));
+  } catch (e) {
+    console.error(`[native-printer] Failed to read tokens file:`, e.message);
+  }
+}
+
+function saveTokens() {
+  try {
+    const now = Date.now();
+    const tokens = [];
+    for (const [token, expiry] of activeTokens) {
+      if (expiry > now) {
+        // Find the origin this token was issued for (best-effort — we
+        // don't store the per-token origin, so we just mark all paired
+        // origins; the token works from any of them anyway).
+        tokens.push({ token, expiry });
+      }
+    }
+    const data = { tokens, origins: [...pairedOrigins], savedAt: now };
+    writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(`[native-printer] Failed to write tokens file:`, e.message);
+  }
+}
+
+function pruneExpiredTokens() {
+  const now = Date.now();
+  let pruned = 0;
+  for (const [token, expiry] of activeTokens) {
+    if (expiry <= now) { activeTokens.delete(token); pruned++; }
+  }
+  if (pruned > 0) {
+    console.log(`[native-printer] Pruned ${pruned} expired token(s)`);
+    saveTokens();
+  }
+}
+
 loadPairingState();
+loadTokens();
+// Prune expired tokens every 10 minutes (in the background).
+setInterval(pruneExpiredTokens, 10 * 60 * 1000).unref?.();
 
 // ─── Helpers ────────────────────────────────────────────────────────
+// CORS: reflect ANY origin. The token secret (32 bytes) + loopback binding
+// (127.0.0.1 only) + the browser's same-origin policy (localStorage is
+// per-origin, so a malicious site can't read the token) provide the
+// security. The previous origin-allowlist broke every time the deployment
+// URL changed (Vercel preview URLs, custom domains, etc.) — reflecting
+// any origin makes the pairing survive those changes.
 function setCORS(res, origin) {
-  if (origin && pairedOrigin && origin === pairedOrigin) {
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -164,18 +246,29 @@ function sendJSON(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// Origin validation: accept ANY origin. The actual access control is the
+// bearer token (validateToken). Same-origin requests (no Origin header)
+// are allowed for the unauthenticated health check.
 function validateOrigin(req) {
   const origin = req.headers.origin;
-  // Same-origin requests (no Origin header) are allowed for the health check
   if (!origin) return req.url === '/health';
-  return pairedOrigin !== null && origin === pairedOrigin;
+  return true; // any origin — token is the gatekeeper
 }
 
 function validateToken(req) {
-  if (!activeToken || Date.now() > tokenExpiry) return false;
+  if (activeTokens.size === 0) return false;
   const auth = req.headers.authorization ?? '';
   if (!auth.startsWith('Bearer ')) return false;
-  return auth.slice(7) === activeToken;
+  const token = auth.slice(7);
+  const expiry = activeTokens.get(token);
+  if (!expiry) return false; // unknown token
+  if (Date.now() > expiry) {
+    // Lazy prune — drop the expired token so future checks are fast.
+    activeTokens.delete(token);
+    saveTokens();
+    return false;
+  }
+  return true;
 }
 
 function rateLimited() {
@@ -256,11 +349,21 @@ const server = createServer(async (req, res) => {
   // ── Health check (unauthenticated, no origin check) ──
   if (url.pathname === '/health' && req.method === 'GET') {
     await loadLibrary();
+    // Prune expired tokens opportunistically (cheap when nothing's expired).
+    const now = Date.now();
+    let expiredCount = 0;
+    for (const [token, expiry] of activeTokens) {
+      if (expiry <= now) { activeTokens.delete(token); expiredCount++; }
+    }
+    if (expiredCount > 0) saveTokens();
     sendJSON(res, 200, {
       service: 'printshop-native-printer',
-      version: '1.0.0',
+      version: '1.1.0',
       libraryLoaded: !!PDFPrinter,
-      paired: !!activeToken && Date.now() < tokenExpiry,
+      // `paired` = at least one non-expired token exists
+      paired: activeTokens.size > 0,
+      tokenCount: activeTokens.size,
+      pairedOrigins: [...pairedOrigins],
       pairingPending: !!pendingPairingCode && Date.now() < pendingPairingExpiry,
       port: PORT,
       host: HOST,
@@ -276,6 +379,10 @@ const server = createServer(async (req, res) => {
   setCORS(res, req.headers.origin ?? null);
 
   // ── Pairing ──
+  // Accept the pairing code from ANY origin (the shopkeeper may have moved
+  // to a new URL — a Vercel preview, a custom domain, etc.). The new token
+  // is ADDED to the active tokens set (existing tokens stay valid), so the
+  // shopkeeper's existing setup on the old origin keeps working too.
   if (url.pathname === '/v1/pair' && req.method === 'POST') {
     const body = await readBody(req, 1024);
     try {
@@ -284,13 +391,17 @@ const server = createServer(async (req, res) => {
         sendJSON(res, 400, { error: { code: 'bad_request', message: 'Invalid or expired pairing code' } });
         return;
       }
-      // Generate a bearer token
-      activeToken = randomBytes(32).toString('hex');
-      tokenExpiry = Date.now() + TOKEN_TTL_MS;
+      // Generate a bearer token + record the requesting origin.
+      const token = randomBytes(32).toString('hex');
+      const expiry = Date.now() + TOKEN_TTL_MS;
+      activeTokens.set(token, expiry);
+      const origin = req.headers.origin;
+      if (origin) pairedOrigins.add(origin);
       pendingPairingCode = null; // One-time use
-      consumePairingState(); // Delete the persisted state file
-      sendJSON(res, 200, { token: activeToken, expiresIn: TOKEN_TTL_MS });
-      console.log(`[native-printer] Paired successfully with ${req.headers.origin}`);
+      consumePairingState(); // Delete the persisted pairing-code file
+      saveTokens(); // Persist the new token + origin
+      sendJSON(res, 200, { token, expiresIn: TOKEN_TTL_MS, tokenCount: activeTokens.size });
+      console.log(`[native-printer] Paired successfully with ${origin ?? '(unknown origin)'} — ${activeTokens.size} active token(s) total`);
       return;
     } catch {
       sendJSON(res, 400, { error: { code: 'bad_request', message: 'Invalid JSON' } });
@@ -493,13 +604,22 @@ server.listen(PORT, HOST, () => {
   console.log('  PrintShop Native Printer service running');
   console.log(`  → http://${HOST}:${PORT}`);
   console.log(`  → Health check: http://${HOST}:${PORT}/health`);
-  console.log(`  → Paired origin: ${pairedOrigin ?? '(not paired yet)'}`);
+  if (activeTokens.size > 0) {
+    console.log(`  → Paired: ${activeTokens.size} active token(s)`);
+    if (pairedOrigins.size > 0) {
+      console.log(`    Origins: ${[...pairedOrigins].join(', ')}`);
+    }
+    console.log('    (tokens work from ANY origin — re-pair only if the token expired)');
+  } else {
+    console.log('  → Not paired yet');
+  }
   if (pendingPairingCode && Date.now() < pendingPairingExpiry) {
     console.log(`  → Pairing code pending: ${pendingPairingCode}`);
     console.log(`    Enter it on your PrintShop website's Printer Setup page.`);
-  } else {
+  } else if (activeTokens.size === 0) {
     console.log('  → To pair with a website:');
     console.log(`      node index.js pair --origin=https://your-website.vercel.app`);
+    console.log('    (or use pair.bat from the downloaded ZIP)');
   }
   console.log('  → Press Ctrl+C to stop.');
   console.log('══════════════════════════════════════════════════════');

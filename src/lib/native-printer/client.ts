@@ -71,6 +71,8 @@ export interface NativePrinterHealth {
   libraryLoaded?: boolean;
   paired?: boolean;
   pairingPending?: boolean;
+  tokenCount?: number;
+  pairedOrigins?: string[];
 }
 
 export interface NativePrinterPrinter {
@@ -162,22 +164,31 @@ export async function checkNativePrinterStatus(): Promise<{
       health = (await healthRes.json()) as NativePrinterHealth;
     }
   } catch {
-    // Service not reachable at all
+    // Service not reachable at all. Give a clear, actionable message that
+    // explains the THREE common causes (service not started, wrong machine,
+    // firewall) so the shopkeeper knows exactly what to check.
+    const baseMsg =
+      'Native Printer service is not reachable at http://127.0.0.1:32192. Check:\n' +
+      '  1. Is `node index.js` (or start.bat) running on THIS computer?\n' +
+      '  2. Are you opening this website on the SAME computer where the service runs? ' +
+      '(127.0.0.1 is loopback — it is NOT reachable from your phone or another computer.)\n' +
+      '  3. Is Windows Firewall blocking port 32192?';
     if (!token) {
       return {
         state: 'disconnected',
         health: null,
         printers: null,
-        error: 'Native Printer service is not running. Start it with: node index.js',
+        error: baseMsg,
       };
     }
     // Token exists but service is down → disconnected (token may still be valid
-    // when the service comes back)
+    // when the service comes back — we persist tokens now, so a restart no
+    // longer invalidates the pairing).
     return {
       state: 'disconnected',
       health: null,
       printers: null,
-      error: 'Service not reachable. Is `node index.js` running on THIS computer?',
+      error: baseMsg,
     };
   }
 
@@ -198,7 +209,9 @@ export async function checkNativePrinterStatus(): Promise<{
         state: 'disconnected',
         health,
         printers: null,
-        error: 'Service rejected the stored token (it may have been restarted). Click "Disconnect" to re-pair.',
+        error:
+          'The stored pairing token is no longer valid (it expired after 24h, or the service was reset). ' +
+          'Click "Disconnect" below, then re-run pair.bat (or `node index.js pair --origin=...`) on your computer + enter the new code.',
       };
     }
     if (!printersRes.ok) {
@@ -219,10 +232,119 @@ export async function checkNativePrinterStatus(): Promise<{
         state: 'disconnected',
         health,
         printers: null,
-        error: 'Service did not respond (5s timeout). Is `node index.js` running?',
+        error:
+          'Service did not respond (5s timeout). Is `node index.js` running on THIS computer? ' +
+          '(127.0.0.1 is loopback — not reachable from your phone or another computer.)',
       };
     }
     return { state: 'error', health, printers: null, error: err?.message ?? 'Unknown error' };
+  }
+}
+
+// ─── One-shot connection test (for the "Test connection" button) ─────────
+// Returns a structured result the UI can show. Hits /health + (if a token
+// exists) /v1/printers, returning the full diagnostic so the shopkeeper can
+// see exactly what's working + what isn't.
+
+export interface ConnectionTestResult {
+  reachable: boolean;          // is the service responding at all?
+  health: NativePrinterHealth | null;
+  tokenValid: boolean;         // is the stored token accepted by the service?
+  printers: NativePrinterPrinter[] | null;
+  error: string | null;        // human-readable summary of what went wrong
+}
+
+export async function testNativePrinterConnection(): Promise<ConnectionTestResult> {
+  const token = getToken();
+  // Stage 1: health check
+  try {
+    const healthRes = await fetch(`${AGENT_BASE_URL}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!healthRes.ok) {
+      return {
+        reachable: false,
+        health: null,
+        tokenValid: false,
+        printers: null,
+        error: `Health check returned HTTP ${healthRes.status}`,
+      };
+    }
+    const health = (await healthRes.json()) as NativePrinterHealth;
+    // Stage 2: if no token, report "service up, needs pairing"
+    if (!token) {
+      return {
+        reachable: true,
+        health,
+        tokenValid: false,
+        printers: null,
+        error: health.pairingPending
+          ? 'Service is running + a pairing code is waiting. Enter it below to pair.'
+          : 'Service is running but you have not paired yet. Run pair.bat on your computer.',
+      };
+    }
+    // Stage 3: verify the token by fetching printers
+    try {
+      const printersRes = await fetch(`${AGENT_BASE_URL}/v1/printers`, {
+        method: 'GET',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (printersRes.status === 401 || printersRes.status === 403) {
+        return {
+          reachable: true,
+          health,
+          tokenValid: false,
+          printers: null,
+          error:
+            'Your pairing token is no longer valid (expired after 24h or the service was reset). ' +
+            'Click "Disconnect", then re-run pair.bat + enter the new code.',
+        };
+      }
+      if (!printersRes.ok) {
+        return {
+          reachable: true,
+          health,
+          tokenValid: false,
+          printers: null,
+          error: `Printers check failed (HTTP ${printersRes.status})`,
+        };
+      }
+      const data = await printersRes.json();
+      const printers = (data.printers ?? []) as NativePrinterPrinter[];
+      return {
+        reachable: true,
+        health,
+        tokenValid: true,
+        printers,
+        error: null,
+      };
+    } catch (e: unknown) {
+      const err = e as { name?: string };
+      return {
+        reachable: true,
+        health,
+        tokenValid: false,
+        printers: null,
+        error:
+          err?.name === 'TimeoutError' || err?.name === 'AbortError'
+            ? 'Service is up but the printers check timed out (5s). Try again.'
+            : 'Service is up but the printers check failed (network/CORS error).',
+      };
+    }
+  } catch (e: unknown) {
+    const err = e as { name?: string };
+    return {
+      reachable: false,
+      health: null,
+      tokenValid: false,
+      printers: null,
+      error:
+        'Cannot reach the service at http://127.0.0.1:32192. ' +
+        'Is `node index.js` running on THIS computer? ' +
+        '(127.0.0.1 is loopback — not reachable from your phone or another computer.)',
+    };
   }
 }
 

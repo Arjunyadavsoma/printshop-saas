@@ -27,6 +27,7 @@ import {
   AlertCircle, RefreshCw, ChevronDown, Download, Terminal, Monitor, Link2,
   ClipboardCheck, TestTube, Settings2, Zap, Hand, PackagePlus, Trash2,
   Boxes, ArrowLeft, Cpu, FileCode2, Play, Power, Wifi, WifiOff, HelpCircle,
+  ShieldCheck, Globe,
 } from 'lucide-react';
 import {
   checkPrintLatchStatus, confirmPrintLatchPairing, disconnectPrintLatch,
@@ -41,6 +42,8 @@ import {
   checkNativePrinterStatus, confirmNativePrinterPairing, disconnectNativePrinter,
   getNativePairingCommand, getNativeStartCommand, getNativeInstallCommand,
   getNativeHealthUrl,
+  testNativePrinterConnection,
+  type ConnectionTestResult,
   getEnginePref, saveEnginePref, clearEnginePref,
   type PrintEngine,
   type NativePrinterConnectionState, type NativePrinterHealth, type NativePrinterPrinter,
@@ -627,6 +630,10 @@ function NativePrinterSection() {
   const [pairingConfirming, setPairingConfirming] = useState(false);
   const [pairingResult, setPairingResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // One-shot connection-test result (for the "Test connection" button). Null
+  // = not tested yet; the result is shown inline + survives until the next test.
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const checkStatus = useCallback(async () => {
     setChecking(true);
@@ -638,6 +645,20 @@ function NativePrinterSection() {
     setStatusError(error);
     setChecking(false);
   }, []);
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testNativePrinterConnection();
+      setTestResult(result);
+      // Refresh the main status too — the test connection result may have
+      // updated our view of the world (e.g. the service came back online).
+      await checkStatus();
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => {
     void checkStatus();
@@ -691,6 +712,10 @@ function NativePrinterSection() {
                   Disconnect
                 </Button>
               )}
+              <Button variant="outline" size="sm" onClick={() => void handleTestConnection()} disabled={testing} className="gap-1.5 min-h-[44px] sm:self-start">
+                {testing ? <Loader2 className="size-4 animate-spin" /> : <TestTube className="size-4" />}
+                {testing ? 'Testing…' : 'Test connection'}
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => void checkStatus()} disabled={checking} className="gap-1.5 min-h-[44px] sm:self-start">
                 {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 {checking ? 'Checking…' : 'Refresh'}
@@ -719,10 +744,38 @@ function NativePrinterSection() {
                 <FileCode2 className="size-3.5" /> {libraryLoaded ? 'Native library loaded' : 'Library missing'}
               </Badge>
             )}
+            {serviceUp && health?.tokenCount != null && (
+              <Badge variant="outline" className="gap-1.5">
+                <ShieldCheck className="size-3.5 text-emerald-600" /> {health.tokenCount} token(s)
+              </Badge>
+            )}
             {printers && printers.length > 0 && (
               <span className="text-xs text-muted-foreground break-words">{printers.length} printer(s): {printers.map(p => p.name).join(', ')}</span>
             )}
           </div>
+          {/* Inline test-connection result — shows the full diagnostic so the
+              shopkeeper can see exactly what's working + what isn't. */}
+          {testResult && (
+            <div className={`mt-3 rounded-md border p-3 text-xs ${testResult.reachable && testResult.tokenValid ? 'border-emerald-300 bg-emerald-50' : testResult.reachable ? 'border-amber-300 bg-amber-50' : 'border-rose-300 bg-rose-50'}`}>
+              <p className="font-medium text-foreground">
+                {testResult.reachable && testResult.tokenValid ? '✓ Connection healthy' : testResult.reachable ? '⚠ Service is up but not fully paired' : '✗ Cannot reach the service'}
+              </p>
+              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                <li>Service reachable: {testResult.reachable ? '✓ yes' : '✗ no — see below'}</li>
+                {testResult.health && (
+                  <li>Library loaded: {testResult.health.libraryLoaded ? '✓ yes' : '✗ no — run install.bat / npm install'}</li>
+                )}
+                {testResult.health?.tokenCount != null && (
+                  <li>Active tokens: {testResult.health.tokenCount} {testResult.health.pairedOrigins && testResult.health.pairedOrigins.length > 0 ? `(origins: ${testResult.health.pairedOrigins.join(', ')})` : ''}</li>
+                )}
+                <li>Stored token valid: {testResult.tokenValid ? '✓ yes' : '✗ no'}</li>
+                {testResult.printers && testResult.printers.length > 0 && (
+                  <li>Printers detected: {testResult.printers.length}</li>
+                )}
+              </ul>
+              {testResult.error && <p className="mt-2 text-foreground whitespace-pre-line">{testResult.error}</p>}
+            </div>
+          )}
           {statusError && <p className="mt-2 break-words text-sm text-destructive">{statusError}</p>}
           {isConnected && (
             <p className="mt-2 text-sm text-emerald-600">✓ Your printer is connected. Keep this terminal window open while printing. Go to any order and click <strong>Print</strong>.</p>

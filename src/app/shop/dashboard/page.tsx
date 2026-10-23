@@ -60,6 +60,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { DeploymentOriginBanner } from '@/components/pwa/deployment-banner';
 import {
   checkPrintLatchStatus,
 } from '@/lib/printlatch/client';
@@ -414,6 +415,12 @@ export default function ShopDashboardPage() {
       {/* Install-prompt banner (Chrome/Edge/Android: native install button;
           iOS Safari: "Add to Home Screen" instructions). Dismissible. */}
       <InstallPrompt />
+
+      {/* Deployment-origin banner — shows the current URL + warns if it's a
+          Vercel PREVIEW URL (which changes on every commit + breaks the
+          per-origin localStorage printer pairing). Hidden on the stable
+          production URL (no banner noise). */}
+      <DeploymentOriginBanner />
 
       {/* Printer-engine callout — surfaces the 2 print methods so the
           shopkeeper knows they need to pick one before they can print.
