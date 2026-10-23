@@ -2350,3 +2350,67 @@ Stage Summary:
 - Files changed: 2 (src/app/shop/orders/[id]/page.tsx — PrintLatchButton rewrite with confirmation dialog + printer selection; src/app/shop/printer/page.tsx — test-print button added).
 
 - No database changes. No migrations. No new dependencies. No production changes. Changes are local + uncommitted.
+
+---
+Task ID: p2-p6-batch-supplies
+Agent: frontend-styling-expert (sub)
+Task: P2 — controlled batch printing on the orders list page + P6 — manual printer supply tracking card on the printer page.
+
+Work Log:
+- P2 — Batch printing on `src/app/shop/orders/page.tsx`:
+  - Added a checkbox column (first column, before Token) using the shadcn Checkbox.
+  - Header "Select All" checkbox supports tri-state (unchecked / indeterminate / checked) based on how many of the page's eligible orders are currently selected.
+  - Per-row checkbox disabled when `o.status` is not `paid` or `printing` (also `awaiting_payment`, `ready`, `collected`, `cancelled`, `refunded`). A tooltip explains why.
+  - All selection checkboxes are disabled while a batch print is in progress (`batchState.running`).
+  - Selection state stored as `selectedIds: Set<string>`.
+  - Selection is auto-pruned when the orders list refreshes — selected IDs whose order disappeared or whose status changed to ineligible are silently dropped (so a status change on the server side can't get a stale order into a batch).
+  - When 1+ orders are selected (or a batch is running / just finished), a floating action bar is rendered at the bottom of the viewport (`fixed bottom-0 z-50`, `bg-background/95 backdrop-blur`).
+    - Idle state: "X orders selected (Y eligible on this page)" + Clear + Batch Print (N).
+    - Running state: spinner + "Printing order X of Y, file A of B…" + current filename + `<Progress>` bar (completedFiles / totalFiles).
+    - Done state: "Batch complete." / "Batch canceled." + succeeded/failed/skipped counts + collapsible per-file details list + Done + Clear selection.
+    - Error state (e.g., agent not connected): red error + Dismiss button.
+  - `runBatchPrint` flow:
+    1. Preflight `checkPrintLatchStatus()` — aborts the batch with a friendly error if the agent isn't `connected` (avoids wasting 60-second presigned URLs).
+    2. For each selected order (sequentially): fetch the order detail via `GET /api/v1/shops/me/orders/:id` to get the file list. The fetch is sequenced (not pre-fetched in parallel) so the user can cancel mid-batch.
+    3. For each file (sequentially): `GET /api/v1/shops/me/orders/:id/files/:fileId/print-url` → `fetchPdfBytes(downloadUrl)` → `submitPrintLatchJob({ pdf, filename, mode: 'print', copies: Math.min(Math.max(1, copies), 10), printerId })` → poll `getPrintLatchJobStatus(job.id)` up to 10×2s.
+    4. Honors auto-mode round-robin (`getPrefs()` + `getNextAutoPrinter()`) the same way the single-file PrintLatchButton does.
+    5. Each file's own settings are preserved — `copies` come from the print-url endpoint response, so per-file configuration is respected.
+    6. Per-file result (`success` / `failed` / `skipped`) recorded with the order token + filename + optional error message.
+  - Cancellation: `cancelRef` (useRef<boolean>) is checked between every step (outer order loop, inner file loop, polling inner loop). Once set, the current file's polling finishes, the in-flight file is recorded as `skipped`, and the batch exits. The "Cancel" button in the action bar sets the ref.
+  - Safety rules enforced:
+    - Only `paid` or `printing` orders can be selected (checkbox disabled otherwise + auto-prune on status change).
+    - No concurrent batches — the Batch Print button is disabled while `batchState.running`, and `runBatchPrint` early-returns if `batchState.running`.
+    - Each file retains its own settings (copies from the print-url response, mode='print', no extra UI to override per-file).
+    - No new audit code — the existing `file.print-url` audit log entry from the print-url route covers it.
+  - On each successfully completed file, `localStorage.printshop_print_count` is incremented by 1 — this is the counter the P6 supply-tracking card reads.
+  - Imports added: `useRef`, `Checkbox`, `Progress`, `checkPrintLatchStatus`, `submitPrintLatchJob`, `getPrintLatchJobStatus`, `fetchPdfBytes`, `getPrefs`, `getNextAutoPrinter`, and the lucide icons `Layers`, `X`, `AlertCircle`, `CheckCircle2`, `Ban`.
+
+- P6 — Manual supply tracking card on `src/app/shop/printer/page.tsx`:
+  - New card rendered only when `isConnected` (after the Print Mode card, before the setup guide).
+  - Title: "Supply Tracking" with subtitle: "Manually entered estimates — not automatically detected from your printer hardware."
+  - Table columns: Paper · Color · Starting (right-aligned) · Consumed (est.) (right-aligned) · Current (right-aligned) · Low threshold (right-aligned) · Status · Actions.
+  - Empty state: dashed-border placeholder prompting the user to add a supply below.
+  - Data model: `Supply { id: \`${paperType}-${color}\`, paperType: 'a4'|'a3'|'letter'|'legal', color: 'bw'|'color', startingStock: number, lowStockThreshold: number }`.
+  - Stored in `localStorage.printshop_supplies` (key constant `SUPPLIES_KEY`). Helper `loadSupplies()` defensively parses + validates the JSON shape; `saveSupplies()` persists on every change.
+  - "Consumed (est.)" reads `localStorage.printshop_print_count` via `getPrintCount()` — the same counter the P2 batch print flow increments. All supply rows display the same global count (a coarse but consistent estimate, as the disclaimer makes clear).
+  - `printCount` state is loaded on mount and re-read every 5 seconds (covers the case where a batch print is running in another tab/window of the same browser).
+  - Current stock = `max(0, startingStock - printCount)` (clamped so it never displays negative).
+  - Status badge:
+    - `current <= 0` → "Out" (red).
+    - `current <= lowStockThreshold` → "Low" (amber).
+    - else → "In Stock" (green).
+  - Per-row "Restock" button → swaps the actions cell to an inline `<Input type=number>` + "Add" + "Cancel". Enter adds, Escape cancels. Restocking adds to `startingStock` (so current stock rises).
+  - Per-row trash icon → removes the supply row.
+  - "Add Supply" form: paper type (A4/A3/Letter/Legal), color (B&W/Color), starting stock (sheets, ≥0), low threshold (default 50). Adding a (paper, color) combo that already exists replaces the existing row (no duplicates).
+  - Add Supply button disabled until the starting-stock field is a valid non-negative number.
+  - Footnote explains exactly what the "Consumed (est.)" column means (reads `printshop_print_count`, incremented by the orders-page batch print flow only — single-file prints and prints from other devices don't increment it, so adjust the starting stock manually if needed).
+  - Imports added: `Checkbox` (later removed when not used), `Table`/`TableHeader`/`TableRow`/`TableHead`/`TableBody`/`TableCell`, `Select`/`SelectContent`/`SelectItem`/`SelectTrigger`/`SelectValue`, and the lucide icons `PackagePlus`, `Trash2`, `Boxes`. Helpers `PaperType`, `SupplyColor`, `SupplyStatus`, `Supply`, `NewSupplyForm`, `loadSupplies`, `saveSupplies`, `getPrintCount`, `SupplyStatusBadge` added as module-level definitions after the page component.
+
+- No API routes changed. No backend code changed. No tests added (UI changes are pure presentation; the existing printlatch test suite already covers the API contract). No new dependencies. No DB migrations.
+
+Verification:
+- `bunx tsc --noEmit` → 0 errors.
+- `bun run lint` → 0 warnings.
+- `bunx vitest run` → 217 / 217 pass (unchanged from baseline).
+
+Files changed: 2 (`src/app/shop/orders/page.tsx`, `src/app/shop/printer/page.tsx`).

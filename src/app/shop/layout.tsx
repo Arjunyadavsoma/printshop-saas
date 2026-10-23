@@ -19,6 +19,7 @@ import {
   QrCode,
   ShieldCheck,
   Github,
+  FileBarChart,
 } from 'lucide-react';
 
 interface NavItem {
@@ -52,6 +53,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/shop/dashboard', label: 'Overview', icon: LayoutDashboard },
       { href: '/shop/orders', label: 'Orders', icon: ClipboardList },
       { href: '/shop/printer', label: 'Printer Setup', icon: PrinterIcon },
+      { href: '/shop/reports', label: 'Daily Report', icon: FileBarChart },
     ],
   },
   {

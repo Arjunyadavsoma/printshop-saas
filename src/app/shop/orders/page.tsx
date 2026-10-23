@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { StatusBadge } from '@/components/portal/status-badge';
@@ -16,6 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -45,6 +47,14 @@ import {
 import { formatINRFromPaise } from '@platform/utils';
 import { ORDER_STATUSES, type OrderStatus } from '@platform/core/domain';
 import {
+  checkPrintLatchStatus,
+  submitPrintLatchJob,
+  getPrintLatchJobStatus,
+  fetchPdfBytes,
+  getPrefs,
+  getNextAutoPrinter,
+} from '@/lib/printlatch/client';
+import {
   ClipboardList,
   RefreshCw,
   Loader2,
@@ -57,6 +67,11 @@ import {
   XCircle,
   Printer as PrinterIcon,
   PackageCheck,
+  Layers,
+  X,
+  AlertCircle,
+  CheckCircle2,
+  Ban,
 } from 'lucide-react';
 
 interface OrderRow {
@@ -69,6 +84,49 @@ interface OrderRow {
   paidAt: string | null;
   customerPhone?: string | null;
 }
+
+// Only orders in these statuses are eligible for batch printing — they have
+// been paid for and not yet collected/cancelled (files still exist).
+function isEligibleForBatch(status: OrderStatus): boolean {
+  return status === 'paid' || status === 'printing';
+}
+
+interface BatchFileResult {
+  orderId: string;
+  orderToken: string;
+  filename: string;
+  status: 'success' | 'failed' | 'skipped';
+  error?: string;
+}
+
+interface BatchState {
+  running: boolean;
+  totalOrders: number;
+  currentOrderIdx: number; // 1-based for display
+  totalFilesInCurrentOrder: number;
+  currentFileIdx: number; // 1-based for display
+  totalFiles: number;
+  completedFiles: number;
+  currentFilename: string;
+  results: BatchFileResult[];
+  done: boolean;
+  canceled: boolean;
+  error?: string;
+}
+
+const INITIAL_BATCH_STATE: BatchState = {
+  running: false,
+  totalOrders: 0,
+  currentOrderIdx: 0,
+  totalFilesInCurrentOrder: 0,
+  currentFileIdx: 0,
+  totalFiles: 0,
+  completedFiles: 0,
+  currentFilename: '',
+  results: [],
+  done: false,
+  canceled: false,
+};
 
 const PAGE_SIZE = 20;
 
@@ -138,6 +196,11 @@ export default function ShopOrdersPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // ── Batch print state ──
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchState, setBatchState] = useState<BatchState>(INITIAL_BATCH_STATE);
+  const cancelRef = useRef(false);
+
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true); else setLoading(true);
     setError(null);
@@ -199,6 +262,251 @@ export default function ShopOrdersPage() {
   const paged = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   useEffect(() => { setPage(0); }, [statusFilter, paymentFilter, dateFilter, search]);
+
+  // Prune the selection when the orders list refreshes — drop any selected
+  // ID whose order has disappeared or whose status is no longer eligible
+  // (e.g., cancelled or collected after selection).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const orderMap = new Map(orders.map((o) => [o.id, o]));
+      const next = new Set<string>();
+      for (const id of prev) {
+        const o = orderMap.get(id);
+        if (o && isEligibleForBatch(o.status)) next.add(id);
+      }
+      if (next.size === prev.size) return prev;
+      return next;
+    });
+  }, [orders]);
+
+  // ── Batch selection helpers ──
+  const pagedEligible = useMemo(
+    () => paged.filter((o) => isEligibleForBatch(o.status)),
+    [paged],
+  );
+  const allEligibleOnPageSelected =
+    pagedEligible.length > 0 &&
+    pagedEligible.every((o) => selectedIds.has(o.id));
+  const someEligibleOnPageSelected =
+    !allEligibleOnPageSelected && pagedEligible.some((o) => selectedIds.has(o.id));
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const o of pagedEligible) {
+        if (checked) next.add(o.id);
+        else next.delete(o.id);
+      }
+      return next;
+    });
+  };
+
+  const toggleRow = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // ── Batch print flow ──
+  // For each selected order (sequentially):
+  //   1. Fetch order detail to get the file list
+  //   2. For each file (sequentially):
+  //      - GET print-url endpoint → short-lived presigned URL
+  //      - fetchPdfBytes → submitPrintLatchJob (mode='print')
+  //      - poll getPrintLatchJobStatus until completed/failed/unknown
+  //      - record per-file result
+  // Cancellation: cancelRef is checked between every step; once set, the
+  // loop exits gracefully after the current file finishes (or skips).
+  const runBatchPrint = async () => {
+    if (batchState.running) return;
+    cancelRef.current = false;
+
+    // Preflight: verify the PrintLatch agent is connected before we start
+    // fetching PDFs — otherwise we waste 60-second presigned URLs.
+    const status = await checkPrintLatchStatus();
+    if (status.state !== 'connected') {
+      setBatchState({
+        ...INITIAL_BATCH_STATE,
+        done: true,
+        error: status.error ?? 'PrintLatch agent is not connected. Open the Printer Setup page to connect.',
+      });
+      return;
+    }
+
+    const orderIds = Array.from(selectedIds);
+    setBatchState({
+      ...INITIAL_BATCH_STATE,
+      running: true,
+      totalOrders: orderIds.length,
+    });
+
+    const results: BatchFileResult[] = [];
+    let totalFiles = 0;
+    let completedFiles = 0;
+
+    try {
+      for (let i = 0; i < orderIds.length; i++) {
+        if (cancelRef.current) break;
+        const orderId = orderIds[i];
+
+        // Fetch the order detail to get the file list (and the token for display).
+        const orderR = await api.request<{
+          data?: {
+            id: string;
+            customerToken: string;
+            tokenNumber?: string | null;
+            files: { id: string; originalFilename: string; copies: number; status: string }[];
+          };
+          error?: { message?: string };
+        }>('GET', `/api/v1/shops/me/orders/${orderId}`);
+
+        if (orderR.status !== 200 || !orderR.data?.data) {
+          results.push({
+            orderId,
+            orderToken: orderId.slice(0, 8),
+            filename: '(order)',
+            status: 'failed',
+            error: orderR.data?.error?.message ?? `Could not load order (HTTP ${orderR.status})`,
+          });
+          setBatchState((prev) => ({
+            ...prev,
+            currentOrderIdx: i + 1,
+            results: [...results],
+          }));
+          continue;
+        }
+
+        const order = orderR.data.data;
+        const orderToken = order.tokenNumber ?? order.customerToken;
+        const files = order.files ?? [];
+        totalFiles += files.length;
+
+        for (let j = 0; j < files.length; j++) {
+          if (cancelRef.current) break;
+          const file = files[j];
+
+          setBatchState((prev) => ({
+            ...prev,
+            currentOrderIdx: i + 1,
+            totalFilesInCurrentOrder: files.length,
+            currentFileIdx: j + 1,
+            totalFiles,
+            completedFiles,
+            currentFilename: file.originalFilename,
+            results: [...results],
+          }));
+
+          try {
+            // 1. Get the short-lived presigned URL + file settings.
+            const urlR = await api.request<{
+              data?: { downloadUrl: string; filename: string; copies: number };
+              error?: { message?: string };
+            }>('GET', `/api/v1/shops/me/orders/${orderId}/files/${file.id}/print-url`);
+            if (urlR.status !== 200 || !urlR.data?.data) {
+              throw new Error(urlR.data?.error?.message ?? `Could not get print URL (HTTP ${urlR.status})`);
+            }
+            const { downloadUrl, filename, copies } = urlR.data.data;
+
+            // 2. Fetch the actual PDF bytes from the presigned URL.
+            const pdfBytes = await fetchPdfBytes(downloadUrl);
+
+            // 3. Submit the job to the PrintLatch agent. If auto mode is on,
+            // use the round-robin printer; otherwise let the agent use the default.
+            const prefs = getPrefs();
+            const autoPrinter = prefs.mode === 'auto' ? getNextAutoPrinter() : undefined;
+            const job = await submitPrintLatchJob({
+              pdf: pdfBytes,
+              filename,
+              mode: 'print',
+              copies: Math.min(Math.max(1, copies), 10),
+              printerId: autoPrinter,
+            });
+
+            // 4. Poll for completion (up to 10 attempts × 2s = 20s).
+            let finalStatus: 'completed' | 'failed' | 'unknown' = 'unknown';
+            let finalError: string | undefined;
+            for (let k = 0; k < 10; k++) {
+              if (cancelRef.current) break;
+              await new Promise((r) => setTimeout(r, 2000));
+              const status = await getPrintLatchJobStatus(job.id);
+              if (status.status === 'completed') { finalStatus = 'completed'; break; }
+              if (status.status === 'failed') { finalStatus = 'failed'; finalError = status.error?.message ?? 'Print job failed'; break; }
+              if (status.status === 'unknown') { finalStatus = 'unknown'; finalError = status.error?.message ?? 'Unknown — check printer queue'; break; }
+            }
+
+            if (cancelRef.current) {
+              results.push({
+                orderId,
+                orderToken,
+                filename,
+                status: 'skipped',
+                error: 'Canceled by user',
+              });
+              setBatchState((prev) => ({ ...prev, results: [...results] }));
+              break;
+            }
+
+            if (finalStatus === 'completed') {
+              results.push({ orderId, orderToken, filename, status: 'success' });
+              completedFiles++;
+              // Increment the global print counter that the printer page's
+              // supply-tracking card reads to estimate paper consumption.
+              try {
+                const cur = parseInt(localStorage.getItem('printshop_print_count') ?? '0', 10) || 0;
+                localStorage.setItem('printshop_print_count', String(cur + 1));
+              } catch { /* localStorage unavailable — ignore */ }
+            } else if (finalStatus === 'failed') {
+              results.push({ orderId, orderToken, filename, status: 'failed', error: finalError });
+            } else {
+              results.push({
+                orderId,
+                orderToken,
+                filename,
+                status: 'failed',
+                error: finalError ?? 'Timed out — check printer queue',
+              });
+            }
+            setBatchState((prev) => ({ ...prev, results: [...results], completedFiles }));
+          } catch (err) {
+            results.push({
+              orderId,
+              orderToken,
+              filename: file.originalFilename,
+              status: 'failed',
+              error: err instanceof Error ? err.message : 'Print failed',
+            });
+            setBatchState((prev) => ({ ...prev, results: [...results] }));
+          }
+        }
+        if (cancelRef.current) break;
+      }
+    } finally {
+      setBatchState((prev) => ({
+        ...prev,
+        running: false,
+        done: true,
+        canceled: cancelRef.current,
+        results: [...results],
+        completedFiles,
+        totalFiles,
+      }));
+    }
+  };
+
+  const cancelBatch = () => {
+    cancelRef.current = true;
+  };
+
+  const resetBatch = () => {
+    cancelRef.current = false;
+    setBatchState(INITIAL_BATCH_STATE);
+  };
 
   // ── Quick actions ──
   const quickVerify = async (orderId: string, action: 'verify' | 'reject') => {
@@ -380,10 +688,26 @@ export default function ShopOrdersPage() {
               </p>
             </div>
           ) : (
-            <Table className="min-w-[720px]">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-4">Token</TableHead>
+                  <TableHead className="w-10 pl-4 text-center">
+                    <Checkbox
+                      aria-label="Select all eligible orders on this page"
+                      checked={
+                        pagedEligible.length === 0
+                          ? false
+                          : allEligibleOnPageSelected
+                            ? true
+                            : someEligibleOnPageSelected
+                              ? 'indeterminate'
+                              : false
+                      }
+                      onCheckedChange={(v) => toggleSelectAllOnPage(v === true)}
+                      disabled={batchState.running || pagedEligible.length === 0}
+                    />
+                  </TableHead>
+                  <TableHead className="pl-1">Token</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
@@ -399,9 +723,20 @@ export default function ShopOrdersPage() {
                   const canStart = o.status === 'paid';
                   const canReady = o.status === 'printing';
                   const idBusy = busy?.startsWith(`${o.id}:`) ?? false;
+                  const eligible = isEligibleForBatch(o.status);
+                  const isChecked = selectedIds.has(o.id);
                   return (
                     <TableRow key={o.id} className="cursor-pointer">
-                      <TableCell className="pl-4">
+                      <TableCell className="w-10 pl-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          aria-label={`Select order ${o.tokenNumber ?? o.customerToken} for batch print`}
+                          checked={isChecked}
+                          disabled={!eligible || batchState.running}
+                          onCheckedChange={(v) => toggleRow(o.id, v === true)}
+                          title={!eligible ? `Orders in status '${o.status}' cannot be batch-printed (files may not be ready or have been removed).` : undefined}
+                        />
+                      </TableCell>
+                      <TableCell className="pl-1">
                         <Link
                           href={`/shop/orders/${o.id}`}
                           className="font-mono font-semibold text-amber-700 hover:underline"
@@ -528,6 +863,164 @@ export default function ShopOrdersPage() {
             >
               Next <ChevronRight className="size-4" />
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating batch action bar */}
+      {/* Visible whenever orders are selected OR a batch is in progress / just finished */}
+      {(selectedIds.size > 0 || batchState.running || (batchState.done && !batchState.error)) && (
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto flex max-w-5xl flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4">
+            {/* Left: status / progress */}
+            <div className="min-w-0 flex-1 space-y-1">
+              {batchState.running ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+                    <Loader2 className="size-4 animate-spin" />
+                    <span>
+                      Printing order {batchState.currentOrderIdx} of {batchState.totalOrders}
+                      {batchState.totalFilesInCurrentOrder > 0
+                        ? `, file ${batchState.currentFileIdx} of ${batchState.totalFilesInCurrentOrder}`
+                        : ''}
+                      …
+                    </span>
+                  </div>
+                  {batchState.currentFilename && (
+                    <p className="truncate text-xs text-muted-foreground" title={batchState.currentFilename}>
+                      {batchState.currentFilename}
+                    </p>
+                  )}
+                  <Progress
+                    value={
+                      batchState.totalFiles > 0
+                        ? (batchState.completedFiles / batchState.totalFiles) * 100
+                        : 0
+                    }
+                    className="h-1.5"
+                  />
+                </>
+              ) : batchState.done && batchState.results.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <span className="font-medium text-foreground">
+                    {batchState.canceled ? 'Batch canceled.' : 'Batch complete.'}
+                  </span>
+                  <span className="text-emerald-700">
+                    <Check className="mr-0.5 inline size-3" />
+                    {batchState.results.filter((r) => r.status === 'success').length} succeeded
+                  </span>
+                  <span className="text-rose-700">
+                    <XCircle className="mr-0.5 inline size-3" />
+                    {batchState.results.filter((r) => r.status === 'failed').length} failed
+                  </span>
+                  {batchState.results.some((r) => r.status === 'skipped') && (
+                    <span className="text-muted-foreground">
+                      <Ban className="mr-0.5 inline size-3" />
+                      {batchState.results.filter((r) => r.status === 'skipped').length} skipped
+                    </span>
+                  )}
+                  <details className="text-muted-foreground">
+                    <summary className="cursor-pointer">Details</summary>
+                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto text-[11px]">
+                      {batchState.results.map((r, idx) => (
+                        <li key={idx} className="flex items-start gap-1">
+                          {r.status === 'success' ? (
+                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-emerald-600" />
+                          ) : r.status === 'skipped' ? (
+                            <Ban className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <XCircle className="mt-0.5 size-3 shrink-0 text-rose-600" />
+                          )}
+                          <span className="truncate" title={`${r.orderToken} — ${r.filename}${r.error ? ` — ${r.error}` : ''}`}>
+                            <span className="font-mono">{r.orderToken}</span> · {r.filename}
+                            {r.error && <span className="text-rose-600"> — {r.error}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              ) : batchState.done && batchState.error ? (
+                <div className="flex items-center gap-2 text-sm text-rose-700">
+                  <AlertCircle className="size-4 shrink-0" />
+                  <span className="break-words">{batchState.error}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Layers className="size-4 text-amber-600" />
+                  <span>{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({pagedEligible.length} eligible on this page)
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Right: actions */}
+            <div className="flex shrink-0 items-center gap-2">
+              {batchState.running ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={cancelBatch}
+                  className="min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                >
+                  <X className="size-4" /> Cancel
+                </Button>
+              ) : batchState.done ? (
+                <>
+                  {batchState.error && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetBatch}
+                      className="min-h-[44px] gap-1.5"
+                    >
+                      Dismiss
+                    </Button>
+                  )}
+                  {!batchState.error && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetBatch}
+                      className="min-h-[44px] gap-1.5"
+                    >
+                      <Check className="size-4" /> Done
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="min-h-[44px] gap-1.5"
+                  >
+                    Clear selection
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    disabled={selectedIds.size === 0}
+                    className="min-h-[44px] gap-1.5"
+                  >
+                    <Ban className="size-4" /> Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => void runBatchPrint()}
+                    disabled={selectedIds.size === 0}
+                    className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    <PrinterIcon className="size-4" />
+                    Batch Print{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

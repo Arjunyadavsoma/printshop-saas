@@ -960,19 +960,31 @@ function PrintLatchButton({
 }) {
   const [jobState, setJobState] = useState<PrintLatchJobState>({ status: 'idle' });
   const [agentConnected, setAgentConnected] = useState<boolean | null>(null);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [printers, setPrinters] = useState<PrintLatchPrinter[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>('');
   const [printersLoading, setPrintersLoading] = useState(false);
 
+  // P3: Auto-refresh with bounded backoff (2s→4s→8s→16s→30s) when agent is down.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
       const { state } = await checkPrintLatchStatus();
-      if (!cancelled) setAgentConnected(state === 'connected');
-    })();
-    return () => { cancelled = true; };
-  }, []);
+      if (cancelled) return;
+      setAgentConnected(state === 'connected');
+      if (state !== 'connected') {
+        const delay = Math.min(2000 * Math.pow(2, reconnectAttempt), 30000);
+        setReconnectAttempt(prev => Math.min(prev + 1, 4));
+        timer = setTimeout(check, delay);
+      } else {
+        setReconnectAttempt(0);
+      }
+    };
+    void check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [reconnectAttempt]);
 
   // Fetch available printers when the dialog opens.
   useEffect(() => {
@@ -1085,14 +1097,34 @@ function PrintLatchButton({
               )}
             </div>
           ) : (
-            // ── Pre-print confirmation ──
+            // ── Pre-print confirmation with preflight warnings ──
             <div className="space-y-3 py-2">
+              {/* Preflight warnings */}
+              {file.sizeBytes > 10 * 1024 * 1024 && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>Large file ({(file.sizeBytes / 1024 / 1024).toFixed(1)} MB) — printing may take longer.</span>
+                </div>
+              )}
+              {!file.pageCount && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>Page count unknown — PrintLatch will print all pages. Verify before confirming.</span>
+                </div>
+              )}
+              {file.mimeType !== 'application/pdf' && (
+                <div className="flex items-start gap-2 rounded-md border border-rose-300 bg-rose-50 p-2 text-[11px] text-rose-700">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>Not a PDF ({file.mimeType}) — PrintLatch only accepts PDF files. Convert it first.</span>
+                </div>
+              )}
+
               {/* Document info */}
               <div className="rounded-lg border border-border bg-muted/40 p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Document</p>
                 <p className="mt-0.5 text-sm font-medium text-foreground break-words">{file.originalFilename}</p>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                  <span>{file.pageCount ? `${file.pageCount} pages` : 'Pages: N/A'}</span>
+                  <span>{file.pageCount ? `${file.pageCount} pages` : 'Pages: unknown'}</span>
                   <span>{(file.sizeBytes / 1024).toFixed(0)} KB</span>
                   <span>{file.copies} cop{file.copies > 1 ? 'ies' : 'y'}</span>
                 </div>

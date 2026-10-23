@@ -9,9 +9,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   CheckCircle2, Loader2, Printer as PrinterIcon, ExternalLink, Copy, Check,
   AlertCircle, RefreshCw, ChevronDown, Download, Terminal, Monitor, Link2,
-  ClipboardCheck, TestTube, Settings2, Zap, Hand,
+  ClipboardCheck, TestTube, Settings2, Zap, Hand, PackagePlus, Trash2,
+  Boxes,
 } from 'lucide-react';
 import {
   checkPrintLatchStatus, confirmPrintLatchPairing, disconnectPrintLatch,
@@ -96,6 +112,71 @@ export default function PrinterSetupPage() {
       ? current.filter(id => id !== printerId)
       : [...current, printerId];
     updatePrefs({ autoPrinterIds: updated, lastPrinterIndex: 0 });
+  };
+
+  // ── Supply tracking (localStorage-only, manual estimates) ──
+  // Data model: one row per (paperType × color). The consumption estimate is
+  // read from `printshop_print_count` — a global counter incremented by the
+  // batch print flow on the orders page (and by other print flows in future).
+  // This is a MANUAL estimate, not auto-detected from printer hardware.
+
+  const [supplies, setSupplies] = useState<Supply[]>([]);
+  const [restockId, setRestockId] = useState<string | null>(null);
+  const [restockAmount, setRestockAmount] = useState('');
+  const [newSupply, setNewSupply] = useState<NewSupplyForm>({
+    paperType: 'a4',
+    color: 'bw',
+    startingStock: '',
+    lowStockThreshold: '50',
+  });
+  const [printCount, setPrintCount] = useState(0);
+
+  // Load supplies + print count on mount (and whenever the user navigates here
+  // after running a batch print elsewhere).
+  useEffect(() => {
+    setSupplies(loadSupplies());
+    setPrintCount(getPrintCount());
+  }, []);
+
+  // Persist supplies whenever they change.
+  useEffect(() => {
+    saveSupplies(supplies);
+  }, [supplies]);
+
+  // Re-read the print count every 5s — covers the case where a batch print is
+  // running in another tab/window.
+  useEffect(() => {
+    const id = setInterval(() => setPrintCount(getPrintCount()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const addSupply = () => {
+    const start = parseInt(newSupply.startingStock, 10);
+    const threshold = parseInt(newSupply.lowStockThreshold, 10);
+    if (!Number.isFinite(start) || start < 0) return;
+    if (!Number.isFinite(threshold) || threshold < 0) return;
+    const id = `${newSupply.paperType}-${newSupply.color}`;
+    // Replace if the same combination already exists (don't duplicate rows).
+    setSupplies((prev) => {
+      const filtered = prev.filter((s) => s.id !== id);
+      return [
+        ...filtered,
+        { id, paperType: newSupply.paperType, color: newSupply.color, startingStock: start, lowStockThreshold: threshold },
+      ];
+    });
+    setNewSupply({ ...newSupply, startingStock: '' });
+  };
+
+  const removeSupply = (id: string) => {
+    setSupplies((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleRestock = (id: string) => {
+    const add = parseInt(restockAmount, 10);
+    if (!Number.isFinite(add) || add <= 0) return;
+    setSupplies((prev) => prev.map((s) => s.id === id ? { ...s, startingStock: s.startingStock + add } : s));
+    setRestockId(null);
+    setRestockAmount('');
   };
 
   return (
@@ -246,6 +327,166 @@ export default function PrinterSetupPage() {
         </Card>
       )}
 
+      {/* Connected: Supply tracking card (manual estimates) */}
+      {isConnected && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><Boxes className="size-4 text-amber-600" /> Supply Tracking</CardTitle>
+            <CardDescription className="text-xs">
+              Manually entered estimates — not automatically detected from your printer hardware.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Existing supplies table */}
+            {supplies.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                No supplies tracked yet. Add one below to start tracking paper stock.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Paper</TableHead>
+                    <TableHead>Color</TableHead>
+                    <TableHead className="text-right">Starting</TableHead>
+                    <TableHead className="text-right">Consumed (est.)</TableHead>
+                    <TableHead className="text-right">Current</TableHead>
+                    <TableHead className="text-right">Low threshold</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {supplies.map((s) => {
+                    const consumed = printCount;
+                    const current = s.startingStock - consumed;
+                    const status: SupplyStatus =
+                      current <= 0 ? 'out' : current <= s.lowStockThreshold ? 'low' : 'in-stock';
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium uppercase">{s.paperType}</TableCell>
+                        <TableCell>{s.color === 'bw' ? 'B&W' : 'Color'}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">{s.startingStock}</TableCell>
+                        <TableCell className="text-right font-mono text-sm text-muted-foreground">{consumed}</TableCell>
+                        <TableCell className="text-right font-mono text-sm font-medium">{Math.max(0, current)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm text-muted-foreground">{s.lowStockThreshold}</TableCell>
+                        <TableCell><SupplyStatusBadge status={status} /></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {restockId === s.id ? (
+                              <>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={restockAmount}
+                                  onChange={(e) => setRestockAmount(e.target.value)}
+                                  placeholder="+sheets"
+                                  className="h-9 w-20"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRestock(s.id);
+                                    if (e.key === 'Escape') { setRestockId(null); setRestockAmount(''); }
+                                  }}
+                                />
+                                <Button size="sm" variant="outline" onClick={() => handleRestock(s.id)} className="gap-1.5 min-h-[44px]">
+                                  <Check className="size-3.5 text-emerald-600" /> Add
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setRestockId(null); setRestockAmount(''); }} className="min-h-[44px]">
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm" variant="outline" onClick={() => { setRestockId(s.id); setRestockAmount(''); }}
+                                  className="gap-1.5 min-h-[44px]"
+                                  title="Add to the starting stock"
+                                >
+                                  <PackagePlus className="size-3.5" /> Restock
+                                </Button>
+                                <Button
+                                  size="sm" variant="ghost" onClick={() => removeSupply(s.id)}
+                                  className="min-h-[44px]" title="Remove this supply row"
+                                >
+                                  <Trash2 className="size-3.5 text-rose-600" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+
+            {/* Add-supply form */}
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium text-foreground">Add a supply</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Choose a paper type and color, then enter how many sheets you have right now.
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="space-y-1">
+                  <Label className="text-xs" htmlFor="supply-paper">Paper type</Label>
+                  <Select value={newSupply.paperType} onValueChange={(v) => setNewSupply((p) => ({ ...p, paperType: v as PaperType }))}>
+                    <SelectTrigger id="supply-paper" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="a4">A4</SelectItem>
+                      <SelectItem value="a3">A3</SelectItem>
+                      <SelectItem value="letter">Letter</SelectItem>
+                      <SelectItem value="legal">Legal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs" htmlFor="supply-color">Color</Label>
+                  <Select value={newSupply.color} onValueChange={(v) => setNewSupply((p) => ({ ...p, color: v as SupplyColor }))}>
+                    <SelectTrigger id="supply-color" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bw">B&W</SelectItem>
+                      <SelectItem value="color">Color</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs" htmlFor="supply-starting">Starting stock (sheets)</Label>
+                  <Input
+                    id="supply-starting" type="number" min={0}
+                    value={newSupply.startingStock}
+                    onChange={(e) => setNewSupply((p) => ({ ...p, startingStock: e.target.value }))}
+                    placeholder="e.g. 500"
+                    className="h-11 sm:h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs" htmlFor="supply-threshold">Low threshold</Label>
+                  <Input
+                    id="supply-threshold" type="number" min={0}
+                    value={newSupply.lowStockThreshold}
+                    onChange={(e) => setNewSupply((p) => ({ ...p, lowStockThreshold: e.target.value }))}
+                    placeholder="50"
+                    className="h-11 sm:h-9"
+                  />
+                </div>
+              </div>
+              <Button
+                size="sm" className="mt-3 gap-1.5 min-h-[44px] bg-amber-600 text-white hover:bg-amber-700"
+                onClick={addSupply}
+                disabled={!newSupply.startingStock || parseInt(newSupply.startingStock, 10) < 0}
+              >
+                <PackagePlus className="size-4" /> Add Supply
+              </Button>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              The "Consumed (est.)" column reads a global print counter from <code className="rounded bg-muted px-1 py-0.5">printshop_print_count</code> in your browser. It is incremented each time a file is printed via the batch print flow on the orders page. Single-file prints and prints from other devices do not increment it — adjust the starting stock manually if needed.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Setup guide (shown when NOT connected) */}
       {!isConnected && (
         <Card>
@@ -336,6 +577,76 @@ export default function PrinterSetupPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── Supply tracking helpers ────────────────────────────────────────────
+
+type PaperType = 'a4' | 'a3' | 'letter' | 'legal';
+type SupplyColor = 'bw' | 'color';
+type SupplyStatus = 'in-stock' | 'low' | 'out';
+
+interface Supply {
+  id: string; // `${paperType}-${color}`
+  paperType: PaperType;
+  color: SupplyColor;
+  startingStock: number;
+  lowStockThreshold: number;
+}
+
+interface NewSupplyForm {
+  paperType: PaperType;
+  color: SupplyColor;
+  startingStock: string;
+  lowStockThreshold: string;
+}
+
+const SUPPLIES_KEY = 'printshop_supplies';
+const PRINT_COUNT_KEY = 'printshop_print_count';
+
+function loadSupplies(): Supply[] {
+  try {
+    const raw = localStorage.getItem(SUPPLIES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is Supply =>
+      s && typeof s.id === 'string' &&
+      typeof s.paperType === 'string' &&
+      typeof s.color === 'string' &&
+      typeof s.startingStock === 'number' &&
+      typeof s.lowStockThreshold === 'number'
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveSupplies(supplies: Supply[]): void {
+  try {
+    localStorage.setItem(SUPPLIES_KEY, JSON.stringify(supplies));
+  } catch { /* ignore */ }
+}
+
+function getPrintCount(): number {
+  try {
+    return parseInt(localStorage.getItem(PRINT_COUNT_KEY) ?? '0', 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function SupplyStatusBadge({ status }: { status: SupplyStatus }) {
+  const cls =
+    status === 'in-stock' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' :
+    status === 'low' ? 'border-amber-300 bg-amber-50 text-amber-700' :
+    'border-rose-300 bg-rose-50 text-rose-700';
+  const label = status === 'in-stock' ? 'In Stock' : status === 'low' ? 'Low' : 'Out';
+  return (
+    <Badge variant="outline" className={`text-[11px] ${cls}`}>
+      <span className="mr-1 inline-block size-1.5 rounded-full bg-current opacity-70" />
+      {label}
+    </Badge>
   );
 }
 
