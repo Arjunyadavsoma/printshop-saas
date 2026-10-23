@@ -274,3 +274,70 @@ export function getPairingCommand(): string {
 export function disconnectPrintLatch(): void {
   clearToken();
 }
+
+// ─── Printer preferences (auto/manual mode + preferred printers) ────────────
+
+const PREFS_KEY = 'printlatch_prefs';
+
+export type PrintMode = 'manual' | 'auto';
+
+export interface PrintLatchPrefs {
+  mode: PrintMode;
+  /** Printer IDs selected for auto mode (round-robin). Empty = use default. */
+  autoPrinterIds: string[];
+  /** Last-used printer index for round-robin (stored to rotate). */
+  lastPrinterIndex: number;
+}
+
+const DEFAULT_PREFS: PrintLatchPrefs = {
+  mode: 'manual',
+  autoPrinterIds: [],
+  lastPrinterIndex: 0,
+};
+
+export function getPrefs(): PrintLatchPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return DEFAULT_PREFS;
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_PREFS, ...parsed };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+export function savePrefs(prefs: PrintLatchPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Get the next printer for auto-mode round-robin.
+ * Rotates through autoPrinterIds. If the list is empty, returns undefined
+ * (the agent will use the default printer).
+ */
+export function getNextAutoPrinter(): string | undefined {
+  const prefs = getPrefs();
+  if (prefs.mode !== 'auto' || prefs.autoPrinterIds.length === 0) return undefined;
+  const idx = prefs.lastPrinterIndex % prefs.autoPrinterIds.length;
+  const printerId = prefs.autoPrinterIds[idx];
+  // Save the next index for the next call.
+  savePrefs({ ...prefs, lastPrinterIndex: idx + 1 });
+  return printerId;
+}
+
+/** Get the install command (PowerShell, for the setup guide). */
+export function getInstallCommand(): string {
+  return 'Set-ExecutionPolicy -Scope Process Bypass; .\\install.ps1 -NoDashboard';
+}
+
+/** Get the diagnose command. */
+export function getDiagnoseCommand(): string {
+  return '& "$env:LOCALAPPDATA\\PrintLatch\\bin\\printlatch.exe" diagnose';
+}
+
+/** Get the dashboard command (starts the agent + opens the dashboard). */
+export function getDashboardCommand(): string {
+  return '& "$env:LOCALAPPDATA\\PrintLatch\\bin\\printlatch.exe" dashboard --port 32191';
+}

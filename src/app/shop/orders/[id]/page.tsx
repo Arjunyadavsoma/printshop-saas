@@ -46,6 +46,8 @@ import {
   getPrintLatchJobStatus,
   getPrintLatchPrinters,
   fetchPdfBytes,
+  getPrefs,
+  getNextAutoPrinter,
   type PrintLatchPrinter,
 } from '@/lib/printlatch/client';
 import {
@@ -1002,10 +1004,15 @@ function PrintLatchButton({
       const pdfBytes = await fetchPdfBytes(downloadUrl);
 
       setJobState({ status: 'submitting' });
+      // Check if auto-mode is enabled — if so, use the round-robin printer.
+      // If manual mode, use the selected printer from the dialog dropdown.
+      const prefs = getPrefs();
+      const autoPrinter = prefs.mode === 'auto' ? getNextAutoPrinter() : undefined;
+      const printerId = autoPrinter ?? (selectedPrinter || undefined);
       const job = await submitPrintLatchJob({
         pdf: pdfBytes, filename, mode: 'print',
         copies: Math.min(Math.max(1, copies), 10),
-        printerId: selectedPrinter || undefined,
+        printerId,
       });
 
       setJobState({ status: 'polling', agentJobId: job.id });
