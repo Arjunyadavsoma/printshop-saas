@@ -55,7 +55,19 @@ import {
   QrCode,
   Sparkles,
   Plus,
+  Terminal,
+  Cpu,
+  ArrowRight,
 } from 'lucide-react';
+import { InstallPrompt } from '@/components/pwa/install-prompt';
+import {
+  checkPrintLatchStatus,
+} from '@/lib/printlatch/client';
+import {
+  checkNativePrinterStatus,
+  getEnginePref,
+  type PrintEngine,
+} from '@/lib/native-printer/client';
 
 interface ShopInfo {
   id: string;
@@ -143,6 +155,11 @@ export default function ShopDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [verifyBusy, setVerifyBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Printer-engine status for the "Choose your print engine" callout. The
+  // shopkeeper picks between PrintLatch + Native Windows Printer on the
+  // /shop/printer page; here we just surface whether they've picked yet.
+  const [printerEngine, setPrinterEngine] = useState<PrintEngine | null | undefined>(undefined);
+  const [printerConnected, setPrinterConnected] = useState(false);
 
   const load = async (silent = false) => {
     if (silent) setRefreshing(true); else setLoading(true);
@@ -174,6 +191,25 @@ export default function ShopDashboardPage() {
     void load();
     const id = setInterval(() => void load(true), 15_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Check the printer-engine status once on mount — surfaces the
+  // "Choose your print engine" callout if the shopkeeper hasn't set up
+  // a printer yet. Both checks are best-effort + run in parallel.
+  useEffect(() => {
+    let cancelled = false;
+    const engine = getEnginePref();
+    setPrinterEngine(engine);
+    if (engine === 'printlatch') {
+      checkPrintLatchStatus().then((s) => {
+        if (!cancelled) setPrinterConnected(s.state === 'connected');
+      });
+    } else if (engine === 'native') {
+      checkNativePrinterStatus().then((s) => {
+        if (!cancelled) setPrinterConnected(s.state === 'connected');
+      });
+    }
+    return () => { cancelled = true; };
   }, []);
 
   const todays = useMemo(() => {
@@ -353,6 +389,70 @@ export default function ShopDashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Install-prompt banner (Chrome/Edge/Android: native install button;
+          iOS Safari: "Add to Home Screen" instructions). Dismissible. */}
+      <InstallPrompt />
+
+      {/* Printer-engine callout — surfaces the 2 print methods so the
+          shopkeeper knows they need to pick one before they can print.
+          Hidden once they've connected a printer. */}
+      {printerEngine !== undefined && !(printerEngine && printerConnected) && (
+        <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <PrinterIcon className="size-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {printerEngine === null
+                      ? 'Choose your print engine to start printing'
+                      : 'Finish setting up your printer'}
+                  </h2>
+                  <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-800 text-[10px]">
+                    Setup needed
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  PrintShop supports two print engines. Pick the one that fits your shop — you can switch any time.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {/* Method 1: PrintLatch */}
+                  <div className={`rounded-lg border p-3 ${printerEngine === 'printlatch' ? 'border-amber-400 bg-amber-50' : 'border-border bg-card'}`}>
+                    <div className="flex items-center gap-2">
+                      <Terminal className="size-4 text-amber-600" />
+                      <span className="text-sm font-medium text-foreground">PrintLatch</span>
+                      <Badge variant="outline" className="ml-auto border-emerald-300 bg-emerald-50 text-emerald-700 text-[9px]">Recommended</Badge>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      One-click installer. Auto-starts on Windows boot. No coding required.
+                    </p>
+                  </div>
+                  {/* Method 2: Native Windows Printer */}
+                  <div className={`rounded-lg border p-3 ${printerEngine === 'native' ? 'border-amber-400 bg-amber-50' : 'border-border bg-card'}`}>
+                    <div className="flex items-center gap-2">
+                      <Cpu className="size-4 text-zinc-600" />
+                      <span className="text-sm font-medium text-foreground">Native Windows Printer</span>
+                      <Badge variant="outline" className="ml-auto border-zinc-300 bg-zinc-50 text-zinc-600 text-[9px]">Advanced</Badge>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Node.js service. Direct GDI printing. Terminal must stay open.
+                    </p>
+                  </div>
+                </div>
+                <Button asChild size="sm" className="mt-3 gap-1.5 bg-amber-600 text-white hover:bg-amber-700 min-h-[44px]">
+                  <Link href="/shop/printer">
+                    {printerEngine === null ? 'Choose your engine' : 'Finish setup'}
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fef3c7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed amber background (maskable-safe: fills the entire canvas) -->
+  <rect width="512" height="512" rx="0" fill="url(#bg)"/>
+
+  <!-- Subtle inner highlight (top-lit look) -->
+  <rect width="512" height="256" fill="#ffffff" opacity="0.06"/>
+
+  <!-- Printer body (centered, within the 80% safe zone for maskable) -->
+  <g transform="translate(256 256)">
+    <!-- Paper sheet coming out the top -->
+    <rect x="-72" y="-150" width="144" height="92" rx="8" fill="url(#paper)" stroke="#d97706" stroke-width="3"/>
+    <!-- Text lines on the paper -->
+    <rect x="-56" y="-134" width="112" height="6" rx="3" fill="#d97706" opacity="0.35"/>
+    <rect x="-56" y="-118" width="96" height="6" rx="3" fill="#d97706" opacity="0.35"/>
+    <rect x="-56" y="-102" width="104" height="6" rx="3" fill="#d97706" opacity="0.35"/>
+
+    <!-- Printer body (main block) -->
+    <rect x="-120" y="-58" width="240" height="120" rx="16" fill="#1f2937"/>
+    <!-- Top edge highlight -->
+    <rect x="-120" y="-58" width="240" height="14" rx="16" fill="#374151"/>
+
+    <!-- Output slot (where paper comes out) -->
+    <rect x="-72" y="-66" width="144" height="10" rx="3" fill="#0f172a"/>
+
+    <!-- Front panel (slightly lighter) -->
+    <rect x="-100" y="-2" width="200" height="64" rx="8" fill="#374151"/>
+
+    <!-- Control LED (emerald = ready) -->
+    <circle cx="78" cy="30" r="7" fill="#10b981"/>
+    <circle cx="78" cy="30" r="3.5" fill="#34d399"/>
+
+    <!-- Paper tray (bottom) -->
+    <rect x="-92" y="62" width="184" height="40" rx="6" fill="#111827"/>
+    <!-- Tray handle -->
+    <rect x="-22" y="72" width="44" height="6" rx="3" fill="#4b5563"/>
+  </g>
+
+  <!-- "P" monogram badge (bottom-right, brand mark) -->
+  <g transform="translate(384 384)">
+    <circle r="64" fill="#ffffff" stroke="#d97706" stroke-width="4"/>
+    <text x="0" y="0" text-anchor="middle" dominant-baseline="central"
+          font-family="Georgia, 'Times New Roman', serif" font-size="76" font-weight="700"
+          fill="#d97706">P</text>
+  </g>
+</svg>
