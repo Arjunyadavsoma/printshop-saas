@@ -19,20 +19,36 @@ import type { PaymentProvider } from '@platform/core/domain';
 export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
   readonly provider: PaymentProvider = 'googlepay';
 
-  /** Build a `upi://pay?` URI from the shopkeeper's VPA + amount. */
+  /** Build a `upi://pay?` URI from the shopkeeper's VPA + amount + name. */
   async createPaymentIntent(input: {
     orderId: string;
     amountPaise: number;
+    customerPhone?: string;
     shopUpiId: string;
+    shopName?: string;
+    customerToken?: string;
     shopCredentials: Record<string, unknown>;
   }): Promise<PaymentIntent> {
+    // UPI deep-link per NPCI BHIM spec:
+    //   pa = Payee Address (the shop's VPA, e.g. quickprint@okaxis)
+    //   pn = Payee Name (the shop's display name — shown in the UPI app)
+    //   am = Amount in rupees (2 decimal places)
+    //   cu = Currency (INR)
+    //   tn = Transaction Note (shown in the UPI app's payment confirmation)
+    //   tr = Transaction Reference (unique per order — used for reconciliation)
+    //
+    // URLSearchParams.toString() URL-encodes every value per RFC 3986 — safe
+    // for the `upi://` scheme. No unescaped user-controlled values are
+    // concatenated into the URI.
     const params = new URLSearchParams({
       pa: input.shopUpiId,
+      pn: input.shopName ?? 'PrintShop',
       am: (input.amountPaise / 100).toFixed(2),
-      pn: 'PrintShop',
-      tn: `Order ${input.orderId.slice(0, 8)}`,
-      tr: input.orderId,
       cu: 'INR',
+      tn: input.customerToken
+        ? `PrintShop order ${input.customerToken}`
+        : `PrintShop order ${input.orderId.slice(0, 8)}`,
+      tr: input.customerToken ?? input.orderId,
     });
     const upiUri = `upi://pay?${params.toString()}`;
     return {

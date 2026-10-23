@@ -34,6 +34,8 @@ export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req
       orderId: order.id,
       amountPaise: order.totalAmountPaise,
       shopUpiId: shop.upiId,
+      shopName: shop.name,
+      customerToken: order.customerToken,
       shopCredentials: shop.paymentCredentials,
     });
 

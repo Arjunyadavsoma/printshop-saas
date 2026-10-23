@@ -22,7 +22,7 @@ import type {
 import {
   UploadCloud, FileText, Trash2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   CheckCircle2, RefreshCw, CreditCard, QrCode, ShieldCheck, Info,
-  Home, Download, XCircle,
+  Home, Download, XCircle, Smartphone,
 } from 'lucide-react';
 
 // Also need Label + ToggleGroup already imported above
@@ -185,6 +185,7 @@ export default function OrderFlowPage() {
   const [checkout, setCheckout] = useState<CheckoutResponse | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [shopkeeperQrUrl, setShopkeeperQrUrl] = useState<string | null>(null);
 
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [trackError, setTrackError] = useState<string | null>(null);
@@ -486,6 +487,7 @@ export default function OrderFlowPage() {
     setBusy(true);
     setCheckoutError(null);
     setQrDataUrl(null);
+    setShopkeeperQrUrl(null);
     const r = await api.request<{ data?: CheckoutResponse; error?: { message?: string } }>('POST', `/api/v1/orders/${orderId}/checkout`);
     setBusy(false);
     if (r.status >= 400 || !r.data?.data) {
@@ -493,34 +495,48 @@ export default function OrderFlowPage() {
       return;
     }
     setCheckout(r.data.data);
-    // Render a QR from the upiUri (if present) for desktop scanning.
+
+    // Fetch the shopkeeper's ACTUAL uploaded UPI QR (desktop fallback) from
+    // the public endpoint. This is the shopkeeper's own QR image — NOT the
+    // generated QR from the upiUri. If the shopkeeper hasn't uploaded a QR,
+    // the endpoint returns hasUpiQr=false + we fall back to the generated QR.
+    if (shopSlug) {
+      const qrR = await api.request<{ data?: { hasUpiQr?: boolean; upiQrUrl?: string; upiId?: string } }>('GET', `/api/v1/shops/${shopSlug}/upi-qr`);
+      if (qrR.status === 200 && qrR.data?.data?.hasUpiQr && qrR.data.data.upiQrUrl) {
+        setShopkeeperQrUrl(qrR.data.data.upiQrUrl);
+      }
+    }
+
+    // Also generate a QR from the upiUri as a fallback (for desktop scanning
+    // if the shopkeeper hasn't uploaded a custom QR).
     const payload = r.data.data.upiUri ?? r.data.data.qrPayload;
     if (payload) {
       const qr = await api.request<{ data?: { pngDataUrl?: string }; error?: { message?: string } }>('GET', `/api/v1/qr?data=${encodeURIComponent(payload)}`);
       if (qr.data?.data?.pngDataUrl) setQrDataUrl(qr.data.data.pngDataUrl);
     }
     setStep('pay');
-  }, [api, orderId]);
+  }, [api, orderId, shopSlug]);
 
-  // ─── Pay (dev simulate) ───
+  // ─── "I've paid" — move to track WITHOUT marking payment as verified ───
+  // The customer taps "I've paid" after completing the UPI payment in their
+  // UPI app. This does NOT verify payment — it just moves the customer to the
+  // tracking page. The order remains `awaiting_payment` until the shopkeeper
+  // manually verifies receipt (or a verified provider webhook confirms).
+  // In dev, the customer can use the "Simulate payment" button on the track
+  // page (dev-only, gated behind requireDev()).
   const doPay = useCallback(async () => {
     if (!checkout) return;
     setBusy(true);
     setPaymentError(null);
-    const r = await api.request<{ data?: SimulateResponse; error?: { message?: string } }>('POST', '/api/v1/payments/dev/phonepe/simulate', {
-      body: { orderId, merchantOrderId: checkout.merchantOrderId, outcome: 'paid' },
-    });
-    setBusy(false);
-    const d = r.data?.data;
-    if (r.status >= 400 || !d || !d.processed.applied) {
-      setPaymentError(d?.processed?.summary ?? r.data?.error?.message ?? 'Payment simulation failed.');
-      return;
-    }
-    setSimulated(true);
+    // In production: just move to track. The shopkeeper verifies manually.
+    // In dev: the dev/phonepe/simulate endpoint is available on the track page
+    // for testing the paid → printing → ready flow.
+    setSimulated(false);
     setStep('track');
+    setBusy(false);
     // Pull the fresh status immediately.
     void loadOrder({ silent: true });
-  }, [api, orderId, checkout, loadOrder]);
+  }, [checkout, loadOrder]);
 
   // ─── Track refresh ───
   const refreshStatus = useCallback(async () => {
@@ -662,6 +678,8 @@ export default function OrderFlowPage() {
                 <PayStep
                   checkout={checkout}
                   qrDataUrl={qrDataUrl}
+                  shopkeeperQrUrl={shopkeeperQrUrl}
+                  shopName={shop?.name ?? null}
                   busy={busy}
                   error={paymentError}
                   simulated={simulated}
@@ -1043,42 +1061,92 @@ function CheckoutStep(props: {
 function PayStep(props: {
   checkout: CheckoutResponse | null;
   qrDataUrl: string | null;
+  shopkeeperQrUrl: string | null;
+  shopName: string | null;
   busy: boolean;
   error: string | null;
   simulated: boolean;
   onPay: () => void;
   onBack: () => void;
 }) {
+  const amount = props.checkout ? formatINRFromPaise(props.checkout.amountPaise) : '—';
+  const upiUri = props.checkout?.upiUri ?? null;
+  // The shopkeeper's ACTUAL uploaded QR is preferred for desktop display.
+  // The generated QR (from the upiUri) is the fallback.
+  const desktopQr = props.shopkeeperQrUrl ?? props.qrDataUrl;
+  const isShopkeeperQr = !!props.shopkeeperQrUrl;
+
+  // Mobile detection (client-side only — for prioritizing the UPI button).
+  // The button is ALWAYS shown; this just affects the layout emphasis.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.matchMedia('(max-width: 768px)').matches);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  const launchUpi = () => {
+    if (!upiUri) return;
+    // On mobile, this navigates to upi:// which the OS intercepts to launch
+    // the installed UPI app or app chooser. On desktop, it typically does
+    // nothing (no UPI app handler) — the customer falls back to the QR.
+    window.location.href = upiUri;
+  };
+
   return (
     <div className="space-y-4">
       <Card className="border-amber-300">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <QrCode className="h-5 w-5 text-amber-600" /> Step 4 · Pay
+            <QrCode className="h-5 w-5 text-amber-600" /> Step 4 · Pay {props.shopName ? props.shopName : 'the shopkeeper'}
           </CardTitle>
-          <CardDescription>Scan the QR with any UPI app to pay the shopkeeper directly.</CardDescription>
+          <CardDescription>Pay directly to the shopkeeper&apos;s UPI — 0% commission.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* Amount */}
-            <div className="flex flex-col items-center justify-center text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
-              <p className="mt-1 text-4xl font-bold text-foreground">
-                {props.checkout ? formatINRFromPaise(props.checkout.amountPaise) : '—'}
+        <CardContent className="space-y-4">
+          {/* Amount + order reference — prominent */}
+          <div className="rounded-lg bg-amber-50 p-4 text-center ring-1 ring-amber-200">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
+            <p className="mt-1 text-4xl font-bold text-foreground sm:text-5xl">{amount}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
+            {props.checkout?.merchantOrderId && (
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Order ref: <code className="font-mono">{props.checkout.merchantOrderId.slice(0, 8)}…</code>
               </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
-              {props.checkout?.merchantOrderId && (
-                <p className="mt-3 text-[10px] text-muted-foreground">
-                  Merchant ref: <code className="font-mono">{props.checkout.merchantOrderId.slice(0, 8)}…</code>
-                </p>
-              )}
-            </div>
+            )}
+          </div>
 
-            {/* QR */}
+          {/* PRIMARY: Pay with UPI button (mobile-first) */}
+          {upiUri && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={launchUpi}
+                disabled={props.busy}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-4 text-base font-semibold text-white shadow-md transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:opacity-50 sm:py-3"
+                aria-label={`Pay ${amount} with UPI`}
+              >
+                <Smartphone className="h-5 w-5" />
+                Pay {amount} with UPI
+              </button>
+              <p className="text-center text-[11px] text-muted-foreground">
+                {isMobile
+                  ? 'Tapping this opens your UPI app with the amount prefilled.'
+                  : 'On mobile, this opens your UPI app. On desktop, scan the QR below with your phone.'}
+              </p>
+            </div>
+          )}
+
+          {/* DESKTOP FALLBACK: the shopkeeper's uploaded UPI QR */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col items-center justify-center">
-              {props.qrDataUrl ? (
+              {desktopQr ? (
                 <div className="rounded-lg bg-white p-2 ring-1 ring-border">
-                  <img src={props.qrDataUrl} alt="UPI payment QR code" className="h-44 w-44" />
+                  <img
+                    src={desktopQr}
+                    alt="UPI payment QR code"
+                    className="h-40 w-40 sm:h-44 sm:w-44"
+                  />
                 </div>
               ) : props.checkout ? (
                 <div className="flex h-44 w-44 items-center justify-center rounded-lg bg-muted/60">
@@ -1089,22 +1157,36 @@ function PayStep(props: {
                   No QR
                 </div>
               )}
-              {props.checkout?.upiUri && (
-                <a href={props.checkout.upiUri} className="mt-2 inline-block rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
-                  Open in UPI app
-                </a>
-              )}
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                {isShopkeeperQr
+                  ? 'Scan with any UPI app (GPay, PhonePe, Paytm) to pay.'
+                  : 'Scan this QR with your UPI app to pay.'}
+              </p>
+            </div>
+
+            {/* Manual UPI ID entry fallback */}
+            <div className="flex flex-col items-center justify-center gap-2 rounded-lg bg-muted/40 p-4 text-center">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Or pay manually</p>
+              <p className="text-sm font-medium text-foreground">
+                UPI ID: <code className="font-mono">{props.checkout ? '<in checkout>' : '—'}</code>
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Open your UPI app, tap Send, enter the shop&apos;s UPI ID + the exact amount <strong>{amount}</strong>, then send.
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Reference: your order token (shown on the next page).
+              </p>
             </div>
           </div>
 
-          {/* Demo notice — prominent */}
-          <div className="mt-4 rounded-lg border border-amber-400 bg-amber-100 p-3 text-xs text-amber-900">
+          {/* Payment-security notice */}
+          <div className="rounded-lg border border-amber-400 bg-amber-100 p-3 text-xs text-amber-900">
             <div className="flex items-start gap-2">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                <p className="font-semibold">Demo payment — no real money is charged.</p>
+                <p className="font-semibold">After paying, tap &quot;I&apos;ve paid&quot; below.</p>
                 <p className="mt-0.5 text-amber-800">
-                  {'Click "I\'ve paid" below to simulate the PhonePe paid webhook. The order flips to "paid" and printing is queued. In production, a real UPI payment triggers this automatically.'}
+                  Your payment stays <strong>Pending</strong> until the shopkeeper confirms receipt. Launching the UPI app or returning here does <strong>not</strong> verify payment.
                 </p>
               </div>
             </div>
@@ -1123,7 +1205,7 @@ function PayStep(props: {
           </Button>
           <Button size="sm" onClick={props.onPay} disabled={props.busy || !props.checkout || props.simulated}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-            {props.simulated ? 'Paid — tracking…' : 'I\'ve paid — track my order'}
+            {props.simulated ? 'Tracking…' : "I've paid — track my order"}
           </Button>
         </CardFooter>
       </Card>

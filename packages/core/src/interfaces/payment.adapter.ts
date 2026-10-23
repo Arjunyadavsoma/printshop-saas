@@ -93,6 +93,11 @@ export interface PaymentAdapter {
     amountPaise: number;
     customerPhone?: string;
     shopUpiId: string;
+    /** The shop's display name — used as the UPI payee name (`pn`). */
+    shopName?: string;
+    /** The order's customer-facing token (e.g. "B5EY7Y") — used in the
+     * transaction note (`tn`) so the customer + shopkeeper can reconcile. */
+    customerToken?: string;
     shopCredentials: Record<string, unknown>;
   }): Promise<PaymentIntent>;
 

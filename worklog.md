@@ -1871,3 +1871,63 @@ Stage Summary:
 - Database, hosting, or deployment changes: NONE. No database migrations, no Vercel settings changes, no production promotion. All changes are local + uncommitted. The existing Neon DB (with the `Order_shop_tokenNumber_unique` partial unique index applied in the previous step) + Supabase Storage + Vercel preview are unchanged.
 
 Completion criteria: ✓ A new shopkeeper has a clear registration path (Create Shop Account link → 4-step wizard). ✓ An existing shopkeeper can sign in, refresh, navigate, and sign out without loops or glitches (verified via Agent Browser). ✓ Existing shop/order/payment data and working features remain intact (all 148 original tests still pass; the changes are purely additive to the auth + nav layer).
+
+---
+Task ID: customer-ordering-upi-checkout
+Agent: orchestrator (senior full-stack engineer)
+Task: Professional customer ordering + UPI checkout. Mobile-first "Pay with UPI" button that launches the installed UPI app with amount prefilled. Desktop QR fallback using the shopkeeper's ACTUAL uploaded QR. Preserve payment verification security (launching UPI app is NOT proof of payment).
+
+Work Log:
+- Phase 1 — Inspection: reviewed the existing customer flow: `src/app/shops/[slug]/page.tsx` (shop page), `src/app/orders/[id]/page.tsx` (1404-line order page with 5 steps: upload → configure → checkout → pay → track), `src/app/api/v1/orders/[id]/checkout/route.ts` (creates payment intent), `packages/adapters/src/payment/upi-deeplink.adapter.ts` (generates the `upi://pay?...` URI). Found: the UPI adapter HARDCODED `pn: 'PrintShop'` (the payee name) instead of using the shop's actual name. The checkout API didn't pass the shop name to the adapter. The PayStep used a dev-only simulate endpoint (production-unsafe). No public endpoint for the shopkeeper's uploaded UPI QR.
+
+- Phase 2-6 — Implementation (5 files changed, 2 new):
+
+  1. `packages/core/src/interfaces/payment.adapter.ts` (MODIFIED) — added `shopName?: string` + `customerToken?: string` to the `createPaymentIntent` input. All existing adapters still work (the new fields are optional).
+
+  2. `packages/adapters/src/payment/upi-deeplink.adapter.ts` (MODIFIED) — the UPI adapter now uses `input.shopName` as the `pn` (payee name) instead of hardcoded 'PrintShop'. Uses `input.customerToken` as the `tr` (transaction reference) + in the `tn` (transaction note) — e.g. "PrintShop order B5EY7Y". Falls back to the orderId if customerToken is absent. URL-encodes all parameters via `URLSearchParams.toString()` (RFC 3986 compliant — no unescaped user-controlled values).
+
+  3. `src/app/api/v1/orders/[id]/checkout/route.ts` (MODIFIED) — passes `shopName: shop.name` + `customerToken: order.customerToken` to the adapter's `createPaymentIntent`. The UPI URI now contains the shop's actual name + the order's customer-facing token.
+
+  4. `src/app/api/v1/shops/[slug]/upi-qr/route.ts` (NEW) — public endpoint `GET /api/v1/shops/:slug/upi-qr` returns a short-lived (15-min) presigned download URL for the shopkeeper's uploaded UPI payment QR image. Returns `hasUpiQr: false` if no QR is uploaded (the customer UI then falls back to the generated QR from the upiUri, or shows the UPI ID as text for manual entry). Rate-limited (60/60s). No auth required — the UPI VPA is already public (it's in the `upi://pay?pa=...` URI + on the shop page).
+
+  5. `src/app/orders/[id]/page.tsx` (MODIFIED) — the PayStep component was rewritten:
+     - NEW: prominent "Pay ₹{amount} with UPI" button (mobile-first, emerald-600, full-width, touch-friendly). On click, `window.location.href = upiUri` — on mobile, the OS intercepts the `upi://` scheme + launches the installed UPI app or app chooser with the payee VPA, exact amount, and order reference prefilled. On desktop, the button typically does nothing (no UPI app handler) — the customer falls back to the QR.
+     - NEW: desktop QR fallback now prefers the shopkeeper's ACTUAL uploaded UPI QR (fetched from the new public endpoint). If the shopkeeper hasn't uploaded a QR, falls back to the generated QR (from the upiUri).
+     - NEW: manual UPI ID entry fallback (shows the UPI ID as text + instructions to enter it manually in the UPI app).
+     - NEW: mobile detection via `window.matchMedia('(max-width: 768px)')` — adjusts the helper text (mobile: "opens your UPI app"; desktop: "scan the QR below").
+     - CHANGED: `doPay` no longer calls the dev-simulate endpoint (`/api/v1/payments/dev/phonepe/simulate`). It just moves to the track step. The order remains `awaiting_payment` until the shopkeeper manually verifies receipt (or a verified provider webhook confirms). In dev, the simulate endpoint is still available for testing the paid → printing → ready flow, but it's NOT called automatically by the customer's "I've paid" button.
+     - NEW: payment-security notice — "Your payment stays Pending until the shopkeeper confirms receipt. Launching the UPI app or returning here does NOT verify payment."
+     - Added `shopkeeperQrUrl` state — fetched in `doCheckout` alongside the generated QR.
+     - Added `Smartphone` icon import.
+
+  6. `packages/adapters/src/payment/upi-deeplink.adapter.test.ts` (NEW) — 13 regression tests for UPI URI construction:
+     - Verifies the `upi://pay?` URI format with all NPCI parameters (pa, pn, am, cu, tn, tr).
+     - Verifies the amount matches the server-calculated total (paise → rupees, 2 decimals) — 6 test cases (100p=₹1.00, 105p=₹1.05, 5050p=₹50.50, 99999p=₹999.99, 100000p=₹1000.00, 0p=₹0.00).
+     - Verifies the payee name is the shop's actual name (NOT hardcoded 'PrintShop').
+     - Verifies the customerToken is used as the transaction reference (tr) + note (tn).
+     - Verifies all parameters are URL-encoded (shop name with `&` + spaces, non-ASCII Hindi characters).
+     - Verifies cu=INR is hardcoded (not user-supplied).
+     - Verifies NO application secrets are in the URI (shopCredentials are server-side only).
+     - Verifies qrPayload = upiUri (for desktop QR rendering).
+     - Verifies expiresAt is 10 minutes from now.
+     - Verifies merchantOrderId = orderId.
+
+- Phase 7-12 — Security + tests:
+  - UPI URI security: all parameters are URL-encoded via `URLSearchParams.toString()` (RFC 3986). No unescaped user-controlled values. No application secrets in the URI. The `cu=INR` is hardcoded. The amount is the server-calculated total (the client cannot modify it — the checkout API reads `order.totalAmountPaise` from the DB, not from the request body).
+  - Payment verification security: launching the UPI app does NOT verify payment. Returning to the browser does NOT verify payment. The "I've paid" button does NOT verify payment — it just moves to the track step. The order remains `awaiting_payment` until the shopkeeper manually verifies (via `POST /api/v1/shops/me/orders/:id/verify-payment` with `['owner']` role) or a verified provider webhook confirms. The customer-submitted UTR is NOT auto-verified.
+  - Desktop QR security: the shopkeeper's uploaded UPI QR is served via a short-lived (15-min) presigned URL from the private Supabase bucket. The UPI VPA is already public (it's on the shop page + in the upiUri), so serving the QR image publicly is not a leak.
+  - Tests: 13 new UPI URI tests + 165 prior tests = 178/178 pass. tsc 0 errors. lint 0 warnings.
+
+- Phase 13 — Final report (see below).
+
+Stage Summary:
+- Files changed: 5 (2 new, 3 modified). All changes are backward-compatible + additive. No existing API contracts, business logic, order history, payment records, or working features were modified.
+- Customer flow: scan shop QR → shop page (pricing + "Start order") → create order (race-safe token allocation) → upload documents (presigned PUT to Supabase) → configure print settings (copies, color, duplex, paper size, page range) → server-side pricing validation → checkout (creates payment intent with upiUri) → PayStep (prominent "Pay ₹{amount} with UPI" button on mobile + shopkeeper's uploaded QR on desktop + manual UPI ID entry fallback) → "I've paid" (moves to track WITHOUT verifying payment) → track page (auto-polls every 2.5s, shows status + token + payment status separately).
+- Mobile UPI deep linking: `window.location.href = upiUri` where `upiUri = upi://pay?pa=<shopVPA>&pn=<shopName>&am=<amount>&cu=INR&tn=<orderToken>&tr=<orderToken>`. On mobile, the OS intercepts the `upi://` scheme + launches the installed UPI app (GPay, PhonePe, Paytm) or system app chooser. The UPI app shows the shop's payee name + exact amount + transaction note prefilled. The customer authorizes payment inside the UPI app. Limitation: the browser cannot detect whether a UPI app is installed or whether payment succeeded — the customer returns to the browser + taps "I've paid" to move to tracking. Payment remains pending until the shopkeeper verifies.
+- Desktop QR fallback: the shopkeeper's ACTUAL uploaded UPI QR is fetched from the public endpoint `GET /api/v1/shops/:slug/upi-qr` (15-min presigned URL). If the shopkeeper hasn't uploaded a QR, the generated QR (from the upiUri) is used as a fallback. If neither is available, the UPI ID is shown as text for manual entry.
+- Payment verification remains secure: the "I've paid" button does NOT call any payment-verification endpoint. The order stays `awaiting_payment`. The shopkeeper manually verifies via `POST /api/v1/shops/me/orders/:id/verify-payment` (with `['owner']` role + `canTransitionOrder` guard). A verified provider webhook (PhonePe/Paytm) can also confirm — but those are simulated (no sandbox credentials).
+- Tests + commands run: `bunx tsc --noEmit` (0 errors), `bun run lint` (0 warnings), `bunx vitest run` (18 files, 178/178 tests pass — 165 prior + 13 new UPI URI tests). Production build NOT run (forbidden by sandbox rules).
+- Remaining issues / required shop configuration: (1) the shopkeeper needs to upload a UPI QR image via `/shop/settings` (UPI QR tab) for the desktop QR fallback to show the shopkeeper's actual QR. Without it, the generated QR (from the upiUri) is used instead. (2) the shop needs a valid `upiId` (VPA) configured — without it, the checkout API returns a validation error. (3) the shop needs valid pricing configured — without it, files have no price + the checkout API rejects with "file(s) have no price". (4) PhonePe/Paytm sandbox credentials still missing (UPI deep-link is the production path; PhonePe/Paytm are optional integrations). (5) Upstash Redis still not configured (rate limiting per-invocation on Vercel; the cache TTL fix only addresses the in-memory adapter).
+- Migration / deployment steps requiring authorization: (1) the changes are NOT committed (the user said "Do not commit, push, deploy... without explicit authorization"). (2) NO database migrations are needed — the change uses existing fields (`shop.name`, `order.customerToken`, `shop.upiQrStorageKey`). (3) NO Vercel settings changes. (4) NO production promotion.
+
+Definition of done: ✓ A customer can complete the order-creation workflow (upload → configure → checkout → pay → track). ✓ The mobile UPI button attempts to open a compatible UPI app with the correct amount prefilled (`upi://pay?pa=<shopVPA>&pn=<shopName>&am=<exactAmount>&cu=INR&tn=<orderToken>&tr=<orderToken>`). ✓ The desktop QR fallback uses the shopkeeper's actual uploaded payment QR (or the generated QR as a fallback). ✓ The customer can return to the site + track the order. ✓ The application does NOT falsely declare payment successful — payment remains pending until the shopkeeper manually verifies.
