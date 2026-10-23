@@ -93,48 +93,34 @@ function authHeaders(): Record<string, string> {
 // ─── Status check (GET /health — unauthenticated) ─────────────────────────
 
 export async function checkPrintLatchStatus(): Promise<{ state: PrintLatchConnectionState; health: PrintLatchHealth | null; printers: PrintLatchPrinter[] | null; error: string | null }> {
+  const token = getToken();
+
+  // No token stored → the shopkeeper hasn't paired yet. Don't try /health
+  // (it doesn't send CORS headers for browser origins → causes a false
+  // "agent not reachable" error). Just show the setup guide.
+  if (!token) {
+    return { state: 'pairing-required', health: null, printers: null, error: null };
+  }
+
+  // Token exists → try to verify it by fetching printers (authenticated,
+  // CORS-enabled for browser use). This tells us if the agent is running +
+  // the token is still valid.
   try {
-    // Step 1: Check if the agent is running (unauthenticated health check).
-    const healthRes = await fetch(`${AGENT_BASE_URL}/health`, {
+    const printersRes = await fetch(`${AGENT_BASE_URL}/v1/printers`, {
       method: 'GET',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(5000),
     });
-    if (!healthRes.ok) {
-      return { state: 'error', health: null, printers: null, error: `Agent responded HTTP ${healthRes.status}` };
+    if (printersRes.status === 401 || printersRes.status === 403) {
+      clearToken();
+      return { state: 'pairing-required', health: null, printers: null, error: 'Token expired — please re-pair.' };
     }
-    const health = (await healthRes.json()) as PrintLatchHealth;
-
-    // Step 2: If we have a browser token, try to fetch printers (authenticated).
-    const token = getToken();
-    if (!token) {
-      return { state: 'pairing-required', health, printers: null, error: null };
+    if (!printersRes.ok) {
+      return { state: 'error', health: null, printers: null, error: `Printers check failed (HTTP ${printersRes.status})` };
     }
-
-    try {
-      const printersRes = await fetch(`${AGENT_BASE_URL}/v1/printers`, {
-        method: 'GET',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (printersRes.status === 401 || printersRes.status === 403) {
-        // Token expired or revoked — need to re-pair.
-        clearToken();
-        return { state: 'pairing-required', health, printers: null, error: 'Token expired — please re-pair.' };
-      }
-      if (!printersRes.ok) {
-        return { state: 'error', health, printers: null, error: `Printers check failed (HTTP ${printersRes.status})` };
-      }
-      const printersData = await printersRes.json();
-      const printers = (printersData.printers ?? []) as PrintLatchPrinter[];
-      return { state: 'connected', health, printers, error: null };
-    } catch (e: any) {
-      // Token exists but printers endpoint failed — still consider connected
-      // (the agent is running, we just can't list printers right now).
-      if (e.name === 'TypeError') {
-        return { state: 'connected', health, printers: null, error: 'Agent running but printers endpoint unreachable (CORS?). Try submitting a job directly.' };
-      }
-      return { state: 'connected', health, printers: null, error: null };
-    }
+    const printersData = await printersRes.json();
+    const printers = (printersData.printers ?? []) as PrintLatchPrinter[];
+    return { state: 'connected', health: { version: 'connected' }, printers, error: null };
   } catch (e: any) {
     if (e.name === 'TimeoutError' || e.name === 'AbortError') {
       return { state: 'disconnected', health: null, printers: null, error: 'Agent did not respond (5s timeout). Is PrintLatch running on THIS computer?' };

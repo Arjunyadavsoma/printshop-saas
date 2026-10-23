@@ -40,27 +40,22 @@ const {
   PRINTLATCH_DASHBOARD_URL,
 } = await import('@/lib/printlatch/client');
 
-describe('PrintLatch client — health check (GET /health)', () => {
+describe('PrintLatch client — status check (GET /v1/printers when token exists)', () => {
   beforeEach(() => { mockFetch.mockReset(); mockStorage.clear(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('returns "pairing-required" when the agent is running but no token is stored', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ product: 'PrintLatch', version: '0.1.1', loopback: true, telemetry: false }),
-    });
+  it('returns "pairing-required" when no token is stored (does NOT try /health — avoids CORS error)', async () => {
+    // No mockFetch mock needed — the function should NOT call fetch when there's no token.
     const { state, health, error } = await checkPrintLatchStatus();
     expect(state).toBe('pairing-required');
-    expect(health?.version).toBe('0.1.1');
+    expect(health).toBeNull();
     expect(error).toBeNull();
+    // Verify no fetch was made (no /health request that would cause a CORS error).
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('returns "connected" when the agent is running + token is valid + printers return', async () => {
+  it('returns "connected" when token is valid + printers endpoint returns 200', async () => {
     mockStorage.set('printlatch_token', 'pl_live_test');
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ product: 'PrintLatch', version: '0.1.1' }),
-    });
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ printers: [{ id: 'capture:pdf', name: 'PDF Capture', kind: 'capture' }] }),
@@ -69,19 +64,20 @@ describe('PrintLatch client — health check (GET /health)', () => {
     expect(state).toBe('connected');
     expect(printers).toHaveLength(1);
     expect(printers![0].name).toBe('PDF Capture');
+    // Verify the request went to /v1/printers (NOT /health).
+    expect(mockFetch.mock.calls[0][0]).toContain('/v1/printers');
   });
 
   it('returns "pairing-required" when token is expired (401 from printers endpoint)', async () => {
     mockStorage.set('printlatch_token', 'expired');
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ version: '0.1.1' }) });
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     const { state } = await checkPrintLatchStatus();
     expect(state).toBe('pairing-required');
-    // Token should be cleared
     expect(mockStorage.get('printlatch_token')).toBeUndefined();
   });
 
   it('returns "disconnected" when the agent is not running (network error)', async () => {
+    mockStorage.set('printlatch_token', 'pl_live_test');
     mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const { state, error } = await checkPrintLatchStatus();
     expect(state).toBe('disconnected');
