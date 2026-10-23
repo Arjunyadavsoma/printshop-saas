@@ -173,10 +173,45 @@ export default function OrderFlowPage() {
   // Read shopSlug from URL query param (avoids useSearchParams() which
   // requires a Suspense boundary during next build).
   const [shopSlug, setShopSlug] = useState<string | null>(null);
+  // ── SEC-001 fix: per-order access token ──
+  // The customer-facing order routes (/api/v1/orders/:id/*) now require an
+  // X-Order-Token header (or ?t= query) that constant-time-matches the
+  // order's customerToken. The token is issued at order-creation time
+  // (POST /api/v1/shops/:slug/orders returns it) + the shop page redirects
+  // here with ?t=<token>. We store it in sessionStorage (per-tab, survives
+  // refresh, not permanent) keyed by orderId so multiple orders in
+  // different tabs don't conflict.
+  const [orderToken, setOrderToken] = useState<string | null>(null);
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
     setShopSlug(search.get('shop'));
-  }, []);
+    // Read the order-access token from ?t= (preferred) OR sessionStorage
+    // (for refreshes — the URL's ?t= is stripped after first load so it
+    // doesn't leak via referrer/history). On first load with ?t=, persist
+    // to sessionStorage; on subsequent loads, read from sessionStorage.
+    const tokenFromUrl = search.get('t');
+    if (tokenFromUrl) {
+      setOrderToken(tokenFromUrl);
+      try { sessionStorage.setItem(`order-token:${orderId}`, tokenFromUrl); } catch { /* ignore */ }
+      // Strip ?t= from the URL so it doesn't leak via the browser history
+      // or referrer header (the token stays in sessionStorage for refreshes).
+      try {
+        const cleanUrl = window.location.pathname + (search.toString().replace(/(^|&)t=[^&]*/, '') ? `?${search.toString().replace(/(^|&)t=[^&]*/, '')}` : '');
+        window.history.replaceState(null, '', cleanUrl);
+      } catch { /* ignore */ }
+    } else {
+      try {
+        const stored = sessionStorage.getItem(`order-token:${orderId}`);
+        if (stored) setOrderToken(stored);
+      } catch { /* ignore */ }
+    }
+  }, [orderId]);
+  // Headers to attach to every /api/v1/orders/:id/* request. Empty when no
+  // token is known (the routes will return 403 with a clear message).
+  const orderAuthHeaders = useMemo<Record<string, string> | undefined>(
+    () => (orderToken ? { 'X-Order-Token': orderToken } : undefined),
+    [orderToken],
+  );
 
   const [shop, setShop] = useState<ShopInfo | null>(null);
   const [order, setOrder] = useState<OrderStatusResponse | null>(null);
@@ -211,7 +246,7 @@ export default function OrderFlowPage() {
       setLoading(true);
       setFatalError(null);
     }
-    const r = await api.request<{ data?: OrderStatusResponse; error?: { message?: string } }>('GET', `/api/v1/orders/${orderId}/status`);
+    const r = await api.request<{ data?: OrderStatusResponse; error?: { message?: string } }>('GET', `/api/v1/orders/${orderId}/status`, { headers: orderAuthHeaders });
     if (!opts?.silent) setLoading(false);
     if (r.status >= 400 || !r.data?.data) {
       setFatalError(r.data?.error?.message ?? 'Order not found.');
@@ -265,7 +300,7 @@ export default function OrderFlowPage() {
         setStep('track');
       }
     }
-  }, [api, orderId]);
+  }, [api, orderId, orderAuthHeaders]);
 
   // Fetch shop info (if slug in query) so we can do client-side price estimates.
   const loadShop = useCallback(async () => {
@@ -276,11 +311,17 @@ export default function OrderFlowPage() {
   }, [api, shopSlug]);
 
   useEffect(() => {
-    if (!api.ready || !orderId) return;
+    // Wait for the order-access token to hydrate (from ?t= on first load
+    // or sessionStorage on refresh) before fetching the order status. The
+    // /api/v1/orders/:id/* routes are token-gated (SEC-001 fix); calling
+    // them before the token is known returns a 403 that would briefly
+    // flash a "link incomplete" fatal error. loadShop doesn't need the
+    // token but it's fine to wait — the token loads in milliseconds.
+    if (!api.ready || !orderId || !orderToken) return;
     void (async () => {
       await Promise.all([loadOrder(), loadShop()]);
     })();
-  }, [api.ready, orderId, loadOrder, loadShop]);
+  }, [api.ready, orderId, orderToken, loadOrder, loadShop]);
 
   // ─── Client-side price estimate ───
   const clientEstimate = useCallback((f: LocalFile): number => {
@@ -342,7 +383,7 @@ export default function OrderFlowPage() {
         const uu = await api.request<{ data?: UploadUrlResponse; error?: { message?: string } }>(
           'POST',
           `/api/v1/orders/${orderId}/files/upload-url`,
-          { body: { filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size } },
+          { body: { filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
         );
         const u = uu.data?.data;
         if (!u?.uploadUrl) {
@@ -370,7 +411,7 @@ export default function OrderFlowPage() {
         const cf = await api.request<{ data?: ConfirmFileResponse; error?: { message?: string } }>(
           'POST',
           `/api/v1/orders/${orderId}/files`,
-          { body: { fileId: u.fileId, storageKey: u.storageKey, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size } },
+          { body: { fileId: u.fileId, storageKey: u.storageKey, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
         );
         const c = cf.data?.data;
         if (!c?.fileId) {
@@ -395,7 +436,7 @@ export default function OrderFlowPage() {
           const pr = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
             'PATCH',
             `/api/v1/orders/${orderId}/files/${c.fileId}`,
-            { body: def },
+            { body: def, headers: orderAuthHeaders },
           );
           const d = pr.data?.data;
           if (d) {
@@ -418,7 +459,7 @@ export default function OrderFlowPage() {
         setUploadError(msg);
       }
     }
-  }, [api, orderId]);
+  }, [api, orderId, orderAuthHeaders]);
 
   const removeFile = useCallback((fileId: string) => {
     setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
@@ -467,7 +508,7 @@ export default function OrderFlowPage() {
     const r = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
       'PATCH',
       `/api/v1/orders/${orderId}/files/${fileId}`,
-      { body },
+      { body, headers: orderAuthHeaders },
     );
     const d = r.data?.data;
     setFiles((prev) => prev.map((x) => {
@@ -488,7 +529,7 @@ export default function OrderFlowPage() {
       setOrderTotalPaise(d.orderTotalPaise);
       setServerCalculated(true);
     }
-  }, [api, orderId, files]);
+  }, [api, orderId, files, orderAuthHeaders]);
 
   // ─── Checkout ───
   const doCheckout = useCallback(async () => {
@@ -496,7 +537,7 @@ export default function OrderFlowPage() {
     setCheckoutError(null);
     setQrDataUrl(null);
     setShopkeeperQrUrl(null);
-    const r = await api.request<{ data?: CheckoutResponse; error?: { message?: string } }>('POST', `/api/v1/orders/${orderId}/checkout`);
+    const r = await api.request<{ data?: CheckoutResponse; error?: { message?: string } }>('POST', `/api/v1/orders/${orderId}/checkout`, { headers: orderAuthHeaders });
     setBusy(false);
     if (r.status >= 400 || !r.data?.data) {
       setCheckoutError(r.data?.error?.message ?? 'Checkout failed. Make sure all files have settings applied.');
@@ -523,7 +564,7 @@ export default function OrderFlowPage() {
       if (qr.data?.data?.pngDataUrl) setQrDataUrl(qr.data.data.pngDataUrl);
     }
     setStep('pay');
-  }, [api, orderId, shopSlug]);
+  }, [api, orderId, shopSlug, orderAuthHeaders]);
 
   // ─── "I've paid" — move to track WITHOUT marking payment as verified ───
   // The customer taps "I've paid" after completing the UPI payment in their
@@ -563,7 +604,11 @@ export default function OrderFlowPage() {
 
   // ─── Receipt download ───
   const downloadReceipt = useCallback(async () => {
-    const r = await api.request('GET', `/api/v1/orders/${orderId}/receipt`, { raw: 'bytes' });
+    // The receipt is fetched as bytes (NOT navigated to), so the
+    // X-Order-Token header can be attached directly (no ?t= query needed).
+    // If a direct <a href> navigation were used instead, the URL would need
+    // `?t=${orderToken ?? ''}` appended — but here we use fetch + Blob.
+    const r = await api.request('GET', `/api/v1/orders/${orderId}/receipt`, { raw: 'bytes', headers: orderAuthHeaders });
     if (!r.raw) return;
     const blob = r.raw instanceof Blob ? r.raw : new Blob([r.raw]);
     const url = URL.createObjectURL(blob);
@@ -574,7 +619,7 @@ export default function OrderFlowPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }, [api, orderId]);
+  }, [api, orderId, orderAuthHeaders]);
 
   // ─── Render ───
   return (

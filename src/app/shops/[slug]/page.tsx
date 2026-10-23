@@ -104,9 +104,18 @@ export default function ShopDetailPage() {
       setCreateError(r.data?.error?.message ?? 'Could not start an order. Try again.');
       return;
     }
-    // Pass the shop slug via query string so the order page can fetch the
-    // shop's pricing config for live client-side price estimates.
-    router.push(`/orders/${r.data.data.orderId}?shop=${encodeURIComponent(shop.slug)}`);
+    // SEC-001 fix: pass the order's customerToken via the ?t= query param so
+    // the customer tracking page can authenticate to the (now token-gated)
+    // /api/v1/orders/:id/* routes. The tracking page strips ?t= from the
+    // URL after reading it into sessionStorage (so it doesn't leak via
+    // history/referrer). Also pass the shop slug so the order page can
+    // fetch the shop's pricing config for live client-side price estimates.
+    const token = r.data.data.customerToken ?? '';
+    const params = new URLSearchParams({
+      shop: shop.slug,
+      ...(token ? { t: token } : {}),
+    });
+    router.push(`/orders/${r.data.data.orderId}?${params.toString()}`);
   };
 
   return (

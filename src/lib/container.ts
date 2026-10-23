@@ -177,13 +177,35 @@ let _container: Container | null = null;
  * per request and lose its state.
  */
 export function getContainer(): Container {
-  const g = globalThis as unknown as { __printshopContainer?: Container };
+  const g = globalThis as unknown as { __printshopContainer?: Container; __printshopStartupMaintenanceStarted?: boolean };
   if (g.__printshopContainer) return g.__printshopContainer;
   if (_container) return _container;
 
   const container = buildContainer();
   g.__printshopContainer = container;
   _container = container;
+
+  // ── Fire-and-forget startup maintenance (DB-005 / PERF-003 fix) ──
+  // recoverStaleJobsOnStartup() flips stuck 'printing' jobs back to
+  // 'needs_review' (so a crashed/timeout function doesn't leave jobs
+  // permanently stuck) AND prunes audit logs older than 30 days (keeps
+  // the Neon free-tier DB from filling up). The function has its own
+  // `staleRecovered` guard so it only runs ONCE per process.
+  //
+  // Previously this was dead code — defined but never called. We tried
+  // calling it from src/instrumentation.ts but Next.js loads instrumentation
+  // in the Edge runtime too (which can't use node:crypto via the container's
+  // import chain) + the server crashed. Calling it here (lazily, on the
+  // first API request that hits the container) is the Node.js-only,
+  // safe place. Fire-and-forget so the first request isn't blocked.
+  if (!g.__printshopStartupMaintenanceStarted && process.env.NODE_ENV !== 'test') {
+    g.__printshopStartupMaintenanceStarted = true;
+    void recoverStaleJobsOnStartup().catch((e) => {
+      // Non-fatal — the app still serves requests.
+      console.error('[container] startup maintenance failed:', e instanceof Error ? e.message : String(e));
+    });
+  }
+
   return container;
 }
 

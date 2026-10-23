@@ -4,7 +4,8 @@ import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
-import { NotFoundError, ValidationError } from '@platform/core/errors';
+import { withOrderAccess } from '@/lib/api/with-order-access';
+import { ValidationError } from '@platform/core/errors';
 import { parsePageCount } from '@/lib/services/parse-page-count';
 
 const ConfirmFileSchema = z.object({
@@ -15,12 +16,18 @@ const ConfirmFileSchema = z.object({
   size: z.number().int().positive(),
 });
 
-/** POST /api/v1/orders/:id/files — confirm an upload, parse page count. */
-export const POST = withRateLimit<{ id: string }>('confirm-file', 30, 60, async (req, ctx) => {
-  try {
-    const { id } = await ctx.params;
-    const order = await repos.orders.findById(id);
-    if (!order) throw new NotFoundError('Order not found');
+/** POST /api/v1/orders/:id/files — confirm an upload, parse page count.
+ *
+ * SEC-001 fix: behind withOrderAccess — caller must present the order's
+ * `customerToken` (X-Order-Token header or ?t= query) before any upload
+ * confirmation runs. Previously anyone who learned the order UUID could
+ * spam another customer's order with PDFs. */
+export const POST = withRateLimit<{ id: string }>(
+  'confirm-file',
+  30,
+  60,
+  withOrderAccess<{ id: string }>(async (req, _ctx, order) => {
+    try {
     if (order.status !== 'awaiting_payment') {
       throw new ValidationError(`Order in status '${order.status}' cannot accept files`);
     }
@@ -88,7 +95,8 @@ export const POST = withRateLimit<{ id: string }>('confirm-file', 30, 60, async 
       status: needsReview ? 'needs_review' : file.status,
       needsReview,
     });
-  } catch (cause) {
-    return fail(toAppError(cause));
-  }
-});
+    } catch (cause) {
+      return fail(toAppError(cause));
+    }
+  }),
+);

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
+import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
 
@@ -14,12 +15,21 @@ const PatchFileSchema = z.object({
   duplex: z.boolean().optional(),
 });
 
-/** PATCH /api/v1/orders/:id/files/:fileId — update print settings + reprice. */
-export const PATCH = withRateLimit<{ id: string; fileId: string }>('patch-file', 60, 60, async (req, ctx) => {
-  try {
-    const { id, fileId } = await ctx.params;
-    const order = await repos.orders.findById(id);
-    if (!order) throw new NotFoundError('Order not found');
+/** PATCH /api/v1/orders/:id/files/:fileId — update print settings + reprice.
+ *
+ * SEC-001 fix: behind withOrderAccess — caller must present the order's
+ * `customerToken` before any print-setting mutation runs. Previously
+ * anyone who learned the order UUID could PATCH another customer's files
+ * (re-pricing their order, flipping color/duplex, etc.). The `fileId`
+ * is still read from ctx.params inside the handler — withOrderAccess only
+ * loads + verifies the `order`, the file lookup remains the handler's job. */
+export const PATCH = withRateLimit<{ id: string; fileId: string }>(
+  'patch-file',
+  60,
+  60,
+  withOrderAccess<{ id: string; fileId: string }>(async (req, ctx, order) => {
+    try {
+    const { fileId } = await ctx.params;
     if (order.status !== 'awaiting_payment') {
       throw new ValidationError(`Order in status '${order.status}' cannot be edited`);
     }
@@ -70,7 +80,8 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>('patch-file',
       orderTotalPaise: orderTotal,
       lineItems: result.lineItems,
     });
-  } catch (cause) {
-    return fail(toAppError(cause));
-  }
-});
+    } catch (cause) {
+      return fail(toAppError(cause));
+    }
+  }),
+);

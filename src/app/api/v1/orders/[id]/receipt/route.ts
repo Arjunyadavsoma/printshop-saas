@@ -1,16 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { repos } from '@/lib/repositories';
 import { NotFoundError } from '@platform/core/errors';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
+import { withOrderAccess } from '@/lib/api/with-order-access';
 
-/** GET /api/v1/orders/:id/receipt — downloadable PDF receipt. */
-export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+/** GET /api/v1/orders/:id/receipt — downloadable PDF receipt.
+ *
+ * SEC-001 fix: behind withOrderAccess — caller must prove they know the
+ * order's `customerToken` via the X-Order-Token header or the `?t=` query
+ * param. Receipts are opened as a browser NAVIGATION (the customer
+ * clicks a Download receipt link), so the browser cannot send a custom
+ * header — the customer tracking page must construct the URL with
+ * `?t=<token>`. withOrderAccess already reads the `?t=` fallback. */
+export const GET = withOrderAccess<{ id: string }>(async (_req, _ctx, order) => {
   try {
-    const { id } = await ctx.params;
-    const order = await repos.orders.findById(id);
-    if (!order) throw new NotFoundError('Order not found');
     const shop = await repos.shops.findById(order.shopId);
     if (!shop) throw new NotFoundError('Shop not found');
     if (order.status === 'awaiting_payment' || order.status === 'cancelled') {
@@ -73,4 +78,4 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const { toAppError, fail } = await import('@/lib/api/envelope');
     return fail(toAppError(cause));
   }
-}
+});

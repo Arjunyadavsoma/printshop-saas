@@ -4,7 +4,8 @@ import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
-import { NotFoundError, ValidationError } from '@platform/core/errors';
+import { withOrderAccess } from '@/lib/api/with-order-access';
+import { ValidationError } from '@platform/core/errors';
 import { storageKey, validateUploadRequest, type FileUploadRequest } from '@platform/utils';
 import { ALLOWED_UPLOAD_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES } from '@platform/core/domain';
 
@@ -14,12 +15,18 @@ const UploadUrlSchema = z.object({
   size: z.number().int().positive(),
 });
 
-/** POST /api/v1/orders/:id/files/upload-url — mint a presigned PUT URL. */
-export const POST = withRateLimit<{ id: string }>('upload-url', 30, 60, async (req, ctx) => {
-  try {
-    const { id } = await ctx.params;
-    const order = await repos.orders.findById(id);
-    if (!order) throw new NotFoundError('Order not found');
+/** POST /api/v1/orders/:id/files/upload-url — mint a presigned PUT URL.
+ *
+ * SEC-001 fix: behind withOrderAccess — caller must present the order's
+ * `customerToken` before any presigned URL is minted. Previously anyone
+ * who learned the order UUID could mint PUT URLs and upload arbitrary
+ * objects into another customer's order namespace. */
+export const POST = withRateLimit<{ id: string }>(
+  'upload-url',
+  30,
+  60,
+  withOrderAccess<{ id: string }>(async (req, _ctx, order) => {
+    try {
     if (order.status !== 'awaiting_payment') {
       throw new ValidationError(`Order in status '${order.status}' cannot accept files`);
     }
@@ -45,7 +52,8 @@ export const POST = withRateLimit<{ id: string }>('upload-url', 30, 60, async (r
     });
 
     return ok({ fileId, storageKey: key, uploadUrl, expiresInSeconds: 300 });
-  } catch (cause) {
-    return fail(toAppError(cause));
-  }
-});
+    } catch (cause) {
+      return fail(toAppError(cause));
+    }
+  }),
+);

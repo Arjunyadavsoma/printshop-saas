@@ -52,7 +52,7 @@ interface AuthContextValue extends AuthState {
   request: <T = unknown>(
     method: string,
     path: string,
-    opts?: { body?: unknown; raw?: 'bytes' | 'json' | 'text' },
+    opts?: { body?: unknown; raw?: 'bytes' | 'json' | 'text'; headers?: Record<string, string> },
   ) => Promise<ApiResponse<T>>;
 }
 
@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async <T = unknown,>(
       method: string,
       path: string,
-      opts?: { body?: unknown; raw?: 'bytes' | 'json' | 'text' },
+      opts?: { body?: unknown; raw?: 'bytes' | 'json' | 'text'; headers?: Record<string, string> },
     ): Promise<ApiResponse<T>> => {
       const doFetch = async (authToken: string | null): Promise<Response> => {
         return fetch(path, {
@@ -160,6 +160,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           headers: {
             ...(opts?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            // Custom per-request headers (e.g. X-Order-Token for the
+            // customer-facing order-access middleware — see
+            // src/lib/api/with-order-access.ts). Merged LAST so callers
+            // can't accidentally override the auth/content-type headers.
+            ...(opts?.headers ?? {}),
           },
           body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
         });

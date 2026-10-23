@@ -3,15 +3,22 @@ import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
+import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { rememberPaymentSession } from '@/lib/payments/webhook.service';
 
-/** POST /api/v1/orders/:id/checkout — create a payment intent (provider = shop's). */
-export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req, ctx) => {
-  try {
-    const { id } = await ctx.params;
-    const order = await repos.orders.findById(id);
-    if (!order) throw new NotFoundError('Order not found');
+/** POST /api/v1/orders/:id/checkout — create a payment intent (provider = shop's).
+ *
+ * SEC-001 fix: behind withOrderAccess — caller must present the order's
+ * `customerToken` before a payment intent is minted. Previously anyone
+ * who learned the order UUID could create payment intents for another
+ * customer's order, polluting their checkout state. */
+export const POST = withRateLimit<{ id: string }>(
+  'checkout',
+  20,
+  60,
+  withOrderAccess<{ id: string }>(async (req, _ctx, order) => {
+    try {
     if (order.status !== 'awaiting_payment') {
       throw new ValidationError(`Order in status '${order.status}' cannot be checked out`);
     }
@@ -69,7 +76,8 @@ export const POST = withRateLimit<{ id: string }>('checkout', 20, 60, async (req
       qrPayload: intent.qrPayload,
       expiresAt: intent.expiresAt,
     });
-  } catch (cause) {
-    return fail(toAppError(cause));
-  }
-});
+    } catch (cause) {
+      return fail(toAppError(cause));
+    }
+  }),
+);
