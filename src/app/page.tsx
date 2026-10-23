@@ -103,20 +103,20 @@ export default function HomePage() {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Hero */}
       <header className="border-b border-border bg-gradient-to-b from-amber-50 to-background">
-        <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-4 py-8 sm:gap-6 sm:px-6 sm:py-16 lg:py-20">
           <Badge variant="outline" className="border-amber-300 bg-amber-100/80 text-amber-900">
             <Sparkles className="h-3 w-3" />
             QR-powered print shops for India
           </Badge>
           <div className="max-w-3xl space-y-4">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
               Find a print shop, upload, and pay the shopkeeper directly.
             </h1>
-            <p className="text-base text-muted-foreground sm:text-lg">
+            <p className="text-sm text-muted-foreground sm:text-lg">
               {'PrintShop is a customer portal for Indian print and Xerox shops. Scan a shop QR, upload your PDFs, set print options, and pay via UPI — with zero commission and files that auto-delete the moment you collect.'}
             </p>
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button size="lg" onClick={() => document.getElementById('shop-discovery')?.scrollIntoView({ behavior: 'smooth' })}>
+            <div className="flex w-full flex-wrap items-center gap-3 pt-2 sm:w-auto">
+              <Button size="lg" className="w-full sm:w-auto min-h-[44px]" onClick={() => document.getElementById('shop-discovery')?.scrollIntoView({ behavior: 'smooth' })}>
                 <Search className="h-4 w-4" />
                 Find a shop
               </Button>
@@ -124,7 +124,7 @@ export default function HomePage() {
           </div>
 
           {/* Feature cards */}
-          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
             {FEATURES.map((f) => (
               <Card key={f.title} className="border-border shadow-sm">
                 <CardContent className="flex flex-col gap-2 p-4">
@@ -142,9 +142,9 @@ export default function HomePage() {
 
       {/* Shop discovery */}
       <main className="flex-1">
-        <section id="shop-discovery" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <section id="shop-discovery" className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-2">
-            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-3xl">
               Discover print shops
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -161,11 +161,11 @@ export default function HomePage() {
                 placeholder={'Search by shop name or address…'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="pl-9"
+                className="h-11 pl-9 sm:h-auto"
                 aria-label="Search shops"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => setQuery('')} disabled={!query}>
+            <Button variant="outline" size="sm" className="w-full sm:w-auto min-h-[44px]" onClick={() => setQuery('')} disabled={!query}>
               Clear
             </Button>
           </div>
@@ -173,7 +173,7 @@ export default function HomePage() {
           {/* Shops grid */}
           <div className="mt-8">
             {loading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Card key={i} className="border-border">
                     <CardContent className="flex flex-col gap-3 p-4">
@@ -219,7 +219,7 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {filtered.map((shop) => (
                   <ShopCard key={shop.id} shop={shop} onClick={() => onShopClick(shop.slug)} />
                 ))}
@@ -231,7 +231,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-border bg-card">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-8">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-600 font-bold text-white">
               P
@@ -243,7 +243,7 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-          <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <nav className="flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
             <Link href="/shop/login" className="inline-flex items-center gap-1.5 hover:text-foreground">
               <Store className="h-3.5 w-3.5" />
               Shopkeeper portal
@@ -280,7 +280,7 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
     >
       <CardHeader className="pb-0">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Printer className="h-4 w-4 shrink-0 text-amber-600" />
               <span className="truncate">{shop.name}</span>
@@ -310,12 +310,12 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
             </p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-[11px] break-words text-muted-foreground">
           {'Min. order '}{formatINRFromPaise(shop.pricingSummary.minOrderValue)}{' · UPI '}{shop.upiId}
         </p>
       </CardContent>
       <CardFooter className="pt-0">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 transition-all group-hover:gap-2">
+        <span className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-amber-700 transition-all group-hover:gap-2">
           Visit shop
           <ArrowRight className="h-3.5 w-3.5" />
         </span>

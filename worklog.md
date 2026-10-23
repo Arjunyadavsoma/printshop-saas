@@ -2129,3 +2129,148 @@ Work Log:
 
 Stage Summary:
 - The shopkeeper printer UI is now clean + professional. The `/shop/printer` page has a dedicated PrintLatch setup flow (all-in-one, step-by-step) with the connection status, pairing guide, pairing code input, and troubleshooting. The order detail page's Print button is simplified — just a "Print" button or a "Set up printer" link. No more cramped inline pairing guides inside the file table.
+
+---
+Task ID: consumer-mobile-optimization
+Agent: frontend-styling-expert
+Task: Optimize 3 consumer-facing pages (homepage, shop detail, customer order flow) for 375px mobile-first responsive design.
+
+Work Log:
+- Scope: pure CSS / Tailwind class adjustments. No business logic, API calls, state management, auth, UPI deep-link, or PrintLatch integration touched. No new dependencies. No tests changed.
+
+Page 1 — `src/app/page.tsx` (homepage / shop discovery + pricing):
+  - Hero header padding tightened: `py-12` → `py-8 sm:py-16 lg:py-20` (less wasted vertical space at 375px); gap `6` → `gap-4 sm:gap-6`.
+  - Hero H1 typography scaled mobile-first: `text-3xl` → `text-2xl sm:text-4xl lg:text-5xl`.
+  - Hero lede paragraph: `text-base` → `text-sm sm:text-lg`.
+  - Hero CTA button container widened on mobile: `flex flex-wrap items-center gap-3 pt-2` → `flex w-full flex-wrap items-center gap-3 pt-2 sm:w-auto`; the "Find a shop" Button grew to `w-full sm:w-auto min-h-[44px]`.
+  - Feature cards grid gap mobile-first: `gap-4` → `gap-3 sm:gap-4`.
+  - Shop discovery section padding tightened: `py-10` → `py-8 sm:py-14`; section heading `text-2xl` → `text-xl sm:text-3xl`.
+  - Search Input lifted to 44px touch target: added `h-11 pl-9 sm:h-auto`; the Clear button became `w-full sm:w-auto min-h-[44px]` so it stacks under the search box on mobile.
+  - Shops grid gap mobile-first: `gap-4` → `gap-3 sm:gap-4` on both the loading skeletons and the populated grid.
+  - ShopCard title row: title `<div>` got `flex-1` so the tier Badge never collides with the truncated shop name on narrow screens.
+  - ShopCard "Min. order · UPI" line gets `break-words` so long `shopkeeper@bank` UPI IDs wrap instead of overflowing.
+  - ShopCard "Visit shop" CTA gets `min-h-[28px]` for a more tappable row.
+  - Footer: link `<nav>` switched from `flex-wrap` to `flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-2` so portal links stack vertically on mobile and reflow horizontally on >=sm. Footer padding `py-8` → `py-6 sm:py-8`.
+
+Page 2 — `src/app/shops/[slug]/page.tsx` (customer shop page):
+  - Header bar switched from `py-3` to `h-14 sm:h-16` (compact 56px mobile, full 64px desktop) and the "Back to shops" link got `min-h-[44px]` for a proper touch target.
+  - Main padding tightened on mobile: `py-8` → `py-6 sm:py-12`.
+  - Shop name CardTitle: `text-2xl sm:text-3xl` → `text-xl sm:text-2xl lg:text-3xl`.
+  - UPI ID cell: `font-mono text-sm` got `break-words` so long UPI IDs don't overflow the 2-col layout.
+  - Pricing reference table: wrapper changed from `overflow-hidden` to `overflow-x-auto sm:overflow-hidden` and the table got `min-w-[280px]` — now scrolls horizontally on mobile if needed but never overflows the viewport.
+  - "Start an order" CTA button: added `min-h-[44px]` for a proper touch target (already `w-full`).
+  - Error fallback buttons (Try again / Browse other shops): added `min-h-[44px] flex-1 sm:flex-initial` so they stack horizontally on mobile with equal width and proper touch size.
+  - Footer padding `py-6` → `py-4 sm:py-6`; portal links `<div>` switched from `flex-wrap` to `flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1` for vertical stacking on mobile.
+
+Page 3 — `src/app/orders/[id]/page.tsx` (~1526 lines, 5-step flow):
+  - Page header: switched from `py-3` to `h-12 sm:h-16` (compact 48px mobile, full 64px desktop). The "Order" label is hidden on mobile (`hidden sm:inline`) since the order code Badge is already prominent — saves horizontal space. "Home" back-link got `min-h-[44px]`.
+  - OrderStepper: list items got `min-w-0 flex-1` so 5 steps share the 375px viewport equally without overflow; circle bumps to `h-9 w-9` on `sm:`. Gap `gap-1 sm:gap-2`.
+  - UploadStep dropzone: `p-6` → `p-4 sm:p-6`; "Browse files" button: added `w-full min-h-[44px] sm:w-auto`.
+  - UploadStep sticky summary bar: button row was `flex gap-2` → `flex flex-col gap-2 sm:flex-row sm:gap-2`; both buttons (Skip to checkout / Configure files) get `w-full min-h-[44px] sm:w-auto`. The price area now stacks cleanly above the buttons on mobile.
+  - ConfigureStep print-settings grid: `grid-cols-2 sm:grid-cols-4` → `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` for breathing room at 375px; all inputs/selects/toggles get `h-11 sm:h-9` (44px touch target on mobile, default desktop).
+  - ConfigureStep price display row: `flex items-center justify-between` → `flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2` so the page count and price stack on mobile.
+  - ConfigureStep sticky summary bar: same mobile-first stacking as UploadStep; Back and "Review & checkout" buttons both `w-full min-h-[44px] sm:w-auto`.
+  - CheckoutStep files table: wrapper `overflow-hidden` → `overflow-x-auto sm:overflow-hidden`; table got `min-w-[480px]` so it scrolls horizontally on mobile instead of squashing the File / Settings / Price columns. UPI ID line gets `flex-wrap` + `break-words`.
+  - CheckoutStep CardFooter: `flex justify-between gap-2` → `flex flex-col gap-2 sm:flex-row sm:justify-between sm:gap-2`; both buttons `w-full min-h-[44px] sm:w-auto`.
+  - PayStep amount display: `text-4xl sm:text-5xl` → `text-3xl sm:text-4xl lg:text-5xl` — large rupee amounts (e.g. ₹1,299) no longer overflow the amber card at 375px.
+  - PayStep QR image: added `mx-auto max-w-[200px]` so the QR is centered and capped at 200px wide on mobile (per the mobile guidelines for QR codes).
+  - PayStep QR placeholder boxes also got the `sm:h-44 sm:w-44` mobile-first sizing so the loading/empty states line up with the actual image.
+  - PayStep CardFooter: stacked mobile-first; both buttons `w-full min-h-[44px] sm:w-auto`.
+  - TrackStep token display: `text-4xl` → `text-3xl sm:text-4xl`; added `break-words` so a long customer token wraps instead of overflowing the centered card on mobile.
+  - TrackStep files table: `overflow-hidden` → `overflow-x-auto sm:overflow-hidden`; table got `min-w-[320px]` so the File + Status columns scroll horizontally on mobile.
+  - TrackStep CardFooter: `flex flex-wrap justify-between gap-2` → `flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between sm:gap-2`; Refresh, Download receipt, Back to home buttons all `w-full min-h-[44px] sm:w-auto`.
+  - FileCard delete (Trash2) button: was `rounded-md p-1` (~24px touch target) → `flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md ...` (proper 44px square target).
+  - FileCard settings grid (used in UploadStep inline file rows): `grid-cols-2 sm:grid-cols-4` → `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`; all Inputs / ToggleGroupItems / Duplex switch row get `h-11 sm:h-8` (44px mobile touch targets); the page-range Input span adjusted to `sm:col-span-2 lg:col-span-4` to match the new breakpoint ladder.
+  - Footer: portal links stack vertically on mobile (`flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1`).
+
+Verification:
+- `bunx tsc --noEmit`: 0 errors.
+- `bun run lint`: 0 warnings.
+- `bunx vitest run`: 21 files, 217/217 tests pass.
+- Production build: NOT RUN (forbidden by sandbox rules).
+
+What was NOT changed (per task constraints):
+- No business logic, API calls, or state management modified.
+- No AuthContext, auth flow, or imports changed.
+- No new dependencies added.
+- UPI deep-link logic (`launchUpi`, `window.location.href = upiUri`) untouched.
+- PrintLatch integration untouched (this PR only touches consumer-facing pages; the shopkeeper printer UI from the prior task is unchanged).
+- No existing tests modified or weakened.
+
+---
+Task ID: shopkeeper-responsive-optimization
+Agent: frontend-styling-expert
+Task: Optimize 6 shopkeeper portal pages (/shop/dashboard, /shop/orders, /shop/orders/[id], /shop/settings, /shop/printer, /shop/register) for mobile (375px) + desktop (1280px+) responsive design. Tailwind CSS 4 mobile-first ladder.
+
+Work Log:
+- Per the brief: NO business logic / API calls / state management / AuthContext / PrintLatch client / tests were touched. Only Tailwind class names were edited. No new dependencies.
+
+Page 1 — `src/app/shop/dashboard/page.tsx` (758 lines):
+  - Loading skeleton: stat tiles grid `grid-cols-2 gap-4 md:grid-cols-5` → `grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5`; skeleton width `w-64` → `w-48 sm:w-64`.
+  - Stat tiles grid (live): `grid-cols-2 gap-3 sm:gap-4 md:grid-cols-5` → `grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5` — matches the brief's mobile 2-up ladder.
+  - Payment queue row: inner content row `flex items-center gap-3` → `flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-3` so token + amount stack on mobile.
+  - Payment queue action row `flex items-center gap-2` → `flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end`; Open/Verify/Reject buttons all got `min-h-[44px]` + `flex-1 sm:flex-initial` so they share the row width on mobile and stay 44px touch targets.
+  - Recent orders Table: got `className="min-w-[640px]"` so its 6 columns scroll horizontally inside the Table component's built-in `overflow-x-auto` wrapper on mobile (Table already wraps; the min-w prevents column squashing).
+
+Page 2 — `src/app/shop/orders/page.tsx` (534 lines):
+  - Header Refresh button: added `min-h-[44px]`.
+  - Filters Card: Search Input + 3 SelectTriggers (status / payment / date) all got `h-11 sm:h-9` for mobile 44px touch targets. The 4-column `grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4` ladder was already mobile-first and left untouched.
+  - Orders Table: got `className="min-w-[720px]"` so 7 columns scroll horizontally on mobile.
+  - All quick-action buttons (Verify / Reject icon-only / Start / Ready) got `min-h-[44px]`. Reject is icon-only on mobile and gets `min-w-[44px]` too (square target).
+  - Pagination row: `flex items-center justify-between` → `flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`; Prev/Next buttons got `min-h-[44px] gap-1`.
+
+Page 3 — `src/app/shop/orders/[id]/page.tsx` (~1047 lines):
+  - Loading skeleton: `w-64` → `w-48 sm:w-64`.
+  - Back + Refresh header buttons: both got `min-h-[44px]`.
+  - Token banner: `p-6` → `p-4 sm:p-6`; token display `text-4xl sm:text-5xl` → `text-3xl sm:text-4xl lg:text-5xl`; order id `<span>` got `break-all` so long UUIDs don't overflow on mobile.
+  - Payment verification panel: txnRef Input got `h-11 sm:h-9`. Verify/Reject button row `flex flex-wrap gap-2` → `flex flex-col gap-2 sm:flex-row sm:flex-wrap`; both buttons got `w-full min-h-[44px] sm:w-auto`.
+  - Status actions Card: `CardContent` `flex flex-wrap gap-2` → `flex flex-col gap-2 sm:flex-row sm:flex-wrap`. Every AlertDialogTrigger Button got `w-full min-h-[44px] sm:w-auto`. Every AlertDialogCancel + AlertDialogAction got `min-h-[44px]`.
+  - Files Table (8 cols): got `className="min-w-[900px]"`.
+  - Print-instructions panel: file row header `flex items-center justify-between gap-3` → `flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3`. Settings grid `grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6` → `grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6` (mobile-first ladder — 1 col on mobile for breathing room).
+  - Bottom back/dashboard row `flex flex-wrap gap-2` → `flex flex-col gap-2 sm:flex-row sm:flex-wrap`; both buttons got `min-h-[44px]`.
+  - NotFound Card footer: `flex flex-wrap gap-2` → `flex flex-col gap-2 sm:flex-row sm:flex-wrap`; back-to-orders button got `min-h-[44px]`.
+  - Error Card Retry button got `min-h-[44px] gap-1.5`.
+
+Page 4 — `src/app/shop/settings/page.tsx` (1098 lines):
+  - TabsList: `flex w-full flex-wrap gap-1` → `flex w-full gap-1 overflow-x-auto sm:flex-wrap` — 5 tabs scroll horizontally on mobile and wrap on >=sm. TabsTrigger `whitespace-nowrap` was already there so labels don't break mid-word.
+  - Profile tab: every Input (name / logoUrl / phone / address) got `h-11 sm:h-9`. Timezone SelectTrigger got `h-11 w-full sm:h-9` (the trigger default `w-fit` was making the select narrower than its grid cell — w-full matches the Input).
+  - Profile CardFooter `flex items-center gap-2` → `flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:gap-2`; Save button `w-full min-h-[44px] sm:w-auto`; tier Badge got `self-start sm:self-auto` so it doesn't stretch on mobile.
+  - Pricing tab: all 8 per-page price Inputs (h-8) → `h-11 sm:h-9`. Duplex / bulk-threshold / bulk-discount-pct Inputs (h-8) → `h-11 sm:h-9`. Min-order-value Input (`h-8 w-20`) → `h-11 w-20 sm:h-9`. Save prices button row `flex items-center gap-3` → `flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:gap-3`; Save button got `w-full min-h-[44px] sm:w-auto`.
+  - Business hours tab: per-day time Inputs `w-28` → `h-11 w-full sm:flex-initial sm:w-28` — full width on mobile so the open/close pair stacks cleanly. Save hours button got `min-h-[44px]`.
+  - Payment tab: UPI ID Input + payment-phone Input got `h-11 sm:h-9`. Save payment button got `min-h-[44px]`.
+  - UPI QR tab: preview box `size-44` → `size-32 sm:size-44` (128px on mobile, 176px on >=sm). Upload `<label><span>` height `h-9` → `min-h-[44px]` (full touch target). Remove button got `min-h-[44px]`.
+  - Shop QR tab: same QR size + min-h-[44px] on all 4 buttons (PNG / SVG / Print / Copy URL).
+  - Header Reload button + error-card Retry button: both got `min-h-[44px] gap-1.5`.
+
+Page 5 — `src/app/shop/printer/page.tsx` (397 lines, had 0 responsive classes):
+  - Page header h1: `text-2xl font-bold` → `text-xl font-bold tracking-tight sm:text-2xl`.
+  - Connection status CardHeader: `flex items-center justify-between` → `flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between`; Refresh button got `min-h-[44px] sm:self-start`.
+  - Connection badges row: `flex items-center gap-3` → `flex flex-wrap items-center gap-x-3 gap-y-2`; "N printer(s): …" line got `break-words` so a long printer name wraps.
+  - SetupStep component: `flex gap-4` → `flex gap-3 sm:gap-4`; step content `flex-1` → `min-w-0 flex-1` (prevents long content from breaking out); STEP/Done badge row `flex items-center gap-2` → `flex flex-wrap items-center gap-2`.
+  - Step 1 dashboard link `<a>`: added `min-h-[44px] break-all`; ExternalLink icon got `shrink-0`; URL wrapped in `<span className="break-all">` so long URLs don't push the icon off-screen.
+  - Step 2 code+button row: `flex items-start gap-2` → `flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-2`; `<code>` got `block flex-1` so it fills the row width above the Copy button on mobile; Copy button got `min-h-[44px] w-full sm:w-auto`.
+  - Step 2 expected-output + origin-mismatch callouts: both `<p>` / `<div>` got `break-words`; inline `<code>` for origin URL got `break-all`.
+  - Step 3 pairing input + Confirm button row: `flex gap-2` → `flex flex-col gap-2 sm:flex-row sm:items-start`; Input got `h-11 font-mono sm:h-9`; Confirm button got `min-h-[44px] w-full sm:w-auto`.
+  - Troubleshooting list: `<ul>` got `break-words`; inline `<code>` (--origin, current origin, $env:, &) all got `break-all`; the long PowerShell command `<code>` got `block break-all` and was already a separate line. Dashboard URL `<a>` got `break-words`.
+
+Page 6 — `src/app/shop/register/page.tsx` (713 lines, 4-step wizard):
+  - Outer wrapper padding `py-8` → `py-6 sm:py-8`.
+  - Brand h1 `text-2xl` → `text-xl sm:text-2xl` (tighter on 375px).
+  - Progress CardHeader `flex items-center justify-between` → `flex flex-wrap items-center justify-between` so the step indicator + "Step N of 4" Badge wraps to a second row on small mobile instead of overflowing.
+  - Field component Input (used by name/email/phone/password/passwordConfirm/shopName/upiId/address): added `h-11 sm:h-10` per the brief (44px mobile touch target, default 40px desktop).
+  - Slug prefix `<code>` was `rounded-md border px-2 py-2` → `inline-flex h-11 shrink-0 items-center … sm:h-10` so it's the same height as the slug Input and stays aligned on mobile.
+  - Slug Input got `h-11 flex-1 sm:h-10` to match the prefix and touch-target.
+  - CardFooter Back + Continue / Create-my-shop buttons: all got `min-h-[44px]`.
+
+Verification:
+- `bunx tsc --noEmit`: 0 errors (exit 0).
+- `bun run lint`: 0 warnings (exit 0).
+- `bunx vitest run`: 21 files, 217/217 tests pass (exit 0).
+- Production build: NOT RUN (forbidden by sandbox rules).
+
+What was NOT changed (per task constraints):
+- No business logic, API calls, or state management modified.
+- No AuthContext, auth flow, or imports changed.
+- No new dependencies added.
+- No PrintLatch client logic touched (only the printer setup PAGE got responsive classes; the underlying `checkPrintLatchStatus`, `confirmPrintLatchPairing`, `submitPrintLatchJob` calls are unchanged).
+- No existing tests modified or weakened.

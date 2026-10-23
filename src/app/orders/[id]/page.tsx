@@ -575,13 +575,13 @@ export default function OrderFlowPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+        <div className="mx-auto flex h-12 max-w-4xl items-center justify-between gap-4 px-4 sm:h-16 sm:px-6">
+          <Link href="/" className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
             Home
           </Link>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-muted-foreground">Order</span>
+            <span className="hidden text-muted-foreground sm:inline">Order</span>
             <code className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">{orderId.slice(0, 8)}</code>
             {order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
@@ -710,7 +710,7 @@ export default function OrderFlowPage() {
       <footer className="mt-auto border-t border-border bg-card">
         <div className="mx-auto flex max-w-4xl flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>{'PrintShop SaaS · 0% commission · files auto-delete on collection'}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1">
             <Link href="/shop/login" className="hover:text-foreground">Shopkeeper portal</Link>
             <Link href="/admin/login" className="hover:text-foreground">Admin portal</Link>
           </div>
@@ -725,13 +725,13 @@ export default function OrderFlowPage() {
 function OrderStepper({ current }: { current: Step }) {
   const idx = STEP_LABELS.findIndex((s) => s.key === current);
   return (
-    <ol className="flex items-center justify-between gap-1" aria-label="Order progress">
+    <ol className="flex items-center justify-between gap-1 sm:gap-2" aria-label="Order progress">
       {STEP_LABELS.map((s, i) => {
         const active = i === idx;
         const done = i < idx;
         return (
-          <li key={s.key} className="flex flex-1 flex-col items-center gap-1">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors ${done ? 'bg-emerald-600 text-white' : active ? 'bg-amber-600 text-white' : 'bg-muted text-muted-foreground'}`}>
+          <li key={s.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:h-9 sm:w-9 ${done ? 'bg-emerald-600 text-white' : active ? 'bg-amber-600 text-white' : 'bg-muted text-muted-foreground'}`}>
               {done ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
             </div>
             <span className={`text-[10px] sm:text-xs ${active ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
@@ -776,7 +776,7 @@ function UploadStep(props: {
             onDragOver={props.onDragOver}
             onDragLeave={props.onDragLeave}
             onDrop={props.onDrop}
-            className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${props.dragOver ? 'border-amber-500 bg-amber-50' : 'border-border'}`}
+            className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors sm:p-6 ${props.dragOver ? 'border-amber-500 bg-amber-50' : 'border-border'}`}
           >
             <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-2 text-sm text-foreground">Drag files here, or</p>
@@ -784,7 +784,7 @@ function UploadStep(props: {
               type="button"
               size="sm"
               variant="outline"
-              className="mt-3"
+              className="mt-3 w-full min-h-[44px] sm:w-auto"
               onClick={() => props.fileInputRef.current?.click()}
             >
               Browse files
@@ -838,11 +838,11 @@ function UploadStep(props: {
                 : 'Will be set when you upload your first file.'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={props.onCheckout} disabled={readyFiles.length === 0 || hasUploading}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+          <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={readyFiles.length === 0 || hasUploading}>
             Skip to checkout <ArrowRight className="h-4 w-4" />
           </Button>
-          <Button size="sm" onClick={props.onConfigure} disabled={readyFiles.length === 0 || hasUploading}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onConfigure} disabled={readyFiles.length === 0 || hasUploading}>
             Configure files <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
@@ -867,9 +867,9 @@ function ConfigureStep(props: {
         <Card key={f.fileId}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-5 w-5 text-amber-600" />
+              <FileText className="h-5 w-5 shrink-0 text-amber-600" />
               <span className="truncate">{f.filename}</span>
-              <Badge variant="secondary" className="ml-auto text-xs">
+              <Badge variant="secondary" className="ml-auto shrink-0 text-xs">
                 {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
               </Badge>
             </CardTitle>
@@ -888,7 +888,7 @@ function ConfigureStep(props: {
             )}
 
             {/* Print settings */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label className="text-xs">Copies</Label>
                 <Input
@@ -897,7 +897,7 @@ function ConfigureStep(props: {
                   max={500}
                   value={f.copies}
                   onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Math.min(500, Number(e.target.value) || 1)), dirty: true })}
-                  className="mt-1"
+                  className="mt-1 h-11 sm:h-9"
                 />
               </div>
               <div>
@@ -908,8 +908,8 @@ function ConfigureStep(props: {
                   onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode, dirty: true })}
                   className="mt-1"
                 >
-                  <ToggleGroupItem value="bw" className="text-xs">B&W</ToggleGroupItem>
-                  <ToggleGroupItem value="color" className="text-xs">Colour</ToggleGroupItem>
+                  <ToggleGroupItem value="bw" className="h-11 text-xs sm:h-9">B&W</ToggleGroupItem>
+                  <ToggleGroupItem value="color" className="h-11 text-xs sm:h-9">Colour</ToggleGroupItem>
                 </ToggleGroup>
               </div>
               <div>
@@ -917,7 +917,7 @@ function ConfigureStep(props: {
                 <select
                   value={f.paperSize}
                   onChange={(e) => props.onUpdate(f.fileId, { paperSize: e.target.value as PaperSize, dirty: true })}
-                  className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2 text-sm sm:h-9"
                 >
                   <option value="a4">A4</option>
                   <option value="a3">A3</option>
@@ -933,20 +933,20 @@ function ConfigureStep(props: {
                   onValueChange={(v) => props.onUpdate(f.fileId, { duplex: v === 'duplex', dirty: true })}
                   className="mt-1"
                 >
-                  <ToggleGroupItem value="simplex" className="text-xs">Single</ToggleGroupItem>
-                  <ToggleGroupItem value="duplex" className="text-xs">Double</ToggleGroupItem>
+                  <ToggleGroupItem value="simplex" className="h-11 text-xs sm:h-9">Single</ToggleGroupItem>
+                  <ToggleGroupItem value="duplex" className="h-11 text-xs sm:h-9">Double</ToggleGroupItem>
                 </ToggleGroup>
               </div>
             </div>
 
             {/* Price display */}
-            <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+            <div className="flex flex-col gap-1 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
               <span className="text-xs text-muted-foreground">
                 {f.selectedPages && f.selectedPages.length < f.pageCount
                   ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
                   : `${f.pageCount || '?'} pages × ${f.copies} copies`}
               </span>
-              <span className="text-lg font-bold text-foreground">
+              <span className="text-lg font-bold text-foreground sm:text-right">
                 {formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
               </span>
             </div>
@@ -961,11 +961,11 @@ function ConfigureStep(props: {
           </p>
           <p className="text-2xl font-bold text-foreground">{formatINRFromPaise(props.orderTotal)}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={props.onBack}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+          <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" onClick={props.onCheckout}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout}>
             Review &amp; checkout <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
@@ -994,8 +994,9 @@ function CheckoutStep(props: {
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-sm">
+          {/* On mobile: horizontal scroll. On >=sm: standard table. */}
+          <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
+            <table className="w-full min-w-[480px] text-sm">
               <thead className="bg-muted/60 text-xs">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">File</th>
@@ -1033,9 +1034,9 @@ function CheckoutStep(props: {
 
           {props.shop && (
             <div className="mt-4 rounded-lg bg-muted/60 p-3 text-sm">
-              <p className="flex items-center gap-2 text-foreground">
-                <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                Pay to <strong className="font-mono">{props.shop.upiId}</strong> · {props.shop.name}
+              <p className="flex flex-wrap items-center gap-2 text-foreground">
+                <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span className="break-words">Pay to <strong className="font-mono">{props.shop.upiId}</strong> · {props.shop.name}</span>
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {'Provider: '}{props.shop.paymentProvider}{'. The shopkeeper receives money directly — zero commission.'}
@@ -1050,11 +1051,11 @@ function CheckoutStep(props: {
             </div>
           )}
         </CardContent>
-        <CardFooter className="flex justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={props.onBack}>
+        <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:gap-2">
+          <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" onClick={props.onCheckout} disabled={props.busy || priced.length === 0}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
             Create payment
           </Button>
@@ -1113,7 +1114,7 @@ function PayStep(props: {
           {/* Amount + order reference — prominent */}
           <div className="rounded-lg bg-amber-50 p-4 text-center ring-1 ring-amber-200">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
-            <p className="mt-1 text-4xl font-bold text-foreground sm:text-5xl">{amount}</p>
+            <p className="mt-1 text-3xl font-bold text-foreground sm:text-4xl lg:text-5xl">{amount}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
             {props.checkout?.merchantOrderId && (
               <p className="mt-2 text-[10px] text-muted-foreground">
@@ -1151,15 +1152,15 @@ function PayStep(props: {
                   <img
                     src={desktopQr}
                     alt="UPI payment QR code"
-                    className="h-40 w-40 sm:h-44 sm:w-44"
+                    className="mx-auto h-40 w-40 max-w-[200px] sm:h-44 sm:w-44"
                   />
                 </div>
               ) : props.checkout ? (
-                <div className="flex h-44 w-44 items-center justify-center rounded-lg bg-muted/60">
+                <div className="flex h-40 w-40 items-center justify-center rounded-lg bg-muted/60 sm:h-44 sm:w-44">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <div className="flex h-44 w-44 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                <div className="flex h-40 w-40 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground sm:h-44 sm:w-44">
                   No QR
                 </div>
               )}
@@ -1205,11 +1206,11 @@ function PayStep(props: {
             </div>
           )}
         </CardContent>
-        <CardFooter className="flex justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={props.onBack} disabled={props.busy}>
+        <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:gap-2">
+          <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack} disabled={props.busy}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" onClick={props.onPay} disabled={props.busy || !props.checkout || props.simulated}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onPay} disabled={props.busy || !props.checkout || props.simulated}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
             {props.simulated ? 'Tracking…' : "I've paid — track my order"}
           </Button>
@@ -1242,7 +1243,7 @@ function TrackStep(props: {
           {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
-            <p className="font-mono text-4xl font-bold tracking-widest text-amber-600">
+            <p className="font-mono text-3xl font-bold tracking-widest break-words text-amber-600 sm:text-4xl">
               {props.order.tokenNumber ?? props.order.customerToken}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
@@ -1304,8 +1305,9 @@ function TrackStep(props: {
           {/* Files table */}
           <div>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Files</p>
-            <div className="overflow-hidden rounded-lg border border-border">
-              <table className="w-full text-sm">
+            {/* On mobile: horizontal scroll. On >=sm: standard table. */}
+            <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
+              <table className="w-full min-w-[320px] text-sm">
                 <thead className="bg-muted/60 text-xs">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">File</th>
@@ -1338,17 +1340,17 @@ function TrackStep(props: {
             </div>
           )}
         </CardContent>
-        <CardFooter className="flex flex-wrap justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={props.onRefresh}>
+        <CardFooter className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between sm:gap-2">
+          <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onRefresh}>
             <RefreshCw className="h-4 w-4" /> Refresh
           </Button>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
             {done && (
-              <Button variant="outline" size="sm" onClick={props.onDownloadReceipt}>
+              <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onDownloadReceipt}>
                 <Download className="h-4 w-4" /> Download receipt
               </Button>
             )}
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="w-full min-h-[44px] sm:w-auto">
               <Link href="/"><Home className="h-4 w-4" /> Back to home</Link>
             </Button>
           </div>
@@ -1408,7 +1410,7 @@ function FileCard(props: {
             <button
               type="button"
               onClick={() => props.onRemove(f.fileId)}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-rose-600"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-rose-600"
               aria-label="Remove file"
             >
               <Trash2 className="h-4 w-4" />
@@ -1426,7 +1428,7 @@ function FileCard(props: {
 
         {/* Settings — only for uploaded files */}
         {!isUploading && !isFailed && (
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <Label className="text-[10px] text-muted-foreground">Copies</Label>
               <Input
@@ -1436,7 +1438,7 @@ function FileCard(props: {
                 value={f.copies}
                 onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Number(e.target.value) || 1) })}
                 disabled={isReview}
-                className="h-8 text-sm"
+                className="h-11 text-sm sm:h-8"
               />
             </div>
             <div>
@@ -1446,10 +1448,10 @@ function FileCard(props: {
                 value={f.colorMode}
                 onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode })}
                 disabled={isReview}
-                className="h-8"
+                className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="bw" className="h-8 px-2 text-[11px]">B&W</ToggleGroupItem>
-                <ToggleGroupItem value="color" className="h-8 px-2 text-[11px]">Color</ToggleGroupItem>
+                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&W</ToggleGroupItem>
+                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Color</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
@@ -1459,17 +1461,17 @@ function FileCard(props: {
                 value={f.paperSize}
                 onValueChange={(v) => v && props.onUpdate(f.fileId, { paperSize: v as PaperSize })}
                 disabled={isReview}
-                className="h-8"
+                className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="a4" className="h-8 px-2 text-[11px]">A4</ToggleGroupItem>
-                <ToggleGroupItem value="a3" className="h-8 px-2 text-[11px]">A3</ToggleGroupItem>
-                <ToggleGroupItem value="letter" className="h-8 px-2 text-[11px]">LTR</ToggleGroupItem>
-                <ToggleGroupItem value="legal" className="h-8 px-2 text-[11px]">LGL</ToggleGroupItem>
+                <ToggleGroupItem value="a4" className="h-11 px-2 text-[11px] sm:h-8">A4</ToggleGroupItem>
+                <ToggleGroupItem value="a3" className="h-11 px-2 text-[11px] sm:h-8">A3</ToggleGroupItem>
+                <ToggleGroupItem value="letter" className="h-11 px-2 text-[11px] sm:h-8">LTR</ToggleGroupItem>
+                <ToggleGroupItem value="legal" className="h-11 px-2 text-[11px] sm:h-8">LGL</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
               <Label className="text-[10px] text-muted-foreground">Duplex</Label>
-              <div className="flex h-8 items-center">
+              <div className="flex h-11 items-center sm:h-8">
                 <Switch
                   checked={f.duplex}
                   onCheckedChange={(v) => props.onUpdate(f.fileId, { duplex: v })}
@@ -1478,7 +1480,7 @@ function FileCard(props: {
                 <span className="ml-2 text-[11px] text-muted-foreground">{f.duplex ? 'On' : 'Off'}</span>
               </div>
             </div>
-            <div className="sm:col-span-4">
+            <div className="sm:col-span-2 lg:col-span-4">
               <Label className="text-[10px] text-muted-foreground">Page range (optional)</Label>
               <Input
                 type="text"
@@ -1486,7 +1488,7 @@ function FileCard(props: {
                 onChange={(e) => props.onUpdate(f.fileId, { pageRange: e.target.value })}
                 placeholder={'e.g. 1-5, 8, 12-14 — leave blank to print all'}
                 disabled={isReview}
-                className="h-8 text-sm"
+                className="h-11 text-sm sm:h-8"
               />
             </div>
           </div>

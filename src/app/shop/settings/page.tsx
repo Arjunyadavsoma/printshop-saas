@@ -530,7 +530,7 @@ export default function ShopSettingsPage() {
           <CardDescription className="text-rose-700">{error}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={() => void load()} variant="outline" size="sm">
+          <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
             <RefreshCw className="size-4" /> Retry
           </Button>
         </CardContent>
@@ -553,7 +553,7 @@ export default function ShopSettingsPage() {
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => void load()} className="min-h-[44px] gap-1.5">
           <RefreshCw className="size-4" /> Reload
         </Button>
       </div>
@@ -565,7 +565,7 @@ export default function ShopSettingsPage() {
       )}
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="flex w-full flex-wrap gap-1">
+        <TabsList className="flex w-full gap-1 overflow-x-auto sm:flex-wrap">
           <TabsTrigger value="profile" className="gap-1.5">
             <Store className="size-3.5" /> Profile
           </TabsTrigger>
@@ -599,7 +599,7 @@ export default function ShopSettingsPage() {
                 <Label htmlFor="name">
                   <span className="flex items-center gap-1"><Store className="size-3.5" /> Shop name</span>
                 </Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} disabled={savingProfile} />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} disabled={savingProfile} className="h-11 sm:h-9" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description</Label>
@@ -622,6 +622,7 @@ export default function ShopSettingsPage() {
                   onChange={(e) => setLogoUrl(e.target.value)}
                   placeholder="https://…/logo.png"
                   disabled={savingProfile}
+                  className="h-11 sm:h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Paste a public image URL. We don't host image uploads for the logo yet.
@@ -638,12 +639,13 @@ export default function ShopSettingsPage() {
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+91…"
                     disabled={savingProfile}
+                    className="h-11 sm:h-9"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="timezone">Timezone</Label>
                   <Select value={timezone} onValueChange={setTimezone}>
-                    <SelectTrigger id="timezone"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="timezone" className="h-11 w-full sm:h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {TIMEZONES.map((tz) => (
                         <SelectItem key={tz} value={tz}>{tz}</SelectItem>
@@ -661,20 +663,21 @@ export default function ShopSettingsPage() {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   disabled={savingProfile}
+                  className="h-11 sm:h-9"
                 />
               </div>
               {profileError && <p className="text-sm text-rose-700">⚠ {profileError}</p>}
             </CardContent>
-            <CardFooter className="flex items-center gap-2 border-t pt-4">
+            <CardFooter className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:gap-2">
               <Button
                 onClick={() => void saveProfile()}
                 disabled={savingProfile}
-                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto"
               >
                 {savingProfile ? <Loader2 className="size-4 animate-spin" /> : profileSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingProfile ? 'Saving…' : profileSaved ? 'Saved' : 'Save changes'}
               </Button>
-              <Badge variant="outline" className="gap-1">
+              <Badge variant="outline" className="gap-1 self-start sm:self-auto">
                 <Tag className="size-3" /> tier: {shop.subscriptionTier}
               </Badge>
             </CardFooter>
@@ -712,7 +715,7 @@ export default function ShopSettingsPage() {
                                 const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
                                 setPricingDraft((prev) => prev ? { ...prev, [key]: paise } : prev);
                               }}
-                              className="h-8 text-xs"
+                              className="h-11 text-xs sm:h-9"
                               disabled={savingPricing}
                             />
                             <span className="text-[10px] text-muted-foreground">/ page</span>
@@ -736,7 +739,7 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, duplex_discount: Math.max(0, Math.min(100, v)) } : prev);
                         }}
-                        className="h-8 text-xs"
+                        className="h-11 text-xs sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
@@ -751,7 +754,7 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, bulk_threshold: Math.max(0, v) } : prev);
                         }}
-                        className="h-8 text-xs"
+                        className="h-11 text-xs sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
@@ -767,7 +770,7 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, bulk_discount_pct: Math.max(0, Math.min(100, v)) } : prev);
                         }}
-                        className="h-8 text-xs"
+                        className="h-11 text-xs sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
@@ -787,15 +790,15 @@ export default function ShopSettingsPage() {
                           const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
                           setPricingDraft((prev) => prev ? { ...prev, min_order_value: paise } : prev);
                         }}
-                        className="h-8 w-20 text-xs"
+                        className="h-11 w-20 text-xs sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
                   </div>
 
                   {/* Save + feedback */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <Button onClick={savePricing} disabled={savingPricing} size="sm" className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90">
+                  <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:gap-3">
+                    <Button onClick={savePricing} disabled={savingPricing} size="sm" className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto">
                       {savingPricing ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
                       {savingPricing ? 'Saving…' : 'Save prices'}
                     </Button>
@@ -854,7 +857,7 @@ export default function ShopSettingsPage() {
                         value={sched.open}
                         onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], open: e.target.value } }))}
                         disabled={sched.closed}
-                        className="w-28"
+                        className="h-11 w-full sm:flex-initial sm:w-28"
                         aria-label={`${d.label} opening time`}
                       />
                       <span className="text-xs text-muted-foreground">to</span>
@@ -863,7 +866,7 @@ export default function ShopSettingsPage() {
                         value={sched.close}
                         onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], close: e.target.value } }))}
                         disabled={sched.closed}
-                        className="w-28"
+                        className="h-11 w-full sm:flex-initial sm:w-28"
                         aria-label={`${d.label} closing time`}
                       />
                     </div>
@@ -876,7 +879,7 @@ export default function ShopSettingsPage() {
               <Button
                 onClick={() => void saveHours()}
                 disabled={savingHours}
-                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
               >
                 {savingHours ? <Loader2 className="size-4 animate-spin" /> : hoursSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingHours ? 'Saving…' : hoursSaved ? 'Saved' : 'Save hours'}
@@ -908,6 +911,7 @@ export default function ShopSettingsPage() {
                   placeholder="myshop@okaxis"
                   disabled={savingPayment}
                   pattern="^[\w.\-]+@[\w.\-]+$"
+                  className="h-11 sm:h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Customers pay directly to this UPI ID. 0% commission — money lands in your account instantly.
@@ -923,6 +927,7 @@ export default function ShopSettingsPage() {
                   onChange={(e) => setPaymentPhone(e.target.value)}
                   placeholder="+91…"
                   disabled={savingPayment}
+                  className="h-11 sm:h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Separate from the business phone — used only for verifying customer UPI payments.
@@ -962,7 +967,7 @@ export default function ShopSettingsPage() {
               <Button
                 onClick={() => void savePayment()}
                 disabled={savingPayment}
-                className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
               >
                 {savingPayment ? <Loader2 className="size-4 animate-spin" /> : paymentSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingPayment ? 'Saving…' : paymentSaved ? 'Saved' : 'Save payment'}
@@ -984,7 +989,7 @@ export default function ShopSettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-6">
-                <div className="flex size-44 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white p-2">
+                <div className="flex size-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white p-2 sm:size-44">
                   {upiQrPreview ? (
                     <img src={upiQrPreview} alt="UPI payment QR" className="size-full object-contain" />
                   ) : upiQrHasImage ? (
@@ -1017,7 +1022,7 @@ export default function ShopSettingsPage() {
                         disabled={upiQrUploading}
                       />
                       <span
-                        className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md bg-amber-600 px-4 text-sm font-medium text-white hover:bg-amber-600/90 ${
+                        className={`inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md bg-amber-600 px-4 text-sm font-medium text-white hover:bg-amber-600/90 ${
                           upiQrUploading ? 'opacity-50' : ''
                         }`}
                       >
@@ -1031,7 +1036,7 @@ export default function ShopSettingsPage() {
                         size="sm"
                         onClick={() => void removeQr()}
                         disabled={upiQrUploading}
-                        className="gap-1.5"
+                        className="min-h-[44px] gap-1.5"
                       >
                         <Trash2 className="size-4" /> Remove
                       </Button>
@@ -1056,7 +1061,7 @@ export default function ShopSettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
-              <div className="flex size-44 shrink-0 items-center justify-center rounded-md border border-border bg-white p-2">
+              <div className="flex size-32 shrink-0 items-center justify-center rounded-md border border-border bg-white p-2 sm:size-44">
                 {qr?.pngDataUrl ? (
                   <img src={qr.pngDataUrl} alt={`QR for ${shop.name}`} className="size-full object-contain" width={176} height={176} />
                 ) : (
@@ -1074,16 +1079,16 @@ export default function ShopSettingsPage() {
                   </code>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('png')} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('png')} className="min-h-[44px] gap-1.5">
                     <Download className="size-4" /> PNG
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('svg')} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => void downloadShopQr('svg')} className="min-h-[44px] gap-1.5">
                     <Download className="size-4" /> SVG
                   </Button>
-                  <Button variant="outline" size="sm" onClick={printQr} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={printQr} className="min-h-[44px] gap-1.5">
                     <Printer className="size-4" /> Print
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => void copyUrl()} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => void copyUrl()} className="min-h-[44px] gap-1.5">
                     <Copy className="size-4" /> Copy URL
                   </Button>
                 </div>

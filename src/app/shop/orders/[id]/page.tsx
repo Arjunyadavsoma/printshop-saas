@@ -396,7 +396,7 @@ export default function ShopOrderDetailPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-9 w-48 sm:w-64" />
         <Skeleton className="h-32" />
         <Skeleton className="h-64" />
       </div>
@@ -414,8 +414,8 @@ export default function ShopOrderDetailPage() {
             This order may belong to another shop, or it has been deleted.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button asChild variant="outline" size="sm" className="min-h-[44px]">
             <Link href="/shop/orders"><ArrowLeft className="size-4" /> Back to orders</Link>
           </Button>
         </CardContent>
@@ -431,7 +431,7 @@ export default function ShopOrderDetailPage() {
           <CardDescription className="text-rose-700">{error}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={() => void load()} variant="outline" size="sm">
+          <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
             <RefreshCw className="size-4" /> Retry
           </Button>
         </CardContent>
@@ -447,7 +447,7 @@ export default function ShopOrderDetailPage() {
     <div className="space-y-6">
       {/* Back + refresh */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
+        <Button asChild variant="ghost" size="sm" className="min-h-[44px] gap-1.5">
           <Link href="/shop/orders"><ArrowLeft className="size-4" /> Orders</Link>
         </Button>
         <Button
@@ -455,7 +455,7 @@ export default function ShopOrderDetailPage() {
           size="sm"
           onClick={() => void load(true)}
           disabled={refreshing}
-          className="gap-1.5"
+          className="min-h-[44px] gap-1.5"
         >
           {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           Refresh
@@ -464,13 +464,13 @@ export default function ShopOrderDetailPage() {
 
       {/* ── Token + status banner ── */}
       <Card className="border-border">
-        <CardContent className="flex flex-col items-center justify-between gap-4 p-6 sm:flex-row sm:items-center">
+        <CardContent className="flex flex-col items-center justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
           <div className="flex flex-col items-center gap-1 text-center sm:items-start sm:text-left">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Token number</span>
-            <span className="font-mono text-4xl font-bold tracking-tight text-amber-700 sm:text-5xl">
+            <span className="break-words font-mono text-3xl font-bold tracking-tight text-amber-700 sm:text-4xl lg:text-5xl">
               {displayToken}
             </span>
-            <span className="font-mono text-[10px] text-muted-foreground">id: {order.id}</span>
+            <span className="break-all font-mono text-[10px] text-muted-foreground">id: {order.id}</span>
           </div>
           <div className="flex flex-col items-center gap-2 sm:items-end">
             <StatusBadge status={order.status} />
@@ -501,16 +501,17 @@ export default function ShopOrderDetailPage() {
                 onChange={(e) => setTxnRef(e.target.value)}
                 placeholder="e.g. 4012XXXXXXXX or UPI/123456789"
                 disabled={verifyAction !== null}
+                className="h-11 sm:h-9"
               />
               <p className="text-[10px] text-muted-foreground">
                 Optional but recommended — recorded against the order for reconciliation.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 onClick={() => void runVerify('verify')}
                 disabled={verifyAction !== null}
-                className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90"
+                className="w-full min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:w-auto"
               >
                 {verifyAction === 'verify' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                 Verify payment
@@ -519,7 +520,7 @@ export default function ShopOrderDetailPage() {
                 onClick={() => void runVerify('reject')}
                 disabled={verifyAction !== null}
                 variant="outline"
-                className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                className="w-full min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:w-auto"
               >
                 {verifyAction === 'reject' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
                 Reject
@@ -540,11 +541,11 @@ export default function ShopOrderDetailPage() {
               : `"${order.status}" is a terminal state — no further transitions.`}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {canStart && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90" disabled={statusAction !== null}>
+                <Button className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'start' ? <Loader2 className="size-4 animate-spin" /> : <PrinterIcon className="size-4" />}
                   Start printing
                 </Button>
@@ -557,9 +558,9 @@ export default function ShopOrderDetailPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="bg-amber-600 text-white hover:bg-amber-600/90"
+                    className="min-h-[44px] bg-amber-600 text-white hover:bg-amber-600/90"
                     onClick={(e) => { e.preventDefault(); void runStatusAction('start'); }}
                   >
                     Yes, start printing
@@ -571,7 +572,7 @@ export default function ShopOrderDetailPage() {
           {canReady && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-1.5" disabled={statusAction !== null}>
+                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'ready' ? <Loader2 className="size-4 animate-spin" /> : <PackageCheck className="size-4 text-emerald-700" />}
                   Mark ready for pickup
                 </Button>
@@ -584,8 +585,8 @@ export default function ShopOrderDetailPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={(e) => { e.preventDefault(); void runStatusAction('ready'); }}>
+                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+                  <AlertDialogAction className="min-h-[44px]" onClick={(e) => { e.preventDefault(); void runStatusAction('ready'); }}>
                     Yes, mark ready
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -595,7 +596,7 @@ export default function ShopOrderDetailPage() {
           {canComplete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-1.5" disabled={statusAction !== null}>
+                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'complete' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4 text-emerald-700" />}
                   Mark collected
                 </Button>
@@ -608,8 +609,8 @@ export default function ShopOrderDetailPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={(e) => { e.preventDefault(); void runStatusAction('complete'); }}>
+                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+                  <AlertDialogAction className="min-h-[44px]" onClick={(e) => { e.preventDefault(); void runStatusAction('complete'); }}>
                     Yes, mark collected
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -619,7 +620,7 @@ export default function ShopOrderDetailPage() {
           {canCancel && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50" disabled={statusAction !== null}>
+                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'cancel' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
                   Cancel order
                 </Button>
@@ -642,9 +643,9 @@ export default function ShopOrderDetailPage() {
                   />
                 </div>
                 <AlertDialogFooter>
-                  <AlertDialogCancel onClick={() => setCancelReason('')}>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel className="min-h-[44px]" onClick={() => setCancelReason('')}>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="bg-rose-600 text-white hover:bg-rose-600/90"
+                    className="min-h-[44px] bg-rose-600 text-white hover:bg-rose-600/90"
                     onClick={(e) => { e.preventDefault(); void runStatusAction('cancel'); }}
                   >
                     Yes, cancel order
@@ -693,7 +694,7 @@ export default function ShopOrderDetailPage() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-4">Filename</TableHead>
@@ -703,7 +704,7 @@ export default function ShopOrderDetailPage() {
                     <TableHead>Paper</TableHead>
                     <TableHead>Duplex</TableHead>
                     <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Download</TableHead>
+                    <TableHead className="pr-4 text-right">Download</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -769,14 +770,14 @@ export default function ShopOrderDetailPage() {
                 <div className="space-y-2">
                   {order.files.map((f) => (
                     <div key={f.id} className="rounded-md border border-border bg-card p-3 text-sm">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <span className="font-medium">{f.originalFilename}</span>
                         <span className="text-xs text-muted-foreground">
                           {f.pageCount ?? 'Unknown'} pages · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
                         </span>
                       </div>
                       <Separator className="my-2" />
-                      <div className="grid grid-cols-2 gap-1 text-xs sm:grid-cols-3 lg:grid-cols-6">
+                      <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                         <Instruction label="Colour mode" value={f.colorMode === 'color' ? 'Colour' : 'B&W'} />
                         <Instruction label="Paper" value={f.paperSize.toUpperCase()} />
                         <Instruction label="Duplex" value={f.duplex ? 'Yes (both sides)' : 'No (single side)'} />
@@ -898,11 +899,11 @@ export default function ShopOrderDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap gap-2">
-        <Button asChild variant="outline" size="sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
           <Link href="/shop/orders"><ArrowLeft className="size-4" /> Back to orders</Link>
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => router.push('/shop/dashboard')}>
+        <Button variant="ghost" size="sm" onClick={() => router.push('/shop/dashboard')} className="min-h-[44px]">
           Go to dashboard
         </Button>
       </div>

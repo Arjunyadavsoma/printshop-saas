@@ -278,7 +278,7 @@ export default function ShopOrdersPage() {
           size="sm"
           onClick={() => void load(true)}
           disabled={refreshing}
-          className="gap-1.5"
+          className="min-h-[44px] gap-1.5"
         >
           {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           Refresh
@@ -297,14 +297,14 @@ export default function ShopOrdersPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="token, order ID, or phone"
-                className="pl-9"
+                className="h-11 pl-9 sm:h-9"
               />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="status" className="text-xs">Order status</Label>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-              <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="status" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {ORDER_STATUSES.map((s) => (
@@ -316,7 +316,7 @@ export default function ShopOrdersPage() {
           <div className="space-y-1.5">
             <Label htmlFor="payment" className="text-xs">Payment</Label>
             <Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v as PaymentFilter)}>
-              <SelectTrigger id="payment"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="payment" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All payments</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
@@ -329,7 +329,7 @@ export default function ShopOrdersPage() {
           <div className="space-y-1.5">
             <Label htmlFor="date" className="text-xs">Date range</Label>
             <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-              <SelectTrigger id="date"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="date" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All time</SelectItem>
                 <SelectItem value="today">Today</SelectItem>
@@ -380,7 +380,7 @@ export default function ShopOrdersPage() {
               </p>
             </div>
           ) : (
-            <Table>
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">Token</TableHead>
@@ -425,7 +425,7 @@ export default function ShopOrdersPage() {
                                 variant="outline"
                                 onClick={() => void quickVerify(o.id, 'verify')}
                                 disabled={idBusy}
-                                className="gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                className="min-h-[44px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                                 title="Verify payment"
                               >
                                 {busy === `${o.id}:verify` ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
@@ -437,7 +437,7 @@ export default function ShopOrdersPage() {
                                     size="sm"
                                     variant="outline"
                                     disabled={idBusy}
-                                    className="gap-1 border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    className="min-h-[44px] min-w-[44px] gap-1 border-rose-300 text-rose-700 hover:bg-rose-50"
                                     title="Reject payment"
                                   >
                                     {busy === `${o.id}:reject` ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
@@ -469,7 +469,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickStart(o.id)}
                               disabled={idBusy}
-                              className="gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                              className="min-h-[44px] gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
                               title="Start printing"
                             >
                               {busy === `${o.id}:start` ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
@@ -482,7 +482,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickReady(o.id)}
                               disabled={idBusy}
-                              className="gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              className="min-h-[44px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                               title="Mark ready for pickup"
                             >
                               {busy === `${o.id}:ready` ? <Loader2 className="size-3.5 animate-spin" /> : <PackageCheck className="size-3.5" />}
@@ -505,7 +505,7 @@ export default function ShopOrdersPage() {
 
       {/* Pagination */}
       {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
             Page {safePage + 1} of {totalPages} · {filtered.length} orders
           </p>
@@ -515,6 +515,7 @@ export default function ShopOrdersPage() {
               variant="outline"
               disabled={safePage === 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
+              className="min-h-[44px] gap-1"
             >
               <ChevronLeft className="size-4" /> Prev
             </Button>
@@ -523,6 +524,7 @@ export default function ShopOrdersPage() {
               variant="outline"
               disabled={safePage >= totalPages - 1}
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              className="min-h-[44px] gap-1"
             >
               Next <ChevronRight className="size-4" />
             </Button>

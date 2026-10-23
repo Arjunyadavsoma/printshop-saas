@@ -289,8 +289,8 @@ export default function ShopDashboardPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-9 w-64" />
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <Skeleton className="h-9 w-48 sm:w-64" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
         </div>
         <Skeleton className="h-64" />
@@ -355,7 +355,7 @@ export default function ShopDashboardPage() {
       </div>
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
         {stats.map((s) => {
           const Icon = s.icon;
           return (
@@ -479,7 +479,7 @@ export default function ShopDashboardPage() {
                 key={o.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card p-3"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-3">
                   <div className="flex flex-col">
                     <span className="font-mono font-bold text-amber-700">{o.tokenNumber ?? o.customerToken}</span>
                     <span className="text-[10px] text-muted-foreground">{timeAgo(o.createdAt)}</span>
@@ -492,15 +492,15 @@ export default function ShopDashboardPage() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button asChild size="sm" variant="ghost" className="text-[11px]">
+                <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
+                  <Button asChild size="sm" variant="ghost" className="min-h-[36px] flex-1 sm:flex-initial text-[11px]">
                     <Link href={`/shop/orders/${o.id}`}>Open →</Link>
                   </Button>
                   <Button
                     size="sm"
                     onClick={() => void quickVerify(o.id, 'verify')}
                     disabled={verifyBusy === o.id}
-                    className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90"
+                    className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:flex-initial"
                   >
                     {verifyBusy === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                     Verify
@@ -511,7 +511,7 @@ export default function ShopDashboardPage() {
                         size="sm"
                         variant="outline"
                         disabled={verifyBusy === o.id}
-                        className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                        className="min-h-[44px] flex-1 gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:flex-initial"
                       >
                         <XCircle className="size-3.5" /> Reject
                       </Button>
@@ -631,7 +631,7 @@ export default function ShopDashboardPage() {
               </Button>
             </div>
           ) : (
-            <Table>
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">Token</TableHead>

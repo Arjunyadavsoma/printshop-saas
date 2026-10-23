@@ -96,7 +96,7 @@ export default function PrinterSetupPage() {
     <div className="space-y-6">
       {/* ── Page header ── */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Printer Setup</h1>
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Printer Setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Connect your Windows printer to PrintShop using PrintLatch. Once connected, you can print customer orders directly from your browser.
         </p>
@@ -105,7 +105,7 @@ export default function PrinterSetupPage() {
       {/* ── Connection status card ── */}
       <Card className={isConnected ? 'border-emerald-300' : isDisconnected ? 'border-amber-300' : 'border-border'}>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <PrinterIcon className="size-5 text-amber-600" />
@@ -115,14 +115,14 @@ export default function PrinterSetupPage() {
                 The local agent that sends print jobs to your Windows printer.
               </CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => void checkStatus()} disabled={checking} className="gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => void checkStatus()} disabled={checking} className="min-h-[44px] gap-1.5 sm:self-start">
               {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               {checking ? 'Checking…' : 'Refresh'}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {isConnected ? (
               <Badge className="gap-1.5 bg-emerald-100 text-emerald-700">
                 <CheckCircle2 className="size-3.5" /> Connected
@@ -144,7 +144,7 @@ export default function PrinterSetupPage() {
               <span className="text-xs text-muted-foreground">Agent v{health.version}</span>
             )}
             {printers && printers.length > 0 && (
-              <span className="text-xs text-muted-foreground">
+              <span className="break-words text-xs text-muted-foreground">
                 {printers.length} printer(s): {printers.map(p => p.name).join(', ')}
               </span>
             )}
@@ -183,10 +183,10 @@ export default function PrinterSetupPage() {
                 href={PRINTLATCH_DASHBOARD_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:underline"
+                className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 break-all text-sm font-medium text-amber-700 hover:underline"
               >
-                <ExternalLink className="size-3.5" />
-                {PRINTLATCH_DASHBOARD_URL}
+                <ExternalLink className="size-3.5 shrink-0" />
+                <span className="break-all">{PRINTLATCH_DASHBOARD_URL}</span>
               </a>
               <p className="mt-2 text-xs text-muted-foreground">
                 If PrintLatch isn&apos;t installed, download it from the official source. The agent runs as a local process on your Windows 11 computer — it does NOT need admin privileges or network configuration.
@@ -203,26 +203,26 @@ export default function PrinterSetupPage() {
               <p className="text-sm text-muted-foreground">
                 Open <strong>Windows PowerShell</strong> (Start menu → type &quot;PowerShell&quot; → Enter) and run this exact command. It pairs THIS website with your local PrintLatch agent:
               </p>
-              <div className="mt-2 flex items-start gap-2">
-                <code className="flex-1 block break-all rounded-lg bg-zinc-900 p-3 text-xs text-zinc-100">
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
+                <code className="block flex-1 break-all rounded-lg bg-zinc-900 p-3 text-xs text-zinc-100">
                   {pairingCommand}
                 </code>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => copyToClipboard(pairingCommand)}
-                  className="shrink-0 gap-1.5"
+                  className="min-h-[44px] w-full shrink-0 gap-1.5 sm:w-auto"
                 >
                   {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
                   {copied ? 'Copied' : 'Copy'}
                 </Button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="mt-2 break-words text-xs text-muted-foreground">
                 You should see: <code className="rounded bg-muted px-1.5 py-0.5">Pairing code: PL-XXXX-XXXX-XXXX-XXXX</code>
               </p>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+              <div className="mt-2 break-words rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
                 <strong>Important:</strong> The <code>--origin</code> URL must match this website&apos;s address exactly. You are currently on:{' '}
-                <code className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                <code className="break-all rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
                   {typeof window !== 'undefined' ? window.location.origin : ''}
                 </code>
               </div>
@@ -238,19 +238,19 @@ export default function PrinterSetupPage() {
               <p className="text-sm text-muted-foreground">
                 Copy the pairing code from PowerShell (it looks like <code className="rounded bg-muted px-1.5 py-0.5">PL-...</code>) and paste it here:
               </p>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
                 <Input
                   type="text"
                   value={pairingCode}
                   onChange={(e) => setPairingCode(e.target.value)}
                   placeholder="PL-XXXX-XXXX-XXXX-XXXX"
-                  className="font-mono"
+                  className="h-11 font-mono sm:h-9"
                   disabled={pairingConfirming}
                 />
                 <Button
                   onClick={() => void handleConfirmPairing()}
                   disabled={pairingConfirming || !pairingCode.trim()}
-                  className="gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                  className="min-h-[44px] w-full gap-1.5 bg-amber-600 text-white hover:bg-amber-700 sm:w-auto"
                 >
                   {pairingConfirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {pairingConfirming ? 'Confirming…' : 'Confirm'}
@@ -297,22 +297,22 @@ export default function PrinterSetupPage() {
           </button>
         </CardHeader>
         <CardContent id="troubleshooting-content" className="hidden">
-          <ul className="space-y-3 text-sm text-muted-foreground">
+          <ul className="space-y-3 break-words text-sm text-muted-foreground">
             <li>
               <strong className="text-foreground">Agent not reachable:</strong> Ensure PrintLatch is running. Open{' '}
-              <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a>{' '}
+              <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="break-words text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a>{' '}
               and check it shows &quot;Agent connected&quot;.
             </li>
             <li>
-              <strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website&apos;s address. You are on{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>.
+              <strong className="text-foreground">Origin mismatch:</strong> The <code className="break-all rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website&apos;s address. You are on{' '}
+              <code className="break-all rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>.
             </li>
             <li>
               <strong className="text-foreground">Pairing code expired:</strong> The code expires after a few minutes. Re-run the pairing command and enter the new code.
             </li>
             <li>
               <strong className="text-foreground">PowerShell &quot;command not found&quot; or &quot;Unexpected token&quot;:</strong> Use the PowerShell call operator <code className="rounded bg-muted px-1.5 py-0.5">&amp;</code> + <code className="rounded bg-muted px-1.5 py-0.5">$env:</code> prefix. The full command is:{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 break-all">
+              <code className="block break-all rounded bg-muted px-1.5 py-0.5">
                 &amp; &quot;$env:LOCALAPPDATA\PrintLatch\bin\printlatch.exe&quot; pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}
               </code>
             </li>
@@ -364,7 +364,7 @@ function SetupStep({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex gap-4">
+    <div className="flex gap-3 sm:gap-4">
       {/* Step number / icon */}
       <div className="flex flex-col items-center">
         <div
@@ -379,8 +379,8 @@ function SetupStep({
         {number < 4 && <div className="mt-1 h-full w-px flex-1 bg-border" />}
       </div>
       {/* Step content */}
-      <div className="flex-1 pb-4">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-muted-foreground">STEP {number}</span>
           {done && (
             <Badge variant="outline" className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-700">

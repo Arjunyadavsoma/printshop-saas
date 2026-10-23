@@ -113,8 +113,8 @@ export default function ShopDetailPage() {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Header bar */}
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4 sm:h-16 sm:px-6">
+          <Link href="/" className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
             Back to shops
           </Link>
@@ -126,7 +126,7 @@ export default function ShopDetailPage() {
       </header>
 
       <main className="flex-1">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-12">
           {loading ? (
             <ShopSkeleton />
           ) : error ? (
@@ -138,10 +138,10 @@ export default function ShopDetailPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">{error}</p>
                 <div className="flex gap-2">
-                  <Button onClick={loadShop} size="sm" variant="outline">
+                  <Button onClick={loadShop} size="sm" variant="outline" className="min-h-[44px] flex-1 sm:flex-initial">
                     <Loader2 className="h-4 w-4" /> Try again
                   </Button>
-                  <Button asChild size="sm" variant="ghost">
+                  <Button asChild size="sm" variant="ghost" className="min-h-[44px] flex-1 sm:flex-initial">
                     <Link href="/">Browse other shops</Link>
                   </Button>
                 </div>
@@ -163,7 +163,7 @@ export default function ShopDetailPage() {
                         </Badge>
                       )}
                     </div>
-                    <CardTitle className="text-2xl sm:text-3xl">{shop.name}</CardTitle>
+                    <CardTitle className="text-xl sm:text-2xl lg:text-3xl">{shop.name}</CardTitle>
                     <CardDescription className="flex items-start gap-1.5 pt-1">
                       <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>{shop.timezone}</span>
@@ -173,7 +173,7 @@ export default function ShopDetailPage() {
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="rounded-lg bg-muted/60 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">UPI ID</p>
-                        <p className="mt-1 font-mono text-sm font-medium text-foreground">{shop.upiId}</p>
+                        <p className="mt-1 break-words font-mono text-sm font-medium text-foreground">{shop.upiId}</p>
                       </div>
                       <div className="rounded-lg bg-muted/60 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Payment provider</p>
@@ -202,8 +202,9 @@ export default function ShopDetailPage() {
                     <CardDescription>Per-page rates. Final price is computed at checkout using the live pricing engine.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="overflow-hidden rounded-lg border border-border">
-                      <table className="w-full text-sm">
+                    {/* On mobile: horizontal scroll. On >=sm: standard table. */}
+                    <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
+                      <table className="w-full min-w-[280px] text-sm">
                         <thead className="bg-muted/60 text-xs">
                           <tr>
                             <th className="px-3 py-2 text-left font-medium text-muted-foreground">Variant</th>
@@ -274,7 +275,7 @@ export default function ShopDetailPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center gap-3 rounded-lg bg-muted/60 p-3">
-                      <Smartphone className="h-5 w-5 text-amber-600" />
+                      <Smartphone className="h-5 w-5 shrink-0 text-amber-600" />
                       <p className="text-xs text-muted-foreground">
                         {'You\'ll upload your files on the next screen. Files auto-delete on collection.'}
                       </p>
@@ -287,7 +288,7 @@ export default function ShopDetailPage() {
                     )}
                   </CardContent>
                   <CardFooter>
-                    <Button className="w-full" size="lg" onClick={startOrder} disabled={creating}>
+                    <Button className="w-full min-h-[44px]" size="lg" onClick={startOrder} disabled={creating}>
                       {creating ? (
                         <><Loader2 className="h-4 w-4 animate-spin" /> Starting…</>
                       ) : (
@@ -303,9 +304,9 @@ export default function ShopDetailPage() {
       </main>
 
       <footer className="mt-auto border-t border-border bg-card">
-        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <p>{'© PrintShop SaaS · 0% commission · pay the shopkeeper directly'}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1">
             <Link href="/shop/login" className="hover:text-foreground">Shopkeeper portal</Link>
             <Link href="/admin/login" className="hover:text-foreground">Admin portal</Link>
           </div>

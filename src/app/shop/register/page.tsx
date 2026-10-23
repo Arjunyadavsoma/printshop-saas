@@ -289,14 +289,14 @@ export default function ShopRegisterPage() {
 
   // ── Render ──
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-background px-4 py-8">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-background px-4 py-6 sm:py-8">
       <div className="w-full max-w-2xl">
         {/* Brand */}
         <div className="mb-5 flex flex-col items-center text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-amber-600 text-white shadow-sm">
             <Store className="size-6" />
           </div>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight">Start your print shop</h1>
+          <h1 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl">Start your print shop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Set up your shop in four quick steps — no credit card, no commission.
           </p>
@@ -305,7 +305,7 @@ export default function ShopRegisterPage() {
         {/* Progress */}
         <Card className="border-border shadow-sm">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-1.5">
                 {STEPS.map((s, i) => {
                   const Icon = s.icon;
@@ -445,7 +445,7 @@ export default function ShopRegisterPage() {
                 <div className="space-y-1.5">
                   <Label htmlFor="slug">Shop URL slug</Label>
                   <div className="flex items-center gap-2">
-                    <code className="rounded-md border border-border bg-muted px-2 py-2 text-xs text-muted-foreground">
+                    <code className="inline-flex h-11 shrink-0 items-center rounded-md border border-border bg-muted px-2 text-xs text-muted-foreground sm:h-10">
                       /shops/
                     </code>
                     <Input
@@ -457,7 +457,7 @@ export default function ShopRegisterPage() {
                       }}
                       placeholder="sharma-print"
                       disabled={submitting}
-                      className="flex-1"
+                      className="h-11 flex-1 sm:h-10"
                     />
                   </div>
                   {slugStatus === 'checking' && (
@@ -608,7 +608,7 @@ export default function ShopRegisterPage() {
               size="sm"
               onClick={back}
               disabled={stepIndex === 0 || submitting}
-              className="gap-1.5"
+              className="min-h-[44px] gap-1.5"
             >
               <ArrowLeft className="size-4" /> Back
             </Button>
@@ -619,7 +619,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={advance}
                   disabled={!canAdvance || submitting}
-                  className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
                 >
                   Continue <ArrowRight className="size-4" />
                 </Button>
@@ -629,7 +629,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={() => void submit()}
                   disabled={submitting}
-                  className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
                 >
                   {submitting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {submitting ? 'Creating shop…' : 'Create my shop'}
@@ -687,6 +687,7 @@ function Field({
         disabled={disabled}
         autoComplete={autoComplete}
         aria-invalid={Boolean(error)}
+        className="h-11 sm:h-10"
       />
       {error && <p className="text-[11px] text-rose-700">{error}</p>}
     </div>
