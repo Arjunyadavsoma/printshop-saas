@@ -44,11 +44,13 @@ export function middleware(_req: NextRequest) {
   // needs to talk to it for direct printing (fetch the PDF from the server's
   // presigned URL → send bytes to the local agent). This is a loopback address
   // (treated as a secure context by browsers even on HTTPS pages).
+  // The Native Windows Printer service runs at http://127.0.0.1:32192.
   const printlatchOrigin = 'http://127.0.0.1:32191';
+  const nativePrinterOrigin = 'http://127.0.0.1:32192';
 
   const connectSrc = supabaseOrigin
-    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin}`
-    : `'self' ws: wss: ${printlatchOrigin}`;
+    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin} ${nativePrinterOrigin}`
+    : `'self' ws: wss: ${printlatchOrigin} ${nativePrinterOrigin}`;
   const imgSrc = supabaseOrigin
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
