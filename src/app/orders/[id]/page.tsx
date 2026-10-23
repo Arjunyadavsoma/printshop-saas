@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -170,8 +170,13 @@ export default function OrderFlowPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const api = useApiClient();
-  const search = useSearchParams();
-  const shopSlug = search.get('shop');
+  // Read shopSlug from URL query param (avoids useSearchParams() which
+  // requires a Suspense boundary during next build).
+  const [shopSlug, setShopSlug] = useState<string | null>(null);
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search);
+    setShopSlug(search.get('shop'));
+  }, []);
 
   const [shop, setShop] = useState<ShopInfo | null>(null);
   const [order, setOrder] = useState<OrderStatusResponse | null>(null);
