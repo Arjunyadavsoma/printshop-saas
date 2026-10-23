@@ -28,7 +28,6 @@ import {
   confirmPrintLatchPairing,
   getPairingCommand,
   PRINTLATCH_DASHBOARD_URL,
-  PRINTLATCH_EXE_PATH,
   type PrintLatchConnectionState,
   type PrintLatchStatus,
 } from '@/lib/printlatch/client';
@@ -308,9 +307,9 @@ export default function PrinterSetupPage() {
               <strong className="text-foreground">Pairing code expired:</strong> The code expires after a few minutes. Re-run the pairing command and enter the new code.
             </li>
             <li>
-              <strong className="text-foreground">PowerShell &quot;command not found&quot;:</strong> Use the full path:{' '}
+              <strong className="text-foreground">PowerShell &quot;command not found&quot; or &quot;Unexpected token&quot;:</strong> Use the PowerShell call operator <code className="rounded bg-muted px-1.5 py-0.5">&amp;</code> + <code className="rounded bg-muted px-1.5 py-0.5">$env:</code> prefix. The full command is:{' '}
               <code className="rounded bg-muted px-1.5 py-0.5 break-all">
-                &quot;{PRINTLATCH_EXE_PATH}&quot; pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}
+                &amp; &quot;$env:LOCALAPPDATA\PrintLatch\bin\printlatch.exe&quot; pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}
               </code>
             </li>
             <li>

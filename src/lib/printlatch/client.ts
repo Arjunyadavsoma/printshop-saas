@@ -74,7 +74,7 @@ export async function checkPrintLatchStatus(): Promise<{ state: PrintLatchConnec
     const res = await fetch(`${AGENT_BASE_URL}${AGENT_STATUS_PATH}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
       return { state: 'error', status: null, error: `Agent responded HTTP ${res.status}` };
@@ -85,10 +85,10 @@ export async function checkPrintLatchStatus(): Promise<{ state: PrintLatchConnec
     return { state: 'connected', status: data, error: null };
   } catch (e: any) {
     if (e.name === 'TimeoutError' || e.name === 'AbortError') {
-      return { state: 'disconnected', status: null, error: 'Agent did not respond (timeout). Is PrintLatch running?' };
+      return { state: 'disconnected', status: null, error: 'Agent did not respond (5s timeout). Is PrintLatch running on THIS computer? (127.0.0.1 only works if your browser and PrintLatch are on the same machine.)' };
     }
     if (e.name === 'TypeError' && /fetch|Failed/i.test(e.message)) {
-      return { state: 'disconnected', status: null, error: 'Agent not reachable. Is PrintLatch running on this computer?' };
+      return { state: 'disconnected', status: null, error: 'Agent not reachable. Common causes: (1) PrintLatch is not running — open http://127.0.0.1:32191/app/ to check. (2) You are on a different computer than PrintLatch — the agent only works on the SAME Windows machine as your browser. (3) Run the pairing command first (Step 2 on the Printer Setup page) — the agent only accepts browser requests after pairing.' };
     }
     return { state: 'error', status: null, error: e.message ?? 'Unknown error' };
   }
@@ -144,7 +144,11 @@ export const PRINTLATCH_DASHBOARD_URL = `${AGENT_BASE_URL}/app/`;
 
 export function getPairingCommand(): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://your-printshop.vercel.app';
-  return `"${PRINTLATCH_EXE_PATH}" pair --origin ${origin} --name "PrintShop SaaS"`;
+  // PowerShell requires the call operator (&) to invoke a quoted path, and
+  // uses $env: prefix for environment variables (NOT %VAR% which is CMD-only).
+  // Without &, PowerShell treats "%LOCALAPPDATA%\..." as a string literal
+  // and throws "Unexpected token 'pair'".
+  return `& "$env:LOCALAPPDATA\\PrintLatch\\bin\\printlatch.exe" pair --origin ${origin} --name "PrintShop SaaS"`;
 }
 
 export const PRINTLATCH_EXE_PATH = '%LOCALAPPDATA%\\PrintLatch\\bin\\printlatch.exe';
