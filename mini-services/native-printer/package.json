@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Local Windows printing service for PrintShop SaaS — uses windows-pdf-printer-native for direct Windows printing",
   "type": "module",
-  "main": "index.ts",
+  "main": "index.js",
   "scripts": {
-    "dev": "bun --hot index.ts",
+    "dev": "bun --hot index.js",
     "start": "node index.js",
     "pair": "node index.js pair"
   },

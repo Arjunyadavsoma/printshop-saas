@@ -2414,3 +2414,70 @@ Verification:
 - `bunx vitest run` → 217 / 217 pass (unchanged from baseline).
 
 Files changed: 2 (`src/app/shop/orders/page.tsx`, `src/app/shop/printer/page.tsx`).
+
+---
+Task ID: native-printer-engine-guide
+Agent: main (Z.ai Code)
+Task: Build a step-by-step installation guide for the Native Windows Printer engine on the shopkeeper's Printer Setup page. First ASK which print engine to use (PrintLatch vs Native Windows Printer), then go through detailed step-by-step instructions for the chosen engine.
+
+Work Log:
+- Read the existing native-printer mini-service (`mini-services/native-printer/index.ts`) + printlatch browser client (`src/lib/printlatch/client.ts`) + printer setup page (`src/app/shop/printer/page.tsx`, 685 lines) + middleware CSP (already allows port 32192).
+- Discovered TWO bugs blocking the user's intended `node index.js pair --origin=...` then `node index.js` flow:
+  1. No `index.js` existed — only `index.ts`. Node can't run TypeScript, so `node index.js` would fail.
+  2. Pairing persistence bug: the `pair` CLI command generated a code in a module-level variable then `process.exit(0)`. When the server started later (fresh process), the code was gone → POST /v1/pair would ALWAYS fail with "Invalid or expired pairing code".
+
+- Fixed the native-printer service:
+  - Created `mini-services/native-printer/index.js` — plain Node.js (ESM, `type: module`), no TypeScript, runnable with `node index.js` and `node index.js pair --origin=...`.
+  - Fixed the pairing persistence: the `pair` command now writes `{ code, origin, expiry }` to `.pairing-state.json` (in the script's directory) and exits. On server start, `loadPairingState()` reads the file, loads the code into memory, and the POST /v1/pair handler consumes it (deletes the file). Codes last 15 minutes (was 5 — generous because the shopkeeper starts the server after pairing).
+  - Added rate limiting (20 jobs/min sliding window), a friendlier pairing-code banner, a friendlier server-start banner, origin validation in the `pair` command.
+  - Updated `package.json`: `main: index.js`, `start: node index.js`, `dev: bun --hot index.js`, `pair: node index.js pair`.
+  - Deleted the stale `index.ts` (was `@ts-nocheck` and unused by the build).
+  - `node --check index.js` → syntax OK.
+
+- Created `src/lib/native-printer/client.ts` — browser client for port 32192:
+  - Two-stage status check: GET /health (unauthed, no Origin header) → GET /v1/printers (authed) to determine state (pairing-required / connected / disconnected / error).
+  - Pairing: `confirmNativePrinterPairing(code)` → POST /v1/pair → stores bearer token in `localStorage.native_printer_token` (separate key from printlatch).
+  - Printers, job submit (multipart: file + printerName + copies + duplex + paperSize + color + orientation), job status, retry, cancel, disconnect.
+  - `fetchPdfBytes(presignedUrl)` helper (duplicated from printlatch so the native flow doesn't import the printlatch client).
+  - Engine preference: `getEnginePref() / saveEnginePref(engine) / clearEnginePref()` using `localStorage.printshop_print_engine` ('printlatch' | 'native' | null).
+  - Command helpers: `getNativePairingCommand()` (uses `window.location.origin` so the `--origin` always matches the current website), `getNativeStartCommand()`, `getNativeInstallCommand()`, `getNativeHealthUrl()`.
+
+- Refactored `src/app/shop/printer/page.tsx` (now ~720 lines, split into 3 components):
+  - `PrinterSetupPage` (root): loads the engine preference from localStorage. If null → renders `<EnginePicker>`. If set → renders a "Using: X" banner with a "Change engine" button + the chosen section.
+  - `EnginePicker`: two big selectable cards (PrintLatch = Recommended, Native Windows Printer = Advanced), each with icon, badge, feature bullets, and a "Choose X →" call-to-action. Plus a "Not sure which to pick?" help block.
+  - `PrintLatchSection`: the existing PrintLatch UI (connection status, print mode, supply tracking, 6-step setup guide, troubleshooting) — preserved unchanged, just moved into a sub-component. (Ids of the troubleshooting `<CardContent>` renamed from `ts` → `ts-pl` to avoid a duplicate-id collision with the native section.)
+  - `NativePrinterSection` (NEW): connection status card (shows Connected / Service Down / Pairing Required / Checking + "Service running" + "Native library loaded" badges), available-printers table (shown when connected), and a 7-step setup guide:
+    1. Install Node.js 22+ (one-time) — nodejs.org link + `node --version` check + "Why Node.js 22+?" callout
+    2. Download the native-printer folder (one-time) — GitHub link + folder structure
+    3. Install dependencies (one-time) — `cd C:\PrintShop\native-printer` + `npm install` (both as a multiline block and as separate commands) + Visual Studio Build Tools callout
+    4. Generate the pairing code — `node index.js pair --origin=<current-origin>` (dynamic) + a preview of the exact console output the shopkeeper will see
+    5. Enter the pairing code here — input field (placeholder `PS-XXXXXXXX-XXXXXXXX-XXXXXXXX`) + Confirm pairing button (disabled until code typed, enabled after — verified via Agent Browser) + tip about ordering (pair first or start service first, both work)
+    6. Start the service — `node index.js` + a preview of the exact console output + "⚠️ Leave this window open!" callout + health-check URL link
+    7. You're ready to print! — order flow explanation + how to stop/restart
+  - Native troubleshooting card (collapsible) with 8 common-failure rows.
+
+- Created `mini-services/native-printer/README.md` — standalone reference for the shopkeeper (quick start, daily usage, security, architecture diagram, API table, troubleshooting matrix, requirements).
+
+Verification:
+- `bunx tsc --noEmit` → 0 errors.
+- `bun run lint` → 0 warnings.
+- `node --check mini-services/native-printer/index.js` → syntax OK.
+- Dev server log (`tail dev.log`) → no compile/runtime errors during the session (only React DevTools info + HMR/Fast Refresh logs).
+- Agent Browser self-verification (logged in as `owner@quickprint.demo / demo1234`):
+  1. `/shop/printer` → engine picker renders with both options (PrintLatch "Recommended", Native Windows Printer "Advanced"). ✓
+  2. Click "Native Windows Printer" → 7-step guide renders fully: Install Node.js 22+, Download folder, Install dependencies, Generate pairing code, Enter pairing code, Start service, You're ready to print. ✓
+  3. Code blocks contain the right commands: `cd C:\PrintShop\native-printer`, `npm install`, `node index.js pair --origin=http://localhost:3000` (dynamic origin), `node index.js`, `node --version`, the pairing-code console preview, the service-running console preview. ✓
+  4. Pairing input: typed `PS-TEST-CODE-1234` → "Confirm pairing" button enabled (was disabled before typing). ✓
+  5. "Change engine" button → returns to the picker. ✓
+  6. Click "PrintLatch" → 6-step PrintLatch guide renders fully (Download+Install, Verify running, Pair, Enter code, Select mode+printers, Ready to print). ✓
+  7. No page errors, no console errors. ✓
+  8. Footer at y=2032 with a 577 viewport → correct "natural push on overflow" behavior (the printer page is long; the footer flows below the fold, not overlaid). ✓
+- Screenshots saved: `tool-results/printer-engine-picker.png` (65 KB), `tool-results/printer-native-guide.png` (214 KB, full page).
+
+Stage Summary:
+- The Printer Setup page now first ASKS the shopkeeper which print engine to use (PrintLatch vs Native Windows Printer), then shows a detailed step-by-step installation guide for the chosen engine. The choice persists in localStorage; a "Change engine" button lets them switch at any time.
+- The Native Windows Printer guide includes the exact commands the user requested (`cd mini-services/native-printer`, `npm install`, `node index.js pair --origin=...`, copy pairing code, enter on website, `node index.js`, service at http://127.0.0.1:32192) plus prerequisite steps (Node.js 22+, download folder, build tools) and post-setup steps (health check, print from order page, daily usage, troubleshooting).
+- Fixed two blocking bugs in the native-printer service: (1) created a plain-JS `index.js` (Node can't run the old `index.ts`), (2) fixed pairing persistence so the two-step `pair` → `start` flow actually works (the code is now saved to `.pairing-state.json` and read on server start).
+- Files changed: 4 created (`mini-services/native-printer/index.js`, `mini-services/native-printer/README.md`, `src/lib/native-printer/client.ts`, `tool-results/printer-*.png`), 1 rewritten (`src/app/shop/printer/page.tsx`), 1 updated (`mini-services/native-printer/package.json`), 1 deleted (`mini-services/native-printer/index.ts`).
+- No DB changes. No migrations. No new main-app dependencies (the `windows-pdf-printer-native` dep is in the mini-service's own package.json, only installed on the shopkeeper's Windows machine). No API routes changed. No tests added (UI changes are pure presentation; the existing printlatch test suite covers the printlatch API contract; the native-printer service runs on the shopkeeper's machine, not in the sandbox).
+- NOT hardware-verified: actual `node index.js pair` on a real Windows machine, actual `npm install windows-pdf-printer-native`, actual PDF submission to a real Windows printer. The service is syntactically valid (`node --check` OK) and the API contract matches the browser client, but the native library can't be installed on this Linux sandbox.
