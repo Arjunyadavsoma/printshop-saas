@@ -41,6 +41,14 @@ import {
 import { formatINRFromPaise } from '@platform/utils';
 import { ALLOWED_ORDER_TRANSITIONS, type OrderStatus } from '@platform/core/domain';
 import {
+  checkPrintLatchStatus,
+  submitPrintLatchJob,
+  getPrintLatchJobStatus,
+  fetchPdfBytes,
+  getPairingCommand,
+  PRINTLATCH_DASHBOARD_URL,
+} from '@/lib/printlatch/client';
+import {
   ArrowLeft,
   RefreshCw,
   Loader2,
@@ -731,16 +739,24 @@ export default function ShopOrderDetailPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(f.pricePaise)}</TableCell>
                         <TableCell className="pr-4 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void downloadFile(f)}
-                            disabled={downloading === f.id || isCollected}
-                            className="gap-1.5"
-                          >
-                            {downloading === f.id ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                            Download
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void downloadFile(f)}
+                              disabled={downloading === f.id || isCollected}
+                              className="gap-1.5"
+                            >
+                              {downloading === f.id ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                              Download
+                            </Button>
+                            <PrintLatchButton
+                              file={f}
+                              orderId={orderId}
+                              api={api}
+                              disabled={isCollected}
+                            />
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -913,6 +929,170 @@ function Instruction({ label, value, mono = false }: { label: string; value: str
     <div className="flex flex-col gap-0.5">
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className={`break-words text-sm ${mono ? 'font-mono' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PrintLatchButton — the shopkeeper's "Print via PrintLatch" action.
+// Shows the agent connection state + submits the file to the local agent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PrintLatchJobState {
+  status: 'idle' | 'fetching-url' | 'fetching-pdf' | 'submitting' | 'polling' | 'completed' | 'failed' | 'unknown';
+  agentJobId?: string;
+  error?: string;
+}
+
+function PrintLatchButton({
+  file,
+  orderId,
+  api,
+  disabled,
+}: {
+  file: PrintFile;
+  orderId: string;
+  api: ReturnType<typeof useApiClient>;
+  disabled: boolean;
+}) {
+  const [jobState, setJobState] = useState<PrintLatchJobState>({ status: 'idle' });
+  const [agentConnected, setAgentConnected] = useState<boolean | null>(null);
+  const [showPairing, setShowPairing] = useState(false);
+
+  // Check agent status once on mount (lightweight — just one fetch).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { state } = await checkPrintLatchStatus();
+      if (!cancelled) setAgentConnected(state === 'connected');
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handlePrint = async () => {
+    if (jobState.status === 'fetching-url' || jobState.status === 'fetching-pdf' || jobState.status === 'submitting') return;
+
+    setJobState({ status: 'fetching-url' });
+    try {
+      // 1. Get the short-lived presigned PDF URL from the server.
+      const urlR = await api.request<{
+        data?: {
+          downloadUrl: string;
+          filename: string;
+          copies: number;
+          colorMode: 'bw' | 'color';
+          duplex: boolean;
+          paperSize: string;
+          pageRange?: string | null;
+        };
+        error?: { message?: string };
+      }>('GET', `/api/v1/shops/me/orders/${orderId}/files/${file.id}/print-url`);
+      if (urlR.status !== 200 || !urlR.data?.data) {
+        throw new Error(urlR.data?.error?.message ?? 'Could not get print URL');
+      }
+      const { downloadUrl, filename, copies, colorMode, duplex, paperSize, pageRange } = urlR.data.data;
+
+      // 2. Fetch the PDF bytes from the presigned URL.
+      setJobState({ status: 'fetching-pdf' });
+      const pdfBytes = await fetchPdfBytes(downloadUrl);
+
+      // 3. Submit to the local PrintLatch agent.
+      setJobState({ status: 'submitting' });
+      const job = await submitPrintLatchJob({
+        pdf: pdfBytes,
+        filename,
+        copies,
+        colorMode,
+        duplex,
+        paperSize,
+        pageRange: pageRange ?? undefined,
+      });
+
+      setJobState({ status: 'polling', agentJobId: job.id });
+
+      // 4. Poll the job status (up to 10 attempts, 2s apart).
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const status = await getPrintLatchJobStatus(job.id);
+        if (status.status === 'completed') {
+          setJobState({ status: 'completed', agentJobId: job.id });
+          return;
+        }
+        if (status.status === 'failed') {
+          setJobState({ status: 'failed', agentJobId: job.id, error: status.error ?? 'Print job failed' });
+          return;
+        }
+        if (status.status === 'unknown') {
+          setJobState({ status: 'unknown', agentJobId: job.id, error: status.error ?? 'Unknown status — check printer queue before retrying' });
+          return;
+        }
+        // 'queued' | 'submitting' | 'accepted' → keep polling
+      }
+      // Timed out after 20s of polling — treat as 'unknown'.
+      setJobState({ status: 'unknown', agentJobId: job.id, error: 'Job status timed out — check your printer queue before retrying' });
+    } catch (err) {
+      setJobState({ status: 'failed', error: err instanceof Error ? err.message : 'Print failed' });
+    }
+  };
+
+  const isBusy = ['fetching-url', 'fetching-pdf', 'submitting', 'polling'].includes(jobState.status);
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => void handlePrint()}
+        disabled={disabled || isBusy || agentConnected === false}
+        className="gap-1.5"
+        title={agentConnected === false ? 'PrintLatch agent not connected — pair or start the agent first' : 'Print via PrintLatch'}
+      >
+        {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
+        {isBusy ? 'Printing…' : 'Print'}
+      </Button>
+
+      {/* Status indicator */}
+      {jobState.status === 'completed' && (
+        <span className="text-[10px] font-medium text-emerald-600">✓ Printed</span>
+      )}
+      {jobState.status === 'failed' && (
+        <div className="flex flex-col items-end">
+          <span className="text-[10px] font-medium text-destructive">✗ {jobState.error}</span>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">
+            Retry
+          </button>
+        </div>
+      )}
+      {jobState.status === 'unknown' && (
+        <div className="flex flex-col items-end">
+          <span className="text-[10px] font-medium text-amber-700">⚠ {jobState.error}</span>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">
+            Retry after checking queue
+          </button>
+        </div>
+      )}
+
+      {/* Pairing help (collapsible) */}
+      {agentConnected === false && (
+        <div className="mt-1">
+          <button onClick={() => setShowPairing((v) => !v)} className="text-[10px] text-muted-foreground hover:underline">
+            Agent not connected — show setup
+          </button>
+          {showPairing && (
+            <div className="mt-1 max-w-xs rounded-md border border-border bg-muted/50 p-2 text-[10px] text-muted-foreground">
+              <p className="font-medium text-foreground">PrintLatch setup:</p>
+              <ol className="mt-1 list-decimal pl-3 space-y-0.5">
+                <li>Open <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" className="text-amber-700 underline">PrintLatch dashboard</a> → confirm "Agent connected"</li>
+                <li>Run the pairing command on this computer:</li>
+              </ol>
+              <code className="mt-1 block break-all rounded bg-card p-1.5 text-[9px]">{getPairingCommand()}</code>
+              <p className="mt-1">If <code>printlatch</code> is not on PATH, use the full path:</p>
+              <code className="mt-1 block break-all rounded bg-card p-1.5 text-[9px]">%LOCALAPPDATA%\PrintLatch\bin\printlatch.exe pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}</code>
+              <p className="mt-1">Then click <button onClick={() => setAgentConnected(null)} className="text-amber-700 underline">retry connection check</button>.</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

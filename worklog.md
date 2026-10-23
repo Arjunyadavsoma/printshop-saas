@@ -2037,3 +2037,62 @@ Stage Summary:
 - Homepage: removed the Shopkeeper Portal button from the hero; kept the footer link.
 - Pricing: the existing `pricingConfig` model + PATCH route already supported editing. Fix: changed the settings page from read-only to editable with a Save button.
 - No database migrations needed. No infrastructure changes. All 197 tests pass. tsc 0 errors. lint 0 warnings.
+
+---
+Task ID: printlatch-integration
+Agent: orchestrator (senior full-stack engineer)
+Task: Integrate PrintLatch (local Windows printing agent) into PrintShop SaaS so shopkeepers can print customer orders directly from their browser.
+
+Work Log:
+- Phase 1 — Inspection: reviewed the existing print architecture (print-agent daemon via socket.io, PrintJob Prisma model, /shop/printer page, order detail page's "Start printing" action, existing /agents/* API routes). The existing system uses a separate daemon process that connects via WebSocket — PrintLatch replaces this with a simpler browser-to-local-agent HTTP flow.
+
+- Architecture chosen: **browser-origin pairing integration**. The shopkeeper's browser (on the same Windows machine as PrintLatch) talks directly to the local agent at `http://127.0.0.1:32191`. The PrintShop server (Vercel) generates a short-lived (60s) presigned PDF download URL — the browser fetches the PDF bytes + sends them to the PrintLatch agent. No server secrets, pairing tokens, or local-agent credentials are in the browser bundle. The server's `withAuth(['owner'])` + `repos.shops.getByOwner` + `repos.orders.findByIdAndShop` enforce triple-layered authorization.
+
+- Files changed (5 total: 3 new, 2 modified):
+  - NEW `src/lib/printlatch/client.ts` — the browser-side PrintLatch client module. Exports: `checkPrintLatchStatus()` (GET /api/status), `submitPrintLatchJob()` (POST /api/jobs with PDF bytes + print settings), `getPrintLatchJobStatus()` (GET /api/jobs/:id), `fetchPdfBytes()` (fetch from presigned URL), `getPairingCommand()`, `PRINTLATCH_AGENT_URL`, `PRINTLATCH_DASHBOARD_URL`.
+  - NEW `src/app/api/v1/shops/me/orders/[id]/files/[fileId]/print-url/route.ts` — the server-side endpoint that generates a 60-second presigned download URL for a specific order file. Uses `withAuth(['owner'])` + `repos.shops.getByOwner` + `repos.orders.findByIdAndShop` + `repos.files.findByOrder` for triple-layered authorization. Returns the presigned URL + the file's print settings (copies, colorMode, duplex, paperSize, pageRange) so the browser can send them to PrintLatch without a second API call. Audit-logs `file.print-url`.
+  - NEW `src/lib/printlatch/printlatch.test.ts` — 18 regression tests covering: status check (connected, pairing-required, disconnected, timeout, HTTP error), job submission (success, HTTP error, form data fields), job status polling (success, 404 → unknown, HTTP error), PDF fetching (success, HTTP error), pairing command generation, CSP includes the PrintLatch origin, payment/order status independence.
+  - MODIFIED `src/middleware.ts` — added `http://127.0.0.1:32191` to the CSP `connect-src` so the browser can talk to the local PrintLatch agent. (The Supabase origin is still conditionally added from `SUPABASE_URL`.)
+  - MODIFIED `src/app/shop/orders/[id]/page.tsx` — added a `PrintLatchButton` component to each file row in the order detail table. The button:
+    1. Checks the PrintLatch agent connection on mount.
+    2. On click: fetches the presigned PDF URL from the server → fetches the PDF bytes → submits to the local PrintLatch agent → polls job status (up to 10 attempts, 2s apart).
+    3. Shows: submitting → polling → completed (green "✓ Printed") / failed (red "✗" + retry) / unknown (amber "⚠ check printer queue before retrying" + retry).
+    4. Disables while busy (prevents duplicate clicks).
+    5. Shows a collapsible pairing guide if the agent is not connected (pairing command, executable path, dashboard link).
+
+- PrintLatch pairing steps for the shopkeeper:
+  1. Install PrintLatch on the Windows 11 computer (already done — the executable is at `%LOCALAPPDATA%\PrintLatch\bin\printlatch.exe`).
+  2. Start the PrintLatch agent (if not auto-started — check the dashboard at `http://127.0.0.1:32191/app/`).
+  3. Open the PrintShop shopkeeper dashboard (e.g., `https://printshop-saas-three.vercel.app/shop/dashboard`) → Settings → Printer Setup.
+  4. Run the pairing command in Windows Terminal:
+     `printlatch pair --origin https://printshop-saas-three.vercel.app --name "PrintShop SaaS"`
+     (If `printlatch` is not on PATH, use the full path:
+     `%LOCALAPPDATA%\PrintLatch\bin\printlatch.exe pair --origin https://printshop-saas-three.vercel.app --name "PrintShop SaaS"`)
+  5. Open an eligible order → click "Print" next to the file → the PrintLatch agent prints it on the configured printer.
+
+- Environment variables / configuration needed:
+  - No NEW environment variables. The PrintLatch agent URL (`http://127.0.0.1:32191`) is hardcoded in the client module (it's a well-known loopback address — not a secret).
+  - The CSP is updated to allow `http://127.0.0.1:32191` in `connect-src` — no env var needed (the PrintLatch origin is a fixed loopback address).
+  - The presigned PDF URL endpoint uses the existing storage adapter's `getPresignedDownloadUrl` — no new storage configuration needed.
+
+- Test commands + results:
+  - `bunx tsc --noEmit`: 0 errors.
+  - `bun run lint`: 0 warnings, 0 errors.
+  - `bunx vitest run`: 21 test files, 215/215 tests pass (197 prior + 18 new PrintLatch tests).
+  - Production build: NOT RUN (forbidden by sandbox rules).
+
+- Limitations imposed by the current PrintLatch release:
+  - The exact PrintLatch API endpoints (GET /api/status, POST /api/jobs, GET /api/jobs/:id) are based on common REST patterns + the documented integration methods. If the actual PrintLatch release uses different endpoints, the paths in `src/lib/printlatch/client.ts` need to be adjusted. The rest of the integration (auth, presigned URLs, UI, CSP, tests) is agnostic to the exact API paths.
+  - PrintLatch's browser-origin pairing requires the shopkeeper to run the pairing command on the SAME Windows machine where the browser + agent are running. If the shopkeeper uses a different computer, the browser can't reach the agent (it's on `127.0.0.1`).
+  - The `connect-src http://127.0.0.1:32191` in the CSP allows the browser to talk to the PrintLatch agent. Browsers treat `127.0.0.1` as a secure context even on HTTPS pages (loopback exemption). No mixed-content blocking.
+
+- Remaining manual setup:
+  - The shopkeeper needs to: (1) start PrintLatch, (2) pair the origin, (3) confirm the printer is configured in the PrintLatch dashboard.
+  - The PrintLatch agent must be running on the shopkeeper's Windows machine before the "Print" button can work.
+  - If `printlatch` is not on PATH, the shopkeeper uses the full executable path.
+
+- Whether actual printing was verified on hardware: NO. The tests use mocked PrintLatch agent responses (deterministic unit tests). No real PDF was sent to a real PrintLatch agent or printed on a real printer. The integration is verified logically (the code path, the auth, the CSP, the UI flow) but NOT physically.
+
+- Migration / deployment actions remaining: (1) the changes are NOT committed (per "Do not commit, push, deploy... without explicit authorization"); (2) NO database migrations needed (the existing `PrintJob` model is not used by the PrintLatch integration — the PrintLatch client tracks job status in-memory during the print flow); (3) NO Vercel settings changes; (4) NO production promotion.
+
+- Payment + order status independence: the print flow does NOT touch `order.paidAt`, `order.paymentTxnId`, `order.paymentUtr`, or `order.status`. The presigned URL endpoint does NOT check payment status (the shopkeeper can print any file in their shop's orders). Payment status is tracked separately via the existing `verify-payment` route + the existing webhook service — unchanged by this integration.

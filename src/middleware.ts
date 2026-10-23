@@ -40,9 +40,15 @@ export function middleware(_req: NextRequest) {
   // Build the CSP directives. The Supabase origin is added to connect-src
   // (for XHR PUT uploads) + img-src (for presigned download URLs) only when
   // SUPABASE_URL is set (production). In dev (memory storage), it's omitted.
+  // The PrintLatch agent runs locally at http://127.0.0.1:32191. The browser
+  // needs to talk to it for direct printing (fetch the PDF from the server's
+  // presigned URL → send bytes to the local agent). This is a loopback address
+  // (treated as a secure context by browsers even on HTTPS pages).
+  const printlatchOrigin = 'http://127.0.0.1:32191';
+
   const connectSrc = supabaseOrigin
-    ? `'self' ws: wss: ${supabaseOrigin}`
-    : "'self' ws: wss:";
+    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin}`
+    : `'self' ws: wss: ${printlatchOrigin}`;
   const imgSrc = supabaseOrigin
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
