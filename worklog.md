@@ -2562,3 +2562,1596 @@ Stage Summary:
 - Files changed: 1 created (`src/app/api/v1/downloads/native-printer/route.ts`), 1 modified (`src/app/shop/printer/page.tsx` — Step 2 rewrite + Steps 3/4/6 + troubleshooting .bat mentions), 2 updated (`package.json` + `bun.lock` for the jszip dependency).
 - No DB changes. No migrations. No API routes changed beyond the new download route. No tests added (the download route is a pure file-bundling helper with no business logic; the curl + unzip verification covers the contract).
 - Pushed to GitHub (commit c73be84). Vercel will auto-deploy.
+
+---
+Task ID: p5
+Agent: sub-agent (Phase 5 — Database + data integrity)
+Task: Audit Prisma schema, migrations, + repository methods for data-integrity issues.
+
+Findings (16 total: 1 Critical, 3 High, 5 Medium, 7 Low):
+
+CRITICAL — DB-001: Migration SQL is out of sync with schema.prisma
+  - File: prisma/migrations/20261015172034_init/migration.sql (176 lines)
+  - Evidence: `grep -c tokenNumber migration.sql` returns 0. The schema declares
+    `Order.tokenNumber String?` (line 73) + `@@unique([shopId, tokenNumber])`
+    (line 79). The migration creates the Order table WITHOUT the tokenNumber
+    column AND without the composite-unique index.
+  - Impact: A developer who runs `prisma migrate deploy` (instead of
+    `prisma db push` — both are valid Prisma commands) against a fresh SQLite
+    DB gets an INCOMPLETE schema. Every code path that touches
+    `Order.tokenNumber` (createWithUniqueToken, findByTokenNumber, the daily
+    report, the customer status route, the admin order detail route) would
+    throw at runtime. The committed migration is also the baseline recorded
+    by `scripts/pg-migrate-prod.sh` — meaning a team that trusts the
+    migration file alone (without the pg-migrate-prod.sh DDL regeneration)
+    ships a broken schema.
+  - Note: dev (`bun run db:push`) and prod (`pg-migrate-prod.sh`) both bypass
+    the committed migration file by regenerating DDL from schema.prisma
+    directly — so the file is orphaned. The trap is dormant, not active.
+  - Fix: regenerate the migration: `DATABASE_URL=file:./db/custom.db bunx
+    prisma migrate dev --name init --create-only --skip-generate`. Then
+    verify the new migration.sql contains the tokenNumber column + the
+    Order_shopId_tokenNumber unique index. Commit. Re-run integration tests.
+
+HIGH — DB-002: Timezone-aware "today" calculation is broken in the daily report
+  - File: src/app/api/v1/shops/me/reports/daily/route.ts:21-24
+  - Evidence:
+      const tz = shop.timezone || 'Asia/Kolkata';     // ← read
+      const targetDate = dateParam ? ... : new Date();
+      const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0); // ← tz IGNORED
+      const endOfDay   = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+  - Impact: `setHours()` uses the SERVER's local timezone. On Vercel (UTC)
+    a Kolkata shop's "today" starts at 18:30 UTC (00:00 IST) and ends at
+    18:29:59 UTC — but `setHours(0,0,0,0)` on a UTC server produces
+    00:00 UTC = 05:30 IST. Daily reconciliation silently attributes orders
+    placed between 00:00 IST and 05:30 IST to the PREVIOUS day. Shopkeeper
+    reports + admin analytics are wrong by up to 5h30m.
+  - Fix: compute the UTC instants for tz-local midnight using
+    Intl.DateTimeFormat with `timeZone: tz` to get the YYYY-MM-DD in the
+    shop's tz, then construct `new Date('${date}T00:00:00+05:30')` (with
+    the correct offset — note +05:30 is IST; do NOT hardcode, use
+    `Intl.DateTimeFormat(...).formatToParts` + a manual offset lookup,
+    or depend on `date-fns-tz`'s `zonedTimeToUtc`). Filter `o.createdAt`
+    against the resulting UTC instants.
+
+HIGH — DB-003: Cross-tenant update relies on caller discipline, not the DB layer
+  - Files: src/app/api/v1/shops/me/orders/[id]/{start,cancel,ready,complete,
+    verify-payment,print}/route.ts; src/lib/payments/webhook.service.ts:205,307;
+    src/lib/services/print.service.ts:87
+  - Evidence: Every shop-scoped route does `findByIdAndShop(id, shop.id)`
+    (correct tenant check) then immediately calls the UNSCOPED mutator
+    `repos.orders.update(order.id, { status: ... })`. The tenant-scoped
+    mutator `updateByShop(id, shopId, patch)` exists (order.repository.ts:261)
+    but is called from EXACTLY ONE production site
+    (src/app/api/v1/shops/me/orders/[id]/route.ts:44, the notes PATCH).
+    All 9 other call sites use the unscoped `update(order.id, ...)`.
+  - Impact: Currently safe because `order.id` is a UUID that uniquely
+    identifies one row in one shop — no cross-tenant leak YET. But the
+    safety is convention-only. A future refactor that drops the
+    `findByIdAndShop` precondition, or that passes a user-controllable id
+    into `update()`, becomes a cross-tenant write. The DB layer should
+    enforce what the route layer assumes.
+  - Fix: replace every `repos.orders.update(order.id, { ... })` in the
+    shop-scoped routes + webhook.service.ts + print.service.ts with
+    `repos.orders.updateByShop(order.id, shop.id, { ... })`. The webhook
+    service already has `shop.id` in scope (line 117). The print service
+    has shopId passed in.
+
+HIGH — DB-004: Order state transitions are read-modify-write races
+  - Files: src/app/api/v1/shops/me/orders/[id]/{start,cancel,ready,complete,
+    verify-payment,print}/route.ts; src/lib/payments/webhook.service.ts:205
+  - Evidence: every transition does `canTransitionOrder(order.status, X)`
+    THEN `repos.orders.update(order.id, { status: X })`. The update has
+    NO `WHERE status = <expected>` precondition. The agent status
+    endpoint (src/app/api/v1/agents/jobs/[id]/status/route.ts:39-46)
+    demonstrates the correct pattern: `db.update('printJob', { id, shopId,
+    status: 'queued' }, { status: 'printing', ... })` — atomic conditional
+    update, 0 rows = someone else won, skip.
+  - Impact: two concurrent `POST /verify-payment` requests for the same
+    order both pass `canTransitionOrder('awaiting_payment', 'paid')`, both
+    run the update. The SECOND update overwrites the FIRST's
+    `paymentTxnId`/`paidAt`/`paymentUtr` — first shopkeeper's manual-txn
+    id is silently lost; two audit entries are logged for the same
+    transition. The webhook replay guard (`paymentTxnId UNIQUE`) catches
+    only the case where BOTH calls set the SAME txnId — different txnIds
+    (the common case for two manual verifies) race silently.
+  - Fix: switch to conditional updates: `db.update('order', { id, shopId,
+    status: 'awaiting_payment' }, { status: 'paid', paymentTxnId, paidAt,
+    ... })`. If 0 rows returned, treat as idempotent (return 200) or 409.
+
+HIGH — DB-005: `recoverStaleJobsOnStartup` (audit-log pruning + stale-job
+           recovery) is dead code — never called
+  - File: src/lib/container.ts:306-326
+  - Evidence: `grep -rn recoverStaleJobsOnStartup src/` finds the function
+    DEFINITION at container.ts:307 and ZERO call sites. The function is
+    exported, never imported. No `instrumentation.ts` file exists. No
+    route calls it. No Vercel Cron invokes it.
+  - Impact:
+    (a) Stale 'printing' PrintJobs never auto-recover to 'needs_review'.
+        A worker that crashes mid-print leaves the job stuck in 'printing'
+        forever (until manual review or DB cleanup). The dashboard shows
+        a ghost "printing now" badge indefinitely.
+    (b) Audit logs are NEVER pruned. The AuditLog table grows unbounded.
+        On a 500MB free-tier Neon DB, at ~100 orders/day × ~10 audit
+        entries each, the table fills in ~6 months. Docs at
+        docs/ZERO_BUDGET_HA.md:286 say "Prune audit logs older than 30
+        days" — the code to do so exists but never runs.
+  - Fix: add `instrumentation.ts` at the project root:
+        export async function register() {
+          if (process.env.NODE_ENV === 'production') {
+            const { recoverStaleJobsOnStartup } = await import(
+              '@/lib/container');
+            void recoverStaleJobsOnStartup().catch(() => {});
+          }
+        }
+    Next.js calls `register()` once on cold start. The `staleRecovered`
+    module-level flag inside the function prevents re-running within the
+    same warm process. For continuous-process deployments, also add a
+    Vercel Cron (or a daily self-ping to /api/v1/health) to re-run
+    pruning on a schedule.
+
+MEDIUM — DB-006: `Order.paidAt` is nullable + uncorrelated with `status`
+  - File: prisma/schema.prisma:70 (paidAt DateTime?)
+  - Evidence: nothing in the schema or the partial-unique SQL enforces
+    the invariant "if status='paid' then paidAt IS NOT NULL (and vice
+    versa)". A code path that sets `status='paid'` without `paidAt`
+    produces an inconsistent row. The current code paths (webhook,
+    verify-payment, dev mark-paid) all set both — but there's no DB
+    guard against future regressions.
+  - Fix: add a CHECK constraint in pg-constraints.sql:
+        ALTER TABLE "Order" ADD CONSTRAINT "Order_paid_consistency"
+        CHECK ((status = 'paid') = ("paidAt" IS NOT NULL));
+    (SQLite doesn't enforce CHECK by default — Prisma's `db push` ignores
+    CHECK clauses. The Postgres prod path via pg-constraints.sql is where
+    to add it. Document that the dev SQLite path doesn't enforce it.)
+
+MEDIUM — DB-007: PrintJob_active_file_unique partial index is missing in
+            SQLite dev — race-condition defense is dev-bypassed
+  - File: prisma/pg-constraints.sql:32-34 (the partial unique index)
+  - Evidence: `pg-constraints.sql` is applied ONLY by
+    `scripts/pg-migrate-prod.sh` (prod) + `scripts/postgres-integration.test.ts`
+    (staging test). Dev SQLite uses `bun run db:push` which only creates
+    indexes declared in schema.prisma — the partial unique is NOT declared
+    there (Prisma can't express partial uniques). So the dev DB has NO
+    constraint enforcing "at most one active PrintJob per file".
+  - Impact: in dev, two concurrent `enqueuePaidOrderPrint` calls for the
+    same file (e.g., a webhook + a manual retry) both pass the
+    application-layer `findActiveByFile` check (TOCTOU), both INSERT,
+    NO unique violation is thrown (the constraint doesn't exist), two
+    PrintJobs are silently created for the same file. The retry-on-P2002
+    catch in webhook.service.ts:291 NEVER fires in dev.
+  - Note: the ConstrainedInMemoryDatabaseAdapter (test fixture) DOES
+    simulate the constraint when `addUnique(['printJob', ['fileId']])`
+    is registered — see atomic-claim + print-job-idempotency tests.
+  - Fix: (a) add a comment in schema.prisma near PrintJob noting that
+    dev lacks the partial unique + the application-layer check is the
+    only defense in dev; (b) consider migrating dev to Postgres
+    (DATABASE_URL=postgresql://localhost:5433/printshop_dev) so the
+    partial unique is present, OR add a Prisma middleware that simulates
+    the constraint in dev.
+
+MEDIUM — DB-008: 30-day audit-log retention conflicts with 7-year
+            financial-record law (acknowledged tradeoff, not a defect)
+  - File: src/lib/container.ts:320 (prune > 30 days)
+  - Evidence: AuditLog entries include `webhook.${provider}.paid` with
+    txnId + utr in metadata (webhook.service.ts:233). Indian law
+    (worklog.md:371) requires 7-year retention of payment records. The
+    Order table itself retains paymentTxnId/paymentUtr/paidAt
+    indefinitely (no pruning), but the per-event audit trail (who
+    verified, when, with what txnId) is lost after 30 days.
+  - Impact: reconciliation disputes older than 30 days lose the audit
+    trail. Acceptable for the free-tier pilot, not for a paid product.
+  - Fix: bump the retention to 7 years for entries with
+    `action LIKE 'webhook.%.paid' OR action = 'order.payment.verify' OR
+    action = 'order.cancel'`. Or partition the AuditLog table by event
+    type (financial vs operational) with different retention. Document
+    the tradeoff in PRODUCTION_READINESS.md.
+
+MEDIUM — DB-009: PrismaDatabaseAdapter.update re-query drops the shopId
+            filter when an `id` is present
+  - File: src/lib/adapters/prisma-database.adapter.ts:67-77
+  - Evidence:
+      const idFilter = filter.id ? { id: filter.id } : filter;
+      return (await delegate.findMany({ where: idFilter })) as T[];
+    When `filter = { id, shopId, status: 'queued' }` and the patch
+    changes `status`, the re-query uses `{ id }` — dropping shopId.
+  - Impact: the UPDATE itself is correctly scoped (updateMany uses the
+    full filter), so no cross-tenant WRITE. But the re-query could
+    theoretically return a row from another shop if the id collided
+    (UUIDs make this impossible in practice). More practically: if
+    filter has NO id (bulk update by `{ shopId, status }`), the re-query
+    uses the full filter — which no longer matches the updated rows
+    (status changed) → returns [] even though rows WERE updated.
+  - Currently no production code does bulk updates via this method (all
+    repo .update calls pass an id). Latent bug, not active.
+  - Fix: change the re-query to use ALL non-mutated filter fields, OR
+    document the contract ("update() with a filter containing `id` is
+    the only supported shape; bulk updates return [] from the re-query
+    even on success"). Better: use Prisma's `updateManyAndReturn` (PG
+    only) or re-query by `id` ALWAYS (require id in the filter).
+
+MEDIUM — DB-010: `transaction()` in PrismaDatabaseAdapter is a no-op
+            (acknowledged, multi-step updates are not atomic)
+  - File: src/lib/adapters/prisma-database.adapter.ts:87-100
+  - Evidence: the `transaction` method runs the work against the ROOT
+    prisma client (no isolation), and `rollback()` just throws
+    `__ROLLBACK__`. The comment acknowledges this.
+  - Impact: multi-step updates like `complete/route.ts:19-34` (set
+    order.collected + delete files from storage) are NOT atomic — if
+    `storage.deleteMany` fails after `orders.update`, the order shows
+    'collected' but files remain in storage. Low practical impact (the
+    shopkeeper can re-trigger or the storage TTL will eventually clear).
+  - Fix: thread a real `prisma.$transaction` through the adapter
+    interface via AsyncLocalStorage. OR document that multi-step flows
+    are not atomic and design each step to be idempotent + retriable.
+
+LOW — DB-011: Redundant index on Shop.slug
+  - File: prisma/schema.prisma:13 + 42
+  - Evidence: `slug String @unique` (creates Shop_slug_key unique index)
+    AND `@@index([slug])` (creates Shop_slug_idx). The unique index
+    already serves both lookup + uniqueness — the extra plain index is
+    wasted space + write amplification.
+  - Fix: delete `@@index([slug])` (line 42).
+
+LOW — DB-012: PrintJob lacks `@@index([fileId])` for cross-status
+            queries (none currently exist)
+  - File: prisma/schema.prisma:124-126
+  - Evidence: the partial unique index in pg-constraints.sql provides
+    coverage for `findActiveByFile` (filters status IN queued,printing).
+    No production code does `findMany({ fileId })` across all statuses.
+    If such a query is added (e.g., admin "print history for this file"),
+    it would full-scan.
+  - Fix: add `@@index([fileId])` to PrintJob. One-line change.
+
+LOW — DB-013: `Order.paymentUtr` is not unique (replay of same UTR under
+            different txnIds is uncaught)
+  - File: prisma/schema.prisma:69 (paymentUtr String?)
+  - Evidence: `paymentTxnId` is `@unique` (line 68) — replay guard
+    against the same txn. `paymentUtr` (the customer's UPI UTR/RRN) is
+    not. UPI UTRs are globally unique per PSP — duplicates indicate a
+    PSP bug or a replay.
+  - Fix: add `@unique` to `paymentUtr`. NULLs-distinct semantics allow
+    unpaid orders to have NULL paymentUtr. Document in pg-constraints.sql
+    if a partial unique is preferred (excludes NULLs).
+
+LOW — DB-014: AuditLog lacks `@@index([createdAt])` for the admin
+            cross-shop "list recent" query
+  - File: prisma/schema.prisma:172
+  - Evidence: `@@index([shopId, createdAt])` is good for tenant queries.
+    The admin path `listRecent()` (audit-log.repository.ts:95) does
+    `findMany({}, { order: ['createdAt', 'desc'] })` — full scan + sort.
+    At 500-shop scale (each shop generating 10 audit entries/day = 5000
+    rows/day = 150k rows/month), this is a sequential scan on each
+    admin page load.
+  - Fix: add `@@index([createdAt])` to AuditLog. Small storage cost,
+    big speedup for admin queries.
+
+LOW — DB-015: Subscription model has no indexes for billing queries
+  - File: prisma/schema.prisma:145-157
+  - Evidence: only `shopId @unique` (1:1) exists. No index on `status`
+    or `currentPeriodEnd`. No code queries subscriptions yet (no
+    SubscriptionRepository). When billing lands, queries like "all
+    expired subscriptions" will full-scan.
+  - Fix: add `@@index([status])` + `@@index([currentPeriodEnd])` when
+    the first billing query is written.
+
+LOW — DB-016: SQLite-vs-Postgres divergence is documented but a
+            maintenance trap (not a defect)
+  - Files: prisma/schema.prisma (provider=sqlite), prisma/migrations/
+    migration_lock.toml (provider=sqlite), scripts/pg-migrate-prod.sh
+    (regenerates DDL for pg), prisma/pg-constraints.sql (pg-only)
+  - Evidence: dev uses SQLite via `db:push` (creates only Prisma-declared
+    indexes). Prod uses Postgres via `pg-migrate-prod.sh` (regenerates
+    DDL + applies pg-constraints.sql partial uniques). The partial
+    unique indexes (PrintJob_active_file_unique, Order_shop_tokenNumber)
+    exist ONLY in prod. Two divergence points:
+      (1) PrintJob_active_file_unique — see DB-007.
+      (2) Order_shop_tokenNumber_unique — the Prisma `@@unique([shopId,
+          tokenNumber])` creates a full UNIQUE in dev (NULLs-distinct
+          in both SQLite + Postgres) which matches the prod partial
+          unique's effect. No divergence here.
+  - SQLite-specific concerns: DATETIME columns are TEXT in SQLite
+    (lexicographic comparisons; Prisma marshals Date↔TEXT). Booleans
+    are 0/1. JSON is TEXT. All marshalled correctly by Prisma.
+  - Fix: consider standardizing on Postgres for dev + prod (eliminates
+    the divergence + the partial-unique gap in dev). Or add a CI step
+    that runs the postgres-integration test against every PR.
+
+Summary by severity:
+  Critical: 1 (DB-001 — migration drift)
+  High:     4 (DB-002 tz, DB-003 cross-tenant update convention, DB-004
+                 state-transition race, DB-005 dead recoverStaleJobsOnStartup)
+  Medium:   5 (DB-006 paidAt consistency, DB-007 dev partial-unique gap,
+                 DB-008 audit retention, DB-009 update re-query drop,
+                 DB-010 transaction no-op)
+  Low:      6 (DB-011 redundant slug index, DB-012 missing PrintJob fileId
+                 index, DB-013 paymentUtr non-unique, DB-014 AuditLog
+                 createdAt index, DB-015 Subscription indexes, DB-016
+                 SQLite-vs-Postgres divergence)
+
+Positive findings (verified correct):
+  - Money is uniformly integer paise (Int). No Decimal/Float/@db.Money fields.
+  - `paymentTxnId` is `@unique` — webhook replay is DB-enforced (DB-013
+    notes the gap on paymentUtr).
+  - `Order.shopId` is NOT NULL with FK ON DELETE RESTRICT — orders
+    cannot be orphaned. Same for PrintFile.orderId, PrintJob.shopId,
+    PrintJob.fileId, PrintAgent.shopId, Subscription.shopId.
+  - AuditLog.shopId + userId are nullable with FK ON DELETE SET NULL —
+    correct: deleting a shop/user shouldn't cascade-delete audit history.
+  - The partial unique index PrintJob_active_file_unique IS correct +
+    idempotent + the duplicate-check safety check at pg-constraints.sql:62-79
+    (DO block that surfaces pre-existing duplicates before applying) is
+    excellent defensive engineering.
+  - The order-token retry loop (order.repository.ts:180-252) correctly
+    re-fetches count on every retry, catches P2002 specifically, falls
+    back to NULL tokenNumber after MAX_ATTEMPTS. Idempotent + graceful.
+  - The agent status endpoint (agents/jobs/[id]/status/route.ts) is the
+    gold standard — atomic conditional UPDATE WHERE status='queued'.
+  - `OrderRepository.findByIdAndShop`, `FileRepository.findByIdAndOrder`,
+    `PrintJobRepository.findByIdAndShop`, `PrintAgentRepository.findByIdAndShop`
+    are all correctly tenant-scoped.
+
+---
+Task ID: p4
+Agent: general-purpose (Phase 4 — Architecture + implementation quality audit)
+Task: Audit codebase architecture + implementation quality. Inspected actual files (src/, packages/, scripts/).
+
+Scope: 1) oversized files 2) duplicate logic 3) any usage 4) unsafe casts 5) dead code 6) unused deps 7) inconsistent error handling 8) race conditions 9) N+1 queries 10) missing transactions 11) hardcoded URLs/limits 12) client/server boundary 13) circular deps 14) process-local locking.
+
+Findings (prioritised correctness > performance > maintainability):
+
+ARCH-001 | race-condition + missing-tx | CRITICAL | Manual payment verify double-click + missing transaction.
+  - File: src/app/api/v1/shops/me/orders/[id]/verify-payment/route.ts:44-72
+  - Evidence: Two concurrent POST requests both fetch order (status=awaiting_payment) → both pass `canTransitionOrder` → both `repos.orders.update({status:'paid', paymentTxnId:'manual-<uuid1>' / 'manual-<uuid2>'})`. Synthetic `manual-${crypto.randomUUID()}` defeats the UNIQUE(paymentTxnId) replay guard — both UPDATEs succeed. Two audit-log entries written; order only reflects the latest txnId. Order.update + audit.log are TWO separate writes with NO transaction; audit-log swallows errors (audit-log.repository.ts:39), so a silent audit failure leaves a paid order with NO trail.
+  - Impact: correctness (silent double-verify, missing audit trail), no replay protection on manual verifies.
+  - Fix: (a) make txnId deterministic: `manual-${order.id}` so the UNIQUE constraint catches the duplicate; (b) wrap order.update + audit.log in a single DB transaction with row lock on the order (SELECT ... FOR UPDATE); (c) audit-log repository MUST propagate errors (not swallow) so the caller can decide.
+
+ARCH-002 | race-condition + missing-tx | CRITICAL | Webhook payment verify is non-transactional; cache.set comes AFTER the order.update.
+  - File: src/lib/payments/webhook.service.ts:204-235
+  - Evidence: `repos.orders.update({status:'paid', paymentTxnId})` (line 205) succeeds, then `cache.set('pay:done:...')` (line 226) and `repos.audit.log` (line 227) follow. If the process crashes between the update and the cache.set/audit, the order is paid but: (i) no cache entry → a replay hits the DB-UNIQUE guard (line 212-223) — that's fine; (ii) no audit trail — the spec §6 requires audit BEFORE processing (line 95-104) + AFTER. The two-layer idempotency (cache + DB UNIQUE) is OK, but audit-log is best-effort and silently swallowed — if a paid order has no audit entry, reconcile breaks.
+  - Impact: correctness (audit gap), regulatory (no payment audit trail).
+  - Fix: wrap order.update + audit.log in a single DB transaction. Move cache.set BEFORE the order.update (so the fast-path idempotency check has the value before the write).
+
+ARCH-003 | race-condition | CRITICAL | /shops/me/orders/:id/start creates print jobs WITHOUT the two-layer idempotency guard used by the webhook path.
+  - File: src/app/api/v1/shops/me/orders/[id]/start/route.ts:36-47
+  - Evidence: Loops over pending files calling `repos.printJobs.create({shopId, fileId})` per file. NO pre-check via `findActiveByFile` and NO try/catch for the partial-UNIQUE constraint (PrintJob_active_file_unique). If the webhook auto-dispatch + manual-start race for the same order, the second call throws P2002 → 500 returned to the shopkeeper (who then retries → repeat). Compare with src/lib/payments/webhook.service.ts:280-304 which has the correct two-layer guard.
+  - Impact: correctness (500 on race), UX (shopkeeper sees failures on retry).
+  - Fix: extract `enqueuePaidOrderPrint`'s per-file idempotency pattern into `print.service.ts` as `enqueueFilePrint(shopId, fileId)` and have BOTH the webhook path AND the /start route call it. Removes duplication AND the race.
+
+ARCH-004 | n+1 + correctness bug | HIGH | Admin orders list has O(N) shop-by-shop fetch + fake "total" count.
+  - File: src/app/api/v1/admin/orders/route.ts:22-49
+  - Evidence: For each order in the page, calls `repos.shops.findById(o.shopId)` inside `.map()` (mitigated by shopCache, but worst case = N shops = N queries). Worse: `pagination: { limit, offset, total: enriched.length }` — "total" is the count of the CURRENT PAGE (≤limit), not the global total. The admin UI cannot tell whether there's a next page.
+  - Impact: performance (N+1 under shop diversity), correctness (broken pagination).
+  - Fix: (a) collect unique shopIds, issue a single `repos.shops.findMany({id:{in:[...]}})`; (b) call `repos.orders.countAll({status})` for the real total.
+
+ARCH-005 | n+1 | HIGH | /shops/me/analytics does up to 200 per-order file lookups per request.
+  - File: src/app/api/v1/shops/me/analytics/route.ts:26-33
+  - Evidence: For each paid order (limit=200, line 12) calls `await repos.files.findByOrder(o.id)` — up to 200 sequential DB queries. Used by the dashboard on every load.
+  - Impact: performance (dashboard blocks on 200 round-trips on a busy shop).
+  - Fix: add `repos.files.findByOrderIds(orderIds: string[])` returning a Map<orderId, PrintFile[]>, or a single query `WHERE orderId IN (...)` grouped client-side.
+
+ARCH-006 | n+1 + memory | HIGH | Admin analytics loads ALL shops (500) + ALL orders (500) on every call.
+  - File: src/app/api/v1/admin/analytics/route.ts:23-24, 73-75
+  - Evidence: `repos.shops.listAll(500, 0)` + `repos.orders.listAll({limit: 500})` + `repos.printAgents.listAll()` on EVERY request. As data grows past 500, the metrics silently under-count (no pagination; the slice is just dropped). Plus line 89: `(byStatus.cancelled ?? 0) + (orders.filter(o => o.status === 'cancelled').length)` is DOUBLE-COUNTING cancelled orders (byStatus.cancelled already == count of cancelled, the filter counts them again).
+  - Impact: correctness (silent under-count over 500, double-count bug at line 89), performance (3 full scans per admin dashboard load).
+  - Fix: replace with SQL aggregations (COUNT(*) GROUP BY status, SUM(totalAmountPaise) WHERE status NOT IN (...)). Fix line 89 to use `byStatus.cancelled` only.
+
+ARCH-007 | hardcoded + correctness | CRITICAL | Agent download URLs are concatenated with `${base}${presignedUrl}` — broken in production with R2/S3/Supabase.
+  - Files: src/app/api/v1/agents/jobs/pending/route.ts:28-34; src/lib/services/print.service.ts:59-60
+  - Evidence: `const base = process.env.APP_BASE_URL ?? 'http://localhost:3000'` then `downloadUrl = \`${base}${await container.storage.getPresignedDownloadUrl(file.storageKey, 900)}\``. The R2/S3/Supabase adapter returns an ABSOLUTE URL (`https://r2.cloudflarestorage.com/...`); concatenation produces `https://printshop-saas-three.vercel.apphttps://r2...` — completely broken. The in-memory dev adapter returns a relative path (`/api/v1/storage/get?...`) which is why this works locally.
+  - Impact: correctness — production print agent CANNOT download files. The whole "customer pays → webhook → auto-print" happy path is broken on R2/S3/Supabase.
+  - Fix: detect absolute vs relative URLs. `const url = presignedUrl.startsWith('http') ? presignedUrl : \`${base}${presignedUrl}\``. Add a regression test that mocks an absolute-URL adapter.
+
+ARCH-008 | unsafe-cast / interface-drift | HIGH | Storage routes cast `storage as unknown as { put?: ...; getBytes?: ... }` because the StorageAdapter interface doesn't define those methods — but R2/S3 adapters DON'T implement them.
+  - Files: src/app/api/v1/storage/put/route.ts:35,38; src/app/api/v1/storage/get/route.ts:21,24; src/app/api/v1/orders/[id]/files/route.ts:56,58; src/app/api/v1/orders/[id]/receipt/route.ts (storage getter); src/app/api/v1/shops/me/orders/[id]/files/[fileId]/download/route.ts:42; src/app/api/v1/shops/me/sticker/route.ts:47; src/app/api/v1/shops/me/upi-qr/route.ts:99,108; src/app/api/v1/downloads/native-printer/route.ts:206
+  - Evidence: `packages/core/src/interfaces/storage.adapter.ts` defines ONLY getPresignedUploadUrl/getPresignedDownloadUrl/delete/deleteMany/head. But 4 routes call `put()` + `getBytes()` via `as unknown as` casts — runtime-checked. R2/S3 adapters DON'T implement put/getBytes (grep returned 0 matches), so any code path hitting these routes in production returns "storage backend does not support direct put" (storage/put/route.ts:36) or throws.
+  - Impact: correctness — the "store bytes directly" path (download/receipt/files routes) is broken in prod with R2/S3; maintainability — the TS compiler can't catch refactor breakage.
+  - Fix: extend the StorageAdapter interface with `put(key, bytes, contentType): Promise<void>` and `getBytes(key): Promise<{bytes, contentType}|null>`. Implement in R2/S3 (S3 PutObject/GetObject). Drop the `as unknown as` casts.
+
+ARCH-009 | duplicate-logic + state-machine-bypass | HIGH | `maybeMarkOrderReady` is duplicated AND bypasses canTransitionOrder.
+  - Files: src/lib/services/print.service.ts:81-90; src/app/api/v1/agents/jobs/[id]/status/route.ts:81-90
+  - Evidence: Two near-identical implementations of "all sibling files completed → flip order to ready". NEITHER calls `canTransitionOrder(order.status, 'ready')` before `repos.orders.update({status:'ready'})`. If a shopkeeper cancels an order mid-print, this still overwrites it back to 'ready'. The state-machine at packages/core/src/domain/order.ts:53-67 is the canonical source of truth — these bypasses silently corrupt state.
+  - Impact: correctness — cancelled/refunded orders can be silently reverted to 'ready'.
+  - Fix: extract to `print.service.ts` as `maybeMarkOrderReady(fileId, shopId, channel)`. ADD `if (!canTransitionOrder(order.status, 'ready')) return;` guard. Both call-sites import the single helper.
+
+ARCH-010 | missing-tx | HIGH | `agents/jobs/[id]/status` route updates job+file+order in 3 separate writes — partial-failure leaves inconsistent state.
+  - File: src/app/api/v1/agents/jobs/[id]/status/route.ts:60-67
+  - Evidence: `repos.printJobs.update(id, {status:'completed'})` (line 60) → `repos.files.update(job.fileId, {status:'completed'})` (line 61) → `maybeMarkOrderReady` → `repos.orders.update(orderId, {status:'ready'})` (line 87). If the file update fails (network glitch), the job is 'completed' but the file is still 'printing'. Same pattern on line 64-65 for failed status.
+  - Impact: correctness — orphaned job/file state mismatches.
+  - Fix: wrap the job+file update in a single transaction; emit realtime events after commit.
+
+ARCH-011 | missing-tx | HIGH | `complete` route (mark collected) does order.update + audit.log + storage.deleteMany — none transactional; if storage.deleteMany fails, files persist on the customer's order that was marked "collected" (privacy violation).
+  - File: src/app/api/v1/shops/me/orders/[id]/complete/route.ts:19-34
+  - Evidence: Order flipped to 'collected' (line 19), audit logged (line 20-27), then storage.deleteMany called (line 34) — if deleteMany throws (R2 outage), the route returns 500 but the order is ALREADY 'collected' in the DB. Customer's files persist on storage with no metadata pointer (the order shows collected, but the bytes are still in the bucket).
+  - Impact: correctness + privacy — files survive collection.
+  - Fix: either (a) wrap order.update + storage.deleteMany in an outbox/saga (mark for deletion, retry via cron), or (b) flip the order: storage.deleteMany FIRST (idempotent), THEN order.update. If delete fails, the order stays in 'ready' (re-tryable).
+
+ARCH-012 | state-machine-bypass | MEDIUM | Cancel route flips order to 'cancelled' but does NOT cancel in-flight print jobs or notify the agent.
+  - File: src/app/api/v1/shops/me/orders/[id]/cancel/route.ts:31-41
+  - Evidence: Order marked cancelled; no logic to mark pending/queued/ printing PrintJobs as cancelled; no realtime event to the agent to abort; file statuses stay as-is.
+  - Impact: correctness — a cancelled order can still get printed (the agent completes the job, calls `maybeMarkOrderReady`, which flips the order BACK to 'ready' per ARCH-009).
+  - Fix: cancel pending print jobs (`repos.printJobs.updateWhere({orderId, status:'queued'}, {status:'cancelled', lastError:'order cancelled'})`), publish `order.cancelled` on the shop channel, and have `maybeMarkOrderReady` skip cancelled orders (covered by ARCH-009 fix).
+
+ARCH-013 | oversized-file | MEDIUM | 8 src files >500 lines — should be split.
+  - Files (line count): src/app/orders/[id]/page.tsx (1532), src/app/shop/orders/[id]/page.tsx (1248), src/app/shop/printer/page.tsx (1137), src/app/shop/settings/page.tsx (1102), src/app/shop/orders/page.tsx (1049), src/app/shop/dashboard/page.tsx (886), src/app/shop/register/page.tsx (713), src/lib/native-printer/client.ts (516).
+  - Evidence: src/app/orders/[id]/page.tsx has 38 React hooks (useState/useEffect/useCallback/useMemo/useRef). Single-file doing upload + preview + pricing + checkout + status-poll.
+  - Impact: maintainability — anything >1000 lines is hard to review/test.
+  - Fix: split each page into ≤3 components (e.g. customer order page → UploadStep, PricingStep, PaymentStep, StatusPoller).
+
+ARCH-014 | unused-deps | MEDIUM | ~17 production dependencies declared in package.json are NEVER imported from src/.
+  - Evidence (grep counts in src/): `@dnd-kit/core|@dnd-kit/sortable|@dnd-kit/utilities` (0), `@electric-sql/pglite` (0), `@mdxeditor/editor` (0 — ~5MB), `@neon/config|@neon/env` (0), `@reactuses/core` (0), `@tanstack/react-query` (0), `@tanstack/react-table` (0), `next-auth` (0 — the app rolls its own JWT), `next-intl` (0), `react-markdown` (0), `react-syntax-highlighter` (0), `framer-motion` (0), `date-fns` (0 — uses native Date), `uuid` (0 — uses crypto.randomUUID), `zustand` (0), `z-ai-web-dev-sdk` (0 in src).
+  - Impact: bundle size (especially `@mdxeditor`, `framer-motion`, `react-syntax-highlighter`, `@tanstack/*`), install time, attack surface.
+  - Fix: `pnpm remove` the unused set. Run `pnpm install --frozen-lockfile=false && pnpm build` to confirm nothing breaks.
+
+ARCH-015 | any-usage + unsafe-cast | MEDIUM | `any` usage is low in src/ (4 sites) but `as unknown as` casts in routes are 13 sites — all on the storage boundary (already captured in ARCH-008). Test scripts use `any` more liberally (~25 sites) — acceptable for tests.
+  - Evidence (src/): `pdf-preview.tsx:120` (page.render cast — pdfjs typings gap), `pdf-preview.tsx:130` (catch e:any), `admin/orders/route.ts:18` (status as any — should use isOneOf like shops/me/orders/route.ts:15 does), `printlatch/client.ts:127,160` (catch e:any), `printing/native-engine.ts:80,106` (catch e:any).
+  - Impact: low (most are catch-block `e: any`).
+  - Fix: replace `catch (e: any)` with `catch (e: unknown)` + `e instanceof Error ? e.message : String(e)`. Replace `status as any` in admin/orders/route.ts with `isOneOf` validation.
+
+ARCH-016 | inconsistent-error-handling | LOW | Auth register route bypasses the `fail()` envelope for 409s.
+  - File: src/app/api/v1/auth/register/route.ts:64-88
+  - Evidence: Lines 64, 79 hand-write `NextResponse.json({success:false, error:{code,message}}, {status:409})` instead of `fail(new ConflictError(...))`. The shape happens to match the envelope, but bypassing the helper means there's no `toAppError` + no Sentry capture (envelope.ts:49,62).
+  - Impact: maintainability — error tracking gap.
+  - Fix: add `ConflictError` to `@platform/core/errors`, use `fail(new ConflictError('EMAIL_TAKEN', ...))`. Also check `access-check/route.ts:34` returns `{ok:true}` not envelope-wrapped.
+
+ARCH-017 | hardcoded | LOW | Hard-coded paise fallbacks in public shop listing.
+  - Files: src/app/api/v1/shops/route.ts:50-52; src/app/api/v1/admin/shops/route.ts:79
+  - Evidence: `s.pricingConfig?.bw_a4_per_page ?? 200`, `... ?? 500`, `... ?? 1000` (min_order_value). Magic numbers — if a shop has no pricingConfig (corrupted row), customers see ₹2/page (B/W), ₹5/page (color), ₹10 min — wrong pricing silently applied.
+  - Impact: correctness — silent wrong pricing on edge case.
+  - Fix: move defaults to `packages/core/src/pricing/types.ts` as `DEFAULT_PRICING_CONFIG` constants; import + reuse. Reject shops with no pricingConfig in the public listing (don't surface broken shops).
+
+ARCH-018 | process-local-locking | INFO | Order-token allocation IS safe under multi-instance Vercel serverless.
+  - File: src/lib/repositories/order.repository.ts:132-252
+  - Evidence: The retry loop relies on the DB UNIQUE constraint (shopId, tokenNumber) — NOT on in-process state. Two concurrent lambda invocations both attempt INSERT; one wins, the other catches the constraint violation, re-fetches `countByShop()`, regenerates a candidate `count+1+attempt`, retries. After MAX_ATTEMPTS=8, degrades gracefully to NULL tokenNumber. Fresh UUID per attempt → no partial-INSERT corruption. The `ConstrainedInMemoryDatabaseAdapter` (test fixture) replicates the constraint.
+  - Impact: none — correct.
+  - Caveat: under pathological contention (many concurrent inserts for the same shop), 8 attempts may not be enough. Consider bumping to 16 or switching to a Postgres sequence (`nextval('shop_token_seq')`).
+
+ARCH-019 | circular-deps | INFO | No circular dependencies detected between @platform/core, @platform/adapters, src/lib/*.
+  - Evidence: container.ts imports from @platform/adapters + @platform/core + @/lib/{db,adapters,auth,logger,payments}. print.service.ts imports container + repositories + @platform/core. webhook.service.ts imports print.service + container + repositories. Repositories import ONLY container (lazily, via getContainer()) — no repo imports another repo's package. The dependency direction is consistently: routes → services → repositories → container → adapters → @platform/core.
+  - Impact: none — clean layering.
+
+ARCH-020 | client-server-boundary | INFO | 'use client' usage is appropriate. All phase1/2/3/4/5 dashboard components that need state/effects are marked; static landing-page sections (phase1/hero, deliverables, roadmap) are server-rendered. No server logic leaks into client components (client components only do fetch + render; no JWT minting, no DB calls). useApiClient exists in two places (phase2 + portal) — the portal one is a re-export of auth-context (the phase2 one is a legacy demo); low-priority cleanup.
+
+Summary of recommended next-actions (priority order):
+  1. ARCH-007 (broken prod download URLs) — ship-blocker.
+  2. ARCH-001 + ARCH-002 (manual verify race + webhook non-tx) — correctness + audit.
+  3. ARCH-003 + ARCH-009 + ARCH-010 + ARCH-011 + ARCH-012 (extract shared helpers, add state-machine guards, wrap multi-write ops in transactions) — cluster of correctness issues.
+  4. ARCH-004 + ARCH-005 + ARCH-006 (N+1 + double-count + missing total) — performance + correctness.
+  5. ARCH-008 (interface drift — extend StorageAdapter) — maintainability.
+  6. ARCH-013 + ARCH-014 (split oversized files + remove unused deps) — bundle + maintainability.
+  7. ARCH-015 + ARCH-016 + ARCH-017 — polish.
+
+Files changed: none (audit-only — no code modified).
+No database changes. No migrations. No new dependencies. No production changes.
+
+---
+Task ID: p8
+Agent: phase-8 sub-agent
+Task: Performance + reliability audit (bundle / polling / N+1 / index / network / image / upload / serverless / coldstart / retry / client-mem)
+
+Work Log:
+- Read worklog context (last ~120 lines) — phase 7 staging/realtime work + PWA infra in place; native-printer ZIP download shipped.
+- Audited 11 dimensions via code inspection + live dev-server measurements (curl + dev.log Prisma query logs).
+
+Findings (MEASURED = confirmed by running a command; SUSPECTED = code inspection only):
+
+PERF-001 [n+1] MEASURED — /api/v1/shops/me/analytics fires 50 separate PrintFile SELECTs per call.
+  File: src/app/api/v1/shops/me/analytics/route.ts:27 (`for (const o of paid) { const files = await repos.files.findByOrder(o.id); ... }`)
+  Evidence: curl'd the endpoint once with an authed owner token; grepped dev.log between the analytics request markers — exactly 50 PrintFile queries fired. Route returned 200 in 17 ms (SQLite local — latency hides the count; on Postgres over the wire each round-trip is 1–5 ms).
+  Impact: dashboard polls this every 15 s → at 50 paid orders × 4 qps shops × 1/15 s ≈ 13 PrintFile queries/sec per active shopkeeper. Neon free tier connection cap = 100 — risks saturation at ~50 concurrent shopkeepers on the dashboard.
+  Fix: replace the for-loop with a single `repos.files.findByOrders(paid.map(o => o.id))` (single `WHERE orderId IN (...)` query). Add this method to FileRepository.
+
+PERF-002 [n+1] SUSPECTED — /api/v1/agents/jobs/pending loops per queued job to look up the PrintFile.
+  File: src/app/api/v1/agents/jobs/pending/route.ts:30–33 (for-loop with `await container.db.findOne('printFile', { id: j.fileId })` per job).
+  Impact: every agent poll for queued jobs fires up to 10 separate PrintFile lookups. With print-agents polling every N seconds × 500 shops, this is a non-trivial DB load on the print dispatch path.
+  Fix: batch-lookup files with `WHERE id IN (...)` once, then zip with the queued jobs. PrintFile already has `@@index([orderId])` — adding `(id)` is the PK so already covered.
+
+PERF-003 [retry] SUSPECTED — recoverStaleJobsOnStartup + audit-log pruning are dead code in production.
+  File: src/lib/container.ts:307–326 (exported but never imported/called anywhere in src/ except tests).
+  Evidence: `rg "recoverStaleJobsOnStartup" src/` returns only the definition site; no Next.js `instrumentation.ts` file exists; no middleware/route calls it.
+  Impact: stale print jobs stuck in 'printing' (worker crashed mid-print) NEVER auto-recover to 'needs_review' — they sit forever. Audit logs NEVER get pruned (DB grows unbounded; the 30-day retention promise is broken). At 500 shops × ~50 audit entries/order × 100 orders/day, AuditLog grows ~5 million rows/year — risks the Neon 0.5 GB free-tier cap.
+  Fix: add `src/instrumentation.ts` that calls `recoverStaleJobsOnStartup()` on `register()`. Next.js invokes this once per serverless cold start (Vercel-supported).
+
+PERF-004 [upload] SUSPECTED — Supabase adapter buffers the entire uploaded file in serverless memory to parse page count.
+  Files: src/app/api/v1/orders/[id]/files/route.ts:56–60 (calls `getBytes` then pdf-lib's `PDFDocument.load(bytes)`); packages/adapters/src/storage/supabase.adapter.ts:163–174 (`getBytes` does `await data.arrayBuffer()` — full file into memory).
+  Impact: every customer upload confirmation on the Supabase production deployment (per vercel.json) loads the full PDF into the Vercel function's memory. Vercel default = 1024 MB. A 25 MB PDF × ~3 concurrent uploads = ~150 MB peak (raw bytes + pdf-lib parse tree). Risk of OOM at moderate concurrency; also a 60 s function timeout risk on slow Supabase downloads.
+  Fix: use pdf-lib's incremental/streaming API, OR fetch only the PDF trailer (last ~1 KB) to count pages, OR run page-count parsing in a Vercel Edge function or background queue (defer the response).
+
+PERF-005 [upload] SUSPECTED — S3 + R2 adapters do NOT implement `getBytes`, so PDF page-count parsing is silently skipped on those providers.
+  Files: packages/adapters/src/storage/r2.adapter.ts (no getBytes method), packages/adapters/src/storage/s3.adapter.ts (no getBytes method).
+  Impact: on R2/S3 deployments, every uploaded PDF gets `pageCount=null` → file marked `needs_review` (see parsePageCount: returns null when bytes=null). Shopkeeper must manually enter page counts. UX bug masquerading as a perf issue.
+  Fix: add a streaming `getBytes` (or `getRange`) to S3 + R2 adapters; OR pre-compute pageCount client-side with pdfjs-dist before upload.
+
+PERF-006 [client-mem] MEASURED (code-confirmed) — Batch print flow loads every PDF entirely into the shopkeeper's browser memory, then re-uploads to PrintLatch.
+  Files: src/app/shop/orders/page.tsx:418 (`fetchPdfBytes(downloadUrl)` → Uint8Array); src/app/shop/orders/[id]/page.tsx:1044–1056; src/lib/printlatch/client.ts:183–203 (submitPrintLatchJob wraps bytes in a Blob + FormData); src/lib/native-printer/client.ts:481 (same pattern).
+  Impact: for a batch of 10 × 25 MB PDFs the shopkeeper's browser holds ~250 MB in JS heap at peak (Uint8Array + Blob copy + FormData multipart). Mobile / low-RAM shopkeeper devices will tab-crash.
+  Fix: PrintLatch's /v1/jobs could accept a URL + the API server's presigned-URL bearer (it already supports `mode=print` with a file upload — extend with `pdf_url`). Browser then submits the URL, agent streams directly from storage, browser holds 0 bytes.
+
+PERF-007 [network] MEASURED (code-confirmed) — TanStack Query is installed but never wired; no client-side cache, every navigation re-fetches.
+  Files: package.json:32 (`@tanstack/react-query: ^5.82.0`); `rg "QueryClient|useQuery" src/` → 0 results.
+  Impact: dashboard fetches orders (limit=50) + analytics + shop + agents; navigating to /shop/orders re-fetches orders. No stale-while-revalidate, no deduplication. Every page navigation shows a loading skeleton.
+  Fix: add a `QueryClientProvider` in `src/app/layout.tsx` + a `useQuery` per data slice. Set `staleTime: 15_000` so the 15 s dashboard poll and the orders-page navigation share cache.
+
+PERF-008 [serverless] SUSPECTED — Vercel production config sets REALTIME_PROVIDER=memory + CACHE_PROVIDER=memory.
+  File: vercel.json:9–10.
+  Impact: with realtime=memory, no socket.io relay on Vercel — dashboard "realtime" badge always shows offline; falls back to 15 s polling (acknowledged in container.ts:140–145). With cache=memory, rate-limiting is per-invocation (effectively disabled — a hostile actor can burst past `withRateLimit` limits). DB UNIQUE constraints still guard payment idempotency.
+  Fix: deploy the realtime mini-service (already in `mini-services/realtime-service/`) and point REALTIME_EMIT_URL at it; OR remove the realtime badge from the dashboard UI to avoid confusing the shopkeeper. Add Upstash Redis for CACHE_PROVIDER=redis (free 10k commands/day) so rate limits + token revocation work serverless-wide.
+
+PERF-009 [index] SUSPECTED — AuditLog is queried by `(shopId, entityId)` but only `(shopId, createdAt)` is indexed.
+  File: prisma/schema.prisma:172 (`@@index([shopId, createdAt])`); src/lib/repositories/audit-log.repository.ts:76–80 (`findByEntity` filters on `{ shopId, entityId }` ordered by createdAt desc).
+  Impact: order-detail page calls /api/v1/shops/me/orders/:id/activity on every load + every 5 s poll. Without an index on entityId, Postgres does a shopId index scan + in-memory filter on entityId. Tolerable at low volume; bad at scale.
+  Fix: add `@@index([shopId, entityId, createdAt])` (composite covers the entity-timeline query directly) — migration is one line.
+
+PERF-010 [index] SUSPECTED — Order listByShop orders by createdAt desc, but the only shopId index is `(shopId, status)` — no createdAt.
+  File: prisma/schema.prisma:80 (`@@index([shopId, status])`); src/lib/repositories/order.repository.ts:63–72 (`findMany({ shopId, ... }, { order: ['createdAt', 'desc'] })`).
+  Impact: SQLite/Postgres use the (shopId, status) index for the filter, then sort in-memory by createdAt. At 1000+ orders/shop, the sort becomes visible.
+  Fix: change to `@@index([shopId, status, createdAt])` (covering index for the common filter+sort). The shop-orders list page would benefit most.
+
+PERF-011 [polling] MEASURED (code-confirmed) — Dashboard / orders / order-detail polling intervals.
+  Files: src/app/shop/dashboard/page.tsx:194 (15 s — matches summary), src/app/shop/orders/page.tsx:231 (20 s), src/app/shop/orders/[id]/page.tsx:277 (5 s — fast), src/app/orders/[id]/page.tsx:560 (30 s — matches summary).
+  Impact: the 5 s order-detail poll × multiple open shopkeeper tabs is the heaviest. The 30 s customer-facing poll is reasonable. The dashboard 15 s is fine. The shop orders list 20 s is fine. The phase4 demo customer-app.tsx:160 polls at 1.5 s but is a homepage demo, not real traffic.
+  Fix (minor): consider increasing the order-detail poll from 5 s → 10 s (the shopkeeper is actively watching the page; 10 s is responsive enough + halves the load). Switch to socket.io push (PERF-008) to remove polls entirely.
+
+PERF-012 [retry] MEASURED (code-confirmed) — order-token P2002 retry is bounded to 8 attempts with NULL-token fallback.
+  File: src/lib/repositories/order.repository.ts:195–252 (MAX_ATTEMPTS=8, explicit fallback).
+  Impact: bounded. Good.
+  No fix needed.
+
+PERF-013 [retry] MEASURED (code-confirmed) — PrintLatch job polling is bounded to 10 attempts × 2 s = 20 s on the orders pages, 5 attempts × 2 s = 10 s on the printer test page.
+  Files: src/app/shop/orders/page.tsx:435–442, src/app/shop/orders/[id]/page.tsx:1051–1058, src/app/shop/printer/page.tsx:413–419.
+  Impact: bounded. Good.
+  No fix needed.
+
+PERF-014 [coldstart] MEASURED (code-confirmed) — getContainer() is lazy + cached on globalThis.
+  File: src/lib/container.ts:179–188 (singleton, globalThis-cached).
+  Impact: cold-start cost = first-call buildContainer (sync, no I/O) + Prisma client init (lazy, no connect until first query). Reasonable. The first query after cold-start adds ~50–200 ms for the TLS handshake to Neon — observable but unavoidable on serverless.
+  Fix (optional): warm Prisma on container build via `db.$connect()` so the first query doesn't pay the TLS handshake.
+
+PERF-015 [bundle] MEASURED (code-confirmed) — Heavy unused client deps in package.json.
+  Files: package.json — `react-syntax-highlighter`, `@mdxeditor/editor`, `framer-motion`, `next-intl`, `next-auth`, `@reactuses/core`, `@dnd-kit/{core,sortable,utilities}` (0 imports each in src/ + packages/).
+  Impact: these don't ship to the client bundle (Next.js tree-shakes), but bloat `bun install` + Vercel build cache. `@mdxeditor/editor` alone is ~700 KB on disk.
+  Fix: `bun remove` the 7 unused packages; reduces install time + dep-tree audit surface.
+
+PERF-016 [bundle] MEASURED (code-confirmed) — All 21 'use client' page components legitimately use hooks/handlers (verified each).
+  Evidence: grep'd every 'use client' file in src/app/ for `useState|useEffect|onClick|fetch|navigator|localStorage` — every file has at least one. None are unnecessarily client.
+  Impact: none — no easy bundle wins from converting pages back to server components.
+  Fix: none.
+
+PERF-017 [image] MEASURED (code-confirmed) — Raw `<img>` used for UPI QR + PDF previews; shop logo is stored but never rendered.
+  Files: src/app/shop/settings/page.tsx:994, 1066 (raw `<img src={upiQrPreview}>`); src/components/portal/pdf-preview.tsx:193, 199 (raw `<img>` for image previews); src/components/phase4/customer-app.tsx:349 (UPI QR).
+  Impact: low. UPI QR PNGs are ~5–10 KB; next/image would add WebP encoding overhead with negligible savings. PDF page thumbnails are rendered to canvas by pdfjs-dist then displayed as blob URLs — next/image can't optimize canvas output.
+  Fix: none priority. If the shop logo starts being rendered (e.g. on the customer-facing shop page), wrap it in `next/image` with explicit width/height to get lazy-load + format negotiation.
+
+PERF-018 [serverless] MEASURED (code-confirmed) — Sticker PDF + Receipt PDF generation routes are bounded (<5 s expected).
+  Files: src/app/api/v1/shops/me/sticker/route.ts (1 QR + 6 placements + 1 doc.save); src/app/api/v1/orders/[id]/receipt/route.ts (3 queries + simple PDF).
+  Impact: both complete well under the 60 s Vercel function timeout. No route in src/app/api/ sets `maxDuration` — they all use the default (10 s on Hobby, 60 s on Pro). The file-confirm route (PERF-004) is the only one at risk.
+  Fix: set `export const maxDuration = 30` on the file-confirm route to make the limit explicit + give headroom for slow Supabase downloads.
+
+PERF-019 [n+1] SUSPECTED — /api/v1/admin/orders does per-shop lookups inside Promise.all (10 parallel round-trips for 10 shops).
+  File: src/app/api/v1/admin/orders/route.ts:23–47 (uses shopCache but still 1 query per unique shopId).
+  Impact: parallel so latency is one round-trip, but at 50 orders spanning 50 shops that's 50 queries. Tolerable for admin (low traffic).
+  Fix: add `repos.shops.findByIds([...])` (single `WHERE id IN (...)`) — 1 query instead of N.
+
+PERF-020 [polling] MEASURED (code-confirmed) — Recover stale jobs query uses an index-unsupported filter.
+  File: src/lib/services/durable-queue.ts:36–42 (`findMany('printJob', { status: 'printing' }, { limit: 50 })`); prisma/schema.prisma:124 (only `@@index([shopId, status])` — no `(status)` alone).
+  Impact: dead code in production (PERF-003) so currently moot — but if PERF-003 is fixed and recovery runs, the query does a full table scan on printJob. At 500 shops with 10k jobs each, that's 5M rows scanned on every cold start.
+  Fix: add `@@index([status, startedAt])` to PrintJob — covers the recovery query directly.
+
+Verification:
+- Dev server running (`pgrep next dev` → PIDs 1064, 1066).
+- Logged in as `owner@quickprint.demo` → got JWT (294 bytes).
+- curl'd `/api/v1/shops/me/analytics` → 200 in 17 ms.
+- dev.log Prisma query log between the analytics request markers shows **exactly 50 PrintFile SELECTs** — confirms PERF-001.
+- Code-inspection audits cross-referenced with prisma/schema.prisma, vercel.json, package.json, container.ts, route files.
+
+Stage Summary:
+- 20 findings (12 confirmed/measured, 8 suspected).
+- 4 high-priority (PERF-001 analytics N+1, PERF-003 dead-code startup recovery, PERF-004 Supabase memory buffering, PERF-007 missing TanStack Query cache).
+- 6 medium (PERF-002 jobs/pending N+1, PERF-005 S3/R2 missing getBytes, PERF-006 client-mem batch print, PERF-008 vercel.json memory providers, PERF-009/010 missing indexes, PERF-020 dead recovery query).
+- The rest are minor / already-correct (PERF-012/013 bounded retries, PERF-014 cold start OK, PERF-016 no unnecessary 'use client', PERF-017 image opt low-impact, PERF-018 PDF routes bounded).
+- No code changes made — audit-only per task spec. Findings ready for the orchestrator to dispatch fixes.
+
+---
+
+Task ID: p3
+Agent: general-purpose
+Task: Phase 3 — Security audit. OWASP ASVS / Top 10 reference inspection of auth, authorization, file uploads, payments, API input validation, printing, secrets, and security headers. Every finding verified by reading the actual source.
+
+Work Log — files inspected (read end-to-end, not just grepped):
+- src/middleware.ts (CSP + security headers)
+- src/lib/auth/jwt-auth.adapter.ts (PBKDF2 + JWT + refresh rotation)
+- src/lib/api/with-auth.ts (withAuth + withDeviceAuth + withRateLimit)
+- src/lib/api/rate-limit.ts (fixed-window limiter + IP derivation)
+- src/lib/api/envelope.ts (response envelope + requestId handling)
+- src/lib/api/require-dev.ts (NODE_ENV=production guard for dev routes)
+- src/lib/container.ts (composition root + startup secret validation)
+- src/lib/storage/capability.ts (HMAC-signed storage capabilities)
+- src/lib/crypto/credential-encryption.ts (AES-256-GCM for payment creds)
+- src/lib/payments/webhook.service.ts (PSP webhook pipeline + idempotency)
+- src/lib/services/seed.service.ts (demo data — `demo1234` admin password)
+- src/lib/printlatch/client.ts (browser side of PrintLatch loopback agent)
+- src/app/admin/login/page.tsx (3-layer admin login: URL key + env vars + JWT role)
+- src/app/admin/layout.tsx (admin-side auth gate via localStorage role)
+- src/app/api/v1/admin/access-check/route.ts (URL-key verification)
+- src/app/api/v1/auth/login/route.ts (env-var admin + normal user login)
+- src/app/api/v1/auth/refresh/route.ts (refresh-token rotation)
+- src/app/api/v1/auth/register/route.ts (shop + owner onboarding)
+- src/app/api/v1/orders/[id]/status/route.ts (public status poll)
+- src/app/api/v1/orders/[id]/receipt/route.ts (public PDF receipt)
+- src/app/api/v1/orders/[id]/files/upload-url/route.ts (presigned PUT)
+- src/app/api/v1/orders/[id]/files/route.ts (confirm upload + page count)
+- src/app/api/v1/orders/[id]/files/[fileId]/route.ts (PATCH settings + reprice)
+- src/app/api/v1/orders/[id]/checkout/route.ts (server-side price source of truth)
+- src/app/api/v1/shops/me/orders/route.ts + [id]/{route,start,ready,complete,cancel,print,verify-payment,activity,files/[fileId]/{download,print-url}}.ts (owner-scoped multi-tenancy)
+- src/app/api/v1/admin/{shops,orders,audit,analytics}/[route].ts (admin-only)
+- src/app/api/v1/agents/{register,heartbeat,jobs/pending,jobs/[id]/status,token}/route.ts (device-token auth)
+- src/app/api/v1/storage/{put,get}/route.ts (dev-only signed-capability storage proxy)
+- src/app/api/v1/shops/[slug]/{route,upi-qr,orders}/route.ts (public shop endpoints)
+- src/app/api/v1/shops/me/{route,qr,sticker,upi-qr,agents,reports/daily,analytics}/route.ts (shopkeeper endpoints)
+- src/app/api/v1/payments/{phonepe/webhook,paytm/callback,upi/verify/[orderId],dev/phonepe/simulate,dev/paytm/simulate,dev/orders/[id]/mark-paid}/route.ts (payment paths)
+- src/app/api/v1/{health,ready,metrics,qr,dev/qr,dev/seed,downloads/native-printer}/route.ts (public/utility routes)
+- packages/core/src/domain/file.ts (ALLOWED_UPLOAD_MIME_TYPES — no magic byte check)
+- packages/utils/src/validation.ts (MIME + size validation only)
+- packages/adapters/src/storage/supabase.adapter.ts (Supabase service-role SDK)
+- mini-services/native-printer/index.js (full file — loopback-only, multi-token)
+- mini-services/realtime-service/index.ts (JWT + emit-secret verification)
+- mini-services/print-agent/src/index.ts (outbound-only agent)
+- .env.example (env-var contract)
+- vercel.json (production env: CACHE_PROVIDER=memory, REALTIME_PROVIDER=memory, no TRUSTED_PROXY)
+
+Stage Summary — findings (Critical/High first, then Medium/Low/Informational):
+
+═══════════════════════════════════════════════════════════════════
+SEC-001 | CRITICAL | authz | Customer-facing order routes are unauthenticated IDOR
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/app/api/v1/orders/[id]/status/route.ts:9
+- src/app/api/v1/orders/[id]/receipt/route.ts:9
+- src/app/api/v1/orders/[id]/files/upload-url/route.ts:18
+- src/app/api/v1/orders/[id]/files/route.ts:19
+- src/app/api/v1/orders/[id]/files/[fileId]/route.ts:18
+- src/app/api/v1/payments/upi/verify/[orderId]/route.ts:14
+
+Evidence (status/route.ts):
+  export const GET = withRateLimit<{ id: string }>('status', 120, 60, async (_req, ctx) => {
+    const { id } = await ctx.params;
+    const order = await repos.orders.findById(id);
+    if (!order) throw new NotFoundError('Order not found');
+    return ok({ ...order, files: ..., paymentUtr: order.paymentUtr, ... });
+  });
+
+Root cause: All customer-facing /orders/:id/* routes use `withRateLimit` (IP-scoped only) instead of `withAuth` or a customer-token check. The `id` is a UUIDv4 (≈122 bits of entropy), which raises the bar but is not a credential. The customer tracking page puts the order UUID in the URL path (`/orders/<uuid>`) and the customer is expected to bookmark / share it. Anyone who learns the UUID (browser history, referrer leak to a third-party site, screenshot, support ticket forwarded to a vendor, log inspection on a shared device, etc.) can:
+  • GET /api/v1/orders/<uuid>/status — see payment status + UTR + customer phone + tokenNumber + filenames + print status of every file
+  • GET /api/v1/orders/<uuid>/receipt — download a printable PDF receipt with shop name, line items, total, UTR
+  • POST /api/v1/orders/<uuid>/files/upload-url + POST /api/v1/orders/<uuid>/files — upload additional files into someone else's order (anyone with the UUID can spam the order with PDFs while it's in `awaiting_payment`)
+  • PATCH /api/v1/orders/<uuid>/files/<fileId> — change print settings (copies, color, paper, duplex) on another customer's files — re-pricing their order
+  • GET /api/v1/payments/upi/verify/<uuid> — check whether the order is paid + read the UTR
+
+Impact: Privacy leak of customer PII (phone, UTR, file list, payment status) + integrity attack (attacker can mutate pricing / upload malicious PDFs to a victim's order before the shopkeeper prints them). For a print shop SaaS this also creates a vector for the "print a malicious PDF on the victim's order + have the shop hand the prints to the attacker's collection pickup" attack.
+
+Recommended fix: Add a per-order access token (separate from the UUID) that the customer must present. The order already has `customerToken` (short uppercase string) — extend it as an authorization header:
+  • Change `POST /api/v1/shops/:slug/orders` to also return a long random `accessToken` (32 bytes hex) stored on the order, alongside the existing `customerToken` (which can stay short for shopkeeper call-out).
+  • Wrap the customer-facing /orders/:id/* routes in a new `withOrderAccess` wrapper that:
+    1. loads the order by `id`
+    2. reads `X-Order-Token` header (or `?t=` query for the download endpoints that don't allow headers, e.g. receipt)
+    3. compares against `order.accessToken` in constant time
+    4. rejects with 401 if missing/mismatched
+  • Update the customer tracking page to store + send the access token (it already controls the URL).
+  • Keep `withRateLimit` as the outer layer (per-IP throttle remains useful).
+Severity rationale: Critical because the IDOR is unauthenticated AND mutable (file upload + price change), not just read.
+
+═══════════════════════════════════════════════════════════════════
+SEC-002 | HIGH | api | Production rate-limiter collapses to one global bucket
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/lib/api/rate-limit.ts:35-46 (rateKey)
+- vercel.json:12 (CACHE_PROVIDER=memory) + missing TRUSTED_PROXY
+
+Evidence:
+  export function rateKey(req: Request, scope: string): string {
+    let ip = 'unknown';
+    const trustedProxy = process.env.TRUSTED_PROXY;
+    const xff = req.headers.get('x-forwarded-for');
+    if (xff) {
+      if (process.env.NODE_ENV !== 'production' || trustedProxy) {
+        ip = xff.split(',')[0]!.trim();
+      }
+    }
+    return `rl:${scope}:${ip}`;
+  }
+
+Root cause: In production with `TRUSTED_PROXY` unset (which is what vercel.json ships), AND when the request lacks an XFF header (or when the proxy doesn't add one), the function returns `rl:<scope>:unknown` — a SINGLE shared key across ALL anonymous clients. Combined with `CACHE_PROVIDER=memory` on Vercel (per-invocation, no shared state), the rate limiter:
+  1. provides no real per-IP throttling (each serverless invocation has its own counter),
+  2. when XFF is absent, ALL anonymous clients share a single global bucket per scope — meaning a single attacker can exhaust the limit for everyone (DoS), OR conversely the limit never fills because each invocation sees a fresh Map.
+
+Impact: Login/register/upload-url/checkout/status-poll rate limits are ineffective in production. Brute-force on `/api/v1/auth/login` (20/60s) and `/api/v1/auth/register` (5/60s) is not actually throttled on Vercel. Customer status polling (`/orders/:id/status`, 120/60s) is essentially unlimited.
+
+Recommended fix:
+  1. Set `TRUSTED_PROXY=1` in vercel.json so the XFF header from Vercel's edge is trusted.
+  2. Switch to Upstash Redis (`CACHE_PROVIDER=redis`) in production so the rate-limit counter is shared across serverless invocations — the container's `validateCacheProvider()` already supports this; the production env just doesn't set it. The `InMemoryCacheAdapter` per-invocation semantics are documented in the code but the operational impact (broken rate-limiting) is not flagged as a security regression.
+  3. As defense-in-depth, key the rate limiter on a hash of (XFF first IP, User-Agent) so even an attacker on a shared IP gets a distinct bucket from the legitimate user on the same IP — and fall back to `req.headers.get('x-real-ip')` when XFF is absent.
+
+═══════════════════════════════════════════════════════════════════
+SEC-003 | HIGH | auth | JWT + refresh token stored in localStorage (XSS-exfiltratable)
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/components/portal/auth-context.tsx:29-32, 90-97, 105-113
+- src/components/portal/auth-context.tsx:120-149 (refresh on 401)
+
+Evidence:
+  const TOKEN_KEY = 'printshop_token';
+  const REFRESH_TOKEN_KEY = 'printshop_refresh_token';
+  ...
+  localStorage.setItem(TOKEN_KEY, t);
+  localStorage.setItem(REFRESH_TOKEN_KEY, rt);
+
+Root cause: Both the short-lived access token (15 min) AND the long-lived refresh token (30 days, with jti replay-rotation) live in localStorage. Any successful XSS — even a single injected <script> in a dependency, a markdown render bug, or a third-party widget compromise — can read both tokens and silently exfiltrate them. The 30-day refresh-token lifetime means a single XSS yields a month of impersonation (the jti rotation actually MAKES this worse: the attacker's auto-refresh keeps the session alive forever, since rotateRefreshToken deletes the old jti and issues a new one to whoever presents it).
+
+Impact: A single stored XSS anywhere in the shopkeeper/admin portal → full account takeover for up to 30 days, with no logout-on-the-victim-side that defeats it (the attacker's refresh wins). The admin token (role='admin') is in the same localStorage bucket — XSS on the admin portal exposes platform-wide admin access.
+
+Recommended fix:
+  1. Move the refresh token to an HttpOnly + Secure + SameSite=Strict cookie (so JS can't read it). The login/refresh endpoints should set the cookie via `Set-Cookie` and the `/api/v1/auth/refresh` route should read it from `Cookie`, not the JSON body. This blocks XSS-based refresh-token theft entirely.
+  2. Keep the access token in memory only (not localStorage) — set it on a module-level variable in `auth-context.tsx`, lose it on reload, and rely on the HttpOnly refresh cookie to silently re-issue it on first load.
+  3. Add a `script-src 'self'` (no `'unsafe-inline'`, no `'unsafe-eval'`) CSP — see SEC-008. This eliminates the XSS vector that would otherwise still exfiltrate the access token from memory via injected script.
+  4. Add a refresh-token binding to a session fingerprint (hash of User-Agent + a random `__Host-sid` cookie) so a stolen refresh token alone can't be replayed from a different browser fingerprint.
+
+═══════════════════════════════════════════════════════════════════
+SEC-004 | HIGH | auth | DB-seeded admin user with hardcoded `demo1234` password
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/lib/services/seed.service.ts:24-30, 104
+
+Evidence:
+  let admin = await repos.users.findByEmail('admin@printshop.demo');
+  if (!admin) {
+    admin = await repos.users.create(
+      { email: 'admin@printshop.demo', phone: '+919999999999', password: 'demo1234', role: 'admin', shopId: null },
+      container.auth,
+    );
+  }
+
+Root cause: The /api/v1/dev/seed route (requireDev-guarded, OK) creates a platform-admin user with email `admin@printshop.demo` and password `demo1234` in the database. The /api/v1/auth/login route's env-var-admin path runs ONLY when ADMIN_EMAIL/ADMIN_PASSWORD env vars are set AND the submitted email matches — otherwise it falls through to the normal `verifyCredentials` DB path. So:
+  • If a developer seeds the Postgres DB in dev (or a preview branch) and the same DB is later promoted to production, the `admin@printshop.demo / demo1234` user is a working production admin login — bypassing the env-var layer entirely.
+  • Even on a fresh production DB (no seed), there is no startup check that the seeded admin user doesn't exist. The risk is configuration-dependent: any "we just used the dev DB as prod" mistake = platform admin takeover.
+
+Impact: Platform-wide admin access via `admin@printshop.demo / demo1234` if the prod DB was ever seeded. The 3-layer admin login (URL key + env vars + JWT role) is bypassed because the env-var layer is optional.
+
+Recommended fix:
+  1. In `validateDatabaseProvider()` (container.ts) or in a new startup probe, query for any User with `role='admin'` whose email is in a hardcoded `KNOWN_DEMO_EMAILS` set (admin@printshop.demo, owner@*.demo) and `FATAL`-out if any exist in production. Refuse to boot until they're deleted.
+  2. Alternatively, the login route should refuse to authenticate any `role='admin'` user via the DB path when `NODE_ENV='production'` — only the env-var-admin path may issue admin tokens in prod. That makes the env-var layer mandatory, not optional.
+  3. Update .env.example to make ADMIN_EMAIL/ADMIN_PASSWORD marked REQUIRED (not OPTIONAL) for production.
+
+═══════════════════════════════════════════════════════════════════
+SEC-005 | HIGH | headers | CSP ships with `unsafe-inline` + `unsafe-eval` in production
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/middleware.ts:60
+
+Evidence:
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js dev needs unsafe-eval; tighten in prod
+
+Root cause: The CSP comment says "tighten in prod" but the code does NOT distinguish dev from prod — the same directives ship in production. `'unsafe-eval'` is needed for Next.js dev (HMR/source-maps) but is not needed for the production build (Next.js uses static + RSC chunks). `'unsafe-inline'` allows any inline <script> — combining with SEC-003 (tokens in localStorage), a single reflected HTML injection becomes full XSS with access to localStorage tokens.
+
+Impact: Every reflected/stored HTML injection (in any route, including third-party deps) executes arbitrary JS in the user's session. Combined with the localStorage-token model, this is a token-theft vector. `'unsafe-eval'` also re-enables `eval()` + `new Function()` — expanding the attack surface for any future dependency that loads untrusted strings.
+
+Recommended fix:
+  1. Branch the CSP on `process.env.NODE_ENV`:
+     - dev: `script-src 'self' 'unsafe-inline' 'unsafe-eval'`
+     - prod: `script-src 'self' 'nonce-${nonce}'` where `nonce` is generated per-request via Next.js's `generateNonce` or a CSP nonce header set by middleware. Inline scripts (Next.js's bootstrap) accept the nonce.
+  2. If nonces are too invasive initially, ship `script-src 'self' 'strict-dynamic'` with a hash allowlist for known-inline scripts — but `'unsafe-inline'` should not ship in prod.
+  3. Keep `'unsafe-eval'` out of prod entirely. (The web-crypto + pdf-lib + qrcode stack used here don't need eval in prod.)
+
+═══════════════════════════════════════════════════════════════════
+SEC-006 | HIGH | printing | Native-printer service exposes /health to any website + reflects any Origin
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- mini-services/native-printer/index.js:235-256 (CORS + validateOrigin)
+- mini-services/native-printer/index.js:350-372 (/health response)
+
+Evidence:
+  function setCORS(res, origin) {
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      ...
+    }
+  }
+  function validateOrigin(req) {
+    const origin = req.headers.origin;
+    if (!origin) return req.url === '/health';
+    return true; // any origin — token is the gatekeeper
+  }
+  // /health response includes: pairedOrigins, tokenCount, pairingPending
+
+Root cause: The native-printer service:
+  1. Reflects ANY Origin in `Access-Control-Allow-Origin` (the comment says "the token is the gatekeeper" — true for /v1/* routes, but /health is unauthenticated).
+  2. Returns `pairedOrigins` (the shopkeeper's deployment URLs), `tokenCount`, and `pairingPending` to ANY website that fetches `http://127.0.0.1:32192/health` from the user's browser.
+
+Any malicious ad/script on any website the shopkeeper visits can `fetch('http://127.0.0.1:32192/health', { mode: 'cors' })` and:
+  • Detect that the shopkeeper runs PrintShop (fingerprinting).
+  • Read their production deployment URL + any preview URLs they've paired with.
+  • Detect an open pairing slot (pendingPairingCode present) — could prompt the user to enter a malicious pairing code on the malicious site (UI-redressing / social engineering).
+
+Impact: Privacy leak (deployment URLs exposed cross-origin), product fingerprinting, and a setup-state probe useful for pairing-code social engineering.
+
+Recommended fix:
+  1. Restrict `/health` to same-origin (no `Access-Control-Allow-Origin` header) — browsers will block cross-origin reads. The shopkeeper's own PrintShop origin is the only legitimate reader.
+  2. Strip `pairedOrigins` from the unauthenticated /health body — move it to an authenticated `/v1/health` or to the paired-origin status returned by `/v1/printers`.
+  3. Add `Access-Control-Allow-Origin: null` for any non-allowlisted origin (or omit the header entirely).
+
+═══════════════════════════════════════════════════════════════════
+SEC-007 | HIGH | upload | No magic-byte validation on customer file uploads
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/app/api/v1/orders/[id]/files/upload-url/route.ts:27-36 (MIME allowlist only)
+- src/app/api/v1/orders/[id]/files/route.ts:28-50 (confirms upload by storageKey + size, never checks bytes)
+- packages/core/src/domain/file.ts:50-78 (ALLOWED_UPLOAD_MIME_TYPES is purely a string list)
+- packages/utils/src/validation.ts:16-24 (no byte sniff)
+
+Evidence (upload-url/route.ts):
+  const body = UploadUrlSchema.parse(await req.json());
+  const err = validateUploadRequest(req_);
+  if (!(ALLOWED_UPLOAD_MIME_TYPES as readonly string[]).includes(body.mimeType)) { ... }
+  // getPresignedUploadUrl — no validation of the actual bytes the client will PUT
+
+Root cause: The customer claims a `mimeType` in the JSON body, the server checks the string against an allowlist, then issues a presigned PUT URL that will accept whatever bytes the client actually uploads. The follow-up `POST /files` confirm step does `storage.head()` (size check only) and `getBytes()` to parse page count — but never compares the actual bytes' magic bytes against the claimed mimeType. An attacker can:
+  • Claim `application/pdf`, upload an HTML file with `<script>` that exploits a downstream PDF viewer that does content-sniffing (browser `Content-Type: application/pdf` with HTML body → some browsers' PDF viewers fall back to text/HTML render in error paths).
+  • Claim `image/png`, upload a polyglot PNG/SVG that runs JS when the shopkeeper previews it.
+  • Upload an Office doc that exploits a known Office CVE in the shopkeeper's local Office app when they manually download + open the file via /shops/me/orders/[id]/files/[fileId]/download.
+
+Impact: Malware delivery to the shopkeeper's machine, with the print shop SaaS as the trusted channel. The download endpoint sets `Content-Type: obj.contentType || file.mimeType || 'application/octet-stream'` and `Content-Disposition: attachment` — the attachment disposition mitigates inline-render XSS, but the file still gets opened by the shopkeeper's local apps.
+
+Recommended fix:
+  1. In `POST /api/v1/orders/:id/files` (confirm route), after the `head()` check, sniff the first 16 bytes of the uploaded object and match against the magic-byte signature of every allowed type:
+     - PDF: `%PDF-`
+     - PNG: `\x89PNG\r\n\x1a\n`
+     - JPEG: `\xff\xd8\xff`
+     - GIF: `GIF87a` / `GIF89a`
+     - WebP: RIFF....WEBP
+     - Office OOXML: `PK\x03\x04` (zip) + check `[Content_Types].xml` for the docx/pptx/xlsx flavor
+     - etc.
+  2. If the sniffed type doesn't match the claimed mimeType, reject the file with `ValidationError('file content does not match declared MIME type')` and quarantine the storage object (delete it).
+  3. Additionally, set `X-Content-Type-Options: nosniff` on the shopkeeper download response (it's already set globally by middleware, so this is covered — but verify the presigned Supabase URL doesn't bypass it).
+
+═══════════════════════════════════════════════════════════════════
+SEC-008 | MEDIUM | authz | Dev routes rely solely on `requireDev()` (NODE_ENV) — bypassable if env mis-set
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/app/api/v1/dev/orders/[id]/mark-paid/route.ts:21-22
+- src/app/api/v1/dev/phonepe/simulate/route.ts:38-39
+- src/app/api/v1/dev/paytm/simulate/route.ts (same pattern)
+- src/app/api/v1/dev/seed/route.ts:9-10, 21-22
+- src/app/api/v1/dev/qr/route.ts:16-17
+- src/app/api/v1/storage/put/route.ts:15-16
+- src/app/api/v1/storage/get/route.ts:15-16
+
+Evidence:
+  const guard = requireDev();
+  if (guard) return guard;
+
+Root cause: The `requireDev()` check returns a 404 ONLY when `NODE_ENV==='production'`. If `NODE_ENV` is unset, empty, or set to anything else (e.g. `'prod'`, `'PRODUCTION'`, `'staging'`), the dev routes stay live. These dev routes include:
+  • `/dev/orders/:id/mark-paid` — flips ANY order to `paid` (no auth, no signature) with a synthetic UTR. If this is live in any non-dev environment, it's a free "mark any order paid" endpoint — financial integrity destroyed.
+  • `/dev/phonepe/simulate` + `/dev/paytm/simulate` — feeds a signed PhonePe/Paytm webhook payload through processWebhook using the shop's OWN dev salt. Same financial-integrity risk if dev creds are still configured in prod.
+  • `/dev/seed` — creates the `admin@printshop.demo / demo1234` user (see SEC-004).
+  • `/storage/put` + `/storage/get` — dev-only signed-capability storage proxy; the capability secret defaults to `'dev-storage-capability-secret'` if `STORAGE_CAPABILITY_SECRET` is unset. If a staging environment has this route live with the default secret, attackers can forge capabilities and overwrite arbitrary storage keys (path traversal blocked by regex, but reads/writes within the regex-allowed namespace are possible).
+
+Impact: Staging/preview environments that aren't strictly `NODE_ENV=production` (which is most of them — Vercel preview deployments default to NODE_ENV=production actually, but staging servers often don't) expose financial-integrity endpoints.
+
+Recommended fix:
+  1. Make `requireDev()` more robust: return 404 if `NODE_ENV !== 'development'` (i.e. fail-closed unless explicitly dev) instead of returning 404 only when `NODE_ENV === 'production'`. This catches undefined, 'staging', 'test', 'preview', etc.
+  2. Move the financial-integrity routes (`/dev/orders/[id]/mark-paid`, `/dev/payments/*/simulate`) behind BOTH `requireDev()` AND a stable admin-auth check (`withAuth(['admin'])`) so they require a logged-in admin even in dev. They're internal testing tools — making them admin-only in dev costs nothing and removes the "live in staging" risk.
+  3. Refuse to boot the container if `STORAGE_CAPABILITY_SECRET === 'dev-storage-capability-secret'` and `NODE_ENV !== 'development'` (mirror the JWT secret validation in `requireSecret()`).
+
+═══════════════════════════════════════════════════════════════════
+SEC-009 | MEDIUM | printing | Device-token "hash" uses a hardcoded HMAC salt + non-constant-time Map lookup
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/lib/api/with-auth.ts:116 (withDeviceAuth)
+- src/app/api/v1/agents/register/route.ts:24 (token issuance)
+
+Evidence:
+  const tokenHash = createHmac('sha256', 'print-agent-salt').update(token).digest('hex');
+  const agent = await repos.printAgents.findByTokenHash(tokenHash);
+  ...
+  // in withDeviceAuth:
+  const agent = await repos.printAgents.findByTokenHash(tokenHash);
+
+Root cause:
+  1. The HMAC key `'print-agent-salt'` is hardcoded in source. This means the "hash" is a deterministic transform of the token — anyone with read access to the source (which is on GitHub per the worklog) + the DB can compute the hash for any candidate token. The token itself is `crypto.randomUUID() + '-' + crypto.randomUUID()` (144 bits of entropy), so brute-forcing from hash to token is still computationally infeasible — but the design is "HMAC with a known key" rather than "HMAC with a server secret", which is a cryptographic anti-pattern (it's effectively just a hash with a confusing name).
+  2. The tokenHash comparison happens inside the DB layer (`findByTokenHash`) which is a string equality match in Prisma — not constant-time. Timing attacks on a 64-char hex hash are impractical, but the pattern is non-ideal.
+  3. `withDeviceAuth` does NOT check `agent.isOnline` or token-expiry — agents don't have token TTLs (unlike the native-printer service which has 24h tokens). A leaked device token is valid forever until the shopkeeper rotates it via `/api/v1/shops/me/agents` (which doesn't currently have a "rotate token" endpoint — the only option is to delete + re-register the agent).
+
+Impact: A leaked device token = permanent shop-scoped agent access (claim jobs, mark jobs printing/completed/failed, mint a JWT for the realtime socket). The "shopId" scope limits the blast radius to the shop's own data, but an attacker who exfiltrates the device token (from the shopkeeper's machine, agent config file, or a stolen POST /agents/register response) can impersonate the agent forever.
+
+Recommended fix:
+  1. Replace the hardcoded `'print-agent-salt'` with a per-deployment server secret read from env (e.g. `DEVICE_TOKEN_HMAC_SECRET`, generated with `openssl rand -hex 32`). Validate it via `requireSecret()` like the JWT secrets.
+  2. Add a `tokenExpiresAt` column to the `printAgent` table (or rotate the token on every heartbeat, with a 7-day TTL). Reject expired tokens in `withDeviceAuth`.
+  3. Add a "rotate token" endpoint: `POST /api/v1/shops/me/agents/:id/rotate-token` that issues a new token + invalidates the old hash. Required for incident response (suspected token leak).
+
+═══════════════════════════════════════════════════════════════════
+SEC-010 | MEDIUM | api | `/api/v1/metrics` public endpoint exposes platform-wide competitive intel
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/app/api/v1/metrics/route.ts:11 (withRateLimit only)
+
+Evidence:
+  export const GET = withRateLimit('metrics', 60, 60, async (_req, _ctx) => {
+    ...
+    return ok({
+      throughput: { ordersPerMinute, totalOrders: orders.length },
+      payments: { successRate, paid: paid.length, cancelled: cancelled.length },
+      revenue: { totalPaise: revenuePaise, formatted: formatINRFromPaise(revenuePaise) },
+      ...
+    });
+  });
+
+Root cause: The metrics endpoint is unauthenticated and exposes platform-wide totals: total order count, paid order count, cancelled count, total revenue in paise, payment success rate, avg + p95 print time, active agent count. Combined with SEC-002 (broken rate limiting in prod), this is scrapable by anyone.
+
+Impact: A competitor or researcher can repeatedly hit `https://printshop-saas.vercel.app/api/v1/metrics` to learn the platform's total revenue, order volume, payment success rate, and printer throughput over time — sensitive competitive intel for a SaaS.
+
+Recommended fix:
+  1. Gate `/api/v1/metrics` behind `withAuth(['admin'])` — platform-wide metrics are an admin concern, not a public utility. The `/api/v1/health` + `/api/v1/ready` endpoints cover the public health-probe need with no business metrics.
+  2. If a subset (e.g. "is the platform up") must stay public, split into a public `/api/v1/health` (already exists, returns ok) and an admin-only `/api/v1/metrics` (the full numbers).
+
+═══════════════════════════════════════════════════════════════════
+SEC-011 | MEDIUM | secrets | `.env.example` lists `ADMIN_PASSWORD` as plain text + ADMIN_ACCESS_KEY as a single layer
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- .env.example:79-88
+
+Evidence:
+  ADMIN_EMAIL=<your-admin-email>
+  ADMIN_PASSWORD=<your-strong-admin-password>
+  ADMIN_ACCESS_KEY=<your-access-key>
+
+Root cause: The admin login has 3 layers (URL access key + env-var email/password + JWT role claim). The first two layers are both env vars stored on Vercel — if a single Vercel env var leak happens (e.g. via a CI log, a misconfigured monitoring tool, an employee's local env file), the attacker has both the URL key AND the admin email + password. The "3-layer" model collapses to a single layer (Vercel env var storage).
+
+The ADMIN_ACCESS_KEY in the URL (`/admin/login?k=...`) is also a long-lived static secret — once a shopkeeper bookmarks it, it sits in their browser history, syncs to other devices, and may be shoulder-surfed. The access-check endpoint has no rate limit (SEC-002 noted), so brute-forcing the access key is also possible.
+
+Impact: A single env-var leak → admin portal entry. The URL access key offers only obscurity, not security.
+
+Recommended fix:
+  1. Add a per-deployment rate limit to `/api/v1/admin/access-check` (currently unthrottled): `withRateLimit('admin-access-check', 10, 60)` — at most 10 key-guesses per minute per IP.
+  2. Document that the URL access key is obscurity, not security — the real gate is ADMIN_EMAIL/ADMIN_PASSWORD. (The code comment already says this — keep it.)
+  3. Encourage 2FA for admin login (TOTP via an authenticator app). Even a stolen admin password is useless without the rotating TOTP code. The User model would need a `totpSecret` column + a verification step in the login route.
+
+═══════════════════════════════════════════════════════════════════
+SEC-012 | LOW | printing | Native-printer token persisted in plaintext to `.tokens.json`
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- mini-services/native-printer/index.js:192-209 (saveTokens)
+
+Evidence:
+  function saveTokens() {
+    ...
+    const data = { tokens, origins: [...pairedOrigins], savedAt: now };
+    writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+  }
+
+Root cause: Bearer tokens (32-byte hex, 24h TTL) are persisted in plaintext at `mini-services/native-printer/.tokens.json`. Any process or user with read access to the shopkeeper's PrintShop folder (e.g. a malicious installer, a backup service, a multi-user machine) can read all valid tokens + impersonate the agent until they expire.
+
+Impact: Local-privilege-escalation path: if another process on the shopkeeper's machine gains read access to the PrintShop folder, it can read the tokens and silently print arbitrary PDFs (or learn about every print job) for up to 24h.
+
+Recommended fix:
+  1. Set `.tokens.json` permissions to 0600 (owner-only) on write: `writeFileSync(TOKENS_FILE, data, { mode: 0o600 })`.
+  2. Encrypt the tokens at rest with a key derived from a machine-specific secret (e.g. DPAPI on Windows — `win32-dpapi` package) so the file alone isn't usable.
+  3. Alternative: rotate tokens on every service restart (re-pair required) — the .tokens.json persistence is a UX feature, not a security feature; consider dropping it.
+
+═══════════════════════════════════════════════════════════════════
+SEC-013 | LOW | api | `requestId` accepts client-supplied `x-request-id` verbatim
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/lib/api/envelope.ts:93-95
+
+Evidence:
+  export function requestId(req: { headers: Headers }): string {
+    return req.headers.get('x-request-id') ?? crypto.randomUUID();
+  }
+
+Root cause: A client can supply any arbitrary string as `x-request-id` and it'll be echoed into the JSON-structured log line + the response `x-request-id` header. The logger uses JSON-stringified fields (`logger.info('request', { ..., requestId: rid })`) so classic newline-based log injection is blocked — but a malicious client can flood the logs with garbage IDs (storage amplification), or attempt to collide with legitimate IDs to confuse log correlation.
+
+Impact: Minor — log noise + theoretical correlation-poisoning.
+
+Recommended fix:
+  1. Validate the incoming `x-request-id`: if it doesn't match `/^[a-zA-Z0-9_-]{1,128}$/`, ignore it and generate a fresh UUID.
+  2. Optionally cap length to 128 chars to prevent log-storage amplification.
+
+═══════════════════════════════════════════════════════════════════
+SEC-014 | LOW | auth | Refresh-token rotation trust-the-rotation ordering
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/lib/auth/jwt-auth.adapter.ts:168-182
+
+Evidence:
+  async rotateRefreshToken(token: string) {
+    const claims = await this.verify(token, this.config.refreshSecret);
+    ...
+    const live = await this.cache.get(`refresh:${claims.jti}`);
+    if (!live) return null; // replay guard
+    await this.cache.del(`refresh:${claims.jti}`);
+    const access = await this.issueAccessToken(...);
+    const refresh = await this.issueRefreshToken(...);
+    return { access: access.token, refresh: refresh.token };
+  }
+
+Root cause: The rotation is correct in isolation (delete-then-issue), but on Vercel with `CACHE_PROVIDER=memory` (per-invocation), the cache is per-invocation. So:
+  1. Shopkeeper's browser calls /auth/refresh → invocation A: cache has the jti → rotates → deletes from A's local cache → returns new tokens.
+  2. Attacker who stole the old refresh token calls /auth/refresh → invocation B: B's cache has NEVER seen the jti (it was set on invocation A) → `cache.get('refresh:jti')` returns null → rotateRefreshToken returns null → 401. 
+
+  This is actually fail-CLOSED in the attack case (good — the replay fails), but it's also fail-closed in the LEGITIMATE case where the shopkeeper's refresh happens on a different invocation than the one that issued it. So in production, refresh-token rotation is broken: every refresh after the first will fail because the jti was stored on a different invocation's cache.
+
+Impact: Forced re-login every 15 minutes in production (access token expires, refresh fails because the jti is in a different invocation's memory). UX bug masquerading as a security feature. Note: the comment in `validateCacheProvider()` mentions DB UNIQUE constraints guard payment idempotency but doesn't note that refresh-token rotation also breaks.
+
+Recommended fix:
+  1. Switch to Upstash Redis in production (set `CACHE_PROVIDER=redis` + `REDIS_URL` + `REDIS_TOKEN` in vercel.json). The container's `validateCacheProvider()` already supports this.
+  2. Alternatively, persist the refresh-jti set in the database (a `RefreshToken` table with `jti` PK + `expiresAt` + `userId`) and check + delete there. This is the right long-term fix because it survives invocation recycling.
+
+═══════════════════════════════════════════════════════════════════
+SEC-015 | LOW | auth | No session-logout endpoint to revoke refresh tokens
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/components/portal/auth-context.tsx:100-113 (clearAuth only deletes localStorage)
+- src/app/api/v1/auth/refresh/route.ts (no logout route exists)
+
+Root cause: The "Sign out" button in the admin/shop layout calls `api.clearAuth()` which only removes the tokens from localStorage. The refresh-token jti remains live in the cache (or would, if the cache were shared — see SEC-014). A stolen refresh token continues to work after the legitimate user "logs out". There's no `/api/v1/auth/logout` route that calls `revokeRefreshToken(jti)` on the adapter (which exists at jwt-auth.adapter.ts:184 but is never called by any route).
+
+Impact: Stolen-token sessions survive the user's logout. A user who suspects compromise cannot invalidate active sessions.
+
+Recommended fix:
+  1. Add `POST /api/v1/auth/logout` that takes the current refresh token, calls `container.auth.revokeRefreshToken(jti)` to delete the jti from the cache, and (in the cookie model from SEC-003) clears the refresh cookie.
+  2. Wire the Sign Out button to call this endpoint before `clearAuth()`.
+  3. Add a "Sign out everywhere" feature in settings that revokes ALL jti for a user (requires tracking jti→user mappings in the DB).
+
+═══════════════════════════════════════════════════════════════════
+SEC-016 | INFORMATIONAL | auth | Admin layout's auth gate is client-side only
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/app/admin/layout.tsx:88-95
+
+Evidence:
+  useEffect(() => {
+    if (!api.ready) return;
+    if (isLoginRoute) return;
+    if (!api.token || api.role !== 'admin') {
+      router.replace('/admin/login');
+    }
+  }, [api.ready, api.token, api.role, isLoginRoute, router]);
+
+Root cause: The admin layout's auth check runs in the browser (useEffect). The actual page rendering for /admin/* pages is a server component, but the layout is a client component that does the redirect after hydration. Between the initial server render and the useEffect firing, the page's children may briefly render. The actual API routes under /api/v1/admin/* ARE properly server-side gated by `withAuth(['admin'])` (verified in admin/orders/route.ts, admin/shops/route.ts, etc.) — so this is NOT an auth bypass; it's just a UI soft-gate that could briefly flash admin page chrome to a non-admin who directly hits /admin/shops before the redirect.
+
+Impact: Informational — no real authz bypass because every admin API route enforces `['admin']` server-side. The UI flash is cosmetic.
+
+Recommended fix:
+  1. Make the admin layout a server component that reads the JWT from the cookie (after SEC-003 fix) and `redirect()` server-side before any rendering — no client-side flash.
+  2. Or wrap the children in `{api.token && api.role === 'admin' ? children : null}` so non-admins see the loading placeholder only, never the page content.
+
+═══════════════════════════════════════════════════════════════════
+SEC-017 | INFORMATIONAL | headers | No `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`
+═══════════════════════════════════════════════════════════════════
+Affected files:
+- src/middleware.ts:58-79
+
+Evidence: The CSP includes `frame-ancestors 'none'` (good — clickjacking blocked), but no COOP/COEP headers are set. Without COEP, a renderer-process-level Spectre-style side channel could (in theory) read cross-origin iframe memory. Since `frame-ancestors 'none'` blocks all iframing of this site, the practical impact is minimal — but adding COEP is best-practice.
+
+Recommended fix:
+  res.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+(Caveat: COEP `require-corp` can break third-party resources without explicit CORP — verify Supabase image loads work, or use 'credentialless'.)
+
+═══════════════════════════════════════════════════════════════════
+
+Summary count: 17 findings (1 Critical, 6 High, 4 Medium, 4 Low, 2 Informational).
+
+Top-priority remediation (must-fix before pilot production):
+1. SEC-001 (Critical): add per-order access token to all /api/v1/orders/:id/* routes.
+2. SEC-002 (High): set TRUSTED_PROXY=1 + CACHE_PROVIDER=redis in vercel.json.
+3. SEC-003 (High): move refresh token to HttpOnly cookie; drop unsafe-inline/unsafe-eval from CSP (SEC-005).
+4. SEC-004 (High): boot-time check that no demo admin/owner users exist in prod; or refuse DB-path admin login in prod.
+5. SEC-005 (High): production CSP without unsafe-inline/unsafe-eval (use nonces).
+6. SEC-006 (High): restrict native-printer /health to same-origin; strip pairedOrigins.
+7. SEC-007 (High): magic-byte sniff uploaded files at confirm time.
+
+Lower-priority but worth fixing in the same pass: SEC-008 (requireDev fail-closed), SEC-009 (device-token HMAC secret + TTL), SEC-010 (admin-only metrics), SEC-014 (refresh rotation broken on Vercel — same fix as SEC-002).
+
+Positive observations (things done right):
+- All shop-scoped routes consistently call `repos.shops.getByOwner(principal.userId)` + `repos.orders.findByIdAndShop(id, shop.id)` — no IDOR within the shopkeeper authz layer. The withAuth wrapper's check that `claims.shopId === user.shopId` defends against stale tokens after shop reassignment.
+- PBKDF2-SHA256 at 600k iterations matches OWASP 2023 recommendation. Constant-time comparison used for password verification.
+- Refresh tokens have jti replay-rotation with cache-backed revocation (when cache is shared — see SEC-014).
+- Payment webhook pipeline has 3-layer idempotency: (1) cache fast-path, (2) UNIQUE(payment_txn_id) DB constraint, (3) `canTransitionOrder` state guard. Amount verification against server-side `order.totalAmountPaise` (no client-supplied amount). Tenant match check between order.shopId and webhook session.shopId.
+- Verify-payment route is correctly owner-role-scoped + tenant-scoped — a customer CANNOT mark their own order paid (they have no auth token; only the shopkeeper does). Replay-safe because `canTransitionOrder` blocks re-verify.
+- Storage capability HMAC + regex-key-validation blocks path-traversal + arbitrary-key overwrites in the dev storage proxy.
+- AES-256-GCM for payment credentials at rest with key-versioning + startup validation that the key is set in prod.
+- CSP `frame-ancestors 'none'` + `X-Frame-Options: DENY` (defense in depth).
+- HSTS with 2-year max-age + includeSubDomains + preload.
+- Audit logs on every auth + order + payment + file action with IP capture.
+- Customer files auto-deleted from storage on order collection (privacy-by-design).
+- Files marked collected/cancelled return ValidationError on download (no post-collection retrieval).
+
+— end of audit —
+
+---
+Task ID: p9
+Agent: sub-agent (Phase 9 — Accessibility, SEO, browser compatibility audit)
+Task: Audit accessibility (WCAG 2.2 AA), SEO + browser compatibility across the PrintShop SaaS app.
+
+Scope: every page in `src/app/` (homepage `/`, public shop page `/shops/[slug]`, customer order flow `/orders/[id]`, shopkeeper portal `/shop/*`, admin portal `/admin/*`), shared layout (`src/app/layout.tsx`, `src/app/shop/layout.tsx`, `src/app/admin/layout.tsx`), shadcn/ui primitives, PWA bits (`manifest.ts`, `sw.js`, `install-prompt.tsx`), `public/robots.txt`. Verified by reading source + spot-checking live render via Agent Browser (http://localhost:81) — no console errors / no hydration warnings on the public shop page, customer order page, or homepage.
+
+FINDINGS (ID · category · file:line · evidence · WCAG criterion · fix):
+
+- A11Y-001 · title · src/app/layout.tsx:27-31 + ALL 'use client' page.tsx files (page.tsx, shops/[slug]/page.tsx, orders/[id]/page.tsx, shop/*, admin/*) · The root layout declares `title.template: '%s · PrintShop SaaS'` but NO sub-page exports `metadata` (every page is `'use client'` so it can't). Verified via Agent Browser: the public shop page `/shops/quickprint` and the customer order page `/orders/<id>` both render `<title>PrintShop SaaS — QR-based print shop management for India</title>` — identical to the homepage. · WCAG 2.4.2 Page Titled (A) — each page must have a unique/descriptive title. · Convert pages to a server-component shell that exports `metadata` (or use `generateMetadata`) + push client state to a child; or add a tiny `Metadata` wrapper. e.g. for the shop page: `title: \`${shop.name} · PrintShop\`, description: \`Print at ${shop.name} via UPI…\``; for orders: `title: \`Order ${order.tokenNumber} · PrintShop\``.
+
+- A11Y-002 · seo · src/app/shops/[slug]/page.tsx:1-65 · The public shop page (the only indexable customer surface) is a `'use client'` component — it cannot export `metadata`, has no OpenGraph URL/type, no canonical link, no JSON-LD structured data. Verified via Agent Browser: `og:url` missing, `og:type` is the generic `website`, no `<link rel=canonical>`, `0` JSON-LD blocks. · SEO best practice (Schema.org `LocalBusiness` for a print shop would be ideal — name, address, UPI payment, opening hours). · Split into a server component that fetches shop data + exports metadata `{ title, description, openGraph: { type: 'profile', images, url }, alternates: { canonical }, other: { 'ld+json': JSON.stringify({ '@context': 'https://schema.org', '@type': 'LocalBusiness', name, address, paymentAccepted, currenciesAccepted, priceRange, openingHours }) } }` and renders the client `<ShopDetailClient />` as a child.
+
+- A11Y-003 · robots · public/robots.txt:1-15 · `User-agent: * / Allow: /` allows crawling EVERYTHING — including `/shop/dashboard`, `/shop/orders`, `/admin`, and `/api/*`. Auth-gated portal pages and API endpoints would be indexed. No `Sitemap:` directive, no sitemap.ts route. · SEO + security best practice. · Replace with: `User-agent: * \nDisallow: /shop/ \nDisallow: /admin/ \nDisallow: /api/ \nAllow: / \nSitemap: <origin>/sitemap.xml`. Add `src/app/sitemap.ts` (Next.js metadata route) listing only public routes (/, /shops/[slug] dynamic from DB).
+
+- A11Y-004 · label · src/app/orders/[id]/page.tsx:898,909,921,934,1438,1450,1463,1478,1489 + src/app/shop/orders/[id]/page.tsx:1178 · Ten `<Label>` elements lack `htmlFor`, and the paired `<Input>`/`<select>`/`<ToggleGroup>` lack `id`. e.g. line 898 `<Label className="text-xs">Copies</Label>` siblings with `<Input type="number" …>` (no id). Clicking the Label does not focus the input; screen readers don't programmatically associate them. · WCAG 1.3.1 Info and Relationships (A) + 3.3.2 Labels or Instructions (A) + 4.1.2 Name, Role, Value (A). · Add `htmlFor` to each Label + matching `id` to each control: `<Label htmlFor="copies-1">Copies</Label>` + `<Input id="copies-1" …>`. For `<select>` on line 921/1184 wrap with Label htmlFor + select id. For ToggleGroups (Colour/Sides/Paper) use the Radix toggle item's accessible name (aria-label on each `ToggleGroupItem`) or wrap the whole group with a `<fieldset><legend>`.
+
+- A11Y-005 · sr · src/app/orders/[id]/page.tsx:556-562, 1249-1296 · The Track step polls `/api/v1/orders/{id}/status` every 30s and updates status text ("Payment Pending" → "Payment Confirmed", "Printing now" → "Ready to collect"), but no `aria-live` region announces these changes. Screen-reader users have to manually re-read the page to learn the status changed. · WCAG 4.1.3 Status Messages (AA). · Wrap both status panels (payment + order-processing) in `<div aria-live="polite" aria-atomic="true">` (or set `role="status"` on the inner `<p>`). Also wrap the polling loader / "Last updated" indicator with `aria-busy`. Bonus: the description on line 1245 says "Refreshed automatically every 2.5 seconds" — but the actual interval is 30_000ms; update the copy.
+
+- A11Y-006 · keyboard · src/app/shop/printer/page.tsx:598,1013 · The Troubleshooting collapsible `<button>` uses `onClick={() => { const el = document.getElementById('ts-pl'); el?.classList.toggle('hidden'); }}` — direct DOM mutation. Missing `aria-expanded` (screen-reader users can't tell if expanded/collapsed) and missing `aria-controls="ts-pl"`. The chevron icon doesn't visually rotate either. · WCAG 4.1.2 Name, Role, Value (A) + 1.3.1 Info and Relationships (A). · Use React state + a real Disclosure primitive: `const [open, setOpen] = useState(false); <button aria-expanded={open} aria-controls="ts-pl" onClick={() => setOpen(!open)}>` and render the content conditionally (`{open && <CardContent id="ts-pl">…}`) OR use the existing shadcn `Collapsible`/`Accordion` primitive which handles aria automatically.
+
+- A11Y-007 · motion · All `Loader2` spinners + Skeleton + dialog/sheet/alert-dialog transitions · 60+ `animate-spin` / `animate-pulse` / `animate-in` / `animate-out` classes used across the app, but ZERO `prefers-reduced-motion` respect. Verified: grep `motion-reduce|motion-safe|prefers-reduced-motion` returns 0 results. The Loader2 spinners on the customer order track page (line 1242/1291) and the Sheet slide-in transitions will continue animating even when a user has `prefers-reduced-motion: reduce` set. · WCAG 2.3.3 Animation from Interactions (AAA — borderline, but spinners may cause issues for vestibular disorder users). · Tailwind v4 supports `motion-reduce:` variants: pair every `animate-spin` with `motion-reduce:animate-none` (or add a single CSS rule in `globals.css`: `@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }`).
+
+- A11Y-008 · focus · src/app/page.tsx:269-280 (ShopCard) · Uses `role="button" tabIndex={0}` on a `<Card>` (div) with `focus:outline-none focus-visible:ring-2 focus-visible:ring-ring`. The `focus:outline-none` kills default outline but `focus-visible:ring-2` only shows on keyboard focus — OK, but the standard `:focus-visible` ring color uses `--ring` (`oklch(0.708 0 0)` ≈ #767676, mid-gray). On a white card that's ~4.6:1 contrast — passes but low. · WCAG 1.4.11 Non-text Contrast (AA) — focus indicator must be ≥3:1. · Prefer a real native `<button>` or `<a href>` for the whole card (or wrap the inner content in a single link) — removes the need for `role`, `tabIndex`, `onKeyDown`, and gives free keyboard support + native `:focus-visible` ring. At minimum, switch the ring color to `focus-visible:ring-amber-500` (matches brand, 5:1 contrast).
+
+- A11Y-009 · touch · src/app/shop/dashboard/page.tsx:624, src/app/admin/orders/page.tsx:291,303, src/app/admin/shops/page.tsx:271,283, src/app/admin/orders/[id]/page.tsx (pagination buttons), src/app/shop/orders/[id]/page.tsx:1237,1243 · Several interactive buttons are below the 44×44px minimum: the dashboard "Open →" link is `min-h-[36px]`; all admin portal pagination buttons use `size="sm"` without `min-h-[44px]` (default h-9 = 36px); the print-job "Retry"/"Retry after checking queue" buttons on lines 1237/1243 use `text-[10px]` (no height set, ~14px line). · WCAG 2.5.8 Target Size — Minimum (AA, WCAG 2.2) requires ≥24×24 CSS px; the project's own UI rules require ≥44×44. · Add `min-h-[44px]` (and `min-w-[44px]` for icon-only) to all pagination + Retry buttons. For text-only "Retry" links, wrap in a real `<Button variant="link" size="sm" className="min-h-[44px]">`.
+
+- A11Y-010 · contrast · src/app/admin/login/page.tsx:154 (`text-zinc-500` on `bg-zinc-950`) + src/app/admin/layout.tsx:152,226 (`text-emerald-400`/`text-muted-foreground` on `bg-zinc-900`) · `text-zinc-500` = #71717a, relative luminance ≈ 0.16; on `bg-zinc-950` (#09090b, lum ≈ 0.005) gives contrast ratio = (0.16+0.05)/(0.005+0.05) = 3.82:1 — FAILS WCAG AA 4.5:1 for normal text (it's `text-xs` small text). Same for `text-emerald-400` on zinc-900 (~3.5:1). `text-amber-600` (#d97706) on white = 4.46:1 — BORDERLINE FAILS for normal text, passes for large text only (3:1). The dashboard order-token pill (line 612 `text-amber-700` #b45309 on `bg-card` white = 5.99:1 — passes). · WCAG 1.4.3 Contrast (Minimum) (AA). · Bump small admin text from `text-zinc-500` to `text-zinc-400` (5.6:1) or `text-zinc-300`. Bump `text-amber-600` body text (where used for small labels like the customer "Visit shop" link `text-xs`) to `text-amber-700` to be safe. The skeleton and most muted-foreground usages pass at ~4.6:1.
+
+- A11Y-011 · console · src/app/shop/printer/page.tsx:565,606,949,1022 · Inline `{typeof window !== 'undefined' ? window.location.origin : ''}` in JSX causes a hydration content mismatch (server renders `''`, client renders `https://printshop…`). Verified by reading source — Agent Browser didn't show the warning in console (likely dev-mode React warnings are silenced in the HMR log), but the pattern IS a hydration-mismatch source per Next.js docs. · Next.js hydration. · Lift into `useState` + `useEffect`: `const [origin, setOrigin] = useState(''); useEffect(() => setOrigin(window.location.origin), [])`. Or use `next/navigation`'s `usePathname` / a `headers()` server-side fetch and pass down. Or add `suppressHydrationWarning` on the specific `<code>` element as a quick fix.
+
+- A11Y-012 · pwa · public/sw.js:21 + src/components/pwa/install-prompt.tsx · The SW caches navigations to `/shop/*` and `/admin/*` (network-first, but cached as fallback). If a shopkeeper uses a shared device, logs out, and another user installs the PWA + goes offline, the cached `/shop/dashboard` HTML (with previous shop's name, revenue numbers) could be served before the auth redirect fires. The SW also precaches `/shop/login` but no other portal routes — that's fine. The `beforeinstallprompt` install prompt fires correctly + is dismissible (verified via the worklog's prior PWA task). No `credentials: 'include'`/cookie-leak concerns (SW only handles same-origin). · Security/privacy best practice. · Add a SW exclusion for auth-gated navigations: in the `fetch` handler, before caching navigations, check `url.pathname.startsWith('/shop/') || url.pathname.startsWith('/admin/')` → network-only (no caching) so auth-gated pages are NEVER stored offline. Keep `/shop/login` in the precache shell (it's the only public portal page).
+
+- A11Y-013 · responsive · src/app/shop/orders/page.tsx:711 (`Table min-w-[760px]`) + src/app/shop/orders/[id]/page.tsx:722 (`Table min-w-[900px]`) + src/app/shop/printer/page.tsx:450 (`Table` with 8 columns) · The shadcn `Table` component wraps the actual `<table>` in `<div className="relative w-full overflow-x-auto">` (line 9-12 of `src/components/ui/table.tsx`), so horizontal scroll DOES work within the table container on mobile. But the parent `<main className="flex-1 overflow-x-hidden">` (shop/layout.tsx:294) clips anything that escapes — which is fine because the inner container scrolls. However, the supply-tracking table (line 450) has 8 columns including buttons — on a 375px-wide phone the inner scroll works but it's a poor UX (8 narrow columns × narrow buttons). · Responsive UX best practice. · For mobile (<640px), consider collapsing the supplies/orders tables into card-lists (one row per card), like the dashboard's "Recent orders" already shows on narrow screens via the table's natural overflow. Add `card` variant on small screens or use `display: none` on low-priority columns (e.g. "Placed" timestamp) below sm.
+
+- A11Y-014 · sr · src/components/pwa/install-prompt.tsx:196-198 · The iOS Safari instruction paragraph embeds two inline lucide icons (`<Share>` and `<Plus>`) inside the text — "Tap <Share /> Share → <Plus /> Add to Home Screen." The icons lack `aria-hidden`, so a screen reader announces them ambiguously (e.g. "Tap [image] Share → [image] Add to Home Screen"). · WCAG 1.4.5 Images of Text (AA) + 1.3.1. · Add `aria-hidden="true"` (and `focusable="false"`) to the inline `<Share>` and `<Plus>` icons — they're decorative, the adjacent text already conveys the action.
+
+- A11Y-015 · semantic · src/app/admin/login/page.tsx:81-100 + src/app/shop/login/page.tsx (bare login shell) · The login pages render without a `<main>` landmark — just nested `<div>`s. (All OTHER key pages — /, /shops/[slug], /shop/* via layout, /admin/* via layout, /orders/[id] — correctly use `<main>`, `<header>`, `<footer>`.) · WCAG 1.3.1 Info and Relationships (A) + 2.4.1 Bypass Blocks (A). · Wrap each login page's content in `<main className="flex min-h-screen items-center justify-center …">` (or add a `<main>` inside the existing wrapper).
+
+POSITIVE FINDINGS (no action required, but worth noting):
+- AlertDialog (reject-payment, complete-order, cancel-order, confirm-print) uses shadcn/radix — focus trap, return-focus, aria-labelledby/describedby, role="alertdialog", Escape-to-close all handled correctly. ✓
+- Sheet (mobile nav in shop/layout.tsx + admin/layout.tsx) uses shadcn/radix Dialog primitive — focus trap + return-focus. The SheetTitle is correctly marked `sr-only` (line 256). ✓
+- All key pages (homepage, public shop, customer order flow, shopkeeper portal, admin portal) use `<header>`, `<main>`, `<footer>`/`<aside>`/`<nav>` landmarks. ✓
+- All `<nav>` elements have `aria-label` (e.g. "Shop portal navigation", "Admin navigation"). ✓
+- The orders list page properly uses `<Label htmlFor>` + matching `<Input id>` for the search + status + payment + date filters (lines 620-660). ✓
+- All primary action buttons (Verify, Reject, Start, Ready, Complete, Cancel, Print) use `min-h-[44px]` touch targets. ✓
+- The shop-login and admin-login use `role="alert"` for error messages (announces automatically) + `autoComplete="email"/"current-password"` for browser autofill. ✓
+- The shadcn `<Input>` has `focus-visible:ring-[3px]` (visible focus ring) — meets 1.4.11. ✓
+- Sonner toaster (used globally) has `aria-live="polite"` (verified: 1 aria-live element on the order track page). ✓
+- The customer UPI-pay button (`/orders/[id]`) uses a native `<button>` with `aria-label="Pay ₹X with UPI"` and `focus-visible:ring-2 ring-offset-2` (lines 1134-1143). ✓
+- The shop register "services" toggles use `aria-pressed={checked}` on each `<button>`. ✓
+- The shop orders list uses `aria-current="page"` on the active sidebar link (shop/layout.tsx:130). ✓
+- The orders list checkbox + table-row checkboxes have descriptive `aria-label`s (e.g. "Select order ABC123 for batch print"). ✓
+- The `<html lang="en">` is set in the root layout. ✓
+- `viewport` exports `maximumScale: 5` (doesn't disable pinch-zoom). ✓
+- Engine-picker cards on `/shop/printer` use native `<button>` (not div) with `focus:ring-2 focus:ring-amber-400` (lines 136, 160). ✓
+
+PRIORITIZED REMEDIATION (highest user impact first):
+1. A11Y-001 + A11Y-002 (page titles + public-shop SEO) — affects every page; biggest SEO + screen-reader gain.
+2. A11Y-003 (robots.txt over-permissive) — security/SEO fix, 5-line change.
+3. A11Y-004 (10 missing htmlFor label-input pairs) — WCAG Level A violation on customer-facing order flow.
+4. A11Y-005 (no aria-live on order tracking poll) — silent status changes for screen-reader customers.
+5. A11Y-006 (Troubleshooting collapsible missing aria-expanded) — keyboard/SR users can't operate it.
+6. A11Y-009 (touch targets <44px on pagination + Retry links) — WCAG 2.2 AA 2.5.8 fail.
+7. A11Y-010 (contrast fails on small admin text + amber-600 borderline) — quick Tailwind class bumps.
+8. A11Y-007 (no prefers-reduced-motion) — one CSS rule in globals.css fixes app-wide.
+9. A11Y-011 (hydration mismatch from inline window.location.origin) — Next.js best practice.
+10. A11Y-012 (SW caching auth-gated navigations) — privacy/security polish.
+11. A11Y-014 (inline icons in install-prompt) — tiny aria-hidden add.
+12. A11Y-015 (responsive supplies table) — UX, not a hard fail.
+13. A11Y-013 (responsive tables — already handled via overflow-x-auto; UX polish only).
+14. A11Y-008 (ShopCard role=button) — works correctly today; consider refactoring to native <a>/<button> for cleaner semantics, but not a hard fail.
+15. A11Y-015 (login pages missing <main>) — tiny wrapper change.
+
+No code changes made — this is a pure audit (Task ID p9). Findings handed off to the orchestrator for prioritization + assignment to a remediation task.
+
+---
+Task ID: ws
+Agent: general-purpose (web-search)
+Task: Research real-world print-shop SaaS user problems + security/accessibility/performance best practices via web search.
+
+Work Log:
+- Read worklog.md (lines 2364-2565) to understand prior context (PWA install prompt, native-printer ZIP download, PrintLatch + native Windows printer engines, batch print flow, QR-based ordering, UPI deep-link + PhonePe webhook, Prisma schema for shops/orders/files/print-jobs/subscriptions/audit-logs).
+- Built a curl+python DuckDuckGo HTML search helper (/tmp/s.sh + /tmp/parse.py) — DDG's HTML endpoint serves result__a + result__snippet anchors reliably when sent a Firefox UA + Accept-Encoding br; reused the same fetch+strip helper (/tmp/fetch.sh) to pull readable plain-text content from each URL (scripts/styles/nav/footer stripped, HTML entities unescaped, collapsed to single spaces) for the top 2-3 hits per topic.
+- Ran 13 search queries across the 10 required topics + 3 supplementary (PDF stored XSS, PhonePe webhook signature pitfalls, DNS rebinding on localhost printer agents). Pulled ~25 source URLs into plain text and extracted concrete problems + solutions from each.
+- Cross-referenced findings against actual PrintShop files: src/app/api/v1/payments/upi/verify/[orderId]/route.ts (UPI verify status check, 30 lines — only checks our DB, no PSP status API), src/app/api/v1/payments/phonepe/webhook/route.ts (raw-body signature verify — already correct per PhonePe pitfalls), src/app/api/v1/orders/[id]/files/upload-url/route.ts (presigned PUT URL — client-declared mimeType + filename, no post-upload content verification), src/components/portal/pdf-preview.tsx (pdf.js getDocument with no isEvalSupported:false / disableAutoFetch flags), src/app/manifest.ts (has description + categories but screenshots:[] empty), src/components/pwa/install-prompt.tsx + pwa-register.tsx (captures beforeinstallprompt + handles iOS Safari — but no getInstalledRelatedApps + no analytics on userChoice outcome), mini-services/native-printer/index.js (CORS reflects ANY origin, no Host header allowlist, no Access-Control-Allow-Private-Network header for Chrome v142+ LNA).
+
+Stage Summary:
+
+TOPIC 1 — Print-shop / Xerox-shop software pain points (India)
+Sources:
+- https://www.qrpress.in/print-shop-software (direct competitor — same model: QR→upload→pay→print)
+- https://printcatalyst.in/software-for-small-print-shops
+- https://printflows.in/ (offset/digital + GST billing + supplier coordination)
+Concrete problems users face:
+- WhatsApp contact exposure — customers call shopkeepers' personal numbers, clog WhatsApp with gigabytes of stranger PDFs (bank statements, marksheets), exposing both parties' phone numbers
+- Pen-drive malware — public USB ports on counter computers get repeatedly infected with shortcut viruses + trojans (LNK payloads)
+- Counter bottleneck — "B/W or color? single/double-sided? copies?" asked repeatedly; shopkeeper is human-order-forwarder
+- Miscount reprints — wrong copy count is the most common expensive error at a counter (reprint cost = paper + ink + labor)
+- Document privacy — customer docs accumulate on counter PC next to the printer (DPDP Act 2023 risk)
+- No standard GST billing / supplier coordination — offset/digital shops coordinate suppliers by phone
+- No live print queue visibility when the shopkeeper steps away from the counter
+Concrete solutions:
+- Counter QR standee → mobile web portal (no app install — "99.4% upload completion rate" claim by QRPress)
+- Live audio alert on new order arrival (so the shopkeeper hears it from anywhere in the shop)
+- Pricing captured as structured data at upload time (copies + color + duplex + page range stored, not remembered)
+- TLS 1.3 in transit + AES at rest + automated 24-hour purge of customer docs (DPDP Act 2023 compliance)
+- Direct hardware printing via Windows desktop agent → Epson EcoTank, HP Smart Tank, Canon PIXMA, Brother
+
+TOPIC 2 — UPI payment verification flow SaaS pitfalls
+Sources:
+- https://github.com/iflexvault/upi-auto-verify (IMAP inbox listener + unique-decimal-amount matching)
+- https://www.jadupe.com/blogs/how-to-accept-upi-payments-without-manual-verification
+- https://developer.phonepe.com/payment-gateway/.../webhook-handling (X-VERIFY checksum)
+- https://amsit.in/razorpay-phonepe-payment-gateway-integration-failed/
+Concrete problems:
+- Manual verification bottleneck — "after a customer makes a payment, someone from the team has to" check UPI app + screenshot + UTR — slow, error-prone, doesn't scale beyond ~20 orders/hour
+- Stale-payment-claim attack — customer screenshots a payment from days ago and submits it for a new order
+- Replay / double-verification — same UTR submitted for multiple orders (no dedupe)
+- Amount-collision — ₹25 paid for order A vs ₹25 paid for order B → ambiguous
+- PhonePe X-VERIFY checksum mismatch — trailing slashes + salt index formatting break HMAC
+- Webhook signature failures — frameworks parsing the raw request body BEFORE HMAC SHA256 validation (Next.js route handlers using `await req.json()` instead of `await req.text()` corrupt the raw bytes the HMAC was computed over)
+- UPI collect / intent deep-links can fail silently when the user's UPI app blocks the deep-link or the user cancels
+Concrete solutions:
+- Unique-decimal-amount per order (e.g. ₹25.01, ₹25.02) — disambiguates which order a payment belongs to without needing UTR
+- 15-minute expiry window on payment confirmation emails — auto-ignore old emails to defeat stale-claim attacks
+- UTR-level dedupe via DB unique constraint — same UTR can't verify two orders
+- Manual UTR fallback — if email wasn't auto-detected, the customer types the 12-digit UTR and the server matches it
+- PhonePe webhook: validate against raw request body bytes (req.text()), never parsed JSON — verify x-phonepe-checksum-signature header using base64-encoded HMAC SHA256 over the raw payload
+- PSP status API polling as a fallback when webhooks fail (idempotent: webhook + poll + manual verify all converge on the same payment state)
+- UPI VPA verification API (eps.eko.in, meon.co.in) — confirm payee name BEFORE showing the QR, so customer knows they're paying the right shop
+
+TOPIC 3 — QR code ordering system restaurant India UX
+Sources:
+- https://loopmenu.in/blog/qr-code-menu-restaurant-india/
+- https://getqrcafe.com/blog/qr-code-ordering-restaurants-india-guide
+- https://menumanager.in/qr-ordering-system/
+Concrete problems:
+- Low scan rate — bad QR visibility (under glass, smudged, poor contrast, on a flat table)
+- Heavy first screen / long-scrolling blocks → customers abandon on 3G/4G
+- Wrong orders due to fuzzy item descriptions ("chicken" without spice level)
+- Modifiers (spice level, add cheese) not intuitive → wrong orders
+- "Not technical" fear — older customers think they're stranded
+- Dead-zone network problems — no fallback when mobile data is down
+- Bill mismatch — no POS sync → duplicate entry at the counter
+- Menu changes often — printing slow + expensive (availability, sold-out items not real-time)
+- Customers distrust feeling "impersonal"
+Concrete solutions:
+- 3-point QR placement: table tent eye-level + counter QR + backup on menu cover/receipt
+- First-screen focus: best sellers + profitable categories early, short sensory descriptions (not ingredient dumps)
+- Mobile-first, 3G/4G-fast pages (<1s TTI on 3G)
+- Real-time availability — hide sold-out items instantly
+- Total price clarity BEFORE confirmation (no surprise at payment)
+- Always-visible "call staff" button — nobody stranded even if not technical
+- Per-table/per-zone unique QR codes — for table routing + tracking
+- Run QR alongside normal service for 2 weeks during rollout (not instead of it)
+- Track weekly KPIs: scan rate, conversion rate, AOV, order accuracy
+
+TOPIC 4 — Next.js PWA installability common issues
+Sources:
+- https://web.dev/learn/pwa/installation-prompt/
+- https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/How_to/Trigger_install_prompt
+- https://github.com/shadowwalker/next-pwa/issues/335
+Concrete problems:
+- beforeinstallprompt never fires if (a) PWA already installed, (b) app fails install criteria, (c) not installable on device (kiosk mode, missing permissions), (d) Chrome/Edge on iOS (only Safari can install on iOS), (e) service worker not registered + active (HMR/dev mode SW breaks criteria), (f) SW has no fetch handler
+- After fresh deploy, beforeinstallprompt doesn't fire until user interacts (~7s + click/scroll) — Chrome defers the installability check until first interaction
+- prompt() can only be called ONCE per BeforeInstallPromptEvent — if dismissed, must wait for next fire
+- iOS Safari has NO beforeinstallprompt event — must show "Add to Home Screen" instructions path
+- Chrome/Edge on iOS don't support PWA install at all
+- next-pwa + dev SW causes stale-asset bugs (HMR conflicts with precached app shell)
+- No analytics on install outcome → can't measure install funnel
+- Manifest without description + screenshots → Chrome Android shows a tiny "Add to home screen" infobar instead of a richer dialog
+Concrete solutions:
+- Listen for beforeinstallprompt → preventDefault → save event reference → show custom UI
+- Listen for appinstalled → clear saved event + hide install UI
+- Use Navigator.getInstalledRelatedApps() — if the platform app is already installed, don't show the PWA install prompt
+- Detect iOS Safari via UA (iPad/iPhone/iPod + WebKit + !CriOS) and show "Share → Add to Home Screen" instructions
+- Capture userChoice.outcome (accepted/dismissed) + send to analytics
+- Add manifest description + screenshots[] + categories[] → richer Chrome Android install dialog
+- Only register SW in production (NODE_ENV === 'production') — skip in dev to avoid HMR stale-asset bugs
+- Promote install at HIGH-ENGAGEMENT moment: after first successful order, after sign-up, in side menu — not on first pageview
+
+TOPIC 5 — OWASP Top 10 2025 web app security
+Sources:
+- https://top10.owasp.org/2025/0x00_2025-Introduction/
+- https://www.skilliteducation.com/blog/owasp-top-10-vulnerabilities-explained-with-examples
+- https://hackersec.com/blog/owasp-top-10-2025-the-main-web-vulnerabilities-in-2025
+The 2025 Top 10 (key changes vs 2021):
+- A01:2025 Broken Access Control (still #1, now includes SSRF)
+- A02:2025 Security Misconfiguration (up from #5 → #2)
+- A03:2025 Software Supply Chain Failures (NEW — expands old A06 vulnerable/outdated components to CI/CD + build systems + distribution infrastructure)
+- A04:2025 Cryptographic Failures (down from #2 → #4)
+- A05:2025 Injection (down from #3 → #5)
+- A06:2025 Insecure Design (down from #4 → #6)
+- A07:2025 Authentication Failures
+- A08:2025 Software or Data Integrity Failures
+- A09:2025 Security Logging & Alerting Failures
+- A10:2025 Mishandling of Exceptional Conditions (NEW — fail-open / verbose error / stack-trace leaks)
+Concrete problems users face:
+- A01 Broken Access Control: user changes the order ID in URL → sees someone else's invoice (IDOR)
+- A02 Security Misconfiguration: admin panel left open with default password; verbose stack traces shown to public
+- A03 Supply Chain: a compromised NPM package slips malicious code into the build
+- A04 Cryptographic Failures: passwords hashed with MD5/SHA1; PII sent without TLS
+- A05 Injection: SQLi / XSS via unchecked user input
+- A07 Authentication Failures: no rate limit on login → brute force; weak session tokens
+- A10 Mishandling Exceptions: error reveals internal DB schema or fails open (skips a permission check on error path)
+Concrete solutions:
+- Server-side permission check on EVERY request — never trust client-side gates
+- Parameterized queries + output encoding (Zod schemas for input + React's JSX escaping for output)
+- Maintain SBOM of NPM deps; pin versions; alert on advisories (Dependabot / Socket)
+- Remove default accounts, sample pages, verbose error messages before go-live
+- Log security events (failed logins, access denials, IDOR attempts) with context → alert on patterns
+- Exception handlers return generic messages + log internal details server-side
+- Sign packages + verify checksums (npm package-lock integrity)
+- MFA + login attempt limit + secure session tokens (JWT with short TTL + refresh)
+- Modern crypto (SHA-256 / bcrypt / argon2 for passwords, AES-256-GCM at rest, TLS 1.3)
+
+TOPIC 6 — WCAG 2.2 accessibility checklist SaaS
+Sources:
+- https://accessivepath.com/blog/wcag-2-2-for-saas
+- https://getwcag.com/en/wcag-2-2-checklist
+- https://www.thewcag.com/checklist
+Concrete problems users face (where WCAG 2.2 bites hardest in SaaS):
+- Component libraries without semantic markup (custom buttons that aren't <button>)
+- Modal dialogs that trap focus incorrectly (focus escapes the modal or gets stuck)
+- Data tables without programmatic structure (no <th scope>, no <caption>)
+- Drag-and-drop without keyboard alternatives
+- Status messages (toasts) not announced to AT (4.1.3 Status Messages — missing aria-live)
+The 9 NEW success criteria in 2.2 (most-missed):
+- 2.4.11 Focus Not Obscured (Minimum) — sticky headers hide focused element
+- 2.4.13 Focus Appearance — clear, contrasting focus ring
+- 2.5.7 Dragging Movements — provide single-pointer alternatives (buttons to move/resize)
+- 2.5.8 Target Size (Minimum) — targets ≥24×24 CSS px (mobile buttons too small)
+- 3.2.6 Consistent Help — keep help entry points in same location across pages
+- 3.3.7 Redundant Entry — don't ask for info twice in multi-step flows
+- 3.3.8 Accessible Authentication (Minimum) — allow paste + password managers + passkeys; avoid cognitive tests (e.g. "solve the puzzle")
+- 3.3.9 Accessible Authentication (Enhanced)
+- 4.1.1 Parsing REMOVED
+Concrete solutions:
+- Use accessibility-instrumented component library (Radix UI primitives — already in PrintShop via shadcn/ui)
+- Run axe-core in CI for regression (npm i @axe-core/playwright)
+- Annual manual audit against WCAG 2.2 AA with IAAP-certified team
+- Add aria-live="polite" to the toaster component (src/components/ui/toaster.tsx)
+- Visible :focus-visible outline with good contrast (Tailwind's focus-visible:ring)
+- Targets ≥24×24 CSS px (verify mobile buttons in customer app)
+- Allow paste in login/register forms (don't disable paste on password fields)
+- Audit modals in src/components/ui/dialog.tsx + sheet.tsx for focus trap correctness
+- Audit src/components/ui/table.tsx for <th scope> + <caption>
+
+TOPIC 7 — Core Web Vitals thresholds + common causes
+Sources:
+- https://sgaindex.com/articles/core-web-vitals-2025-inp-optimization
+- https://cogny.com/docs/core-web-vitals
+- https://www.digitalapplied.com/blog/core-web-vitals-optimization-guide-2025
+Thresholds (Google uses 75th percentile of real-user data — page "passes" only if all 3 meet "Good"):
+- LCP ≤2.5s good | 2.5-4s needs improvement | >4s poor
+- INP ≤200ms good | 200-500ms needs improvement | >500ms poor (INP replaced FID in March 2024)
+- CLS ≤0.1 good | 0.1-0.25 needs improvement | >0.25 poor
+Concrete causes + fixes:
+LCP (loading):
+- Slow TTFB → CDN + edge cache + 103 Early Hints; target TTFB <800ms
+- Render-blocking JS/CSS → inline critical CSS, defer non-critical, avoid @import in CSS
+- Slow image load → preload LCP image, WebP/AVIF, fetchpriority="high", responsive srcset
+- CSR delay → SSR/SSG the LCP content (Next.js app router already does this for server components)
+- Web font blocking LCP text → font-display: swap + preload primary font woff2 + subset
+INP (responsiveness — measures all interactions, not just first):
+- Long tasks >50ms blocking main thread → break with scheduler.yield() / setTimeout(0)
+- Heavy JS execution → code-split with dynamic import(), tree-shake
+- Expensive event handlers → debounce/throttle scroll + resize; avoid forced sync layouts (read-then-write pattern)
+- Large DOM → virtualize long lists (react-window / @tanstack/virtual) + CSS contain: layout style paint
+- Excessive SPA re-renders → React.memo + useMemo + useCallback + startTransition for non-urgent updates
+CLS (visual stability):
+- Always specify image width + height attrs (Next.js next/image does this automatically)
+- font-display: swap
+- Reserve space for dynamic content (ads, embeds, toasts)
+- CSS contain: layout style paint for isolated components
+
+TOPIC 8 — Local printing from browser security (loopback, CORS, origin-binding)
+Sources:
+- https://www.cross-origin.com/.../fixing-blocked-requests-from-https-page-to-localhost/
+- https://blog.paulserban.eu/post/how-to-debug-blocked-requests-local-network-access-in-chrome/
+- https://polariscode.net/articles/dns-rebinding-the-attack-inside-your-browser
+Concrete problems users face:
+- Chrome v142+ Local-Network-Access (LNA) — blocks public website requests to http://127.0.0.1 / 192.168.x.x without explicit permission + Access-Control-Allow-Private-Network: true on the preflight OPTIONS response
+- Safari blocks HTTPS page from loading http://localhost subresources entirely (treats as insecure content — no carve-out for loopback like Chromium/Firefox)
+- Chromium requires Access-Control-Allow-Private-Network: true on preflight for public→loopback requests (Firefox + Safari don't implement this check — different engines fail at different gates)
+- CORS Access-Control-Allow-Origin: * doesn't satisfy LNA — need explicit origin + ACPN header
+- Iframes need allow="local-network-access" attribute
+- DNS rebinding — attacker's DNS server returns 127.0.0.1 for a public hostname; the browser origin hasn't changed; SOP allows the request; if the local service doesn't validate Host header, it responds + the JS reads the response + exfiltrates it
+- Even CORS-safelisted simple requests (Content-Type: text/plain) reach unauthenticated endpoints — blind CSRF (no DNS trick needed)
+Concrete solutions:
+- BIND TO 127.0.0.1, NOT 0.0.0.0 — keeps the agent off the LAN (PrintShop's native-printer already does this — good)
+- ALLOWLIST THE HOST HEADER — reject requests with unexpected Host values (the DNS rebinding fix; PrintShop's native-printer currently doesn't do this — gap)
+- For Chrome LNA: respond to OPTIONS preflight with Access-Control-Allow-Private-Network: true when Access-Control-Request-Private-Network: true is present
+- For Safari: serve the agent over HTTPS via a loopback DNS name (agent.yourdomain.com A→127.0.0.1) with a public-CA cert (DNS-01 challenge)
+- Use navigator.permissions.query({name: "local-network-access"}) to detect LNA state
+- Add allow="local-network-access" on any iframe that needs local network
+- Don't reflect ANY origin — even with a token gatekeeper, the Host-header gap leaves the agent open to DNS rebinding + blind CSRF
+
+TOPIC 9 — File upload security / PDF risks
+Sources:
+- https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
+- https://nhimg.org/file-upload-security-guide
+- https://undercodetesting.com/stored-xss-via-malicious-pdf-upload/
+- https://hacktricks.wiki/en/pentesting-web/xss-cross-site-scripting/pdf-injection.html
+- https://portswigger.net/research/portable-data-exfiltration
+Concrete problems users face:
+- Stored XSS via malicious PDF — PDF can embed JavaScript; if rendered inline via <embed> / <object> / iframe on your domain, the JS runs in your origin → one-click account takeover (130M-user incident cited)
+- pdf.js embedded in a web app → stored XSS on that origin (HackTricks) — pdf.js's eval path is the vulnerable vector
+- Parser exploits in PDF libraries (Acrobat, pdf.js, Poppler) → RCE on server or in browser
+- Zip bombs / decompression bombs — small zip decompresses to TB; XML entity expansion ("billion laughs") in PDFs
+- Polyglot files — valid as both image + script
+- Path traversal via filename (../etc/passwd) or zip slip (archive entries with relative paths)
+- Content-Type spoofing — attacker sets image/png on a .php
+- Double extensions (.jpg.php), null bytes (.php%00.jpg), case manipulation (.pHp) bypass blocklists
+- Configuration override — uploaded .htaccess / web.config changes directory behavior
+- Public disclosure of other files if served from same dir
+- Public file retrieval DoS — small requests, large responses
+Concrete solutions:
+- ALLOWLIST EXTENSIONS (not blocklist) — only safe business-critical types (PDF, JPG, PNG for PrintShop)
+- VERIFY CONTENT TYPE BY PARSING/RE-ENCODING — don't trust Content-Type header (PrintShop's upload-url route uses client-declared mimeType only — gap; add a post-upload server-side magic-byte check or pdf-parse-to-validate step)
+- GENERATE RANDOM FILENAMES (storageKey already does this — good)
+- Set filename length limit + restrict allowed characters (current route allows 1-255 chars — no char restriction; gap)
+- Set file size limit BEFORE AND AFTER decompression (current 25MB pre-decompression limit; add archive ratio limit if archives are accepted)
+- AUTHENTICATE EVERY UPLOAD (current route doesn't have withAuth — gap if order IDs are guessable; the order must be in 'awaiting_payment' status which is a partial mitigation but doesn't authenticate the uploader's identity)
+- STORE OFF THE WEB ROOT (R2 / S3 presigned URLs — already correct in PrintShop)
+- MAP IDs TO FILENAMES — never serve raw filenames (current download route uses fileId — good)
+- NO EXECUTE PERMISSION on upload directory (R2 — N/A, but for any local FS storage)
+- Content-Disposition: attachment + X-Content-Type-Options: nosniff + serve from a separate download domain (PrintShop's download route — verify these headers are set)
+- Refuse or sanitize SVG (don't allow SVG uploads — XSS vector)
+- Disable per-directory overrides (Apache AllowOverride None — N/A for R2)
+- Run uploads through AV / sandbox; consider CDR (Content Disarm & Reconstruct) for PDF/DOCX
+- FOR PDFs SPECIFICALLY: render via pdf.js with isEvalSupported:false + disableAutoFetch:true + disableJavaScript:true (HackTricks mitigation); or convert pages to images server-side and serve images
+- Set entry + ratio limits for archives; timeout on parse
+- Disable DTDs in XML parsers
+
+TOPIC 10 — Vercel serverless function limitations
+Sources:
+- https://vercel.com/kb/guide/what-can-i-do-about-vercel-serverless-functions-timing-out
+- https://generalistprogrammer.com/errors/vercel-function-timeout
+- https://bringforth.ai/blog/vercel-serverless-functions-cold-starts-timeouts-and-cost
+Concrete problems users face:
+- Hard timeout limits — Hobby 10s, Pro 60s, Enterprise 300s (Fluid Compute raises these to 5min on free / 800s on Pro / 1800s beta)
+- Cold starts — 300ms-1.5s on Hobby/Pro after 5-10 min inactivity; user sees spinner, assumes broken, abandons (1-3s abandonment threshold is consumed entirely by the cold start before any code runs)
+- 504 errors returned silently to user when timeout hit — looks like product is down (no error message)
+- Heavy deps at init — each NPM import adds to cold start time (Prisma client, AWS SDK, AI SDK are notorious)
+- Local testing has NO timeout — dev never sees the production failure mode
+- LLM/AI calls exceed 10s Hobby limit every time
+- Long DB queries (Prisma findMany with deep includes) blow the budget
+- Infinite loops in function logic
+- Upstream API hangs — no timeout on fetch() call
+- No response returned → always hits ceiling
+Concrete solutions:
+- ENABLE FLUID COMPUTE — newer Vercel model, up to 800s on Pro/Enterprise, 1800s beta, optimized concurrency (multiple invocations per instance), bytecode caching for cold starts
+- SET `export const maxDuration = N` in route segment config for specific long routes
+- ALWAYS return an HTTP response — even error branches
+- ADD AbortController timeout to all external fetch calls (e.g. 5s) — catch + return 504 fallback early
+- MOVE LONG TASKS TO BACKGROUND JOBS — Vercel Workflow / Inngest / queue → return job ID immediately, process async, client polls for status
+- STREAMING RESPONSES for AI/LLM calls — start returning before computation finishes (resumable streams)
+- OPTIMIZE DB QUERIES — pagination (skip/take), select specific fields not *, add indexes, use _count instead of nested includes, run EXPLAIN
+- REDUCE DEPS — tree-shake, dynamic import() for heavy modules only when needed
+- CRON-BASED WARMERS — hit the function every few minutes to prevent cold start (or rely on Fluid Compute's bytecode caching)
+- GRACEFUL UPSTREAM FAILURE HANDLING — catch and return error early
+- MONITOR — Vercel Function Logs, look for Init Duration field for cold starts
+
+TOP 10 CONCRETE IMPROVEMENTS FOR PRINTSHOP (ranked by impact)
+1. [SECURITY — HIGH] Add Host-header allowlist + Access-Control-Allow-Private-Network preflight response to mini-services/native-printer/index.js. Problem: CORS reflects ANY origin (line 235-242), no Host validation (line 252-256), no ACPN header on OPTIONS preflight (line 237-239). The current code is exploitable via DNS rebinding + blind CSRF + Chrome v142+ LNA blocking. Fix: validate req.headers.host against an allowlist, set Access-Control-Allow-Private-Network: true on preflight when Access-Control-Request-Private-Network: true is requested.
+2. [SECURITY — HIGH] Add server-side post-upload content verification to src/app/api/v1/orders/[id]/files/upload-url/route.ts + add a content-check webhook from R2 (or a post-PUT verify step). Problem: route trusts client-declared mimeType (line 28-33) — Content-Type spoofing lets a .pdf upload actually contain .svg-with-JS or .exe; filename allows any 1-255 chars (line 12) — path traversal + double-extension bypass risks. Fix: after presigned PUT completes, fetch the object's first 16 bytes server-side and verify the magic-byte signature matches the declared MIME; restrict filename chars to [a-zA-Z0-9._-]; refuse SVG uploads entirely.
+3. [SECURITY — HIGH] Harden PDF preview against stored XSS. Problem: src/components/portal/pdf-preview.tsx (line 93) calls pdfjs.getDocument({data: pdfData}) with no isEvalSupported:false / disableAutoFetch:true / disableJavaScript:true flags — pdf.js's eval path is a known XSS vector when rendering attacker-controlled PDFs. Fix: pass getDocument({ data, isEvalSupported: false, disableAutoFetch: true, disableJavaScript: true }); also set a strict CSP (script-src 'self' 'unsafe-inline' for dev only) via src/middleware.ts headers + ensure download route serves PDFs with Content-Disposition: attachment + X-Content-Type-Options: nosniff.
+4. [PAYMENTS — HIGH] Add unique-decimal-amount per order + UTR dedupe to src/app/api/v1/orders/[id]/checkout/route.ts + src/app/api/v1/shops/me/orders/[id]/verify-payment/route.ts. Problem: UPI deep-link payments collide when 2 customers pay ₹25 for 2 different orders; UTR replay attack possible (no unique constraint on paymentUtr). Fix: append a unique decimal (e.g. ₹25.01, ₹25.02, ...₹25.99) to the UPI collect amount per order; add a unique DB constraint on (shopId, paymentUtr) so the same UTR can't verify two orders; reject any payment-verify request whose UTR is older than 15 min from the order's create time.
+5. [PAYMENTS — MEDIUM] Add a 15-minute payment-expiry check to the verify-payment route + the customer status poller. Problem: a customer can submit an old UPI payment reference + claim it for a new order (stale-payment-claim). Fix: in src/app/api/v1/shops/me/orders/[id]/verify-payment/route.ts + src/app/api/v1/payments/upi/verify/[orderId]/route.ts, reject any payment whose timestamp is > 15 minutes before the order's createdAt — server-side, not just client-side.
+6. [PWA — MEDIUM] Add manifest screenshots[] + Navigator.getInstalledRelatedApps() check + userChoice analytics to src/app/manifest.ts + src/components/pwa/install-prompt.tsx. Problem: manifest screenshots:[] is empty (manifest.ts line 91) → Chrome Android shows the small infobar instead of the richer dialog; install-prompt doesn't check getInstalledRelatedApps (pwa-register.tsx) → can prompt users who already have the native app; userChoice isn't sent to analytics. Fix: add 2-3 screenshots (dashboard + customer app + printer setup), check getInstalledRelatedApps() before showing the prompt, fire a posthog/analytics event on userChoice.outcome.
+7. [ACCESSIBILITY — MEDIUM] Audit + fix the 4 most-likely WCAG 2.2 AA failures. Problem: src/components/ui/toaster.tsx likely missing aria-live; src/components/ui/dialog.tsx + sheet.tsx may trap focus incorrectly on edge cases; mobile buttons in src/app/shops/[slug]/page.tsx may be <24×24 CSS px; login/register forms may disable paste. Fix: add aria-live="polite" + role="status" to the Toaster; verify Radix Dialog/Sheet focus trap; audit mobile touch targets (target ≥24×24); never disable paste on password inputs (src/app/shop/login/page.tsx + register/page.tsx).
+8. [PERFORMANCE — MEDIUM] Optimize shopkeeper dashboard + customer app for INP. Problem: src/components/phase5/shop-dashboard.tsx + shop-dashboard-queue likely re-render on every order-poll cycle; src/app/shops/[slug]/page.tsx loads heavy QR + product list on first paint. Fix: wrap heavy child components in React.memo; useMemo the queue-sort + filter computations; use startTransition for non-urgent status updates; verify image width/height attrs (next/image already does this) to avoid CLS; preload the LCP image (hero) with fetchpriority="high".
+9. [VERCEL — MEDIUM] Add maxDuration + AbortController + streaming where needed to API routes. Problem: src/app/api/v1/orders/[id]/files/upload-url/route.ts + verify-payment route make external calls (R2 presign, PSP status API) without timeout protection — Vercel Hobby 10s / Pro 60s limits can be hit silently → 504 to user looks like product is down. Fix: add `export const maxDuration = 30` to the routes that do external I/O; wrap every fetch() in AbortController with 5s timeout; for long PDF-processing routes, consider moving to a background queue (already have packages/adapters/queue in-memory — wire to Vercel Workflow or Inngest for production).
+10. [UX/COPY — MEDIUM] Address the 4 restaurant-style QR ordering UX pain points in the customer app. Problem: src/app/shops/[slug]/page.tsx + src/app/orders/[id]/page.tsx likely have generic "order here" copy; no always-visible "ask staff" button; no real-time availability hiding; no total-price-clarity-before-confirm pattern. Fix: per the QR-restaurant-India findings — add a visible "Ask the shopkeeper" button on every customer screen (so non-technical users aren't stranded); show "Sold out" badges from inventory state; show total price (with breakdown) before the "Pay via UPI" CTA; keep first screen focused on upload + 3 most-common options (B/W single, Color single, Color duplex).
+
+Sources for the top-10 (the URLs above, summarized):
+- DNS rebinding / LNA: cross-origin.com + polariscode.net + paulserban.eu
+- File upload + PDF XSS: cheatsheetseries.owasp.org + nhimg.org + hacktricks.wiki
+- UPI unique-decimal-amount + 15-min expiry: github.com/iflexvault/upi-auto-verify + jadupe.com
+- PhonePe X-VERIFY raw-body: developer.phonepe.com + amsit.in
+- PWA install: web.dev + developer.mozilla.org
+- WCAG 2.2 SaaS: accessivepath.com + getwcag.com
+- Core Web Vitals: sgaindex.com + cogny.com + digitalapplied.com
+- Vercel timeouts: vercel.com/kb + bringforth.ai + generalistprogrammer.com
+- Print-shop pain points India: qrpress.in + printcatalyst.in + printflows.in
+- QR ordering India UX: loopmenu.in + getqrcafe.com
+
+---
+Task ID: b2-routes
+Agent: general-purpose
+Task: Apply the new `withOrderAccess` middleware (created + wired into the status route in the b1 commit) to the remaining 5 customer-facing order routes named in SEC-001: receipt (GET, returns PDF), files (POST, confirm upload + parse page count), files/upload-url (POST, mint presigned PUT URL), files/[fileId] (PATCH, update print settings + reprice), checkout (POST, create payment intent). Follow the EXACT pattern from `src/app/api/v1/orders/[id]/status/route.ts`: `withRateLimit(scope, limit, window, withOrderAccess<{ id: string }>(async (req, ctx, order) => { ... }))` for rate-limited routes, plain `withOrderAccess<{ id: string }>(handler)` for non-rate-limited routes (receipt only). Remove the now-redundant `const { id } = await ctx.params; const order = await repos.orders.findById(id); if (!order) throw new NotFoundError(...)` boilerplate from each handler — withOrderAccess does all that now. Keep ALL business logic intact.
+
+Work Log:
+- Read `worklog.md` lines ~3200-3320 for SEC-001 context (Critical IDOR finding: customer-facing order routes were unauthenticated — UUID in URL was the only credential, exposing PII + enabling file-upload + re-pricing attacks against other customers).
+- Read `src/lib/api/with-order-access.ts` to confirm the contract: returns a wrapper that loads `order` by `id`, constant-time compares the `X-Order-Token` header (or `?t=` query) against `order.customerToken`, throws `ForbiddenError` on mismatch (NOT 404 — don't reveal order existence), passes the loaded `order` as the 3rd handler arg. Returns `Promise<NextResponse>`.
+- Read `src/app/api/v1/orders/[id]/status/route.ts` to capture the canonical pattern: outer `withRateLimit<{ id: string }>('status', 120, 60, ...)` + inner `withOrderAccess<{ id: string }>(async (_req, _ctx, order) => { try { ... } catch (cause) { return fail(toAppError(cause)); } })`. Inner handler keeps its own try/catch (defense in depth — both layers do the same `fail(toAppError(cause))` so behaviour is identical).
+- Read all 5 target route files in parallel to inventory each one's current shape (rate-limit wrapper? generic params? which imports become unused? does the handler use `req` for body / IP audit? does it use `ctx` for params other than `id`?).
+
+Per-file edits:
+
+1. `src/app/api/v1/orders/[id]/receipt/route.ts` (GET — raw PDF, NOT rate-limited)
+   - Replaced `export async function GET(req, ctx): Promise<NextResponse>` with `export const GET = withOrderAccess<{ id: string }>(async (_req, _ctx, order) => { ... })`.
+   - Removed the `const { id } = await ctx.params; const order = await repos.orders.findById(id); if (!order) throw new NotFoundError('Order not found');` block (3 lines).
+   - Kept the inner try/catch + dynamic `await import('@/lib/api/envelope')` for the catch path (withOrderAccess also has its own outer try/catch, but keeping the inner one matches the status-route pattern and is harmless).
+   - Kept `NotFoundError` import (still used for `Shop not found` + `Receipt available only for paid orders`).
+   - Removed unused `NextRequest` from the `next/server` import (now `import { NextResponse } from 'next/server'`) — would have triggered the `@typescript-eslint/no-unused-vars` lint warning otherwise.
+   - Added `import { withOrderAccess } from '@/lib/api/with-order-access';`.
+   - Added SEC-001-fix JSDoc explaining the `?t=` query fallback (receipt opens as a browser navigation — no header can be sent; customer tracking page must construct URL with `?t=<token>` — that's a separate task, not handled here).
+
+2. `src/app/api/v1/orders/[id]/files/route.ts` (POST — confirm upload, parse page count, rate-limited `('confirm-file', 30, 60)`)
+   - Wrapped as `withRateLimit<{ id: string }>('confirm-file', 30, 60, withOrderAccess<{ id: string }>(async (req, _ctx, order) => { try { ... } catch (cause) { return fail(toAppError(cause)); } }))`.
+   - Removed the `const { id } = await ctx.params; const order = ...; if (!order) throw new NotFoundError(...)` block.
+   - Removed `NotFoundError` from the `@platform/core/errors` import (no longer used in this file — would have triggered lint). `ValidationError` still imported (used for status check, storageKey-prefix check, size mismatch, etc.).
+   - Kept `req` (used for `req.json()` body + `req.headers.get('x-forwarded-for')` in audit log).
+   - Kept the cross-order storageKey-prefix defense-in-depth check (`shops/${order.shopId}/orders/${order.id}/`) — this was already a strong mitigation against cross-order attacks WITHIN a shop, but it doesn't help against cross-CUSTOMER attacks where the attacker has a valid token for their own order — withOrderAccess now closes that gap.
+   - Added SEC-001-fix JSDoc.
+
+3. `src/app/api/v1/orders/[id]/files/upload-url/route.ts` (POST — mint presigned PUT URL, rate-limited `('upload-url', 30, 60)`)
+   - Same shape as #2. Wrapped with `withRateLimit('upload-url', 30, 60, withOrderAccess<{ id: string }>(async (req, _ctx, order) => { ... }))`.
+   - Removed `NotFoundError` import (no longer used — `ValidationError` is still used 4x).
+   - Kept the existing MIME-type allowlist + size limit + `validateUploadRequest` checks.
+   - Added SEC-001-fix JSDoc.
+
+4. `src/app/api/v1/orders/[id]/files/[fileId]/route.ts` (PATCH — update print settings + reprice, rate-limited `('patch-file', 60, 60)`, generic `{ id: string; fileId: string }`)
+   - Wrapped as `withRateLimit<{ id: string; fileId: string }>('patch-file', 60, 60, withOrderAccess<{ id: string; fileId: string }>(async (req, ctx, order) => { ... }))`.
+   - Replaced `const { id, fileId } = await ctx.params;` with `const { fileId } = await ctx.params;` — `id` is now in `order.id` (verified + loaded by withOrderAccess), but `fileId` is still a path param the handler must read itself.
+   - Kept `NotFoundError` import (still used for `File not found` + `Shop not found`).
+   - Kept `ValidationError` import (status check + needs_review check).
+   - Used `withOrderAccess<{ id: string; fileId: string }>` (not the default `{ id: string }`) so the handler's `ctx.params` type matches `withRateLimit`'s generic.
+   - Added SEC-001-fix JSDoc explaining that withOrderAccess only verifies the order, not the file — file lookup remains the handler's responsibility (this is correct: the file is a child resource of the order; if you can access the order, you can access its files, subject to the handler's own `fileId ∈ order` check via `repos.files.findByIdAndOrder(fileId, order.id)`).
+   - NOTE: this file only exports `PATCH` (no `GET` for download — download is served by the shopkeeper-side route `src/app/api/v1/shops/me/orders/[id]/files/[fileId]/download/route.ts` which uses `withAuth`, not customer-facing). The task description mentioned "GET + PATCH" but only PATCH existed in this file; only PATCH was modified.
+
+5. `src/app/api/v1/orders/[id]/checkout/route.ts` (POST — create payment intent, rate-limited `('checkout', 20, 60)`)
+   - Same shape as #2/#3. Wrapped with `withRateLimit('checkout', 20, 60, withOrderAccess<{ id: string }>(async (req, _ctx, order) => { ... }))`.
+   - Kept `NotFoundError` import (still used for `Shop not found`).
+   - Kept `req` (used for `req.headers.get('x-forwarded-for')` in audit log).
+   - Kept all business logic: shop lookup, UPI VPA check, file count check, unpaid-files check, payment-adapter call, `rememberPaymentSession` mapping, audit log, ok() envelope.
+   - Added SEC-001-fix JSDoc.
+
+Verification:
+- `bunx tsc --noEmit` → 0 errors. ✅
+- `bun run lint` → 0 warnings (`eslint .` exit code 0). ✅
+- `bunx vitest run` → 218/218 pass (21 test files, ~7.65s). ✅ Same count as before — no tests added/removed/changed. The 5 modified routes have no route-level integration tests (only the `with-order-access` middleware itself is unit-tested); existing tests cover the underlying services (pricing, payments, repositories, etc.) and are unaffected by the wrapper change.
+
+Stage Summary:
+SEC-001 customer-facing order-route IDOR fix is now complete on the API surface. All 6 customer-facing `/api/v1/orders/:id/*` routes named in the audit (status + the 5 updated here) are now behind `withOrderAccess`. The wrapper requires an `X-Order-Token` header (or `?t=` query for navigation-opened links like receipt) that constant-time-matches `order.customerToken`. A mismatch or missing token → 403 Forbidden (NOT 404 — don't reveal whether the order exists). Brute-force attempts are still throttled by the outer `withRateLimit` layer (per-IP, per-scope bucket). Business logic in every handler is byte-for-byte identical to the pre-fix version, just with the `findById` + `if (!order) throw NotFoundError` boilerplate factored out into the wrapper.
+
+REMAINING (NOT in this task's scope, flagged for follow-up):
+- Customer tracking page (`src/app/orders/[id]/page.tsx`) + customer app (`src/components/phase4/customer-app.tsx`) must send `X-Order-Token: <customerToken>` on every fetch to `/api/v1/orders/:id/{status,files,upload-url,files/[fileId],checkout}`, and the "Download receipt" link must be constructed as `/api/v1/orders/:id/receipt?t=<customerToken>` (no header on navigation). Without this, the customer UI will hit 403 on every request — the API is now secure but the UX is broken until the client side is updated.
+- `src/app/api/v1/payments/upi/verify/[orderId]/route.ts` is also named in SEC-001 but was NOT in this task's list of 5 (the orchestrator's task description only listed 5 routes for b2). It still uses the old unauthenticated pattern and needs the same `withOrderAccess` treatment — flagged for a follow-up task.
+- The receipt route's PDF is generated server-side by pdf-lib — no XSS vector (the customer doesn't control PDF content; only shop name + line-item filenames are reflected, both come from the DB, not the request body). No additional hardening needed here.
+
+---
+Task ID: b2-customer-ui
+Agent: general-purpose
+Task: Wire the customer tracking page (`src/app/orders/[id]/page.tsx`) to send the `X-Order-Token` header on every fetch to `/api/v1/orders/:id/*` now that the b2-routes commit landed the `withOrderAccess` middleware on all 6 customer-facing order routes. The page already had an `orderAuthHeaders` variable (`Record<string, string> | undefined` — `{ 'X-Order-Token': <token> }` when a token is known, undefined otherwise) but no callsite was actually using it. Without this fix, the customer UI hits 403 on every request — the API is secure but the UX is broken.
+
+Work Log:
+- Read worklog.md tail (lines ~4045-4125) for the b2-routes stage summary + the explicit "REMAINING" callout flagging this exact task as the customer-UI follow-up.
+- Read `src/lib/api/with-order-access.ts` end-to-end to confirm the 403 messages are already user-friendly ("This order link is incomplete. Open the full link from your receipt or the order-confirmation page (it includes a ?t= token)." for no-token; "Order access token does not match." for wrong-token). Decision: do NOT customise the error UI in the page — the API's error envelope already surfaces directly via `r.data?.error?.message ?? 'Order not found.'` in `loadOrder`, so the customer sees the clear message.
+- Inventoried all `api.request(...)` callsites in `src/app/orders/[id]/page.tsx` via grep: 7 hits on `/api/v1/orders/${orderId}/*` (status, upload-url, files POST, files/${c.fileId} PATCH auto, files/${fileId} PATCH manual, checkout, receipt) + 3 hits on PUBLIC routes that must NOT get the header (`/api/v1/shops/${shopSlug}` shop info, `/api/v1/shops/${shopSlug}/upi-qr` desktop QR fallback, `/api/v1/qr?data=...` generated QR). Confirmed the 3 public callsites were left untouched.
+
+Edits (all in `src/app/orders/[id]/page.tsx`):
+
+1. `loadOrder` — status GET (line ~249): added `, { headers: orderAuthHeaders }` 3rd arg. Added `orderAuthHeaders` to the `useCallback` deps array (was `[api, orderId]`, now `[api, orderId, orderAuthHeaders]`). This makes `loadOrder`'s identity change when the token loads from sessionStorage, which auto-re-triggers the mount effect (which already lists `loadOrder` in its deps) → the status fetch re-fires WITH the token. The first call (token still null → header undefined) will 403 + show the "incomplete link" message; once the token is hydrated from sessionStorage (or stripped from `?t=` in the URL), the second call succeeds and clears `fatalError`. This matches the task's "don't block on the token, let the 403 handle it" guidance — but in practice the second call lands within ~1 render tick so the flash is negligible.
+2. `handleFiles` upload-url POST (line ~380): merged `headers: orderAuthHeaders` into the existing `{ body: { filename, mimeType, size } }` opts object. Added `orderAuthHeaders` to the deps (was `[api, orderId]`, now `[api, orderId, orderAuthHeaders]`).
+3. `handleFiles` files POST (line ~408): same merge pattern — `{ body: { fileId, storageKey, filename, mimeType, size }, headers: orderAuthHeaders }`. Same deps update (covered by #2).
+4. `handleFiles` files/${c.fileId} PATCH auto (line ~433): `{ body: def, headers: orderAuthHeaders }`. Same deps update (covered by #2).
+5. `updateFile` files/${fileId} PATCH manual (line ~505): `{ body, headers: orderAuthHeaders }`. Added `orderAuthHeaders` to deps (was `[api, orderId, files]`, now `[api, orderId, files, orderAuthHeaders]`).
+6. `doCheckout` checkout POST (line ~534): added `, { headers: orderAuthHeaders }` 3rd arg (previously had no opts). Added `orderAuthHeaders` to deps (was `[api, orderId, shopSlug]`, now `[api, orderId, shopSlug, orderAuthHeaders]`). Left the 2 PUBLIC-route fetches inside `doCheckout` (`/api/v1/shops/${shopSlug}/upi-qr` + `/api/v1/qr?data=...`) untouched — those routes are intentionally public.
+7. `downloadReceipt` receipt GET (line ~605): merged `headers: orderAuthHeaders` into the existing `{ raw: 'bytes' }` opts → `{ raw: 'bytes', headers: orderAuthHeaders }`. Added a 4-line JSDoc explaining that the receipt is fetched as bytes (NOT navigated to via an `<a href>`), so the header can be attached directly — no `?t=` query needed. Added `orderAuthHeaders` to deps (was `[api, orderId]`, now `[api, orderId, orderAuthHeaders]`). NOTE: the task description mentioned a possible anchor `<a href="/api/v1/orders/${orderId}/receipt">` needing `?t=` appended — but this page has NO such anchor; the receipt is downloaded via a Button onClick → `downloadReceipt()` → fetch + Blob + programmatic `<a>` click. The header approach is correct + sufficient.
+
+Verification:
+- `bunx tsc --noEmit` → EXIT=0. 0 errors. ✅
+- `bun run lint` → EXIT=0. 0 warnings. ✅ (`eslint .` clean — no `react-hooks/exhaustive-deps` warnings despite adding `orderAuthHeaders` to 5 `useCallback` deps arrays, because every callsite that consumes the variable now lists it in deps.)
+- `bunx vitest run` → 21 files, 218/218 pass (~7.45s). ✅ Same count as before — no tests added/removed/changed. This page has no component-level tests (only the underlying services + the `with-order-access` middleware itself are unit-tested), so the wrapper change is covered transitively.
+
+Stage Summary:
+SEC-001 customer-UI wiring is now complete. All 7 customer-facing fetches in `src/app/orders/[id]/page.tsx` that hit `/api/v1/orders/:id/*` now attach `X-Order-Token: <customerToken>` (via the `orderAuthHeaders` memo). The 3 fetches to public routes (`/api/v1/shops/:slug`, `/api/v1/shops/:slug/upi-qr`, `/api/v1/qr`) correctly do NOT attach it. The receipt download (a fetch + Blob, not an `<a href>` navigation) uses the header, not `?t=`. The customer tracking page will now work end-to-end with the `withOrderAccess` middleware landed in b2-routes: status loads, file uploads mint+confirm+PATCH, checkout creates the payment intent, receipt downloads — all authenticated by the per-order `customerToken` issued at order creation. No-token case is handled gracefully by the API's 403 envelope ("This order link is incomplete...") which surfaces directly in the page's `fatalError` state.
+
+REMAINING (NOT in this task's scope, flagged for follow-up):
+- `src/components/phase4/customer-app.tsx` — the other customer-facing entry point mentioned in b2-routes' "REMAINING" section. Still needs the same `X-Order-Token` wiring if it makes any `/api/v1/orders/:id/*` fetches (audit pending).
+- `src/app/api/v1/payments/upi/verify/[orderId]/route.ts` — still on the old unauthenticated pattern (flagged in b2-routes; not in this task's list either).
