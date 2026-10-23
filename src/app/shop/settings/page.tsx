@@ -189,6 +189,12 @@ export default function ShopSettingsPage() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  // ── Pricing (editable) ──
+  const [pricingDraft, setPricingDraft] = useState<ShopPricingConfig | null>(null);
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [pricingSaved, setPricingSaved] = useState(false);
+  const [pricingError, setPricingError] = useState<string | null>(null);
+
   // ── Business hours ──
   const [hours, setHours] = useState<BusinessHours>(() => parseHours(null));
   const [savingHours, setSavingHours] = useState(false);
@@ -233,6 +239,7 @@ export default function ShopSettingsPage() {
         setPaymentInstructions(s.paymentInstructions ?? '');
         setCashOnPickup(s.cashOnPickup);
         setUpiQrHasImage(Boolean(s.upiQrStorageKey));
+        setPricingDraft(s.pricingConfig);
       } else if (shopR.status === 401) {
         setError('Session expired. Please log in again.');
       } else {
@@ -332,6 +339,42 @@ export default function ShopSettingsPage() {
       setHoursError(err instanceof Error ? err.message : 'Network error');
     } finally {
       setSavingHours(false);
+    }
+  };
+
+  // ── Save pricing (shopkeeper-controlled per-shop prices) ──
+  // Calls PATCH /api/v1/shops/me with the updated pricingConfig. The server
+  // validates via ShopPricingConfigSchema (Zod) — all values must be
+  // non-negative integers (paise). The PATCH route is withAuth(['owner'])
+  // + shop-scoped (repos.shops.getByOwner) — a shopkeeper can only update
+  // their own shop's prices.
+  const savePricing = async () => {
+    if (!pricingDraft) return;
+    setSavingPricing(true);
+    setPricingError(null);
+    setPricingSaved(false);
+    try {
+      const r = await api.request<{ data?: ShopInfo; error?: { message?: string } }>(
+        'PATCH',
+        '/api/v1/shops/me',
+        { body: { pricingConfig: pricingDraft } },
+      );
+      if (r.status !== 200) {
+        setPricingError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+        return;
+      }
+      // Update the shop state with the saved pricing (so the UI reflects
+      // what the server actually persisted, not just what the client sent).
+      if (r.data?.data?.pricingConfig) {
+        setPricingDraft(r.data.data.pricingConfig);
+        setShop((prev) => prev ? { ...prev, pricingConfig: r.data!.data!.pricingConfig } : prev);
+      }
+      setPricingSaved(true);
+      setTimeout(() => setPricingSaved(false), 3000);
+    } catch (err) {
+      setPricingError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setSavingPricing(false);
     }
   };
 
@@ -637,34 +680,138 @@ export default function ShopSettingsPage() {
             </CardFooter>
           </Card>
 
-          {/* Pricing read-only card — kept here so the settings page is one-stop. */}
+          {/* Pricing — editable per-shop prices (shopkeeper-controlled) */}
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="size-4 text-amber-600" /> Pricing configuration
+                <CreditCard className="size-4 text-amber-600" /> Pricing & Print Services
               </CardTitle>
-              <CardDescription className="flex items-center gap-1.5 text-xs">
-                <Lock className="size-3" /> Read-only — the pricing engine in <code className="font-mono">packages/core</code> is the single source of truth.
+              <CardDescription className="text-xs">
+                Set your per-page prices. Customers see these exact prices when ordering. Prices are in paise (1 rupee = 100 paise) — enter the price in rupees and the system converts automatically.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                {PRICING_ROWS.map(({ key, label }) => {
-                  const valuePaise = shop.pricingConfig[key] as number;
-                  return (
-                    <div key={String(key)} className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="font-mono font-semibold">{formatINRFromPaise(valuePaise)}</span>
+            <CardContent className="space-y-3">
+              {pricingDraft ? (
+                <>
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                    {PRICING_ROWS.map(({ key, label }) => {
+                      const valuePaise = pricingDraft[key] as number;
+                      const valueRupees = (valuePaise / 100).toFixed(2);
+                      return (
+                        <div key={String(key)} className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
+                          <span className="text-muted-foreground">{label}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-muted-foreground">₹</span>
+                            <Input
+                              type="number"
+                              step="0.50"
+                              min="0"
+                              value={valueRupees}
+                              onChange={(e) => {
+                                const rupees = parseFloat(e.target.value);
+                                const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
+                                setPricingDraft((prev) => prev ? { ...prev, [key]: paise } : prev);
+                              }}
+                              className="h-8 text-xs"
+                              disabled={savingPricing}
+                            />
+                            <span className="text-[10px] text-muted-foreground">/ page</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Duplex discount + bulk discount + min order */}
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
+                      <span className="text-muted-foreground">Duplex discount (%)</span>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="100"
+                        value={pricingDraft.duplex_discount}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value) || 0;
+                          setPricingDraft((prev) => prev ? { ...prev, duplex_discount: Math.max(0, Math.min(100, v)) } : prev);
+                        }}
+                        className="h-8 text-xs"
+                        disabled={savingPricing}
+                      />
                     </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                <span className="text-emerald-800">Minimum order value</span>
-                <span className="font-mono font-semibold text-emerald-900">
-                  {formatINRFromPaise(shop.pricingConfig.min_order_value)}
-                </span>
-              </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
+                      <span className="text-muted-foreground">Bulk threshold (pages)</span>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={pricingDraft.bulk_threshold}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value) || 0;
+                          setPricingDraft((prev) => prev ? { ...prev, bulk_threshold: Math.max(0, v) } : prev);
+                        }}
+                        className="h-8 text-xs"
+                        disabled={savingPricing}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
+                      <span className="text-muted-foreground">Bulk discount (%)</span>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="100"
+                        value={pricingDraft.bulk_discount_pct}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value) || 0;
+                          setPricingDraft((prev) => prev ? { ...prev, bulk_discount_pct: Math.max(0, Math.min(100, v)) } : prev);
+                        }}
+                        className="h-8 text-xs"
+                        disabled={savingPricing}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                    <span className="text-emerald-800">Minimum order value</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-emerald-900">₹</span>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={(pricingDraft.min_order_value / 100).toFixed(2)}
+                        onChange={(e) => {
+                          const rupees = parseFloat(e.target.value);
+                          const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
+                          setPricingDraft((prev) => prev ? { ...prev, min_order_value: paise } : prev);
+                        }}
+                        className="h-8 w-20 text-xs"
+                        disabled={savingPricing}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save + feedback */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button onClick={savePricing} disabled={savingPricing} size="sm" className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90">
+                      {savingPricing ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                      {savingPricing ? 'Saving…' : 'Save prices'}
+                    </Button>
+                    {pricingSaved && (
+                      <span className="text-xs font-medium text-emerald-600">✓ Prices saved — customers see the new prices immediately.</span>
+                    )}
+                    {pricingError && (
+                      <span className="text-xs font-medium text-destructive">✗ {pricingError}</span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading pricing configuration…
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

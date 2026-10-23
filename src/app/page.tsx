@@ -120,12 +120,6 @@ export default function HomePage() {
                 <Search className="h-4 w-4" />
                 Find a shop
               </Button>
-              <Button asChild size="lg" variant="outline">
-                <Link href="/shop/login">
-                  <Store className="h-4 w-4" />
-                  Shopkeeper portal
-                </Link>
-              </Button>
             </div>
           </div>
 

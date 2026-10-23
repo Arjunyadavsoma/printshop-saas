@@ -1984,3 +1984,56 @@ Stage Summary:
 - The fix remains LOCAL (NOT deployed). Per the user's instruction: "Do not commit, push, deploy... without explicit authorization."
 
 Definition of done: ✓ A customer can select a supported document, upload it to the existing storage service, confirm it against the correct order, see it in the order summary, refresh the page without losing it — ALL verified locally. The production fix (CSP change) is implemented + tested but NOT yet deployed (requires explicit push authorization).
+
+---
+Task ID: payment-status-token-homepage-pricing
+Agent: orchestrator (senior full-stack engineer)
+Task: Four targeted improvements: (1) fix customer payment indicator, (2) fix token mismatch, (3) move Shopkeeper Portal to footer, (4) shopkeeper-controlled pricing.
+
+Work Log:
+- Issue 1 — Payment indicator fix:
+  - ROOT CAUSE: the customer TrackStep showed a permanent amber spinner for ALL non-terminal order statuses (paid, printing, ready). The spinner was tied to the ORDER status (`done = s === 'ready' || s === 'collected'`), NOT the PAYMENT status. So even when payment was CONFIRMED (status=paid, paidAt set), the customer saw a spinning loader — no green checkmark, no "Payment Confirmed" text.
+  - FIX: added a SEPARATE payment status indicator to the TrackStep. It checks `paidAt` (which is set ONLY by an authorized shopkeeper's manual verification or a verified provider webhook — never by a UPI app launch, browser return, or customer-submitted UTR). If `paidAt !== null`: green CheckCircle + "Payment Confirmed" + the confirmation timestamp + UTR. If `paidAt === null`: amber Clock + "Payment Pending" + "The shopkeeper will verify your UPI payment after you pay." The order-processing spinner (paid → printing → ready → collected) is kept SEPARATE below the payment indicator — it correctly shows the order is being processed, not that payment is being verified.
+  - Also added `paymentTxnId` + `paymentUtr` to the status API response (the customer can now see the transaction reference when payment is confirmed).
+
+- Issue 2 — Token mismatch fix:
+  - ROOT CAUSE: the customer status API (`GET /api/v1/orders/:id/status`) returned `customerToken` (e.g. "B5EY7Y" — the 6-char random tracking token) but NOT `tokenNumber` (e.g. "A001" — the per-shop sequential token). The customer tracking page showed `customerToken`. The shopkeeper pages showed `tokenNumber ?? customerToken` (preferring tokenNumber). So the customer saw "B5EY7Y" while the shopkeeper saw "A001" for the same order — a MISMATCH.
+  - FIX: added `tokenNumber` to the customer status API response. The customer tracking page now shows `tokenNumber ?? customerToken` (same pattern as the shopkeeper pages) → both portals display the same canonical token. The `customerToken` is still returned for backward compat (the customer may have written it down before `tokenNumber` existed). Legacy orders with NULL `tokenNumber` fall back to `customerToken`. The order page header badge also shows `tokenNumber` when available (falls back to `customerToken` for legacy orders).
+  - Tests: 5 new regression tests in `src/lib/token-consistency.test.ts` — verifies: an order has BOTH tokens, the status API returns tokenNumber, legacy orders fall back to customerToken, the shopkeeper list + customer status show the same token, payment status is separate from order status.
+
+- Issue 3 — Homepage cleanup:
+  - Removed the prominent "Shopkeeper portal" Button from the hero section (it was a `size="lg"` button next to "Find a shop").
+  - The footer ALREADY had a "Shopkeeper portal" link — kept as-is.
+  - The customer homepage now focuses on ordering: the hero has only the "Find a shop" CTA. The footer has the subtle "Shopkeeper portal" + "Admin portal" links.
+  - The shopkeeper registration flow (accessible from the login page's "Create Shop Account" link) is preserved.
+
+- Issue 4 — Shopkeeper-controlled pricing:
+  - The existing pricing model: `Shop.pricingConfig` (JSON-serialised `ShopPricingConfig` with 8 per-page prices: bw_a4, color_a4, bw_a3, color_a3, bw_letter, color_letter, bw_legal, color_legal + duplex_discount + bulk_threshold + bulk_discount_pct + min_order_value). All values are integer paise. The pricing engine in `packages/core/src/pricing` calculates order totals from these values.
+  - The existing PATCH route (`PATCH /api/v1/shops/me`) ALREADY accepts `pricingConfig` via the `PatchShopSchema` (which validates via `ShopPricingConfigSchema` — all values must be non-negative integers). The server-side was READY.
+  - FIX: changed the settings page's pricing section from READ-ONLY to EDITABLE. Added `pricingDraft` state (initialized from the shop's `pricingConfig` when it loads). Each price is now an editable `<Input type="number">` (in rupees, converted to paise on change). Added a "Save prices" button that calls `PATCH /api/v1/shops/me` with the updated `pricingConfig`. The server validates + persists; the UI updates with the server-returned canonical pricing. Success/error feedback is shown inline.
+  - The customer-facing shop page + order configuration already fetch the shop's `pricingConfig` (via `GET /api/v1/shops/:slug`) + use it for client-side price estimates + the server recalculates the authoritative total at checkout using `priceFile()` from the pricing engine. When the shopkeeper saves new prices, the customer immediately sees them on the shop page + during order configuration.
+  - Server-side validation: the PATCH route uses `withAuth` (owner role) + `repos.shops.getByOwner` (tenant-scoped — a shopkeeper can only update their OWN shop's prices). The `ShopPricingConfigSchema` validates all values are non-negative integers (rejects negative, float, malformed). A shopkeeper cannot change another shop's prices.
+
+- Files changed (5 total: 1 new, 4 modified):
+  - `src/app/api/v1/orders/[id]/status/route.ts` — added `tokenNumber` + `paymentTxnId` + `paymentUtr` to the response.
+  - `src/app/orders/[id]/page.tsx` — added `tokenNumber`/`paymentTxnId`/`paymentUtr` to `OrderStatusResponse`; TrackStep now shows `tokenNumber ?? customerToken` + a separate payment status indicator (green CheckCircle when `paidAt !== null`, amber Clock when null); header badge shows `tokenNumber` when available. Added `Clock` icon import.
+  - `src/app/page.tsx` — removed the Shopkeeper Portal button from the hero section.
+  - `src/app/shop/settings/page.tsx` — changed the pricing card from read-only to editable (12 Input fields: 8 per-page prices + duplex discount + bulk threshold + bulk discount + min order value). Added `pricingDraft`/`savingPricing`/`pricingSaved`/`pricingError` state + `savePricing` function. The save function calls `PATCH /api/v1/shops/me` with the updated `pricingConfig` + updates the local state with the server-returned canonical pricing.
+  - **NEW** `src/lib/token-consistency.test.ts` — 5 regression tests for token consistency + payment-status independence.
+
+- Tests + commands run:
+  - `bunx tsc --noEmit`: 0 errors.
+  - `bun run lint`: 0 warnings, 0 errors.
+  - `bunx vitest run`: 20 test files, 197/197 tests pass (192 prior + 5 new token consistency tests).
+  - Browser verification (Agent Browser):
+    - Homepage: hero has ONLY "Find a shop" (no Shopkeeper button); footer has "Shopkeeper portal" link ✓.
+    - Settings page: "Pricing & Print Services" section with 12 editable number inputs + "Save prices" button ✓.
+
+- Remaining limitations: (1) changes are NOT committed (per "Do not commit, push, deploy... without explicit authorization"); (2) the payment indicator fix needs a paid order to verify visually (the local dev DB was re-seeded — I verified the code path, not the visual with a real paid order); (3) the pricing management needs a save test (I verified the inputs render, not the full save → customer-price-update flow); (4) no database migrations needed — the existing `pricingConfig` JSON field already supports the editable prices.
+
+Stage Summary:
+- Payment indicator root cause: the spinner was tied to ORDER status, not PAYMENT status. Fix: added a separate payment status indicator that checks `paidAt`.
+- Token mismatch root cause: the customer status API didn't return `tokenNumber`. Fix: added `tokenNumber` to the response + the customer page shows `tokenNumber ?? customerToken` (same as the shopkeeper pages).
+- Homepage: removed the Shopkeeper Portal button from the hero; kept the footer link.
+- Pricing: the existing `pricingConfig` model + PATCH route already supported editing. Fix: changed the settings page from read-only to editable with a Save button.
+- No database migrations needed. No infrastructure changes. All 197 tests pass. tsc 0 errors. lint 0 warnings.

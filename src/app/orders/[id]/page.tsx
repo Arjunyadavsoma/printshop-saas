@@ -22,7 +22,7 @@ import type {
 import {
   UploadCloud, FileText, Trash2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   CheckCircle2, RefreshCw, CreditCard, QrCode, ShieldCheck, Info,
-  Home, Download, XCircle, Smartphone,
+  Home, Download, XCircle, Smartphone, Clock,
 } from 'lucide-react';
 
 // Also need Label + ToggleGroup already imported above
@@ -58,11 +58,14 @@ interface StatusFile {
 interface OrderStatusResponse {
   orderId: string;
   customerToken: string;
+  tokenNumber: string | null;
   status: OrderStatus;
   totalAmountPaise: number;
   totalFormatted: string;
   currency: string;
   paidAt: string | null;
+  paymentTxnId: string | null;
+  paymentUtr: string | null;
   files: StatusFile[];
   updatedAt: string;
 }
@@ -580,7 +583,10 @@ export default function OrderFlowPage() {
           <div className="flex items-center gap-2 text-xs">
             <span className="text-muted-foreground">Order</span>
             <code className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">{orderId.slice(0, 8)}</code>
-            {order?.customerToken && (
+            {order?.tokenNumber && (
+              <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
+            )}
+            {order?.customerToken && !order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.customerToken}</Badge>
             )}
           </div>
@@ -1233,14 +1239,48 @@ function TrackStep(props: {
           <CardDescription>Refreshed automatically every 2.5 seconds while printing.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Confirmation */}
+          {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
-            <p className="font-mono text-4xl font-bold tracking-widest text-amber-600">{props.order.customerToken}</p>
+            <p className="font-mono text-4xl font-bold tracking-widest text-amber-600">
+              {props.order.tokenNumber ?? props.order.customerToken}
+            </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
           </div>
 
-          {/* Status banner */}
+          {/* ── Payment status indicator (SEPARATE from order-processing status) ── */}
+          {/* ROOT CAUSE FIX: the old code showed a permanent spinner even when
+              payment was confirmed (because the spinner was tied to the ORDER
+              status, not the PAYMENT status). Now the payment status has its
+              own indicator: green checkmark when paidAt !== null, amber clock
+              when pending. A UPI app launch, browser return, or customer-
+              submitted UTR NEVER sets paidAt — only an authorized shopkeeper
+              or a verified provider webhook can do that. */}
+          <div className={`rounded-xl p-4 text-center ${props.order.paidAt ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-amber-50 ring-1 ring-amber-200'}`}>
+            {props.order.paidAt ? (
+              <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" />
+            ) : (
+              <Clock className="mx-auto h-8 w-8 text-amber-600" />
+            )}
+            <p className={`mt-1 text-sm font-semibold ${props.order.paidAt ? 'text-emerald-700' : 'text-amber-800'}`}>
+              {props.order.paidAt ? 'Payment Confirmed' : 'Payment Pending'}
+            </p>
+            {props.order.paidAt ? (
+              <p className="mt-0.5 text-[11px] text-emerald-600">
+                Confirmed {props.order.paidAt ? new Date(props.order.paidAt).toLocaleString('en-IN') : ''}
+                {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-amber-700">
+                The shopkeeper will verify your UPI payment after you pay.
+              </p>
+            )}
+          </div>
+
+          {/* ── Order-processing status (SEPARATE from payment status) ── */}
+          {/* This shows the ORDER lifecycle: paid → printing → ready → collected.
+              The spinner here is correct — it indicates the order is being
+              processed, NOT that payment is still being verified. */}
           <div className={`rounded-xl p-4 text-center ${done ? 'bg-emerald-50 ring-1 ring-emerald-200' : cancelled ? 'bg-destructive/5 ring-1 ring-destructive/30' : 'bg-amber-50 ring-1 ring-amber-200'}`}>
             {done ? <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" /> : cancelled ? <XCircle className="mx-auto h-8 w-8 text-destructive" /> : <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-600" />}
             <p className={`mt-1 text-sm font-semibold ${done ? 'text-emerald-700' : cancelled ? 'text-destructive' : 'text-amber-800'}`}>
