@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck, Loader2, AlertCircle, ArrowRight, Lock } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
@@ -23,33 +22,24 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
  *    The admin bookmarks the URL with the key.
  * 3. The admin must enter the correct email + password (verified via env vars)
  * 4. Rate limited: 5 attempts per 60 seconds
- *
- * The access key is set via the ADMIN_ACCESS_KEY env var on Vercel.
- * It's a non-secret configuration value (safe in vercel.json or env).
- * The real security is the email + password (set as Vercel secrets).
  */
 export default function AdminLoginPage() {
   const api = useApiClient();
-  const router = useRouter();
-  const search = useSearchParams();
-  const accessKey = search.get('k');
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Check if the access key is valid (the server exposes it via a public
-  // API endpoint that returns whether the key matches). If no key is
-  // provided, show a "not found" page.
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
 
+  // Read the access key from the URL on mount (avoids useSearchParams()
+  // which requires a Suspense boundary during next build).
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const accessKey = params.get('k');
     if (!accessKey) {
       setKeyValid(false);
       return;
     }
-    // Verify the access key via a lightweight API call.
     void (async () => {
       try {
         const res = await fetch('/api/v1/admin/access-check?key=' + encodeURIComponent(accessKey));
@@ -58,7 +48,7 @@ export default function AdminLoginPage() {
         setKeyValid(false);
       }
     })();
-  }, [accessKey]);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
