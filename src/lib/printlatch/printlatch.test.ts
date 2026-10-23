@@ -68,12 +68,14 @@ describe('PrintLatch client — status check (GET /v1/printers when token exists
     expect(mockFetch.mock.calls[0][0]).toContain('/v1/printers');
   });
 
-  it('returns "pairing-required" when token is expired (401 from printers endpoint)', async () => {
+  it('returns "disconnected" when token is rejected (401) — preserves the token for retry', async () => {
     mockStorage.set('printlatch_token', 'expired');
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     const { state } = await checkPrintLatchStatus();
-    expect(state).toBe('pairing-required');
-    expect(mockStorage.get('printlatch_token')).toBeUndefined();
+    // Token is NOT cleared — the agent might have been restarted.
+    // User can retry or explicitly disconnect.
+    expect(state).toBe('disconnected');
+    expect(mockStorage.get('printlatch_token')).toBe('expired');
   });
 
   it('returns "disconnected" when the agent is not running (network error)', async () => {

@@ -155,9 +155,22 @@ export default function PrinterSetupPage() {
             <p className="mt-2 text-sm text-destructive">{statusError}</p>
           )}
           {isConnected && (
-            <p className="mt-2 text-sm text-emerald-600">
-              ✓ Your printer is connected. You can print customer orders from the order detail page.
-            </p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-sm text-emerald-600">
+                ✓ Your printer is connected. You can print customer orders from the order detail page.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  disconnectPrintLatch();
+                  void checkStatus();
+                }}
+                className="gap-1.5 text-xs text-muted-foreground"
+              >
+                Disconnect
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

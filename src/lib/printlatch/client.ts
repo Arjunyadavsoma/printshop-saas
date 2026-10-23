@@ -112,8 +112,11 @@ export async function checkPrintLatchStatus(): Promise<{ state: PrintLatchConnec
       signal: AbortSignal.timeout(5000),
     });
     if (printersRes.status === 401 || printersRes.status === 403) {
-      clearToken();
-      return { state: 'pairing-required', health: null, printers: null, error: 'Token expired — please re-pair.' };
+      // Token may be expired or the agent was restarted. DON'T clear it
+      // immediately — the agent might come back and the token might still
+      // be valid. Show "disconnected" instead, with a hint to reconnect.
+      // The user can explicitly disconnect via the Disconnect button.
+      return { state: 'disconnected', health: null, printers: null, error: 'Agent rejected the stored token (it may have been restarted). Click "Disconnect" to re-pair, or "Re-check" if the agent was just restarted.' };
     }
     if (!printersRes.ok) {
       return { state: 'error', health: null, printers: null, error: `Printers check failed (HTTP ${printersRes.status})` };
