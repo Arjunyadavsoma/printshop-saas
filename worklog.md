@@ -1931,3 +1931,56 @@ Stage Summary:
 - Migration / deployment steps requiring authorization: (1) the changes are NOT committed (the user said "Do not commit, push, deploy... without explicit authorization"). (2) NO database migrations are needed — the change uses existing fields (`shop.name`, `order.customerToken`, `shop.upiQrStorageKey`). (3) NO Vercel settings changes. (4) NO production promotion.
 
 Definition of done: ✓ A customer can complete the order-creation workflow (upload → configure → checkout → pay → track). ✓ The mobile UPI button attempts to open a compatible UPI app with the correct amount prefilled (`upi://pay?pa=<shopVPA>&pn=<shopName>&am=<exactAmount>&cu=INR&tn=<orderToken>&tr=<orderToken>`). ✓ The desktop QR fallback uses the shopkeeper's actual uploaded payment QR (or the generated QR as a fallback). ✓ The customer can return to the site + track the order. ✓ The application does NOT falsely declare payment successful — payment remains pending until the shopkeeper manually verifies.
+
+---
+Task ID: diagnose-fix-customer-upload
+Agent: orchestrator (senior full-stack engineer)
+Task: Diagnose + fix the customer document upload failure. Reproduce the actual failure, identify root cause, fix end-to-end, add regression tests.
+
+Work Log:
+- Phase 1 — Reproduce the failure:
+  - Local API test (curl): upload-url → PUT → confirm → PATCH — ALL returned 200. The API flow works locally (InMemoryStorage uses same-origin /api/v1/storage/put).
+  - Local browser test (Agent Browser): uploaded a 328-byte test PDF — all 4 API calls returned 200, the file card rendered, the file survived a page refresh. The upload WORKS locally.
+  - Production API test (curl against https://printshop-saas-three.vercel.app): upload-url → PUT to Supabase → confirm — ALL returned 200. The API flow works on production via curl.
+  - Production BROWSER test (Agent Browser against the production Vercel preview): uploaded the same test PDF — the upload-url request returned 200, but the XHR PUT to the Supabase signed upload URL FAILED with "Network error during upload" (the `xhr.onerror` callback fired). The file card showed the error: "Network error during upload."
+  - The PUT to Supabase was NOT in the network log response (no HTTP status captured) — confirming a network-level failure, not an HTTP error.
+
+- Phase 2 — Root cause investigation:
+  - Supabase CORS preflight (OPTIONS): `access-control-allow-origin: *`, `access-control-allow-headers: Content-Type`, `access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE,...` — CORS is CORRECT.
+  - Supabase actual PUT response: `HTTP/2 200`, `access-control-allow-origin: *` — CORS is CORRECT on the actual PUT too.
+  - The browser's XHR `onerror` fires when the request is blocked at the NETWORK level — but CORS is fine.
+  - Inspected `src/middleware.ts`: the Content-Security-Policy has `connect-src 'self' ws: wss:` — this ONLY allows same-origin connections. The XHR PUT to `duyharicyurufmsjyhgs.supabase.co` is CROSS-ORIGIN → the browser blocks it at the CSP level BEFORE the CORS check even runs.
+  - **ROOT CAUSE**: the CSP's `connect-src 'self'` blocks the cross-origin XHR PUT to Supabase Storage. The browser enforces CSP before CORS — even though Supabase returns `access-control-allow-origin: *`, the browser blocks the request because the PAGE's CSP doesn't allow the Supabase origin in `connect-src`.
+  - This explains why curl works (no CSP enforcement), local dev works (the InMemoryStorage adapter uses same-origin /api/v1/storage/put which 'self' allows), and production fails (the SupabaseStorageAdapter generates a cross-origin Supabase URL which 'self' blocks).
+  - SECONDARY ISSUE: the CSP's `img-src 'self' data: blob:` would ALSO block the `<img src="https://...supabase.co/...">` for the shopkeeper's uploaded UPI QR image (the desktop QR fallback). This would cause the UPI QR image to not display.
+
+- Phase 4 — Fix (1 file changed, 1 file new):
+  - `src/middleware.ts` (MODIFIED): the CSP now dynamically includes the Supabase Storage origin (from the `process.env.SUPABASE_URL` env var) in BOTH `connect-src` (for XHR PUT uploads + XHR GET downloads) AND `img-src` (for `<img src="...">` presigned download URLs). In local dev (STORAGE_PROVIDER=memory, no SUPABASE_URL), the CSP falls back to `'self'` only (the in-memory storage uses same-origin routes which 'self' allows). In production (STORAGE_PROVIDER=supabase, SUPABASE_URL set), the CSP includes the Supabase origin → the XHR PUT to Supabase is allowed → the upload works.
+  - `src/lib/upload-lifecycle.test.ts` (NEW): 14 regression tests covering:
+    - InMemoryStorageAdapter upload lifecycle: presigned upload URL format, PUT → HEAD → getBytes round-trip, HEAD returns null for non-existent key, getBytes returns null for non-existent key, PUT (upsert) replaces existing bytes, presigned download URL format, delete removes the object, full upload + confirm lifecycle, multiple files with independent storage keys.
+    - CSP middleware: includes the Supabase origin in connect-src when SUPABASE_URL is set, includes the Supabase origin in img-src when SUPABASE_URL is set, does NOT include a Supabase origin when SUPABASE_URL is NOT set (dev mode), still includes all security headers, handles an invalid SUPABASE_URL gracefully.
+
+- Phase 5 — Tests:
+  - 14 new tests in `src/lib/upload-lifecycle.test.ts` — ALL PASS.
+  - Total: 192/192 tests pass (178 prior + 14 new).
+
+- Phase 6 — Verification:
+  - `bunx tsc --noEmit`: 0 errors.
+  - `bun run lint`: 0 warnings, 0 errors.
+  - `bunx vitest run`: 19 test files, 192/192 tests pass.
+  - Local browser upload: verified working (all 4 API calls 200, file card rendered, survives refresh).
+  - Production browser upload: NOT RE-TESTED with the fix (the fix is NOT deployed — it's a CSP change that needs to be pushed + Vercel rebuilt). The fix will work because the CSP will include the Supabase origin → the browser will allow the XHR PUT.
+  - Production build (`bun run build`): NOT RUN (forbidden by sandbox rules).
+
+Stage Summary:
+- The exact upload failure reproduced: on the PRODUCTION Vercel preview, the customer order page's XHR PUT to the Supabase signed upload URL fails with "Network error during upload" (xhr.onerror). The upload-url request succeeds (200), but the PUT to the cross-origin Supabase URL is blocked by the browser's Content-Security-Policy.
+- The root cause: `src/middleware.ts` CSP `connect-src 'self' ws: wss:` blocks the cross-origin XHR PUT to Supabase Storage. The browser enforces CSP before CORS — even though Supabase returns `access-control-allow-origin: *`, the browser blocks the request because the PAGE's CSP doesn't list the Supabase origin.
+- Files changed: `src/middleware.ts` (modified — CSP now includes the Supabase origin from `process.env.SUPABASE_URL`), `src/lib/upload-lifecycle.test.ts` (new — 14 regression tests).
+- The fix: the CSP dynamically includes the Supabase Storage origin (from `process.env.SUPABASE_URL`) in `connect-src` (for XHR PUT uploads) + `img-src` (for presigned download URLs). In dev (no SUPABASE_URL), the CSP falls back to 'self' only (the in-memory storage uses same-origin routes).
+- Test commands + results: `bunx tsc --noEmit` 0 errors, `bun run lint` 0 warnings, `bunx vitest run` 192/192 pass.
+- Real browser upload verified locally: YES (Agent Browser uploaded a 328-byte test PDF — all 4 API calls 200, file card rendered, survives refresh).
+- Real browser upload verified on production with the fix: NO (the fix is NOT deployed — it's a CSP change that needs to be pushed + Vercel rebuilt). The root cause is definitively identified (CSP blocks cross-origin PUT) + the fix is verified logically (the CSP will include the Supabase origin → the browser will allow the XHR PUT).
+- Remaining environment/Supabase/CORS/deployment requirements: the fix needs to be committed + pushed to GitHub → Vercel rebuilds → the CSP on the production page includes the Supabase origin → the customer upload works. No Supabase configuration changes needed (CORS is already correct). No database migrations needed.
+- The fix remains LOCAL (NOT deployed). Per the user's instruction: "Do not commit, push, deploy... without explicit authorization."
+
+Definition of done: ✓ A customer can select a supported document, upload it to the existing storage service, confirm it against the correct order, see it in the order summary, refresh the page without losing it — ALL verified locally. The production fix (CSP change) is implemented + tested but NOT yet deployed (requires explicit push authorization).
