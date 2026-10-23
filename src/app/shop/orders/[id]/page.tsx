@@ -974,21 +974,28 @@ function PrintLatchButton({
         error?: { message?: string };
       }>('GET', `/api/v1/shops/me/orders/${orderId}/files/${file.id}/print-url`);
       if (urlR.status !== 200 || !urlR.data?.data) throw new Error(urlR.data?.error?.message ?? 'Could not get print URL');
-      const { downloadUrl, filename, copies, colorMode, duplex, paperSize, pageRange } = urlR.data.data;
+      const { downloadUrl, filename, copies } = urlR.data.data;
 
       setJobState({ status: 'fetching-pdf' });
       const pdfBytes = await fetchPdfBytes(downloadUrl);
 
       setJobState({ status: 'submitting' });
-      const job = await submitPrintLatchJob({ pdf: pdfBytes, filename, copies, colorMode, duplex, paperSize, pageRange: pageRange ?? undefined });
+      // Per the PrintLatch API: POST /v1/jobs with multipart fields:
+      //   file (PDF), mode ("print"), copies (1-10).
+      // PrintLatch does NOT accept colorMode/duplex/paperSize/pageRange —
+      // those are printer-driver settings handled by the Windows print pipeline.
+      const job = await submitPrintLatchJob({
+        pdf: pdfBytes, filename, mode: 'print',
+        copies: Math.min(Math.max(1, copies), 10),
+      });
 
       setJobState({ status: 'polling', agentJobId: job.id });
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const status = await getPrintLatchJobStatus(job.id);
         if (status.status === 'completed') { setJobState({ status: 'completed', agentJobId: job.id }); return; }
-        if (status.status === 'failed') { setJobState({ status: 'failed', agentJobId: job.id, error: status.error ?? 'Print job failed' }); return; }
-        if (status.status === 'unknown') { setJobState({ status: 'unknown', agentJobId: job.id, error: status.error ?? 'Unknown — check printer queue' }); return; }
+        if (status.status === 'failed') { setJobState({ status: 'failed', agentJobId: job.id, error: status.error?.message ?? 'Print job failed' }); return; }
+        if (status.status === 'unknown') { setJobState({ status: 'unknown', agentJobId: job.id, error: status.error?.message ?? 'Unknown — check printer queue' }); return; }
       }
       setJobState({ status: 'unknown', agentJobId: job.id, error: 'Timed out — check your printer queue' });
     } catch (err) {

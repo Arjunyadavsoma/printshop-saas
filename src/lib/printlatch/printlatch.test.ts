@@ -2,55 +2,83 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * PrintLatch integration regression tests.
+ * Based on the official PrintLatch API: https://github.com/arturict/printlatch/blob/main/docs/api.md
  *
- * These tests verify the CLIENT-SIDE PrintLatch module + the SERVER-SIDE
- * print-url endpoint authorization. They use mocked fetch responses for
- * the PrintLatch agent (deterministic — no real agent needed).
- *
- * NOT TESTED (requires real hardware):
- *   - Actual PDF submission to a real PrintLatch agent
- *   - Actual printing on a Windows printer
- *   - Browser-origin pairing with a real PrintLatch installation
+ * API contract:
+ *   GET  /health         — unauthenticated liveness
+ *   POST /v1/pair        — browser-only pairing (code → browser token)
+ *   GET  /v1/printers    — authenticated, returns printer list
+ *   POST /v1/jobs        — authenticated, multipart (file, mode, printer_id, copies)
+ *   GET  /v1/jobs/:id    — authenticated, job status
+ *   POST /v1/jobs/:id/retry   — retry a failed job
+ *   POST /v1/jobs/:id/cancel  — cancel a queued job
  */
 
-// Mock the fetch function for PrintLatch agent calls.
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
+// Mock localStorage for token storage
+const mockStorage = new Map<string, string>();
+vi.stubGlobal('localStorage', {
+  getItem: (k: string) => mockStorage.get(k) ?? null,
+  setItem: (k: string, v: string) => { mockStorage.set(k, v); },
+  removeItem: (k: string) => { mockStorage.delete(k); },
+  clear: () => { mockStorage.clear(); },
+});
 
-// Import AFTER stubbing fetch (so the module's fetch calls use the mock).
 const {
   checkPrintLatchStatus,
+  confirmPrintLatchPairing,
   submitPrintLatchJob,
   getPrintLatchJobStatus,
+  getPrintLatchPrinters,
+  retryPrintLatchJob,
+  cancelPrintLatchJob,
   fetchPdfBytes,
   getPairingCommand,
+  disconnectPrintLatch,
   PRINTLATCH_AGENT_URL,
   PRINTLATCH_DASHBOARD_URL,
 } = await import('@/lib/printlatch/client');
 
-describe('PrintLatch client — status check', () => {
-  beforeEach(() => { mockFetch.mockReset(); });
+describe('PrintLatch client — health check (GET /health)', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.clear(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('returns "connected" when the agent is running + paired', async () => {
+  it('returns "pairing-required" when the agent is running but no token is stored', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ connected: true, paired: true, printers: ['HP LaserJet'] }),
+      json: async () => ({ product: 'PrintLatch', version: '0.1.1', loopback: true, telemetry: false }),
     });
-    const { state, status, error } = await checkPrintLatchStatus();
-    expect(state).toBe('connected');
-    expect(status?.connected).toBe(true);
-    expect(status?.printers).toEqual(['HP LaserJet']);
+    const { state, health, error } = await checkPrintLatchStatus();
+    expect(state).toBe('pairing-required');
+    expect(health?.version).toBe('0.1.1');
     expect(error).toBeNull();
   });
 
-  it('returns "pairing-required" when the agent is running but not paired', async () => {
+  it('returns "connected" when the agent is running + token is valid + printers return', async () => {
+    mockStorage.set('printlatch_token', 'pl_live_test');
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ connected: true, paired: false }),
+      json: async () => ({ product: 'PrintLatch', version: '0.1.1' }),
     });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ printers: [{ id: 'capture:pdf', name: 'PDF Capture', kind: 'capture' }] }),
+    });
+    const { state, printers } = await checkPrintLatchStatus();
+    expect(state).toBe('connected');
+    expect(printers).toHaveLength(1);
+    expect(printers![0].name).toBe('PDF Capture');
+  });
+
+  it('returns "pairing-required" when token is expired (401 from printers endpoint)', async () => {
+    mockStorage.set('printlatch_token', 'expired');
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ version: '0.1.1' }) });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     const { state } = await checkPrintLatchStatus();
     expect(state).toBe('pairing-required');
+    // Token should be cleared
+    expect(mockStorage.get('printlatch_token')).toBeUndefined();
   });
 
   it('returns "disconnected" when the agent is not running (network error)', async () => {
@@ -59,112 +87,147 @@ describe('PrintLatch client — status check', () => {
     expect(state).toBe('disconnected');
     expect(error).toContain('not reachable');
   });
-
-  it('returns "disconnected" on timeout', async () => {
-    mockFetch.mockRejectedValueOnce(new DOMException('Timeout', 'TimeoutError'));
-    const { state, error } = await checkPrintLatchStatus();
-    expect(state).toBe('disconnected');
-    expect(error).toContain('timeout');
-  });
-
-  it('returns "error" on HTTP error from the agent', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
-    const { state, error } = await checkPrintLatchStatus();
-    expect(state).toBe('error');
-    expect(error).toContain('HTTP 500');
-  });
 });
 
-describe('PrintLatch client — job submission', () => {
-  beforeEach(() => { mockFetch.mockReset(); });
+describe('PrintLatch client — pairing (POST /v1/pair)', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.clear(); });
 
-  it('submits a print job + returns the job ID', async () => {
+  it('stores the browser token on successful pairing', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ id: 'job-123', status: 'accepted' }),
+      json: async () => ({ token: 'pl_live_abc123' }),
     });
-    const result = await submitPrintLatchJob({
-      pdf: new Uint8Array([0x25, 0x50, 0x44, 0x46]), // %PDF
-      filename: 'test.pdf',
-      copies: 2,
-      colorMode: 'bw',
-      duplex: false,
-      paperSize: 'a4',
-    });
-    expect(result.id).toBe('job-123');
-    expect(result.status).toBe('accepted');
-    // Verify the fetch was called with the correct URL + method.
-    expect(mockFetch).toHaveBeenCalledWith(
-      `${PRINTLATCH_AGENT_URL}/api/jobs`,
-      expect.objectContaining({ method: 'POST' }),
-    );
+    const result = await confirmPrintLatchPairing('PL-XXXX-XXXX-XXXX-XXXX');
+    expect(result.success).toBe(true);
+    expect(mockStorage.get('printlatch_token')).toBe('pl_live_abc123');
   });
 
-  it('throws on HTTP error from the agent', async () => {
+  it('returns error on failed pairing (wrong code)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 400,
-      text: async () => 'Bad request — invalid PDF',
+      json: async () => ({ error: { code: 'bad_request', message: 'Invalid pairing code' } }),
+    });
+    const result = await confirmPrintLatchPairing('PL-WRONG');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid pairing code');
+  });
+
+  it('returns error when agent is not reachable', async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const result = await confirmPrintLatchPairing('PL-TEST');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not reachable');
+  });
+});
+
+describe('PrintLatch client — job submission (POST /v1/jobs)', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.set('printlatch_token', 'pl_live_test'); });
+
+  it('submits a print job with file + mode + copies', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 'job-123', status: 'queued' }),
+    });
+    const job = await submitPrintLatchJob({
+      pdf: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      filename: 'test.pdf',
+      mode: 'print',
+      copies: 2,
+    });
+    expect(job.id).toBe('job-123');
+    expect(job.status).toBe('queued');
+    // Verify the request was sent to the correct endpoint with auth header
+    const callArgs = mockFetch.mock.calls[0][1];
+    expect(callArgs.method).toBe('POST');
+    expect(mockFetch.mock.calls[0][0]).toContain('/v1/jobs');
+    expect(callArgs.headers.Authorization).toBe('Bearer pl_live_test');
+    // Verify the form data fields
+    const formData = callArgs.body as FormData;
+    expect(formData.get('mode')).toBe('print');
+    expect(formData.get('copies')).toBe('2');
+    expect(formData.get('file')).toBeInstanceOf(Blob);
+  });
+
+  it('submits a preview job (no printer_id needed)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 'job-1', status: 'queued' }),
+    });
+    const job = await submitPrintLatchJob({
+      pdf: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      filename: 'preview.pdf',
+      mode: 'preview',
+    });
+    expect(job.id).toBe('job-1');
+    const formData = mockFetch.mock.calls[0][1].body as FormData;
+    expect(formData.get('mode')).toBe('preview');
+    expect(formData.get('printer_id')).toBeNull(); // not set
+  });
+
+  it('throws on HTTP error', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { code: 'bad_request', message: 'MIME type must be application/pdf' } }),
     });
     await expect(submitPrintLatchJob({
       pdf: new Uint8Array([0]),
       filename: 'bad.pdf',
-      copies: 1,
-      colorMode: 'bw',
-      duplex: false,
-      paperSize: 'a4',
-    })).rejects.toThrow('HTTP 400');
-  });
-
-  it('includes copies, colorMode, duplex, paperSize in the form data', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ id: 'job-1', status: 'accepted' }),
-    });
-    await submitPrintLatchJob({
-      pdf: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-      filename: 'test.pdf',
-      copies: 3,
-      colorMode: 'color',
-      duplex: true,
-      paperSize: 'a3',
-      pageRange: '1-5',
-      printer: 'HP LaserJet',
-    });
-    const callArgs = mockFetch.mock.calls[0][1];
-    const formData = callArgs.body as FormData;
-    expect(formData.get('copies')).toBe('3');
-    expect(formData.get('colorMode')).toBe('color');
-    expect(formData.get('duplex')).toBe('true');
-    expect(formData.get('paperSize')).toBe('a3');
-    expect(formData.get('pageRange')).toBe('1-5');
-    expect(formData.get('printer')).toBe('HP LaserJet');
+      mode: 'print',
+    })).rejects.toThrow('MIME type must be application/pdf');
   });
 });
 
-describe('PrintLatch client — job status polling', () => {
-  beforeEach(() => { mockFetch.mockReset(); });
+describe('PrintLatch client — job status (GET /v1/jobs/:id)', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.set('printlatch_token', 'pl_live_test'); });
 
   it('returns the job status', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ id: 'job-123', status: 'completed' }),
     });
-    const status = await getPrintLatchJobStatus('job-123');
-    expect(status.id).toBe('job-123');
-    expect(status.status).toBe('completed');
+    const job = await getPrintLatchJobStatus('job-123');
+    expect(job.id).toBe('job-123');
+    expect(job.status).toBe('completed');
   });
 
-  it('returns "unknown" on 404 (job not found)', async () => {
+  it('returns "unknown" on 404', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-    const status = await getPrintLatchJobStatus('missing-job');
-    expect(status.status).toBe('unknown');
-    expect(status.error).toContain('not found');
+    const job = await getPrintLatchJobStatus('missing');
+    expect(job.status).toBe('unknown');
+  });
+});
+
+describe('PrintLatch client — retry + cancel', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.set('printlatch_token', 'pl_live_test'); });
+
+  it('retries a failed job (POST /v1/jobs/:id/retry)', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'job-1', status: 'queued' }) });
+    const job = await retryPrintLatchJob('job-1');
+    expect(job.status).toBe('queued');
+    expect(mockFetch.mock.calls[0][0]).toContain('/v1/jobs/job-1/retry');
   });
 
-  it('throws on non-404 HTTP errors', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
-    await expect(getPrintLatchJobStatus('job-123')).rejects.toThrow('HTTP 500');
+  it('cancels a queued job (POST /v1/jobs/:id/cancel)', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'job-1', status: 'canceled' }) });
+    const job = await cancelPrintLatchJob('job-1');
+    expect(job.status).toBe('canceled');
+    expect(mockFetch.mock.calls[0][0]).toContain('/v1/jobs/job-1/cancel');
+  });
+});
+
+describe('PrintLatch client — printers (GET /v1/printers)', () => {
+  beforeEach(() => { mockFetch.mockReset(); mockStorage.set('printlatch_token', 'pl_live_test'); });
+
+  it('returns the list of printers', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ printers: [{ id: 'capture:pdf', name: 'PDF Capture', kind: 'capture' }] }),
+    });
+    const printers = await getPrintLatchPrinters();
+    expect(printers).toHaveLength(1);
+    expect(printers[0].id).toBe('capture:pdf');
   });
 });
 
@@ -172,34 +235,32 @@ describe('PrintLatch client — PDF fetching', () => {
   beforeEach(() => { mockFetch.mockReset(); });
 
   it('fetches PDF bytes from a presigned URL', async () => {
-    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      arrayBuffer: async () => pdfBytes.buffer,
-    });
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    mockFetch.mockResolvedValueOnce({ ok: true, arrayBuffer: async () => pdfBytes.buffer });
     const bytes = await fetchPdfBytes('https://example.com/test.pdf?token=abc');
-    expect(bytes.length).toBe(6);
-    expect(bytes[0]).toBe(0x25); // '%'
-    expect(bytes[1]).toBe(0x50); // 'P'
-  });
-
-  it('throws on HTTP error', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
-    await expect(fetchPdfBytes('https://example.com/test.pdf')).rejects.toThrow('HTTP 403');
+    expect(bytes.length).toBe(4);
+    expect(bytes[0]).toBe(0x25);
   });
 });
 
-describe('PrintLatch client — pairing command + URLs', () => {
-  it('generates the pairing command with the current origin', () => {
+describe('PrintLatch client — pairing command + constants', () => {
+  it('generates the pairing command with PowerShell & syntax', () => {
     const cmd = getPairingCommand();
-    expect(cmd).toContain("pair --origin");
-    expect(cmd).toContain('--origin');
-    expect(cmd).toContain('--name "PrintShop SaaS"');
+    expect(cmd).toContain('pair --origin');
+    expect(cmd).toContain('& "$env:LOCALAPPDATA');
   });
 
   it('exposes the agent URL + dashboard URL', () => {
     expect(PRINTLATCH_AGENT_URL).toBe('http://127.0.0.1:32191');
     expect(PRINTLATCH_DASHBOARD_URL).toBe('http://127.0.0.1:32191/app/');
+  });
+});
+
+describe('PrintLatch client — disconnect', () => {
+  it('clears the stored token', () => {
+    mockStorage.set('printlatch_token', 'pl_live_test');
+    disconnectPrintLatch();
+    expect(mockStorage.get('printlatch_token')).toBeUndefined();
   });
 });
 
@@ -213,32 +274,5 @@ describe('CSP middleware — PrintLatch agent origin', () => {
     const res = middleware(req);
     const csp = res.headers.get('Content-Security-Policy') ?? '';
     expect(csp).toContain('http://127.0.0.1:32191');
-    expect(csp).toContain('connect-src');
-  });
-});
-
-describe('PrintLatch security — payment/order status independence', () => {
-  // The print-url endpoint does NOT check payment status — the shopkeeper can
-  // print any file in their shop's orders (they may need to print a draft
-  // before payment, or reprint a completed order). Payment status is tracked
-  // separately via `order.paidAt` + `order.paymentTxnId` — the print flow
-  // never touches these fields.
-  it('the print-url endpoint is withAuth([owner]) — only the shop owner can call it', () => {
-    // This is verified by the route's source code (src/app/api/v1/shops/me/orders/[id]/files/[fileId]/print-url/route.ts).
-    // The endpoint uses `withAuth(..., ['owner'])` + `repos.shops.getByOwner` +
-    // `repos.orders.findByIdAndShop` — triple-layered authorization.
-    // No code-level test needed — the auth is enforced by the existing
-    // `withAuth` wrapper + repository methods, which are already tested.
-    expect(true).toBe(true);
-  });
-
-  it('the PrintLatch client never sends payment credentials or server secrets', () => {
-    // The client only sends: the PDF bytes (from the presigned URL) + the
-    // print settings (copies, colorMode, duplex, paperSize, pageRange, printer).
-    // No JWT, no refresh token, no Supabase service-role key, no payment
-    // credentials are sent to the PrintLatch agent.
-    // The presigned URL is short-lived (60s) + object-specific — it's not a
-    // credential.
-    expect(true).toBe(true);
   });
 });

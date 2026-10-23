@@ -26,16 +26,19 @@ import {
 import {
   checkPrintLatchStatus,
   confirmPrintLatchPairing,
+  disconnectPrintLatch,
   getPairingCommand,
   PRINTLATCH_DASHBOARD_URL,
   type PrintLatchConnectionState,
-  type PrintLatchStatus,
+  type PrintLatchHealth,
+  type PrintLatchPrinter,
 } from '@/lib/printlatch/client';
 
 export default function PrinterSetupPage() {
   const api = useApiClient();
   const [connState, setConnState] = useState<PrintLatchConnectionState>('not-configured');
-  const [agentStatus, setAgentStatus] = useState<PrintLatchStatus | null>(null);
+  const [health, setHealth] = useState<PrintLatchHealth | null>(null);
+  const [printers, setPrinters] = useState<PrintLatchPrinter[] | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -52,9 +55,10 @@ export default function PrinterSetupPage() {
   const checkStatus = useCallback(async () => {
     setChecking(true);
     setStatusError(null);
-    const { state, status, error } = await checkPrintLatchStatus();
+    const { state, health, printers, error } = await checkPrintLatchStatus();
     setConnState(state);
-    setAgentStatus(status);
+    setHealth(health);
+    setPrinters(printers);
     setStatusError(error);
     setChecking(false);
   }, []);
@@ -136,12 +140,12 @@ export default function PrinterSetupPage() {
                 <Loader2 className="size-3.5 animate-spin" /> Checking…
               </Badge>
             )}
-            {agentStatus?.version && (
-              <span className="text-xs text-muted-foreground">Agent v{agentStatus.version}</span>
+            {health?.version && (
+              <span className="text-xs text-muted-foreground">Agent v{health.version}</span>
             )}
-            {agentStatus?.printers && agentStatus.printers.length > 0 && (
+            {printers && printers.length > 0 && (
               <span className="text-xs text-muted-foreground">
-                {agentStatus.printers.length} printer(s): {agentStatus.printers.join(', ')}
+                {printers.length} printer(s): {printers.map(p => p.name).join(', ')}
               </span>
             )}
           </div>
