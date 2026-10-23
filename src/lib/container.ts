@@ -298,9 +298,10 @@ export function setContainerForTesting(c: Container): void {
 }
 
 /**
- * On startup (non-test), recover stale print jobs. Moves any job stuck in
- * 'printing' for >5 min to 'needs_review' (shopkeeper must review — no
- * automatic duplicate printing). Called lazily on the first container init.
+ * On startup (non-test), recover stale print jobs + prune old audit logs.
+ * Moves any job stuck in 'printing' for >5 min to 'needs_review'.
+ * Deletes audit logs older than 30 days to keep the DB under the Neon
+ * free-tier 0.5GB limit with 500 shops.
  */
 let staleRecovered = false;
 export async function recoverStaleJobsOnStartup(): Promise<void> {
@@ -313,5 +314,13 @@ export async function recoverStaleJobsOnStartup(): Promise<void> {
     if (count > 0) console.log(`[startup] recovered ${count} stale print job(s) → needs_review`);
   } catch {
     // Non-fatal — the queue recovery is best-effort.
+  }
+  // Prune audit logs older than 30 days (keeps DB small for free tier).
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const deleted = await db.auditLog.deleteMany({ where: { createdAt: { lt: thirtyDaysAgo } } });
+    if (deleted.count > 0) console.log(`[startup] pruned ${deleted.count} audit logs older than 30 days`);
+  } catch {
+    // Non-fatal — pruning is best-effort.
   }
 }

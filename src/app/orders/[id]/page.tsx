@@ -557,7 +557,7 @@ export default function OrderFlowPage() {
     if (step !== 'track') return;
     const terminal: OrderStatus[] = ['collected', 'cancelled', 'refunded'];
     if (order && terminal.includes(order.status)) return;
-    const id = setInterval(() => { void loadOrder({ silent: true }); }, 2500);
+    const id = setInterval(() => { void loadOrder({ silent: true }); }, 30_000); // 30s — optimized for 500 shops on free tier
     return () => clearInterval(id);
   }, [step, order, loadOrder]);
 
