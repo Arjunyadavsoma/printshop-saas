@@ -346,7 +346,14 @@ const server = createServer(async (req, res) => {
 
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
-  // ── Health check (unauthenticated, no origin check) ──
+  // ── Health check (unauthenticated) ──
+  // SECURITY: the /health endpoint is reachable from any website (CORS
+  // reflects the origin for the preflight, but the response itself is
+  // same-origin only — no Access-Control-Allow-Origin header is set here,
+  // so a cross-origin fetch can't read the body via JS). Keep the response
+  // minimal: do NOT leak `pairedOrigins` (deployment URLs) or `tokenCount`
+  // — those are fingerprinting + social-engineering signals. Authenticated
+  // clients can get the full diagnostic via GET /v1/health instead.
   if (url.pathname === '/health' && req.method === 'GET') {
     await loadLibrary();
     // Prune expired tokens opportunistically (cheap when nothing's expired).
@@ -360,10 +367,8 @@ const server = createServer(async (req, res) => {
       service: 'printshop-native-printer',
       version: '1.1.0',
       libraryLoaded: !!PDFPrinter,
-      // `paired` = at least one non-expired token exists
+      // `paired` is a boolean only — no count, no origin list.
       paired: activeTokens.size > 0,
-      tokenCount: activeTokens.size,
-      pairedOrigins: [...pairedOrigins],
       pairingPending: !!pendingPairingCode && Date.now() < pendingPairingExpiry,
       port: PORT,
       host: HOST,

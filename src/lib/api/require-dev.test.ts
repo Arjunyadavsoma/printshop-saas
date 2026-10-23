@@ -5,8 +5,10 @@ import { requireDev } from '@/lib/api/require-dev';
  * Dev-route protection regression test.
  *
  * Confirms that requireDev():
- *   - returns null in development (NODE_ENV != production) — dev routes work
- *   - returns a 404 NextResponse in production — dev routes are unreachable
+ *   - returns null ONLY in development (NODE_ENV === 'development') — dev routes work
+ *   - returns a 404 NextResponse for production, staging, OR unset NODE_ENV
+ *     (fail-closed — previously `=== 'production'` failed open for staging/unset,
+ *     exposing the /dev/orders/:id/mark-paid route which marks any order paid)
  *
  * This guards the /dev/seed, /dev/orders/:id/mark-paid, /dev/qr,
  * /payments/dev/phonepe/simulate, /payments/dev/paytm/simulate, and
@@ -33,10 +35,18 @@ describe('requireDev() — dev-route production guard', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when NODE_ENV is unset (treated as dev)', () => {
+  it('returns a 404 when NODE_ENV is unset (fail-closed)', async () => {
     delete env.NODE_ENV;
     const result = requireDev();
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe(404);
+  });
+
+  it('returns a 404 when NODE_ENV is staging (fail-closed)', async () => {
+    env.NODE_ENV = 'staging';
+    const result = requireDev();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe(404);
   });
 
   it('returns a 404 NextResponse in production', async () => {
@@ -47,15 +57,15 @@ describe('requireDev() — dev-route production guard', () => {
     const body = await result!.json();
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('NOT_FOUND');
-    expect(body.error.message).toBe('Not available in production');
+    expect(body.error.message).toBe('Not available');
   });
 
   it('the 404 body does NOT leak that the route exists (looks like a normal 404)', async () => {
     env.NODE_ENV = 'production';
     const result = requireDev()!;
     const body = await result.json();
-    // The error message is generic "Not available in production" — does NOT
-    // reveal the route's purpose or that it exists in dev.
+    // The error message is generic "Not available" — does NOT reveal the
+    // route's purpose or that it exists in dev.
     expect(body.error.message).not.toContain('dev');
     expect(body.error.message).not.toContain('simulate');
     expect(body.error.message).not.toContain('seed');

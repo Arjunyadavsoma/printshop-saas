@@ -15,7 +15,37 @@ export class InMemoryDatabaseAdapter implements DatabaseAdapter {
   }
 
   private matches(row: Document, filter: Filter): boolean {
-    return Object.entries(filter).every(([k, v]) => row[k] === v);
+    return Object.entries(filter).every(([k, v]) => {
+      // Support Prisma-style operators: { in: [...] }, { not: x }, { lt/gt/lte/gte: n }
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        const op = v as Record<string, unknown>;
+        if ('in' in op && Array.isArray(op.in)) {
+          return op.in.includes(row[k]);
+        }
+        if ('not' in op) {
+          return row[k] !== op.not;
+        }
+        if ('lt' in op) {
+          const rv = row[k];
+          return typeof rv === 'number' && typeof op.lt === 'number' ? rv < op.lt : String(rv) < String(op.lt);
+        }
+        if ('lte' in op) {
+          const rv = row[k];
+          return typeof rv === 'number' && typeof op.lte === 'number' ? rv <= op.lte : String(rv) <= String(op.lte);
+        }
+        if ('gt' in op) {
+          const rv = row[k];
+          return typeof rv === 'number' && typeof op.gt === 'number' ? rv > op.gt : String(rv) > String(op.gt);
+        }
+        if ('gte' in op) {
+          const rv = row[k];
+          return typeof rv === 'number' && typeof op.gte === 'number' ? rv >= op.gte : String(rv) >= String(op.gte);
+        }
+        // Unknown operator object — treat as no-match (defensive).
+        return false;
+      }
+      return row[k] === v;
+    });
   }
 
   async findOne<T = Document>(table: string, filter: Filter): Promise<T | null> {

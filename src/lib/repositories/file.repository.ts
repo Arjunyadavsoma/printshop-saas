@@ -50,6 +50,29 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
     return rows.map(toDomain);
   }
 
+  /**
+   * Batch fetch files for MULTIPLE orders in a single query (avoids the N+1
+   * pattern where the analytics/dashboard routes call findByOrder per order
+   * in a loop — measured at 50 sequential queries per dashboard refresh).
+   * Returns a Map<orderId, PrintFile[]> for easy lookup per order.
+   */
+  async findByOrderIds(orderIds: string[]): Promise<Map<string, PrintFile[]>> {
+    const result = new Map<string, PrintFile[]>();
+    if (orderIds.length === 0) return result;
+    // Prisma's `in` filter on the orderId field — single SELECT.
+    const rows = await this.findMany(
+      { orderId: { in: orderIds } },
+      { order: ['createdAt', 'asc'] },
+    );
+    for (const row of rows) {
+      const f = toDomain(row);
+      const list = result.get(f.orderId) ?? [];
+      list.push(f);
+      result.set(f.orderId, list);
+    }
+    return result;
+  }
+
   async findByIdAndOrder(id: string, orderId: string): Promise<PrintFile | null> {
     const row = await this.findOne({ id, orderId });
     return row ? toDomain(row) : null;

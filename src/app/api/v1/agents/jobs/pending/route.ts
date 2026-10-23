@@ -18,6 +18,21 @@ interface PendingJob {
 }
 
 /**
+ * Resolve a presigned storage URL to a fully-qualified download URL.
+ * Storage adapters return EITHER an absolute URL (Supabase/R2/S3 presigned
+ * — `https://...`) OR a relative path (the in-memory dev adapter —
+ * `/api/v1/storage/get?...`). Concatenating `${base}${url}` unconditionally
+ * produces broken URLs like `https://vercel.apphttps://r2.dev/...` on
+ * production storage adapters. This helper only prepends the base for
+ * relative paths.
+ */
+function resolveDownloadUrl(presignedUrl: string, base: string): string {
+  if (/^https?:\/\//i.test(presignedUrl)) return presignedUrl; // already absolute
+  if (presignedUrl.startsWith('/')) return `${base}${presignedUrl}`;
+  return `${base}/${presignedUrl}`;
+}
+
+/**
  * GET /api/v1/agents/jobs/pending — device-token-authed. Returns queued jobs
  * for the agent's shop, each with a presigned download URL + print settings.
  * The agent claims a job by POSTing /agents/jobs/:id/status {status:'printing'}.
@@ -31,7 +46,10 @@ export const GET = withDeviceAuth(async (_req, _ctx, { agent, shopId }) => {
     // The job is already shop-scoped via findQueuedByShop; look the file up by id.
     const file = await container.db.findOne<{ id: string; orderId: string; originalFilename: string; storageKey: string; copies: number; colorMode: string; duplex: boolean; paperSize: string; pageRange: string | null }>('printFile', { id: j.fileId });
     if (!file) continue;
-    const downloadUrl = `${base}${await container.storage.getPresignedDownloadUrl(file.storageKey, 900)}`;
+    const downloadUrl = resolveDownloadUrl(
+      await container.storage.getPresignedDownloadUrl(file.storageKey, 900),
+      base,
+    );
     jobs.push({
       jobId: j.id,
       fileId: file.id,

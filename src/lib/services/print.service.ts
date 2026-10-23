@@ -1,6 +1,7 @@
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { shopChannel } from '@platform/core/interfaces';
+import { canTransitionOrder } from '@platform/core/domain';
 
 let registered = false;
 
@@ -47,6 +48,24 @@ export function ensurePrintHandler(): void {
 }
 
 /**
+ * Resolve a presigned storage URL to a fully-qualified download URL.
+ *
+ * The storage adapter returns EITHER:
+ *   - an absolute URL (Supabase/R2/S3 presigned — `https://...`), OR
+ *   - a relative path (the in-memory dev adapter — `/api/v1/storage/get?...`).
+ *
+ * Previously we concatenated `${base}${url}` unconditionally, which produced
+ * broken URLs like `https://printshop-saas-three.vercel.apphttps://r2.dev/...`
+ * on production storage adapters. This helper detects absolute vs relative
+ * and only prepends the deployment base for relative paths.
+ */
+function resolveDownloadUrl(presignedUrl: string, base: string): string {
+  if (/^https?:\/\//i.test(presignedUrl)) return presignedUrl; // already absolute
+  if (presignedUrl.startsWith('/')) return `${base}${presignedUrl}`;
+  return `${base}/${presignedUrl}`;
+}
+
+/**
  * Dispatch a job to the agent (when one is online) by publishing a
  * `job.dispatch` event to the shop's realtime room. The agent, connected via
  * socket.io, receives it, claims the job, downloads + prints, and reports
@@ -57,7 +76,10 @@ export async function dispatchToAgent(shopId: string, jobId: string, fileId: str
   const file = await container.db.findOne<{ id: string; orderId: string; storageKey: string; originalFilename: string; copies: number; colorMode: string; duplex: boolean; paperSize: string; pageRange: string | null }>('printFile', { id: fileId });
   if (!file) return;
   const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';
-  const downloadUrl = `${base}${await container.storage.getPresignedDownloadUrl(file.storageKey, 900)}`;
+  const downloadUrl = resolveDownloadUrl(
+    await container.storage.getPresignedDownloadUrl(file.storageKey, 900),
+    base,
+  );
   // Flat shape matching the agent's PendingJob (so copies/colorMode/etc. land
   // on the right fields, not nested under `settings`).
   await publish(shopId, 'job.dispatch', {
@@ -78,15 +100,29 @@ async function findFileById(id: string) {
   return getContainer().db.findOne<{ id: string; orderId: string }>('printFile', { id });
 }
 
-async function maybeMarkOrderReady(fileId: string, shopId: string): Promise<void> {
+/**
+ * Mark the order 'ready' IF all its files are completed — but only if the
+ * order's current status permits the transition. Previously this bypassed
+ * the state machine (a shopkeeper cancelling mid-print would be silently
+ * reverted to 'ready'). The `canTransitionOrder` guard ensures we don't
+ * flip e.g. 'cancelled' or 'collected' back to 'ready'.
+ *
+ * This is the SINGLE source of truth for the "all files done → order ready"
+ * rule. The agent status endpoint (`/api/v1/agents/jobs/[id]/status`) calls
+ * this too — it must not duplicate the logic.
+ */
+export async function maybeMarkOrderReady(fileId: string, shopId: string): Promise<void> {
   const file = await findFileById(fileId);
   if (!file) return;
   const siblings = await repos.files.findByOrder(file.orderId);
   if (siblings.length === 0) return;
-  if (siblings.every((f) => f.status === 'completed')) {
-    await repos.orders.update(file.orderId, { status: 'ready' });
-    await publish(shopId, 'order.ready', { orderId: file.orderId });
-  }
+  if (!siblings.every((f) => f.status === 'completed')) return;
+  // Fetch the order to check the current status before transitioning.
+  const order = await repos.orders.findById(file.orderId);
+  if (!order) return;
+  if (!canTransitionOrder(order.status, 'ready')) return; // state-machine guard
+  await repos.orders.update(file.orderId, { status: 'ready' });
+  await publish(shopId, 'order.ready', { orderId: file.orderId });
 }
 
 async function publish(shopId: string, event: string, payload: unknown): Promise<void> {

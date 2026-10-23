@@ -22,9 +22,13 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
   );
 
   // Popular settings across all files in paid orders.
+  // BATCH: fetch all files for all paid orders in a SINGLE query (was N+1 —
+  // up to 200 sequential findByOrder calls per dashboard refresh, measured
+  // at ~50 queries on the demo dataset).
   const fileAgg = { color: 0, bw: 0, duplex: 0, simplex: 0, a4: 0, a3: 0, other: 0 };
+  const filesByOrder = await repos.files.findByOrderIds(paid.map((o) => o.id));
   for (const o of paid) {
-    const files = await repos.files.findByOrder(o.id);
+    const files = filesByOrder.get(o.id) ?? [];
     for (const f of files) {
       if (f.colorMode === 'color') fileAgg.color++; else fileAgg.bw++;
       if (f.duplex) fileAgg.duplex++; else fileAgg.simplex++;
