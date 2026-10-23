@@ -2096,3 +2096,36 @@ Work Log:
 - Migration / deployment actions remaining: (1) the changes are NOT committed (per "Do not commit, push, deploy... without explicit authorization"); (2) NO database migrations needed (the existing `PrintJob` model is not used by the PrintLatch integration — the PrintLatch client tracks job status in-memory during the print flow); (3) NO Vercel settings changes; (4) NO production promotion.
 
 - Payment + order status independence: the print flow does NOT touch `order.paidAt`, `order.paymentTxnId`, `order.paymentUtr`, or `order.status`. The presigned URL endpoint does NOT check payment status (the shopkeeper can print any file in their shop's orders). Payment status is tracked separately via the existing `verify-payment` route + the existing webhook service — unchanged by this integration.
+
+---
+Task ID: clean-printer-setup-page
+Agent: orchestrator (senior full-stack engineer)
+Task: Clean + professional shopkeeper printer UI. Separate PrintLatch setup page with step-by-step guide + pairing + all-in-one.
+
+Work Log:
+- Rewrote `src/app/shop/printer/page.tsx` (was 499 lines of legacy print-agent UI → now a clean, professional PrintLatch setup page):
+  - Connection status card: shows "Connected" (green), "Not Connected" (amber), "Pairing Required" (amber), or "Checking…" + agent version + printer list + refresh button.
+  - Step-by-step setup guide (4 steps with visual progress indicators):
+    1. Start PrintLatch (link to dashboard at http://127.0.0.1:32191/app/)
+    2. Run the pairing command (with the exact command pre-filled using `window.location.origin` + a Copy button)
+    3. Enter the pairing code (input field + Confirm button → calls `confirmPrintLatchPairing()`)
+    4. "You're ready to print!" (explains how to use the Print button on orders)
+  - Troubleshooting section (collapsible): agent not reachable, origin mismatch, pairing expired, PowerShell not found, re-pairing, agent stops after reboot.
+  - Legacy print-agent card (collapsed at the bottom — for shops that previously set up the old socket.io daemon).
+  - Uses the existing shadcn/ui Card/Button/Badge/Input components + Lucide icons + amber/emerald accent colors (consistent with the rest of the portal).
+
+- Simplified `src/app/shop/orders/[id]/page.tsx` PrintLatchButton (was 216 lines with inline pairing guide → now 104 lines):
+  - Removed the inline pairing guide (it was cramped inside the file table row).
+  - If the agent is NOT connected: shows a small "Set up printer" link → navigates to `/shop/printer`.
+  - If the agent IS connected: shows a clean "Print" button (amber outline) that fetches the PDF + submits to the agent + polls status.
+  - Status indicators: "✓ Printed" (green), "✗ error" (red + retry), "⚠ unknown" (amber + retry after checking queue).
+  - Cleaned up unused imports (removed `getPairingCommand`, `confirmPrintLatchPairing`, `PRINTLATCH_DASHBOARD_URL` — these are now only used on the printer page).
+
+- Verification:
+  - tsc: 0 errors.
+  - lint: 0 warnings.
+  - vitest: 21 files, 215/215 tests pass.
+  - Browser: logged in → navigated to /shop/printer → page rendered cleanly with the 4-step guide + connection status card + troubleshooting section.
+
+Stage Summary:
+- The shopkeeper printer UI is now clean + professional. The `/shop/printer` page has a dedicated PrintLatch setup flow (all-in-one, step-by-step) with the connection status, pairing guide, pairing code input, and troubleshooting. The order detail page's Print button is simplified — just a "Print" button or a "Set up printer" link. No more cramped inline pairing guides inside the file table.

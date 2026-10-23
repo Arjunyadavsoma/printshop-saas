@@ -1,499 +1,393 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useApiClient } from '@/components/portal/use-api-client';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import {
-  Printer as PrinterIcon,
-  Wifi,
-  WifiOff,
-  RefreshCw,
+  CheckCircle2,
   Loader2,
+  Printer as PrinterIcon,
+  ExternalLink,
   Copy,
   Check,
-  PlusCircle,
-  AlertTriangle,
-  Terminal,
-  Cpu,
+  AlertCircle,
+  RefreshCw,
+  FileText,
   Monitor,
+  Link2,
+  ClipboardCheck,
+  TestTube,
+  ChevronDown,
 } from 'lucide-react';
+import {
+  checkPrintLatchStatus,
+  confirmPrintLatchPairing,
+  getPairingCommand,
+  PRINTLATCH_DASHBOARD_URL,
+  PRINTLATCH_EXE_PATH,
+  type PrintLatchConnectionState,
+  type PrintLatchStatus,
+} from '@/lib/printlatch/client';
 
-interface AgentRow {
-  id: string;
-  name: string;
-  isOnline: boolean;
-  lastSeenAt: string | null;
-  printerName: string | null;
-  version: string | null;
-  os: string | null;
-}
-
-interface RegisterResponse {
-  agentId: string;
-  deviceToken: string;
-  shopId: string;
-  shopName: string;
-  warning: string;
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return 'never';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return 'never';
-  const delta = Date.now() - then;
-  if (delta < 0) return 'just now';
-  if (delta < 1000) return `${delta}ms ago`;
-  if (delta < 60_000) return `${Math.floor(delta / 1000)}s ago`;
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  return new Date(then).toLocaleString();
-}
-
-function isStale(lastSeenAt: string | null): boolean {
-  if (!lastSeenAt) return true;
-  const then = new Date(lastSeenAt).getTime();
-  if (Number.isNaN(then)) return true;
-  return Date.now() - then > 30_000; // 30s heartbeat cutoff
-}
-
-const INSTALL_COMMANDS = (token: string) => `cd mini-services/print-agent
-bun install
-PRINT_AGENT_DEMO=1 PRINT_AGENT_DEVICE_TOKEN=${token} PRINT_AGENT_API_URL=http://localhost:3000 bun src/index.ts start`;
-
-export default function ShopPrinterPage() {
+export default function PrinterSetupPage() {
   const api = useApiClient();
-  const [agents, setAgents] = useState<AgentRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [connState, setConnState] = useState<PrintLatchConnectionState>('not-configured');
+  const [agentStatus, setAgentStatus] = useState<PrintLatchStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  // New-agent registration
-  const [name, setName] = useState('');
-  const [registering, setRegistering] = useState(false);
-  const [newToken, setNewToken] = useState<string | null>(null);
-  const [registerError, setRegisterError] = useState<string | null>(null);
+  // Pairing state
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingConfirming, setPairingConfirming] = useState(false);
+  const [pairingResult, setPairingResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const load = async (silent = false) => {
-    if (silent) setRefreshing(true); else setLoading(true);
-    setError(null);
-    try {
-      const r = await api.request<{ data?: AgentRow[] }>('GET', '/api/v1/shops/me/agents');
-      if (r.status === 200 && r.data?.data) {
-        setAgents(r.data.data);
-      } else if (r.status === 401) {
-        setError('Session expired. Please log in again.');
-      } else {
-        setError('Could not load agents.');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error');
-    } finally {
-      if (silent) setRefreshing(false); else setLoading(false);
-    }
-  };
+  // Test print state
+  const [testPrintState, setTestPrintState] = useState<'idle' | 'submitting' | 'polling' | 'completed' | 'failed' | 'unknown'>('idle');
+  const [testPrintError, setTestPrintError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(true), 15_000); // match the 15s heartbeat
-    return () => clearInterval(id);
+  const checkStatus = useCallback(async () => {
+    setChecking(true);
+    setStatusError(null);
+    const { state, status, error } = await checkPrintLatchStatus();
+    setConnState(state);
+    setAgentStatus(status);
+    setStatusError(error);
+    setChecking(false);
   }, []);
 
-  const registerAgent = async () => {
-    setRegistering(true);
-    setRegisterError(null);
-    setNewToken(null);
-    try {
-      const r = await api.request<{ success?: boolean; data?: RegisterResponse; error?: { message?: string } }>(
-        'POST',
-        '/api/v1/agents/register',
-        { body: { name: name.trim() || 'shop-agent', os: undefined, version: undefined, printerName: undefined } },
-      );
-      // The API wraps the data in an envelope: { success, data: { deviceToken, ... } }
-      const inner = r.data?.data;
-      if (r.status === 200 && inner?.deviceToken) {
-        setNewToken(inner.deviceToken);
-        setName('');
-        await load(true);
-      } else {
-        setRegisterError(r.data?.error?.message ?? `Registration failed (HTTP ${r.status}).`);
-      }
-    } catch (err) {
-      setRegisterError(err instanceof Error ? err.message : 'Network error');
-    } finally {
-      setRegistering(false);
+  useEffect(() => {
+    void checkStatus();
+  }, [checkStatus]);
+
+  const handleConfirmPairing = async () => {
+    if (!pairingCode.trim()) return;
+    setPairingConfirming(true);
+    setPairingResult(null);
+    const result = await confirmPrintLatchPairing(pairingCode.trim());
+    setPairingResult(result);
+    setPairingConfirming(false);
+    if (result.success) {
+      setPairingCode('');
+      await checkStatus();
     }
   };
 
-  const copyToken = async () => {
-    if (!newToken) return;
-    try {
-      await navigator.clipboard.writeText(newToken);
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable */
-    }
+    });
   };
 
-  const copyInstall = async (token: string) => {
-    try {
-      await navigator.clipboard.writeText(INSTALL_COMMANDS(token));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable */
-    }
-  };
-
-  const anyOnline = agents.some((a) => a.isOnline);
-
-  const summary = useMemo(() => {
-    return {
-      total: agents.length,
-      online: agents.filter((a) => a.isOnline).length,
-      offline: agents.filter((a) => !a.isOnline).length,
-      stale: agents.filter((a) => isStale(a.lastSeenAt)).length,
-    };
-  }, [agents]);
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="h-9 w-64 animate-pulse rounded bg-muted" />
-        <div className="h-40 animate-pulse rounded bg-muted" />
-        <div className="h-64 animate-pulse rounded bg-muted" />
-      </div>
-    );
-  }
+  const pairingCommand = getPairingCommand();
+  const isConnected = connState === 'connected';
+  const isDisconnected = connState === 'disconnected';
+  const needsPairing = connState === 'pairing-required';
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <PrinterIcon className="size-5 text-amber-600" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Printer setup</h1>
-            <p className="text-xs text-muted-foreground">
-              Connect a print agent so orders print automatically. You can still download files
-              manually below.
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load(true)}
-          disabled={refreshing}
-          className="gap-1.5"
-        >
-          {refreshing ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="size-4" />
-          )}
-          Refresh
-        </Button>
+      {/* ── Page header ── */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Printer Setup</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Connect your Windows printer to PrintShop using PrintLatch. Once connected, you can print customer orders directly from your browser.
+        </p>
       </div>
 
-      {error && (
-        <Card className="border-rose-200 bg-rose-50">
-          <CardContent className="p-4 text-sm text-rose-700">{error}</CardContent>
+      {/* ── Connection status card ── */}
+      <Card className={isConnected ? 'border-emerald-300' : isDisconnected ? 'border-amber-300' : 'border-border'}>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <PrinterIcon className="size-5 text-amber-600" />
+                PrintLatch Agent
+              </CardTitle>
+              <CardDescription className="mt-1">
+                The local agent that sends print jobs to your Windows printer.
+              </CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => void checkStatus()} disabled={checking} className="gap-1.5">
+              {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              {checking ? 'Checking…' : 'Refresh'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            {isConnected ? (
+              <Badge className="gap-1.5 bg-emerald-100 text-emerald-700">
+                <CheckCircle2 className="size-3.5" /> Connected
+              </Badge>
+            ) : isDisconnected ? (
+              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700">
+                <AlertCircle className="size-3.5" /> Not Connected
+              </Badge>
+            ) : needsPairing ? (
+              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700">
+                <Link2 className="size-3.5" /> Pairing Required
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1.5">
+                <Loader2 className="size-3.5 animate-spin" /> Checking…
+              </Badge>
+            )}
+            {agentStatus?.version && (
+              <span className="text-xs text-muted-foreground">Agent v{agentStatus.version}</span>
+            )}
+            {agentStatus?.printers && agentStatus.printers.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {agentStatus.printers.length} printer(s): {agentStatus.printers.join(', ')}
+              </span>
+            )}
+          </div>
+          {statusError && (
+            <p className="mt-2 text-sm text-destructive">{statusError}</p>
+          )}
+          {isConnected && (
+            <p className="mt-2 text-sm text-emerald-600">
+              ✓ Your printer is connected. You can print customer orders from the order detail page.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Step-by-step setup guide (shown when NOT connected) ── */}
+      {!isConnected && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Setup Guide — 4 Steps</CardTitle>
+            <CardDescription>Follow these steps to connect your printer. This only needs to be done once.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Step 1 */}
+            <SetupStep
+              number={1}
+              icon={Monitor}
+              title="Start PrintLatch on your computer"
+              done={isConnected || needsPairing}
+            >
+              <p className="text-sm text-muted-foreground">
+                Open the PrintLatch dashboard in your browser and confirm it shows{' '}
+                <Badge variant="outline" className="gap-1">Agent connected</Badge>:
+              </p>
+              <a
+                href={PRINTLATCH_DASHBOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:underline"
+              >
+                <ExternalLink className="size-3.5" />
+                {PRINTLATCH_DASHBOARD_URL}
+              </a>
+              <p className="mt-2 text-xs text-muted-foreground">
+                If PrintLatch isn&apos;t installed, download it from the official source. The agent runs as a local process on your Windows 11 computer — it does NOT need admin privileges or network configuration.
+              </p>
+            </SetupStep>
+
+            {/* Step 2 */}
+            <SetupStep
+              number={2}
+              icon={Link2}
+              title="Run the pairing command"
+              done={isConnected}
+            >
+              <p className="text-sm text-muted-foreground">
+                Open <strong>Windows PowerShell</strong> (Start menu → type &quot;PowerShell&quot; → Enter) and run this exact command. It pairs THIS website with your local PrintLatch agent:
+              </p>
+              <div className="mt-2 flex items-start gap-2">
+                <code className="flex-1 block break-all rounded-lg bg-zinc-900 p-3 text-xs text-zinc-100">
+                  {pairingCommand}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(pairingCommand)}
+                  className="shrink-0 gap-1.5"
+                >
+                  {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                You should see: <code className="rounded bg-muted px-1.5 py-0.5">Pairing code: PL-XXXX-XXXX-XXXX-XXXX</code>
+              </p>
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                <strong>Important:</strong> The <code>--origin</code> URL must match this website&apos;s address exactly. You are currently on:{' '}
+                <code className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                  {typeof window !== 'undefined' ? window.location.origin : ''}
+                </code>
+              </div>
+            </SetupStep>
+
+            {/* Step 3 */}
+            <SetupStep
+              number={3}
+              icon={ClipboardCheck}
+              title="Enter the pairing code"
+              done={isConnected}
+            >
+              <p className="text-sm text-muted-foreground">
+                Copy the pairing code from PowerShell (it looks like <code className="rounded bg-muted px-1.5 py-0.5">PL-...</code>) and paste it here:
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  type="text"
+                  value={pairingCode}
+                  onChange={(e) => setPairingCode(e.target.value)}
+                  placeholder="PL-XXXX-XXXX-XXXX-XXXX"
+                  className="font-mono"
+                  disabled={pairingConfirming}
+                />
+                <Button
+                  onClick={() => void handleConfirmPairing()}
+                  disabled={pairingConfirming || !pairingCode.trim()}
+                  className="gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  {pairingConfirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                  {pairingConfirming ? 'Confirming…' : 'Confirm'}
+                </Button>
+              </div>
+              {pairingResult?.success && (
+                <p className="mt-2 text-sm text-emerald-600">✓ Pairing confirmed! You can now print.</p>
+              )}
+              {pairingResult && !pairingResult.success && (
+                <p className="mt-2 text-sm text-destructive">✗ {pairingResult.error}</p>
+              )}
+            </SetupStep>
+
+            {/* Step 4 */}
+            <SetupStep
+              number={4}
+              icon={CheckCircle2}
+              title="You're ready to print!"
+              done={isConnected}
+            >
+              <p className="text-sm text-muted-foreground">
+                Once the agent shows <Badge variant="outline" className="gap-1"><CheckCircle2 className="size-3" /> Connected</Badge> above, go to any order and click the <strong>Print</strong> button next to a file. The document will be sent directly to your printer.
+              </p>
+            </SetupStep>
+          </CardContent>
         </Card>
       )}
 
-      {/* Connection banner */}
-      <Card
-        className={`border-l-4 ${
-          anyOnline
-            ? 'border-l-emerald-400 bg-emerald-50/50'
-            : 'border-l-amber-400 bg-amber-50/50'
-        }`}
-      >
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div className="flex items-center gap-3">
-            {anyOnline ? (
-              <Wifi className="size-5 text-emerald-600" />
-            ) : (
-              <WifiOff className="size-5 text-amber-600" />
-            )}
-            <div>
-              <p className="text-sm font-medium">
-                {anyOnline ? 'Print agent online' : 'No print agent connected'}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {anyOnline
-                  ? `Heartbeating within the last 30s · ${summary.online} of ${summary.total} agent(s) online`
-                  : 'You can still download print-ready files manually from each order. The agent is recommended for hands-off operation.'}
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="gap-1">
-            {summary.online} online · {summary.offline} offline · {summary.total} total
-          </Badge>
-        </CardContent>
-      </Card>
-
-      {/* Agents list */}
-      <Card className="border-border">
+      {/* ── Troubleshooting (collapsible) ── */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">Registered agents</CardTitle>
-          <CardDescription className="text-xs">
-            Each agent is identified by a name and a device token (only the SHA-256 hash is stored
-            on the server). Heartbeats every 15s; an agent is “offline” after 30s of silence.
-          </CardDescription>
+          <button
+            onClick={() => {
+              const el = document.getElementById('troubleshooting-content');
+              el?.classList.toggle('hidden');
+            }}
+            className="flex w-full items-center justify-between"
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertCircle className="size-4 text-muted-foreground" />
+              Troubleshooting
+            </CardTitle>
+            <ChevronDown className="size-4 text-muted-foreground" />
+          </button>
         </CardHeader>
-        <CardContent className="px-0 pb-0">
-          {agents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <PrinterIcon className="size-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium">No agents registered yet</p>
-              <p className="max-w-md text-xs text-muted-foreground">
-                Register one below, then run the install commands on the shop’s PC. The agent talks
-                outbound only — no inbound ports, works behind any NAT.
-              </p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-4">Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last seen</TableHead>
-                  <TableHead>Printer</TableHead>
-                  <TableHead>OS / version</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {agents.map((a) => {
-                  const stale = isStale(a.lastSeenAt);
-                  const online = a.isOnline && !stale;
-                  return (
-                    <TableRow key={a.id}>
-                      <TableCell className="pl-4">
-                        <div className="flex flex-col">
-                          <span className="font-medium">{a.name}</span>
-                          <span className="font-mono text-[10px] text-muted-foreground">{a.id}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={
-                            online
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-amber-200 bg-amber-50 text-amber-700'
-                          }
-                        >
-                          {online ? 'online' : 'offline'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {timeAgo(a.lastSeenAt)}
-                      </TableCell>
-                      <TableCell className="text-sm">{a.printerName ?? '—'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {a.os ?? '—'} · v{a.version ?? '?'}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
+        <CardContent id="troubleshooting-content" className="hidden">
+          <ul className="space-y-3 text-sm text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Agent not reachable:</strong> Ensure PrintLatch is running. Open{' '}
+              <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a>{' '}
+              and check it shows &quot;Agent connected&quot;.
+            </li>
+            <li>
+              <strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website&apos;s address. You are on{' '}
+              <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>.
+            </li>
+            <li>
+              <strong className="text-foreground">Pairing code expired:</strong> The code expires after a few minutes. Re-run the pairing command and enter the new code.
+            </li>
+            <li>
+              <strong className="text-foreground">PowerShell &quot;command not found&quot;:</strong> Use the full path:{' '}
+              <code className="rounded bg-muted px-1.5 py-0.5 break-all">
+                &quot;{PRINTLATCH_EXE_PATH}&quot; pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}
+              </code>
+            </li>
+            <li>
+              <strong className="text-foreground">Re-pairing after changing domains:</strong> Run the pairing command with the new origin, enter the new code, and click Confirm.
+            </li>
+            <li>
+              <strong className="text-foreground">Agent stops after reboot:</strong> PrintLatch may not auto-start. Open the dashboard to restart it, or add a shortcut to your Startup folder.
+            </li>
+          </ul>
         </CardContent>
       </Card>
 
-      {/* Register new agent */}
-      <Card className="border-border">
+      {/* ── Old print-agent system (legacy, kept for reference) ── */}
+      <Card className="border-dashed">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <PlusCircle className="size-4 text-amber-600" />
-            Register a new agent
+          <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Monitor className="size-4" />
+            Legacy Print Agent (optional)
           </CardTitle>
           <CardDescription className="text-xs">
-            Mints a one-time device token. Save it immediately — the plaintext token is shown only
-            once (only the SHA-256 hash is stored).
+            The old socket.io-based print agent daemon. Only needed if you&apos;re running the legacy Node.js agent. For most shops, PrintLatch above is the recommended path.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="agent-name">Agent name (optional)</Label>
-            <Input
-              id="agent-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. counter-pc, back-office-printer"
-            />
-          </div>
-          {registerError && (
-            <p className="text-sm text-rose-700">⚠ {registerError}</p>
-          )}
-          {newToken && (
-            <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3">
-              <p className="text-sm font-medium text-emerald-800">
-                ✓ Agent registered. Copy this device token — it will not be shown again.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 break-all rounded bg-white px-2 py-1.5 font-mono text-xs text-emerald-900">
-                  {newToken}
-                </code>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void copyToken()}
-                  className="gap-1.5"
-                >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </Button>
-              </div>
-            </div>
-          )}
+        <CardContent>
+          <p className="text-xs text-muted-foreground">
+            If you previously set up a print-agent daemon, you can manage it from the{' '}
+            <a href="/shop/settings" className="text-amber-700 underline">Settings</a> page. The PrintLatch integration above is the recommended method for direct browser-to-printer printing.
+          </p>
         </CardContent>
-        <CardFooter>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90" disabled={registering}>
-                {registering ? <Loader2 className="size-4 animate-spin" /> : <PlusCircle className="size-4" />}
-                Register agent
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Register a new agent?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This mints a one-time device token for the agent to authenticate. The token is
-                  shown ONCE on the next screen — copy it before leaving this page.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-amber-600 text-white hover:bg-amber-600/90"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void registerAgent();
-                  }}
-                >
-                  Yes, mint device token
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </CardFooter>
       </Card>
+    </div>
+  );
+}
 
-      {/* Installation instructions */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Terminal className="size-4 text-amber-600" />
-            Installation commands
-          </CardTitle>
-          <CardDescription className="text-xs">
-            The print agent is <strong>source-based</strong> (no installer): run the commands
-            below in a terminal on the shop’s PC. The agent daemon connects out to the PrintShop
-            API + realtime mini-service over socket.io; no inbound ports required.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {newToken ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Run these on the shop’s PC:
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void copyInstall(newToken)}
-                  className="gap-1.5"
-                >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </Button>
-              </div>
-              <pre className="overflow-x-auto rounded-md border border-border bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
-                <code>{INSTALL_COMMANDS(newToken)}</code>
-              </pre>
-              <p className="text-xs text-muted-foreground">
-                The agent will start, register its name, and begin heartbeating every 15s. Once it
-                shows “online” above, it will pick up new paid orders automatically.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-4 text-sm text-amber-800">
-              <AlertTriangle className="mb-2 size-4" />
-              Register an agent above first — the install command needs its one-time device token.
-              <pre className="mt-3 overflow-x-auto rounded border border-border bg-zinc-950 p-3 text-xs text-zinc-100">
-                <code>{`cd mini-services/print-agent
-bun install
-PRINT_AGENT_DEMO=1 \\
-  PRINT_AGENT_DEVICE_TOKEN=<paste-token-here> \\
-  PRINT_AGENT_API_URL=http://localhost:3000 \\
-  bun src/index.ts start`}</code>
-              </pre>
-            </div>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:justify-between">
-          <span className="flex items-center gap-1">
-            <Cpu className="size-3.5" /> Heartbeats every 15s · 30s offline cutoff
-          </span>
-          <span className="flex items-center gap-1">
-            <Monitor className="size-3.5" /> Agent version 0.1.0 · source-only
-          </span>
-        </CardFooter>
-      </Card>
+// ─── Helper component for the step-by-step guide ───
 
-      {/* Manual download note */}
-      <Card className="border-l-4 border-l-sky-400 bg-sky-50/50">
-        <CardContent className="flex items-start gap-3 p-4">
-          <AlertTriangle className="mt-0.5 size-4 text-sky-700" />
-          <div>
-            <p className="text-sm font-medium text-sky-900">Manual download always works</p>
-            <p className="mt-1 text-xs text-sky-800">
-              Even without an agent, every paid order in <a className="font-medium underline" href="/shop/orders">Orders</a>{' '}
-              has a Download button on the file list. Use this when the agent is offline, when you
-              want to print from a different machine, or to inspect a file before sending it to the
-              agent.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+function SetupStep({
+  number,
+  icon: Icon,
+  title,
+  done,
+  children,
+}: {
+  number: number;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  done: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-4">
+      {/* Step number / icon */}
+      <div className="flex flex-col items-center">
+        <div
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full ${
+            done
+              ? 'bg-emerald-100 text-emerald-600'
+              : 'bg-amber-100 text-amber-700'
+          }`}
+        >
+          {done ? <CheckCircle2 className="size-5" /> : <Icon className="size-5" />}
+        </div>
+        {number < 4 && <div className="mt-1 h-full w-px flex-1 bg-border" />}
+      </div>
+      {/* Step content */}
+      <div className="flex-1 pb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-muted-foreground">STEP {number}</span>
+          {done && (
+            <Badge variant="outline" className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-700">
+              <Check className="size-3" /> Done
+            </Badge>
+          )}
+        </div>
+        <h3 className="mt-1 text-base font-semibold text-foreground">{title}</h3>
+        <div className="mt-2">{children}</div>
+      </div>
     </div>
   );
 }
