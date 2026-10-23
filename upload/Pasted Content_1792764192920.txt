@@ -1,0 +1,904 @@
+# PrintShop SaaS — Full Website Investigation, Security Audit, Quality Rating & Professional Upgrade
+
+## 1. Role and mission
+
+Act as a principal software architect, senior full-stack engineer, application security auditor, penetration-testing specialist, QA automation engineer, performance engineer, accessibility specialist, and professional UI/UX reviewer.
+
+Your mission is to investigate my existing PrintShop SaaS application in depth, identify every meaningful weakness, explain its root cause, assign a severity and rating, implement appropriate fixes, and raise the quality of the application to a professional production standard.
+
+Do not behave like an assistant that merely suggests improvements. Work directly in the existing repository, inspect the implementation, make justified changes, execute tests, and verify the results.
+
+**Core objective:** transform the existing project from a working prototype or partially verified product into a reliable, secure, maintainable, accessible, and professionally presented SaaS application.
+
+Investigate both code quality and real user experience. A beautiful frontend with insecure APIs is not professional. Passing unit tests without verifying authorization, database behavior, payment flows, and printing reliability is not sufficient.
+
+Do not promise that every possible vulnerability can be found. Report the actual coverage and remaining uncertainty honestly.
+
+---
+
+## 2. Project context
+
+Repository: `Arjunyadavsoma/printshop-saas`
+
+Deployed preview: `https://printshop-saas-three.vercel.app`
+
+Inspect the actual repository before assuming any of the following details are still current.
+
+Previously reported architecture:
+
+- Next.js 16 App Router
+- React 19
+- TypeScript with strict mode
+- Tailwind CSS 4 and shadcn/ui
+- Bun
+- Prisma ORM
+- SQLite for development and Neon PostgreSQL for production
+- Supabase Storage for production files
+- JWT authentication and PBKDF2-SHA256 password hashing
+- Vercel deployment
+- Repository and adapter abstractions
+- Shopkeeper and administrator portals
+- Public customer ordering and QR-based shop discovery
+- Document uploads, PDF page counting, print configuration, pricing, and UPI payments
+- Order tracking and payment verification
+- PrintJob and PrintAgent models
+- PrintLatch local printing integration
+- Planned native Windows printing through `windows-pdf-printer-native`
+- Existing automated tests, reportedly 217 tests across 21 files in an earlier project summary
+
+Treat reported test counts and architectural details as historical context, not verified facts. Establish the real baseline from the current checkout.
+
+### Important product workflows
+
+Investigate the complete lifecycle of:
+
+1. Customer opens a shop page or QR link.
+2. Customer uploads a document.
+3. The system validates and processes the document.
+4. Customer selects copies, page range, paper size, color, and duplex settings.
+5. Server calculates the price.
+6. Customer pays through the supported payment workflow.
+7. Shopkeeper verifies payment where required.
+8. Shopkeeper accepts and processes the order.
+9. Shopkeeper prints through the configured printing engine.
+10. Order is marked ready for pickup.
+11. Order is completed, cancelled, or otherwise resolved.
+12. Audit records, revenue totals, and customer document retention behave correctly.
+
+Investigate customer, shopkeeper, administrator, printing-engine, database, and deployment behavior as connected systems.
+
+---
+
+## 3. Non-negotiable rules
+
+1. Inspect the existing implementation before making changes.
+2. Read actual source files, not just README files or summaries.
+3. Follow imports, call chains, data models, middleware, adapters, API routes, and frontend components.
+4. Do not invent files, endpoints, dependencies, APIs, or current application behavior.
+5. Preserve working features unless a change is necessary and justified.
+6. Avoid unnecessary rewrites, speculative abstractions, and gratuitous dependencies.
+7. Reuse existing architecture and conventions.
+8. Do not introduce a second source of truth for pricing, payment status, order state, or print-job status.
+9. Never trust client-supplied shop IDs, order prices, payment states, user roles, file paths, printer names, or ownership claims.
+10. Never expose secrets, private keys, service-role credentials, passwords, or permanent document URLs.
+11. Never silently change payment, printing, or security behavior to make a test pass.
+12. Do not remove existing security checks just to simplify integration.
+13. Do not make destructive database changes.
+14. Do not apply production migrations, alter production records, deploy, commit, push, or rotate secrets without my explicit approval.
+15. Do not perform destructive or disruptive security tests against production.
+16. Do not claim a vulnerability exists without evidence or label a hypothetical risk as a confirmed finding.
+17. Do not claim a fix is verified unless the relevant test or inspection actually supports that claim.
+18. Do not suppress test failures, weaken assertions, or disable lint rules to make the project appear healthy.
+19. Do not place secrets in screenshots, logs, reports, commits, or generated artifacts.
+20. Continue through the audit and fixes in priority order, but stop before changes that could cause irreversible data loss or unauthorized production impact.
+
+Use only authorized environments. Treat the deployed site as a system for safe, non-destructive inspection unless explicit permission is provided for broader testing.
+
+---
+
+# PHASE 1 — Establish the baseline
+
+Before modifying code, inspect:
+
+- Repository status and existing uncommitted changes
+- Project structure
+- Package manifest and lockfiles
+- README and architecture documentation
+- Environment-variable examples
+- Next.js configuration
+- TypeScript configuration
+- ESLint configuration
+- Tailwind and component configuration
+- Prisma schema and migrations
+- Authentication and authorization implementation
+- API routes and shared middleware
+- Repository interfaces and implementations
+- Storage adapters
+- Payment integrations
+- PrintLatch integration
+- Native Windows printing implementation, if present
+- Frontend pages, components, forms, and navigation
+- Logging, monitoring, error handling, and audit logging
+- Existing tests, fixtures, mocks, and CI configuration
+- Deployment configuration and security headers
+
+Run the existing test, lint, type-check, and build commands where practical.
+
+Record the exact commands, exit codes, failures, warnings, and test counts.
+
+Do not modify code before collecting the initial baseline unless a tool or environment limitation requires a small setup change.
+
+Produce a concise initial report containing:
+
+- Actual architecture
+- Existing features
+- Test baseline
+- Build status
+- Critical risks discovered
+- Missing environment variables or services
+- Areas that cannot be verified locally
+- Recommended audit order
+
+Do not stop after producing this report. Continue with the investigation and remediation.
+
+---
+
+# PHASE 2 — Inspect every relevant file
+
+Systematically inventory the repository.
+
+Inspect every first-party source file that participates in the application's behavior, including:
+
+- Application pages and layouts
+- Reusable UI components
+- API routes and route handlers
+- Authentication and authorization
+- Middleware
+- Business logic and services
+- Repository implementations
+- Data models and migrations
+- Storage and file-processing code
+- Payment verification
+- Printing adapters and local services
+- Input schemas and validation
+- Shared utilities
+- Configuration
+- Tests
+- Build and deployment scripts
+
+For a large repository, work in bounded batches and maintain an audit inventory so no major subsystem is accidentally skipped.
+
+Third-party dependencies do not need a manual line-by-line review. Audit their versions, advisories, permissions, usage, and relevant integration boundaries.
+
+Generated files and build output can be excluded from manual source review when their generating source and security relevance have been inspected.
+
+For each relevant file, record:
+
+- Its responsibility
+- How it is called
+- Inputs and outputs
+- Trust boundaries
+- Dependencies
+- Error handling
+- Security implications
+- Test coverage
+- Actual defects
+- Opportunities for improvement
+
+Trace important functionality end-to-end. A safe API route is insufficient if its repository method leaks cross-shop data, and a secure backend is insufficient if a frontend bypasses its intended workflow.
+
+Maintain a working inventory of reviewed files, files still pending review, and files excluded with a reason.
+
+---
+
+# PHASE 3 — Security audit
+
+Use OWASP ASVS and the OWASP Top 10 as reference frameworks. Apply relevant CWE categories when useful.
+
+Assign findings one of these severities:
+
+- **Critical:** credible compromise of the application, sensitive data, or privileged control with severe impact.
+- **High:** significant unauthorized access, financial manipulation, data exposure, or security-boundary failure.
+- **Medium:** meaningful but more constrained security or integrity risk.
+- **Low:** limited-impact weakness or defense-in-depth gap.
+- **Informational:** hardening recommendation or observation without a demonstrated vulnerability.
+
+For every finding, include evidence, affected files or routes, impact, reproducibility in an authorized environment, recommended remediation, and verification status.
+
+## 3.1 Authentication and sessions
+
+Inspect:
+
+- Registration and login
+- Password hashing and verification
+- Password reset and account recovery, if implemented
+- JWT creation, validation, expiry, and signing algorithms
+- Refresh-token rotation and revocation
+- Cookie flags, where cookies are used
+- Token storage and leakage risks
+- Logout behavior
+- Brute-force and credential-stuffing protection
+- Account enumeration
+- Role assignment
+- Session invalidation
+- Password and token logging
+- Authentication on every protected route
+
+Verify that authorization cannot be bypassed by calling APIs directly.
+
+Do not assume JWT use automatically makes authentication secure.
+
+## 3.2 Authorization and multi-tenancy
+
+Treat tenant isolation as a high-priority audit area.
+
+Test whether a shopkeeper can access another shop's:
+
+- Orders
+- Uploaded files
+- Print jobs
+- Printer settings
+- Payments
+- Reports
+- Audit records
+- User records
+
+Inspect object-level authorization, insecure direct object references, role checks, administrator access, and repository queries.
+
+Ensure ownership checks happen on the server and are applied consistently to nested resources.
+
+Use two or more test tenants to verify isolation.
+
+## 3.3 File uploads and document processing
+
+Inspect:
+
+- File type validation
+- MIME-type spoofing
+- File signature validation
+- Filename handling
+- Upload limits
+- Storage permissions
+- Public versus private buckets
+- Signed URL expiration
+- Unauthorized file downloads
+- Path traversal
+- PDF parser safety
+- Malformed and password-protected documents
+- Large-file denial of service
+- Temporary-file cleanup
+- Document retention and deletion
+- Cross-tenant access
+- File processing timeouts
+
+Treat uploaded files as untrusted input.
+
+Never rely solely on a filename extension or browser-provided MIME type.
+
+Ensure private documents are not accidentally exposed through public storage, logs, cached responses, or predictable URLs.
+
+## 3.4 Payments and financial integrity
+
+Inspect all UPI payment and verification flows.
+
+Check whether:
+
+- Client requests can manipulate amounts
+- UTRs or screenshots are incorrectly treated as verified payments
+- Payment callbacks or webhooks are authenticated
+- Duplicate callbacks are idempotent
+- Repeated requests create duplicate payment records
+- An order can be marked paid without authorization
+- Refund states are fabricated or inconsistent
+- Order totals and collected amounts are conflated
+- Currency rounding is consistent
+- Cancellation and payment transitions are safe
+- Cash collections are explicitly recorded
+- Reports count only the correct financial states
+
+Use integer paise for monetary calculations where applicable.
+
+Never claim that a payment is provider-verified unless the implemented verification mechanism establishes that fact.
+
+## 3.5 API and input validation
+
+Inspect:
+
+- Every API route
+- Request schemas
+- Query parameters
+- Route parameters
+- JSON parsing
+- Body-size limits
+- Error responses
+- HTTP methods and status codes
+- Rate limiting
+- Pagination limits
+- Database query construction
+- Sensitive response fields
+- Excessive resource consumption
+- Cross-origin behavior
+- CSRF exposure where relevant
+- Caching of authenticated responses
+
+Verify that malformed input fails safely and that API responses do not disclose secrets, internal stack traces, or unrelated tenant data.
+
+Do not introduce permissive CORS policies or trust Origin headers as the sole authorization mechanism.
+
+## 3.6 Printing security
+
+Inspect both PrintLatch and native Windows printing paths.
+
+Verify:
+
+- Pairing and token handling
+- Localhost service authentication
+- Origin and Host validation
+- DNS-rebinding protections
+- Arbitrary URL prevention
+- Arbitrary file-path prevention
+- Printer-name validation
+- PDF authorization
+- Request and file-size limits
+- Job status authorization
+- Duplicate submission protection
+- Cross-engine fallback behavior
+- Uncertain job reconciliation
+- Audit logs
+- Temporary-file cleanup
+
+The local native service must not expose arbitrary filesystem access or command execution.
+
+Do not blindly retry a job whose physical outcome is uncertain.
+
+Do not equate successful submission with confirmed physical completion.
+
+Do not claim duplex support works on a particular printer without validating its driver and physical output.
+
+## 3.7 Secrets and configuration
+
+Inspect:
+
+- `.env` files and environment-variable usage
+- `.gitignore`
+- Committed configuration
+- Client-exposed environment variables
+- Logging
+- Error messages
+- Build artifacts
+- CI configuration
+- Git history where available and authorized
+- Third-party API credentials
+
+Never print secret values in the report.
+
+If a credential appears exposed, identify the type and location without reproducing the value. Recommend revocation and rotation. Do not rotate production secrets automatically.
+
+## 3.8 Security headers and browser behavior
+
+Inspect and verify where appropriate:
+
+- Content Security Policy
+- HSTS
+- X-Content-Type-Options
+- Referrer-Policy
+- Frame restrictions
+- Permissions-Policy
+- Secure cookie settings
+- Cache-Control on private data
+- Open redirects
+- Clickjacking
+- XSS risks
+- CSRF risks
+- Unsafe external links
+
+Do not apply a restrictive CSP blindly if it breaks required functionality. Test the policy against the actual application.
+
+---
+
+# PHASE 4 — Architecture and implementation quality
+
+Review the codebase for:
+
+- Duplicate business logic
+- Oversized files and components
+- Circular dependencies
+- Incorrect separation of concerns
+- Unnecessary abstractions
+- Dead code
+- Unused dependencies
+- Inconsistent error handling
+- TypeScript `any` usage
+- Unsafe type assertions
+- Unvalidated external data
+- Fragile environment detection
+- Hard-coded URLs and limits
+- Inconsistent naming
+- Hidden global state
+- Race conditions
+- Unbounded retries
+- Process-local locking where distributed correctness is required
+- Missing transactions
+- N+1 database queries
+- Inappropriate indexes
+- Inconsistent pagination
+- Unnecessary network requests
+- Improper loading of large files
+- Incomplete cleanup
+- Excessive logging
+- Business logic duplicated between client and server
+
+Follow existing architectural conventions where sound.
+
+Do not split every function into a new file merely to make the project appear modular.
+
+Do not introduce a new state-management library or dependency-injection framework without a demonstrated need.
+
+For each refactor, explain the defect or maintainability problem it solves and how behavior remains compatible.
+
+Prioritize correctness, clarity, testability, and maintainability over stylistic churn.
+
+---
+
+# PHASE 5 — Database and data integrity
+
+Review Prisma models, relations, migrations, and repository methods.
+
+Inspect:
+
+- Missing foreign keys and constraints
+- Incorrect cascade deletion
+- Tenant relationships
+- Nullable fields that should be required
+- Duplicate records
+- Uniqueness constraints
+- Query indexes
+- Transaction boundaries
+- Concurrent state transitions
+- SQLite versus PostgreSQL behavior
+- Migration compatibility
+- Timezone handling
+- Soft deletion, if used
+- Audit retention
+- Data consistency after failures
+
+Check whether database constraints actually enforce important business rules.
+
+Do not assume SQLite behavior always matches PostgreSQL.
+
+For production-oriented changes:
+
+- Create reversible or carefully reviewed migrations where practical.
+- Never drop or rewrite production data automatically.
+- Never run production migrations without explicit approval.
+- Provide migration and rollback instructions.
+- Preserve existing customer, shop, order, payment, and print-job records.
+
+---
+
+# PHASE 6 — Full functional testing
+
+Build a workflow matrix for customer, shopkeeper, administrator, and printing-engine roles.
+
+Test:
+
+### Customer
+- Open a shop page
+- Upload a valid document
+- Reject invalid or oversized files
+- Configure print settings
+- Calculate the correct price
+- Submit an order
+- Complete the supported payment flow
+- Track the order
+- Handle expired sessions, failed uploads, and network errors
+
+### Shopkeeper
+- Authenticate
+- View only authorized shop data
+- Find and inspect orders
+- Verify payment using the implemented workflow
+- Change order state using valid transitions
+- Print eligible orders
+- Handle failed and uncertain print jobs
+- Mark orders ready for pickup
+- Record collection and completion where supported
+- Configure printer preferences
+- Review reports
+
+### Administrator
+- Access authorized administrative features
+- Manage shops and orders
+- Review audit logs
+- View analytics without leaking credentials or unnecessary customer data
+- Verify that administrator-only actions cannot be performed by ordinary users
+
+### Cross-system consistency
+- Payment status and order status remain independent.
+- Print-job state and order state remain coherent.
+- Price calculation is consistent from checkout to order records.
+- Repeated requests do not duplicate financial or printing operations.
+- Tenant isolation is enforced.
+- Failed operations do not leave misleading success states.
+- Realtime updates and polling do not bypass authorization.
+
+Add regression tests for every confirmed bug fixed.
+
+Use mocks for external providers when appropriate, but do not present mocked tests as real payment, cloud-storage, or hardware verification.
+
+---
+
+# PHASE 7 — UI/UX and professional design audit
+
+Inspect every significant page at desktop and mobile widths.
+
+Evaluate:
+
+- Visual hierarchy
+- Consistent spacing and typography
+- Color contrast
+- Brand consistency
+- Navigation clarity
+- Responsive layouts
+- Forms and validation
+- Buttons and interaction states
+- Loading indicators
+- Empty states
+- Error recovery
+- Success feedback
+- Dialog behavior
+- Table usability
+- Search and filtering
+- Accessible keyboard navigation
+- Screen-reader labels
+- Focus visibility
+- Touch target sizes
+- Error-message clarity
+- Print preview readability
+- Customer checkout friction
+- Shopkeeper counter workflow
+
+Use the existing Tailwind and shadcn/ui system unless there is a clear reason to extend it.
+
+Establish consistent design tokens and component patterns rather than adding arbitrary styles to individual pages.
+
+Do not redesign every screen simultaneously.
+
+Improve the most important customer and shopkeeper workflows first.
+
+### Professional customer experience
+
+Aim for:
+
+- Clear shop identity and pricing
+- A straightforward upload-to-checkout flow
+- Accurate price breakdowns
+- Clear payment instructions
+- Visible order confirmation
+- Useful order tracking
+- Clear pickup status
+- Friendly but precise error messages
+- Accessible and responsive document configuration
+
+### Professional shopkeeper experience
+
+Aim for:
+
+- An immediately understandable order inbox
+- Clear payment and print statuses
+- Fast access to the next valid action
+- Printer connection and job status visibility
+- Safe retry behavior
+- Readable tables and filters
+- Efficient keyboard and touch interaction
+- Useful empty and failure states
+
+Do not add decorative charts, animations, gradients, or dashboards without a user need.
+
+Every visible control must work. Remove dead buttons, fake functionality, misleading status labels, and placeholder data from production-facing flows.
+
+---
+
+# PHASE 8 — Performance and reliability
+
+Inspect performance using evidence rather than guesses.
+
+Review:
+
+- Bundle size
+- Unnecessary client components
+- Server/client component boundaries
+- Database query latency
+- Slow API routes
+- Repeated requests
+- Large dependencies
+- Image optimization
+- Upload/download memory usage
+- PDF processing time
+- Excessive polling
+- Caching
+- Timeouts
+- Retry policies
+- Concurrency
+- Error rates
+- Resource limits
+
+Use realistic local benchmarks and browser measurements where available.
+
+Apply caching only where authorization and data freshness permit it. Do not cache sensitive customer information across tenants.
+
+Ensure retries use bounded backoff and idempotency where needed.
+
+Avoid adding Redis, a queueing platform, or paid monitoring service unless the current architecture demonstrates a real need.
+
+When external services or production credentials are unavailable, report which performance claims could not be measured.
+
+---
+
+# PHASE 9 — Accessibility, SEO, and browser compatibility
+
+Review:
+
+- Semantic HTML
+- Form labels
+- Keyboard navigation
+- Screen-reader announcements
+- Color contrast
+- Focus states
+- Reduced-motion preferences
+- Accessible dialogs
+- Responsive behavior
+- Page titles and metadata
+- Public shop page indexing
+- Canonical URLs where appropriate
+- Open Graph metadata
+- Favicon and manifest
+- PWA behavior, if implemented
+- Broken links and navigation
+- Browser console errors
+
+Do not index private customer orders, uploaded documents, authenticated dashboards, or sensitive pages.
+
+Do not add a PWA or offline functionality if it creates unsafe storage or printing behavior.
+
+Test the main flows in the browsers and devices available in the environment.
+
+---
+
+# PHASE 10 — Automated quality and dependency audit
+
+Inspect dependency health and package compatibility.
+
+Run the existing project commands for:
+
+- Unit and integration tests
+- TypeScript
+- ESLint
+- Production build
+- Dependency vulnerability checks
+- Formatting checks, if configured
+- End-to-end tests, if available
+
+Inspect outdated dependencies and security advisories. Prefer targeted upgrades over a broad dependency overhaul.
+
+Do not blindly apply `npm audit fix --force` or equivalent commands.
+
+Do not introduce breaking major-version upgrades without a compatibility plan.
+
+Add missing tests where meaningful, especially for security boundaries, financial state transitions, tenant isolation, and printing.
+
+Avoid writing low-value tests solely to inflate the test count.
+
+---
+
+# PHASE 11 — Honest rating system
+
+Rate the existing application before fixes and again after verified fixes.
+
+Use a 0–10 scale with explicit evidence for every category.
+
+| Category | Weight |
+|---|---:|
+| Security and privacy | 20% |
+| Functional correctness | 15% |
+| Architecture and maintainability | 10% |
+| Testing and regression safety | 10% |
+| UI/UX and visual quality | 10% |
+| Performance | 10% |
+| Reliability and error recovery | 10% |
+| Accessibility | 5% |
+| Database and financial integrity | 5% |
+| Deployment and operational readiness | 5% |
+
+Calculate the weighted overall score transparently.
+
+Rules:
+
+- Do not award a high score simply because the project uses modern frameworks.
+- Passing unit tests alone does not prove production readiness.
+- A critical confirmed security flaw must prevent an unqualified production-ready verdict.
+- A missing production credential is an environment limitation, not automatically a code defect.
+- Distinguish confirmed defects from suspected risks.
+- Mark untested categories as unverified and explain how they affect confidence.
+- Do not claim compliance certification from a self-assessment.
+- Do not claim the site is penetration-tested merely because static analysis was performed.
+
+For every score, provide the reason, supporting evidence, confidence level, and next improvement.
+
+---
+
+# PHASE 12 — Remediation and implementation
+
+After the initial investigation, build a prioritized remediation backlog.
+
+For every finding, record:
+
+- ID
+- Severity
+- Category
+- Affected file or route
+- Evidence
+- Root cause
+- User or business impact
+- Recommended fix
+- Regression test
+- Status
+- Verification evidence
+
+Prioritize in this order:
+
+1. Critical security vulnerabilities and data exposure
+2. High-severity authorization, payment, and tenant-isolation defects
+3. Data loss, duplicate payments, duplicate printing, and incorrect business state
+4. Broken core customer or shopkeeper workflows
+5. Medium-severity security and reliability issues
+6. Accessibility and major UI/UX problems
+7. Performance bottlenecks supported by measurements
+8. Maintainability improvements
+9. Low-risk visual polish
+
+Implement fixes in small, reviewable batches.
+
+After each batch:
+
+1. Inspect the diff.
+2. Run the relevant regression tests.
+3. Run type-check and lint.
+4. Run the production build when practical.
+5. Check for accidental changes to unrelated behavior.
+6. Update the remediation report.
+
+If a change requires a production migration, new secret, unavailable external service, or hardware test, prepare the change and document the remaining manual step rather than pretending it has been completed.
+
+Do not stop after producing the backlog. Continue fixing issues until all safe, authorized, high-priority work has been addressed or a clearly documented blocker is reached.
+
+---
+
+# PHASE 13 — Deployment readiness
+
+Inspect the deployment configuration for:
+
+- Correct environment-variable names
+- Missing or inconsistent runtime configuration
+- Production database compatibility
+- Storage permissions
+- Authentication configuration
+- Secure headers
+- Build-time and runtime differences
+- Serverless limitations
+- Logging and monitoring
+- Error reporting
+- Health checks, if appropriate
+- Migration procedures
+- Rollback strategy
+- Backup and recovery assumptions
+- Document retention
+- Privacy policy and terms pages where appropriate
+- Contact and support information where appropriate
+
+Do not invent legal claims, certifications, uptime guarantees, customer testimonials, or compliance statements.
+
+Do not display fabricated production statistics or fake operational health.
+
+Keep the application functional when optional external services are unavailable, where that is safe and compatible with existing behavior.
+
+Do not deploy without approval.
+
+---
+
+# PHASE 14 — Final verification and report
+
+Produce a professional audit report with these sections.
+
+## A. Executive summary
+
+- Initial overall score
+- Final verified score
+- Most serious findings
+- Most important fixes
+- Current production-readiness verdict
+
+## B. Coverage report
+
+- Number of files inventoried
+- Number of first-party files reviewed
+- Files excluded and reasons
+- Routes and workflows tested
+- Automated tests executed
+- Browser tests performed
+- External integrations verified
+- Areas still unverified
+
+Never invent counts. Derive them from the repository and tools.
+
+## C. Findings
+
+For each important finding:
+
+- Severity
+- Evidence
+- Root cause
+- Impact
+- Fix
+- Verification result
+
+## D. Before-and-after ratings
+
+Include every category, its weight, initial score, final score, evidence, and confidence.
+
+## E. Changed files
+
+List changed files grouped by subsystem, with a concise explanation of each meaningful change.
+
+## F. Test results
+
+Report exact results for:
+
+- Tests
+- TypeScript
+- Lint
+- Build
+- Security checks
+- Browser tests
+- Hardware tests, if applicable
+
+Separate passed, failed, skipped, and blocked checks.
+
+## G. Remaining risks
+
+Clearly identify:
+
+- Unfixed issues
+- Unverified hypotheses
+- Missing production credentials
+- External service limitations
+- Manual verification requirements
+- Hardware-specific printing limitations
+- Migration and deployment steps awaiting approval
+
+## H. Next steps
+
+Give a prioritized, practical checklist for achieving the next quality level.
+
+---
+
+# Execution instructions
+
+Start now.
+
+1. Inspect the actual repository and establish the baseline.
+2. Inventory the source files and important execution paths.
+3. Investigate the application systematically.
+4. Record and prioritize findings with evidence.
+5. Fix confirmed high-priority defects.
+6. Improve the most important user workflows.
+7. Add regression tests.
+8. Run the quality checks.
+9. Recalculate the ratings from verified results.
+10. Produce the final report.
+
+Do not just tell me what I should improve. Make the improvements in the existing codebase wherever safe and authorized.
+
+Do not sacrifice security, correctness, or existing functionality for visual polish.
+
+Be rigorous, skeptical, specific, and honest. A professional result is one that has been inspected, fixed, tested, and verified—not one that merely looks impressive in a report.
