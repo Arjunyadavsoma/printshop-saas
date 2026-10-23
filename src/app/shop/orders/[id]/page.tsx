@@ -44,7 +44,9 @@ import {
   checkPrintLatchStatus,
   submitPrintLatchJob,
   getPrintLatchJobStatus,
+  getPrintLatchPrinters,
   fetchPdfBytes,
+  type PrintLatchPrinter,
 } from '@/lib/printlatch/client';
 import {
   ArrowLeft,
@@ -53,6 +55,7 @@ import {
   Download,
   Printer as PrinterIcon,
   CheckCircle2,
+  AlertCircle,
   FileText,
   AlertTriangle,
   Clock,
@@ -933,9 +936,8 @@ function Instruction({ label, value, mono = false }: { label: string; value: str
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PrintLatchButton — clean "Print" button. If the agent is not connected,
-// shows a link to the Printer Setup page instead of an inline guide.
-// ─────────────────────────────────────────────────────────────────────────────
+// PrintLatchButton — confirmation dialog with settings + printer selection.
+// If the agent is not connected, shows a link to the Printer Setup page.
 
 interface PrintLatchJobState {
   status: 'idle' | 'fetching-url' | 'fetching-pdf' | 'submitting' | 'polling' | 'completed' | 'failed' | 'unknown';
@@ -956,6 +958,10 @@ function PrintLatchButton({
 }) {
   const [jobState, setJobState] = useState<PrintLatchJobState>({ status: 'idle' });
   const [agentConnected, setAgentConnected] = useState<boolean | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [printers, setPrinters] = useState<PrintLatchPrinter[]>([]);
+  const [selectedPrinter, setSelectedPrinter] = useState<string>('');
+  const [printersLoading, setPrintersLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -966,12 +972,27 @@ function PrintLatchButton({
     return () => { cancelled = true; };
   }, []);
 
+  // Fetch available printers when the dialog opens.
+  useEffect(() => {
+    if (!dialogOpen || !agentConnected) return;
+    setPrintersLoading(true);
+    getPrintLatchPrinters()
+      .then((ps) => {
+        setPrinters(ps);
+        // Auto-select the first real printer (not the capture device) if available.
+        const firstReal = ps.find((p) => p.kind !== 'capture') ?? ps[0];
+        if (firstReal) setSelectedPrinter(firstReal.id);
+      })
+      .catch(() => { /* non-fatal — can still try to print without a specific printer */ })
+      .finally(() => setPrintersLoading(false));
+  }, [dialogOpen, agentConnected]);
+
   const handlePrint = async () => {
     if (['fetching-url', 'fetching-pdf', 'submitting'].includes(jobState.status)) return;
     setJobState({ status: 'fetching-url' });
     try {
       const urlR = await api.request<{
-        data?: { downloadUrl: string; filename: string; copies: number; colorMode: 'bw' | 'color'; duplex: boolean; paperSize: string; pageRange?: string | null };
+        data?: { downloadUrl: string; filename: string; copies: number };
         error?: { message?: string };
       }>('GET', `/api/v1/shops/me/orders/${orderId}/files/${file.id}/print-url`);
       if (urlR.status !== 200 || !urlR.data?.data) throw new Error(urlR.data?.error?.message ?? 'Could not get print URL');
@@ -981,13 +1002,10 @@ function PrintLatchButton({
       const pdfBytes = await fetchPdfBytes(downloadUrl);
 
       setJobState({ status: 'submitting' });
-      // Per the PrintLatch API: POST /v1/jobs with multipart fields:
-      //   file (PDF), mode ("print"), copies (1-10).
-      // PrintLatch does NOT accept colorMode/duplex/paperSize/pageRange —
-      // those are printer-driver settings handled by the Windows print pipeline.
       const job = await submitPrintLatchJob({
         pdf: pdfBytes, filename, mode: 'print',
         copies: Math.min(Math.max(1, copies), 10),
+        printerId: selectedPrinter || undefined,
       });
 
       setJobState({ status: 'polling', agentJobId: job.id });
@@ -1005,8 +1023,9 @@ function PrintLatchButton({
   };
 
   const isBusy = ['fetching-url', 'fetching-pdf', 'submitting', 'polling'].includes(jobState.status);
+  const isTerminal = ['completed', 'failed', 'unknown'].includes(jobState.status);
 
-  // If agent is not connected, show a link to the setup page instead of the button.
+  // If agent is not connected, show a link to the setup page.
   if (agentConnected === false) {
     return (
       <a href="/shop/printer" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:underline">
@@ -1018,16 +1037,140 @@ function PrintLatchButton({
 
   return (
     <div className="flex flex-col items-end gap-0.5">
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => void handlePrint()}
-        disabled={disabled || isBusy || agentConnected !== true}
-        className="gap-1.5"
-      >
-        {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
-        {isBusy ? 'Printing…' : 'Print'}
-      </Button>
+      <AlertDialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open && isTerminal) setJobState({ status: 'idle' });
+      }}>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled || isBusy || agentConnected !== true}
+            className="gap-1.5"
+          >
+            {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
+            {isBusy ? 'Printing…' : 'Print'}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <PrinterIcon className="size-5 text-amber-600" />
+              Confirm Print
+            </AlertDialogTitle>
+            <AlertDialogDescription className="sr-only">Review the document and print settings before sending to the printer.</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {isBusy || isTerminal ? (
+            // ── Printing in progress / terminal state ──
+            <div className="space-y-3 py-2">
+              <div className="flex items-center gap-2 text-sm">
+                {jobState.status === 'fetching-url' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Preparing document…</>}
+                {jobState.status === 'fetching-pdf' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Fetching PDF…</>}
+                {jobState.status === 'submitting' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Sending to printer…</>}
+                {jobState.status === 'polling' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Waiting for print queue…</>}
+                {jobState.status === 'completed' && <><CheckCircle2 className="size-4 text-emerald-600" /> <span className="text-emerald-700 font-medium">Printed successfully</span></>}
+                {jobState.status === 'failed' && <><AlertCircle className="size-4 text-destructive" /> <span className="text-destructive">{jobState.error}</span></>}
+                {jobState.status === 'unknown' && <><AlertCircle className="size-4 text-amber-600" /> <span className="text-amber-700">{jobState.error ?? 'Unknown status — check printer queue'}</span></>}
+              </div>
+              {jobState.agentJobId && (
+                <p className="text-[10px] text-muted-foreground">Job ID: <code className="font-mono">{jobState.agentJobId.slice(0, 12)}</code></p>
+              )}
+            </div>
+          ) : (
+            // ── Pre-print confirmation ──
+            <div className="space-y-3 py-2">
+              {/* Document info */}
+              <div className="rounded-lg border border-border bg-muted/40 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Document</p>
+                <p className="mt-0.5 text-sm font-medium text-foreground break-words">{file.originalFilename}</p>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <span>{file.pageCount ? `${file.pageCount} pages` : 'Pages: N/A'}</span>
+                  <span>{(file.sizeBytes / 1024).toFixed(0)} KB</span>
+                  <span>{file.copies} cop{file.copies > 1 ? 'ies' : 'y'}</span>
+                </div>
+              </div>
+
+              {/* Print settings */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-md border border-border p-2">
+                  <p className="text-[10px] text-muted-foreground">Color</p>
+                  <p className="font-medium">{file.colorMode === 'bw' ? 'Black & White' : 'Color'}</p>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <p className="text-[10px] text-muted-foreground">Paper</p>
+                  <p className="font-medium uppercase">{file.paperSize}</p>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <p className="text-[10px] text-muted-foreground">Sides</p>
+                  <p className="font-medium">{file.duplex ? 'Double-sided' : 'Single-sided'}</p>
+                </div>
+                <div className="rounded-md border border-border p-2">
+                  <p className="text-[10px] text-muted-foreground">Price</p>
+                  <p className="font-medium">{formatINRFromPaise(file.pricePaise)}</p>
+                </div>
+              </div>
+              {file.pageRange && (
+                <p className="text-[11px] text-muted-foreground">Page range: <code className="font-mono">{file.pageRange}</code></p>
+              )}
+
+              {/* Printer selection */}
+              <div>
+                <Label className="text-xs">Printer</Label>
+                {printersLoading ? (
+                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" /> Detecting printers…
+                  </div>
+                ) : printers.length > 0 ? (
+                  <select
+                    value={selectedPrinter}
+                    onChange={(e) => setSelectedPrinter(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+                  >
+                    {printers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.kind === 'capture' ? ' (preview only)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-1 text-[11px] text-amber-700">No printers detected — will use the default printer.</p>
+                )}
+              </div>
+
+              {/* Settings note */}
+              <p className="text-[10px] text-muted-foreground">
+                Note: color, paper size, and duplex are handled by your Windows printer driver — PrintLatch sends the PDF as-is. The copies count is passed to PrintLatch.
+              </p>
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            {!isBusy && !isTerminal && (
+              <div className="flex justify-end gap-2">
+                <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handlePrint()}
+                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  <PrinterIcon className="size-4" />
+                  Confirm Print
+                </AlertDialogAction>
+              </div>
+            )}
+            {isBusy && (
+              <p className="text-center text-xs text-muted-foreground">Please wait… do not close this dialog.</p>
+            )}
+            {isTerminal && (
+              <div className="flex justify-end">
+                <AlertDialogAction className="min-h-[44px]">Close</AlertDialogAction>
+              </div>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Compact status (shown after dialog closes) */}
       {jobState.status === 'completed' && <span className="text-[10px] text-emerald-600">✓ Printed</span>}
       {jobState.status === 'failed' && (
         <div className="flex flex-col items-end">

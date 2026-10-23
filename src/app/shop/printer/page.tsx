@@ -28,6 +28,8 @@ import {
   confirmPrintLatchPairing,
   disconnectPrintLatch,
   getPairingCommand,
+  submitPrintLatchJob,
+  getPrintLatchJobStatus,
   PRINTLATCH_DASHBOARD_URL,
   type PrintLatchConnectionState,
   type PrintLatchHealth,
@@ -274,6 +276,79 @@ export default function PrinterSetupPage() {
               <p className="text-sm text-muted-foreground">
                 Once the agent shows <Badge variant="outline" className="gap-1"><CheckCircle2 className="size-3" /> Connected</Badge> above, go to any order and click the <strong>Print</strong> button next to a file. The document will be sent directly to your printer.
               </p>
+              {/* Test print button — uses mode: 'preview' (no real printer needed) */}
+              {isConnected && (
+                <div className="mt-3 rounded-lg border border-border bg-card p-3">
+                  <p className="text-xs font-medium text-foreground">Test your connection:</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Send a test PDF to PrintLatch&apos;s built-in capture (no paper wasted):</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+ className="mt-2 gap-1.5"
+                    disabled={testPrintState === 'submitting' || testPrintState === 'polling'}
+                    onClick={async () => {
+                      setTestPrintState('submitting');
+                      setTestPrintError(null);
+                      try {
+                        // Minimal valid PDF (1 blank page)
+                        const testPdf = new Uint8Array([
+                          0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a,
+                          0x31, 0x20, 0x30, 0x20, 0x6f, 0x62, 0x6a, 0x3c, 0x3c,
+                          0x2f, 0x54, 0x79, 0x70, 0x65, 0x2f, 0x43, 0x61, 0x74,
+                          0x61, 0x6c, 0x6f, 0x67, 0x2f, 0x50, 0x61, 0x67, 0x65,
+                          0x73, 0x20, 0x32, 0x20, 0x30, 0x20, 0x52, 0x3e, 0x3e,
+                          0x65, 0x6e, 0x64, 0x6f, 0x62, 0x6a, 0x0a, 0x32, 0x20,
+                          0x30, 0x20, 0x6f, 0x62, 0x6a, 0x3c, 0x3c, 0x2f, 0x54,
+                          0x79, 0x70, 0x65, 0x2f, 0x50, 0x61, 0x67, 0x65, 0x73,
+                          0x2f, 0x4b, 0x69, 0x64, 0x73, 0x5b, 0x33, 0x20, 0x30,
+                          0x20, 0x52, 0x5d, 0x2f, 0x43, 0x6f, 0x75, 0x6e, 0x74,
+                          0x20, 0x31, 0x3e, 0x3e, 0x65, 0x6e, 0x64, 0x6f, 0x62,
+                          0x6a, 0x0a, 0x33, 0x20, 0x30, 0x20, 0x6f, 0x62, 0x6a,
+                          0x3c, 0x3c, 0x2f, 0x54, 0x79, 0x70, 0x65, 0x2f, 0x50,
+                          0x61, 0x67, 0x65, 0x2f, 0x4d, 0x65, 0x64, 0x69, 0x61,
+                          0x42, 0x6f, 0x78, 0x5b, 0x30, 0x20, 0x30, 0x20, 0x36,
+                          0x31, 0x32, 0x20, 0x37, 0x39, 0x32, 0x5d, 0x2f, 0x50,
+                          0x61, 0x72, 0x65, 0x6e, 0x74, 0x20, 0x32, 0x20, 0x30,
+                          0x20, 0x52, 0x3e, 0x3e, 0x65, 0x6e, 0x64, 0x6f, 0x62,
+                          0x6a, 0x0a, 0x78, 0x72, 0x65, 0x66, 0x0a, 0x30, 0x20,
+                          0x34, 0x0a, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+                          0x30, 0x30, 0x30, 0x20, 0x36, 0x35, 0x35, 0x33, 0x35,
+                          0x20, 0x66, 0x20, 0x0a, 0x74, 0x72, 0x61, 0x69, 0x6c,
+                          0x65, 0x72, 0x3c, 0x3c, 0x2f, 0x53, 0x69, 0x7a, 0x65,
+                          0x20, 0x34, 0x2f, 0x52, 0x6f, 0x6f, 0x74, 0x20, 0x31,
+                          0x20, 0x30, 0x20, 0x52, 0x3e, 0x3e, 0x0a, 0x73, 0x74,
+                          0x61, 0x72, 0x74, 0x78, 0x72, 0x65, 0x66, 0x0a, 0x31,
+                          0x39, 0x30, 0x0a, 0x25, 0x25, 0x45, 0x4f, 0x46,
+                        ]);
+                        const job = await submitPrintLatchJob({
+                          pdf: testPdf,
+                          filename: 'printlatch-test.pdf',
+                          mode: 'preview',
+                        });
+                        setTestPrintState('polling');
+                        for (let i = 0; i < 5; i++) {
+                          await new Promise(r => setTimeout(r, 2000));
+                          const status = await getPrintLatchJobStatus(job.id);
+                          if (status.status === 'completed') { setTestPrintState('completed'); return; }
+                          if (status.status === 'failed') { setTestPrintState('failed'); setTestPrintError(status.error?.message ?? 'Test failed'); return; }
+                          if (status.status === 'unknown') { setTestPrintState('unknown'); setTestPrintError(status.error?.message ?? 'Unknown status'); return; }
+                        }
+                        setTestPrintState('unknown');
+                        setTestPrintError('Timed out — check PrintLatch dashboard');
+                      } catch (err) {
+                        setTestPrintState('failed');
+                        setTestPrintError(err instanceof Error ? err.message : 'Test failed');
+                      }
+                    }}
+                  >
+                    {testPrintState === 'submitting' || testPrintState === 'polling' ? <Loader2 className="size-3.5 animate-spin" /> : <TestTube className="size-3.5" />}
+                    {testPrintState === 'submitting' ? 'Sending…' : testPrintState === 'polling' ? 'Waiting…' : 'Test Print'}
+                  </Button>
+                  {testPrintState === 'completed' && <span className="ml-2 text-xs text-emerald-600">✓ Test successful! You&apos;re ready to print real orders.</span>}
+                  {testPrintState === 'failed' && <span className="ml-2 text-xs text-destructive">✗ {testPrintError}</span>}
+                  {testPrintState === 'unknown' && <span className="ml-2 text-xs text-amber-700">⚠ {testPrintError}</span>}
+                </div>
+              )}
             </SetupStep>
           </CardContent>
         </Card>
