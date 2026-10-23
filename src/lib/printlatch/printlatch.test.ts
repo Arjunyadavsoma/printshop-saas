@@ -192,7 +192,7 @@ describe('PrintLatch client — PDF fetching', () => {
 describe('PrintLatch client — pairing command + URLs', () => {
   it('generates the pairing command with the current origin', () => {
     const cmd = getPairingCommand();
-    expect(cmd).toContain('printlatch pair');
+    expect(cmd).toContain('pair --origin');
     expect(cmd).toContain('--origin');
     expect(cmd).toContain('--name "PrintShop SaaS"');
   });

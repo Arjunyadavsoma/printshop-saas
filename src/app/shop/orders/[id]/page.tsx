@@ -46,6 +46,7 @@ import {
   getPrintLatchJobStatus,
   fetchPdfBytes,
   getPairingCommand,
+  confirmPrintLatchPairing,
   PRINTLATCH_DASHBOARD_URL,
 } from '@/lib/printlatch/client';
 import {
@@ -958,23 +959,40 @@ function PrintLatchButton({
   const [jobState, setJobState] = useState<PrintLatchJobState>({ status: 'idle' });
   const [agentConnected, setAgentConnected] = useState<boolean | null>(null);
   const [showPairing, setShowPairing] = useState(false);
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingConfirming, setPairingConfirming] = useState(false);
+  const [pairingResult, setPairingResult] = useState<{ success: boolean; error?: string } | null>(null);
 
-  // Check agent status once on mount (lightweight — just one fetch).
+  const recheckStatus = async () => {
+    const { state } = await checkPrintLatchStatus();
+    setAgentConnected(state === 'connected');
+    return state;
+  };
+
+  // Check agent status once on mount.
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { state } = await checkPrintLatchStatus();
-      if (!cancelled) setAgentConnected(state === 'connected');
-    })();
-    return () => { cancelled = true; };
+    void recheckStatus();
   }, []);
+
+  const handleConfirmPairing = async () => {
+    if (!pairingCode.trim()) return;
+    setPairingConfirming(true);
+    setPairingResult(null);
+    const result = await confirmPrintLatchPairing(pairingCode.trim());
+    setPairingResult(result);
+    setPairingConfirming(false);
+    if (result.success) {
+      // Re-check status after successful pairing.
+      setPairingCode('');
+      await recheckStatus();
+    }
+  };
 
   const handlePrint = async () => {
     if (jobState.status === 'fetching-url' || jobState.status === 'fetching-pdf' || jobState.status === 'submitting') return;
 
     setJobState({ status: 'fetching-url' });
     try {
-      // 1. Get the short-lived presigned PDF URL from the server.
       const urlR = await api.request<{
         data?: {
           downloadUrl: string;
@@ -992,43 +1010,23 @@ function PrintLatchButton({
       }
       const { downloadUrl, filename, copies, colorMode, duplex, paperSize, pageRange } = urlR.data.data;
 
-      // 2. Fetch the PDF bytes from the presigned URL.
       setJobState({ status: 'fetching-pdf' });
       const pdfBytes = await fetchPdfBytes(downloadUrl);
 
-      // 3. Submit to the local PrintLatch agent.
       setJobState({ status: 'submitting' });
       const job = await submitPrintLatchJob({
-        pdf: pdfBytes,
-        filename,
-        copies,
-        colorMode,
-        duplex,
-        paperSize,
+        pdf: pdfBytes, filename, copies, colorMode, duplex, paperSize,
         pageRange: pageRange ?? undefined,
       });
 
       setJobState({ status: 'polling', agentJobId: job.id });
-
-      // 4. Poll the job status (up to 10 attempts, 2s apart).
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const status = await getPrintLatchJobStatus(job.id);
-        if (status.status === 'completed') {
-          setJobState({ status: 'completed', agentJobId: job.id });
-          return;
-        }
-        if (status.status === 'failed') {
-          setJobState({ status: 'failed', agentJobId: job.id, error: status.error ?? 'Print job failed' });
-          return;
-        }
-        if (status.status === 'unknown') {
-          setJobState({ status: 'unknown', agentJobId: job.id, error: status.error ?? 'Unknown status — check printer queue before retrying' });
-          return;
-        }
-        // 'queued' | 'submitting' | 'accepted' → keep polling
+        if (status.status === 'completed') { setJobState({ status: 'completed', agentJobId: job.id }); return; }
+        if (status.status === 'failed') { setJobState({ status: 'failed', agentJobId: job.id, error: status.error ?? 'Print job failed' }); return; }
+        if (status.status === 'unknown') { setJobState({ status: 'unknown', agentJobId: job.id, error: status.error ?? 'Unknown status — check printer queue before retrying' }); return; }
       }
-      // Timed out after 20s of polling — treat as 'unknown'.
       setJobState({ status: 'unknown', agentJobId: job.id, error: 'Job status timed out — check your printer queue before retrying' });
     } catch (err) {
       setJobState({ status: 'failed', error: err instanceof Error ? err.message : 'Print failed' });
@@ -1058,37 +1056,93 @@ function PrintLatchButton({
       {jobState.status === 'failed' && (
         <div className="flex flex-col items-end">
           <span className="text-[10px] font-medium text-destructive">✗ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">
-            Retry
-          </button>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">Retry</button>
         </div>
       )}
       {jobState.status === 'unknown' && (
         <div className="flex flex-col items-end">
           <span className="text-[10px] font-medium text-amber-700">⚠ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">
-            Retry after checking queue
-          </button>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">Retry after checking queue</button>
         </div>
       )}
 
-      {/* Pairing help (collapsible) */}
+      {/* ── Pairing guide (collapsible) ── */}
       {agentConnected === false && (
         <div className="mt-1">
           <button onClick={() => setShowPairing((v) => !v)} className="text-[10px] text-muted-foreground hover:underline">
-            Agent not connected — show setup
+            Agent not connected — show setup guide
           </button>
           {showPairing && (
-            <div className="mt-1 max-w-xs rounded-md border border-border bg-muted/50 p-2 text-[10px] text-muted-foreground">
-              <p className="font-medium text-foreground">PrintLatch setup:</p>
-              <ol className="mt-1 list-decimal pl-3 space-y-0.5">
-                <li>Open <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" className="text-amber-700 underline">PrintLatch dashboard</a> → confirm "Agent connected"</li>
-                <li>Run the pairing command on this computer:</li>
-              </ol>
-              <code className="mt-1 block break-all rounded bg-card p-1.5 text-[9px]">{getPairingCommand()}</code>
-              <p className="mt-1">If <code>printlatch</code> is not on PATH, use the full path:</p>
-              <code className="mt-1 block break-all rounded bg-card p-1.5 text-[9px]">%LOCALAPPDATA%\PrintLatch\bin\printlatch.exe pair --origin {typeof window !== 'undefined' ? window.location.origin : ''}</code>
-              <p className="mt-1">Then click <button onClick={() => setAgentConnected(null)} className="text-amber-700 underline">retry connection check</button>.</p>
+            <div className="mt-1 max-w-sm rounded-md border border-border bg-muted/50 p-3 text-[11px] text-muted-foreground">
+              <p className="font-semibold text-foreground">PrintLatch Setup — 4 steps</p>
+
+              {/* Step 1: Start the agent */}
+              <div className="mt-2">
+                <p className="font-medium text-foreground">① Start PrintLatch</p>
+                <p className="mt-0.5">Open the <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" className="text-amber-700 underline">PrintLatch dashboard</a> → confirm it shows "Agent connected".</p>
+              </div>
+
+              {/* Step 2: Run the pairing command */}
+              <div className="mt-2">
+                <p className="font-medium text-foreground">② Run the pairing command</p>
+                <p className="mt-0.5">Open <strong>Windows PowerShell</strong> + paste this EXACT command (it uses YOUR website origin):</p>
+                <code className="mt-1 block break-all rounded bg-card p-2 text-[10px] text-foreground">{getPairingCommand()}</code>
+                <p className="mt-1">You should see: <code className="text-foreground">Pairing code: PL-XXXX-XXXX-XXXX-XXXX</code></p>
+              </div>
+
+              {/* Step 3: Enter the pairing code */}
+              <div className="mt-2">
+                <p className="font-medium text-foreground">③ Enter the pairing code here</p>
+                <p className="mt-0.5">Copy the pairing code from PowerShell + paste it below:</p>
+                <div className="mt-1 flex gap-1.5">
+                  <input
+                    type="text"
+                    value={pairingCode}
+                    onChange={(e) => setPairingCode(e.target.value)}
+                    placeholder="PL-XXXX-XXXX-XXXX-XXXX"
+                    className="flex-1 rounded border border-border bg-card px-2 py-1 text-[10px] text-foreground"
+                    disabled={pairingConfirming}
+                  />
+                  <button
+                    onClick={() => void handleConfirmPairing()}
+                    disabled={pairingConfirming || !pairingCode.trim()}
+                    className="rounded bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {pairingConfirming ? 'Confirming…' : 'Confirm'}
+                  </button>
+                </div>
+                {pairingResult?.success && (
+                  <p className="mt-1 text-emerald-600">✓ Pairing confirmed! You can now print.</p>
+                )}
+                {pairingResult && !pairingResult.success && (
+                  <p className="mt-1 text-destructive">✗ {pairingResult.error}</p>
+                )}
+              </div>
+
+              {/* Step 4: Test */}
+              <div className="mt-2">
+                <p className="font-medium text-foreground">④ Print</p>
+                <p className="mt-0.5">After confirming, click the <strong>Print</strong> button above to send the file to your printer.</p>
+              </div>
+
+              {/* Re-check connection */}
+              <div className="mt-2 border-t border-border pt-2">
+                <button onClick={() => void recheckStatus()} className="text-amber-700 underline">
+                  Re-check connection
+                </button>
+              </div>
+
+              {/* Troubleshooting */}
+              <details className="mt-2">
+                <summary className="cursor-pointer font-medium text-foreground">Troubleshooting</summary>
+                <ul className="mt-1 list-disc pl-3 space-y-0.5">
+                  <li><strong>Agent not reachable:</strong> ensure PrintLatch is running (check the dashboard at <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" className="text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a>).</li>
+                  <li><strong>Origin mismatch:</strong> the origin in the pairing command MUST match this website's address. You are on: <code className="text-foreground">{typeof window !== 'undefined' ? window.location.origin : ''}</code></li>
+                  <li><strong>Pairing expired:</strong> the pairing code expires after a few minutes. Re-run the command + re-enter the code.</li>
+                  <li><strong>PowerShell "not found":</strong> if <code className="text-foreground">printlatch</code> is not on PATH, use the full path: <code className="text-foreground">"%LOCALAPPDATA%\PrintLatch\bin\printlatch.exe"</code></li>
+                  <li><strong>Re-pairing after changing domains:</strong> run the pairing command with the new origin, enter the new code, and confirm.</li>
+                </ul>
+              </details>
             </div>
           )}
         </div>
