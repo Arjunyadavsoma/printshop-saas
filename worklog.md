@@ -2511,3 +2511,54 @@ Stage Summary:
 - Files changed: 6 created (`public/icon-source.svg`, `public/favicon.ico`, `public/sw.js`, `src/app/manifest.ts`, `src/components/pwa/pwa-register.tsx`, `src/components/pwa/install-prompt.tsx`), 7 generated PNG icons in `public/icons/`, 2 modified (`src/app/layout.tsx`, `src/app/shop/dashboard/page.tsx`).
 - No DB changes. No migrations. No new dependencies (`sharp` was already installed — used only at build time to render the SVG source to PNGs, not a runtime dep). No API routes changed. No tests added (PWA infra is pure presentation + browser-API integration; no new business logic).
 - NOT verified on real hardware: actual install on a real Android phone / Windows machine / iPhone. The PWA infrastructure (manifest + SW + icons + meta tags + install-prompt capture) is correct per the W3C manifest spec + Chrome's installability criteria; the headless-Chrome `beforeinstallprompt` firing in dev confirms the manifest is recognized as installable. Production installability requires the SW to register (which it will, since PWARegister registers in `NODE_ENV === 'production'`).
+
+---
+Task ID: native-printer-website-zip-download
+Agent: main (Z.ai Code)
+Task: Replace the "go to GitHub to download the native-printer files" flow with a single ZIP download hosted on the website itself, so all shopkeepers follow the same process + commands (no GitHub branch/version confusion).
+
+Work Log:
+- Installed `jszip` (lightweight, in-memory ZIP generation) — the only new runtime dependency.
+- Created `src/app/api/v1/downloads/native-printer/route.ts` (public GET endpoint, no auth — the source files are already public on GitHub; bundling them here is for convenience + version pinning):
+  - `runtime: 'nodejs'`, `revalidate: 3600` (1h cache — contents only change on redeploy).
+  - Reads `index.js`, `package.json`, `README.md`, `.gitignore` from `mini-services/native-printer/` at request time (single source of truth — the ZIP always reflects the current deployed version, no stale duplicate).
+  - `getOrigin(req)`: detects the deployment's canonical origin from `x-forwarded-host` + `x-forwarded-proto` (Vercel) or `host` (local dev), falls back to the production URL. This is the key piece — the shopkeeper never types the origin, it's injected.
+  - `customizeReadme(content, origin)`: replaces every hardcoded `https://printshop-saas-three.vercel.app` in the README with the real origin so the downloaded guide's pairing command matches the website the shopkeeper is using.
+  - Generates 3 Windows double-click helpers at request time (eliminates typing errors for the 3 most-run commands):
+    * `install.bat` -> `call npm install` (one-time)
+    * `pair.bat` -> `node index.js pair --origin=<this-website>` (the origin is baked in)
+    * `start.bat` -> `node index.js` (start the service)
+    All 3 use `@echo off`, check `%ERRORLEVEL%`, print a friendly success/failure message, and `pause` at the end so the window stays open (Windows would auto-close the cmd window on completion otherwise, hiding any error).
+  - Builds the ZIP with `jszip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', level: 9 })`. Files go under a `native-printer/` folder so extraction creates a single top-level folder (no "zip bomb" of loose files in the user's Downloads).
+  - Returns `Content-Type: application/zip`, `Content-Disposition: attachment; filename="printshop-native-printer-v<version>.zip"` (version read from package.json, default v1.0.0), `Cache-Control: public, max-age=3600, s-maxage=3600`, `X-Content-Type-Options: nosniff`.
+
+- Rewrote Step 2 of the NativePrinterSection in `src/app/shop/printer/page.tsx`:
+  - Removed the "Download from GitHub" link + the "Click the green Code button -> Download ZIP" instruction (the multi-step GitHub navigation that caused version confusion).
+  - Added a big amber "Download native-printer.zip" button (`<a href="/api/v1/downloads/native-printer" download>`) — the primary CTA.
+  - Added a 3-step extraction guide (File Explorer -> Downloads -> right-click Extract All -> move to `C:\PrintShop\native-printer`).
+  - Added a full file-list callout listing all 8 files the ZIP contains (index.js, package.json, README.md, install.bat, pair.bat, start.bat, .gitignore) with a one-line description of each.
+  - Added a star tip: "You can skip the typed commands in Steps 3, 4, 6 — just double-click the matching .bat file instead."
+  - Kept the GitHub link as a secondary "browse the source" option, but framed it as non-recommended ("the ZIP above is the recommended path - guaranteed to match this website's version").
+
+- Updated Steps 3, 4, 6 to offer "Option A (double-click the .bat)" vs "Option B (type the command)":
+  - Step 3 (install dependencies): green callout "Option A — double-click install.bat" + the existing typed `npm install` commands as Option B.
+  - Step 4 (pairing): green callout "Option A — double-click pair.bat (uses your website address pre-filled — no typing)" + the existing typed pairing command as Option B.
+  - Step 6 (start service): green callout "Option A — double-click start.bat" + the existing typed `node index.js` as Option B.
+  - Every shopkeeper ends up running the same underlying commands (the .bat files run the exact same `node index.js` / `npm install`), just without typing — eliminating transcription errors (wrong origin URL, missing flags, typos in the path).
+
+- Updated the Troubleshooting card to mention the .bat helpers alongside the typed commands (e.g. "Is `node index.js` (or `start.bat`) still running?", "Run `install.bat` (or `npm install`) again", "Re-run `pair.bat`", "Re-download the ZIP + re-run `pair.bat` with the new origin" for the CORS/origin-mismatch case).
+
+Verification:
+- tsc 0 errors, lint 0 warnings.
+- `curl -sI /api/v1/downloads/native-printer` returns `Content-Type: application/zip`, `Content-Disposition: attachment; filename="printshop-native-printer-v1.0.0.zip"`, `Cache-Control: public, max-age=3600`.
+- `curl -s /api/v1/downloads/native-printer -o /tmp/native-printer.zip` downloads 10779 bytes (10.7KB, compressed from 31920 uncompressed).
+- `unzip -l /tmp/native-printer.zip` shows all 8 files under `native-printer/`: index.js (21714B), package.json (466B), README.md (8459B), .gitignore (34B), install.bat (413B), pair.bat (554B), start.bat (280B).
+- Origin injection verified: `pair.bat` contains `node index.js pair --origin=http://localhost:3000` (auto-detected from the dev request's host header). The README has 0 remaining hardcoded `printshop-saas-three.vercel.app` URLs (all replaced with the real origin). In production on Vercel, this would be `https://printshop-saas-three.vercel.app` (or whatever the deployment URL is).
+- Agent Browser: logged in as `owner@quickprint.demo`, opened `/shop/printer`, selected Native Windows Printer, verified Step 2 renders the "Download native-printer.zip" button + full file list + .bat mentions + the extract/move guide. The download link's href is `/api/v1/downloads/native-printer` with the `download` attribute. Clicking the button triggers the download (page URL stays at `/shop/printer` — no navigation, the Content-Disposition: attachment header forces a download). No console/runtime errors in dev.log.
+
+Stage Summary:
+- The shopkeeper no longer needs to visit GitHub to get the native-printer files. The Printer Setup page has a single "Download native-printer.zip" button that downloads a ready-to-use ZIP from the website itself. Every shopkeeper downloads the exact same version that matches their deployment, and the pairing command inside the ZIP (in both the README and pair.bat) uses the website's actual origin — no typing, no transcription errors, no version/branch confusion.
+- The 3 Windows .bat helpers (install.bat, pair.bat, start.bat) let non-technical shopkeepers set up the service by double-clicking instead of typing PowerShell commands. Steps 3, 4, 6 now present "Option A (double-click)" as the primary path and "Option B (type the command)" as the alternative — both run the exact same underlying commands.
+- Files changed: 1 created (`src/app/api/v1/downloads/native-printer/route.ts`), 1 modified (`src/app/shop/printer/page.tsx` — Step 2 rewrite + Steps 3/4/6 + troubleshooting .bat mentions), 2 updated (`package.json` + `bun.lock` for the jszip dependency).
+- No DB changes. No migrations. No API routes changed beyond the new download route. No tests added (the download route is a pure file-bundling helper with no business logic; the curl + unzip verification covers the contract).
+- Pushed to GitHub (commit c73be84). Vercel will auto-deploy.
