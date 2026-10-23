@@ -68,6 +68,7 @@ import {
   getEnginePref,
   type PrintEngine,
 } from '@/lib/native-printer/client';
+import { toast } from 'sonner';
 
 interface ShopInfo {
   id: string;
@@ -290,12 +291,32 @@ export default function ShopDashboardPage() {
         { body: { action } },
       );
       if (r.status >= 400) {
-        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        const msg = r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`;
+        setActionError(msg);
+        toast.error(
+          action === 'verify' ? 'Could not verify payment' : 'Could not reject payment',
+          { description: msg },
+        );
         return;
+      }
+      // Success — give the shopkeeper clear feedback that the payment status
+      // was updated. Without this, the order just silently disappears from
+      // the queue (the `load(true)` refresh re-computes paymentQueue) and
+      // the shopkeeper has no confirmation that the click landed.
+      if (action === 'verify') {
+        toast.success('✓ Payment verified', {
+          description: 'Order marked as paid. The customer will see the update on their tracking page.',
+        });
+      } else {
+        toast.success('Payment rejected', {
+          description: 'Order marked as cancelled. The customer will see "rejected" on their tracking page.',
+        });
       }
       await load(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Network error');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setActionError(msg);
+      toast.error('Network error', { description: msg });
     } finally {
       setVerifyBusy(null);
     }
@@ -600,7 +621,7 @@ export default function ShopDashboardPage() {
                     size="sm"
                     onClick={() => void quickVerify(o.id, 'verify')}
                     disabled={verifyBusy === o.id}
-                    className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:flex-initial"
+                    className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 sm:flex-initial"
                   >
                     {verifyBusy === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                     Verify
@@ -627,7 +648,7 @@ export default function ShopDashboardPage() {
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-rose-600 text-white hover:bg-rose-600/90"
+                          className="bg-rose-600 text-white hover:bg-rose-700"
                           onClick={(e) => { e.preventDefault(); void quickVerify(o.id, 'reject'); }}
                         >
                           Yes, reject

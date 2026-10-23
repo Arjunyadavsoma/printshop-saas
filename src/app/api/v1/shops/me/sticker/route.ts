@@ -5,17 +5,23 @@ import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { toAppError, fail } from '@/lib/api/envelope';
 import { NotFoundError } from '@platform/core/errors';
+import { getShopCustomerUrl } from '@/lib/api/origin';
 
 /**
  * GET /api/v1/shops/me/sticker — a printable A4 sheet with the shop's
  * customer QR repeated as a sheet of stickers (so the shopkeeper can print
  * and stick them anywhere). Rendered as a real PDF via pdf-lib.
+ *
+ * The QR encodes the shop's customer URL on the CURRENT deployment (derived
+ * from the request via getShopCustomerUrl) — so stickers stay valid when
+ * the site moves to a new domain, as long as the shopkeeper re-downloads +
+ * re-prints the sticker sheet after the move.
  */
-export const GET = withAuth(async (_req, _ctx, principal) => {
+export const GET = withAuth(async (req, _ctx, principal) => {
   try {
     const shop = await repos.shops.getByOwner(principal.userId);
     if (!shop.upiId) throw new NotFoundError('Shop has no UPI configured');
-    const customerUrl = `${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/${shop.slug}`;
+    const customerUrl = getShopCustomerUrl(shop.slug, req);
     const qrPng = await QRCode.toBuffer(customerUrl, { margin: 1, width: 300, type: 'png' });
 
     const doc = await PDFDocument.create();

@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
+import { getShopCustomerUrl } from '@/lib/api/origin';
 
 /**
  * GET /api/v1/shops/me/qr?format=png|svg&download=true|false
@@ -16,12 +17,20 @@ import { ok } from '@/lib/api/envelope';
  *  ?format=svg                 → JSON envelope with `svgString` + `pngDataUrl`.
  *
  * No persisted bytes — the QR is generated on demand from the public URL.
+ *
+ * The URL is derived from the REQUEST's host (via getShopCustomerUrl) so
+ * the QR always uses the deployment the shopkeeper is currently on — if
+ * the site moves to a new domain, the next QR generation (or refresh of
+ * the settings page) uses the new domain automatically. Previously this
+ * used process.env.APP_BASE_URL, which broke when the env var wasn't set
+ * on a new deployment (the QR encoded http://localhost:3000/<slug> —
+ * unreachable from a customer's phone).
  */
 export const GET = withAuth(async (req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
   const format = req.nextUrl.searchParams.get('format');
   const download = req.nextUrl.searchParams.get('download') === 'true';
-  const customerUrl = `${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/${shop.slug}`;
+  const customerUrl = getShopCustomerUrl(shop.slug, req);
 
   if (format === 'svg' && download) {
     const svgString = await QRCode.toString(customerUrl, { type: 'svg', margin: 2 });

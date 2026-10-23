@@ -76,6 +76,7 @@ import {
   CreditCard,
   Phone,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface PrintFile {
   id: string;
@@ -298,13 +299,32 @@ export default function ShopOrderDetailPage() {
         { body: { action, txnReference: txnRef.trim() || undefined } },
       );
       if (r.status >= 400) {
-        setVerifyError(r.data?.error?.message ?? `Verification failed (HTTP ${r.status}).`);
+        const msg = r.data?.error?.message ?? `Verification failed (HTTP ${r.status}).`;
+        setVerifyError(msg);
+        toast.error(
+          action === 'verify' ? 'Could not verify payment' : 'Could not reject payment',
+          { description: msg },
+        );
         return;
+      }
+      // Clear feedback — the order detail page previously had no confirmation
+      // that the verify click landed (the panel just disappears because the
+      // status is no longer awaiting_payment). The toast confirms it.
+      if (action === 'verify') {
+        toast.success('✓ Payment verified', {
+          description: 'Order marked as paid. The customer will see the update on their tracking page.',
+        });
+      } else {
+        toast.success('Payment rejected', {
+          description: 'Order marked as cancelled. The customer will see "rejected" on their tracking page.',
+        });
       }
       setTxnRef('');
       await load(true);
     } catch (err) {
-      setVerifyError(err instanceof Error ? err.message : 'Network error');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setVerifyError(msg);
+      toast.error('Network error', { description: msg });
     } finally {
       setVerifyAction(null);
     }
@@ -516,7 +536,7 @@ export default function ShopOrderDetailPage() {
               <Button
                 onClick={() => void runVerify('verify')}
                 disabled={verifyAction !== null}
-                className="w-full min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:w-auto"
+                className="w-full min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
               >
                 {verifyAction === 'verify' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                 Verify payment

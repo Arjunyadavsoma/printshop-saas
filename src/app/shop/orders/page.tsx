@@ -73,6 +73,7 @@ import {
   CheckCircle2,
   Ban,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface OrderRow {
   id: string;
@@ -519,12 +520,31 @@ export default function ShopOrdersPage() {
         { body: { action } },
       );
       if (r.status >= 400) {
-        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        const msg = r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`;
+        setActionError(msg);
+        toast.error(
+          action === 'verify' ? 'Could not verify payment' : 'Could not reject payment',
+          { description: msg },
+        );
         return;
+      }
+      // Success — clear feedback that the payment status was updated. Without
+      // this, the order just silently moves out of the "awaiting payment"
+      // filter and the shopkeeper has no confirmation the click landed.
+      if (action === 'verify') {
+        toast.success('✓ Payment verified', {
+          description: 'Order marked as paid. The customer will see the update on their tracking page.',
+        });
+      } else {
+        toast.success('Payment rejected', {
+          description: 'Order marked as cancelled. The customer will see "rejected" on their tracking page.',
+        });
       }
       await load(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Network error');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setActionError(msg);
+      toast.error('Network error', { description: msg });
     } finally {
       setBusy(null);
     }
