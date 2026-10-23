@@ -802,24 +802,61 @@ function NativePrinterSection() {
             {/* Step 2: Download the native-printer folder */}
             <Step number={2} icon={FileCode2} title="Download the native-printer folder (one-time)" done={false}>
               <p className="text-sm text-muted-foreground">
-                Download the <code className="rounded bg-muted px-1 py-0.5">mini-services/native-printer</code> folder from the PrintShop GitHub repo:
+                Download a ready-to-use ZIP directly from this website — it contains everything you need (the service code, dependency list, README, and Windows double-click helpers). Every shopkeeper downloads the exact same version, so the commands below always work.
               </p>
-              <a href="https://github.com/Arjunyadavsoma/printshop-saas/tree/main/mini-services/native-printer" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 break-all text-sm font-medium text-amber-700 hover:underline">
-                <ExternalLink className="size-3.5 shrink-0" /> github.com/Arjunyadavsoma/printshop-saas/tree/main/mini-services/native-printer
+              <a
+                href="/api/v1/downloads/native-printer"
+                download
+                className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+              >
+                <Download className="size-4" />
+                Download native-printer.zip
               </a>
-              <p className="mt-2 text-[11px] text-muted-foreground">Click the green "Code" button → "Download ZIP". Extract just the <code className="rounded bg-muted px-1 py-0.5">native-printer</code> folder somewhere permanent, e.g. <code className="rounded bg-muted px-1 py-0.5">C:\PrintShop\native-printer</code>.</p>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                The ZIP downloads to your <strong>Downloads</strong> folder as <code className="rounded bg-muted px-1 py-0.5">printshop-native-printer-v1.0.0.zip</code>.
+              </p>
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+                <p className="font-medium">After it downloads — extract + move it:</p>
+                <ol className="mt-1.5 list-decimal space-y-1 pl-5">
+                  <li>Open <strong>File Explorer</strong> → go to your <strong>Downloads</strong> folder.</li>
+                  <li>Right-click <code className="rounded bg-amber-100 px-1 py-0.5">printshop-native-printer-v1.0.0.zip</code> → <strong>Extract All…</strong> → click <strong>Extract</strong>.</li>
+                  <li>This creates a <code className="rounded bg-amber-100 px-1 py-0.5">native-printer</code> folder. Move it somewhere permanent, e.g. <code className="rounded bg-amber-100 px-1 py-0.5">C:\PrintShop\native-printer</code>.</li>
+                </ol>
+              </div>
               <div className="mt-2 rounded-md border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground">
-                <p className="font-medium text-foreground">The folder should contain:</p>
+                <p className="font-medium text-foreground">The folder will contain:</p>
                 <ul className="mt-1 ml-4 list-disc">
                   <li><code className="rounded bg-muted px-1 py-0.5">index.js</code> — the service code</li>
-                  <li><code className="rounded bg-muted px-1 py-0.5">package.json</code> — dependency list</li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">package.json</code> — dependency list (for <code className="rounded bg-muted px-1 py-0.5">npm install</code>)</li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">README.md</code> — full reference guide (with the correct website address for <em>your</em> deployment)</li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">install.bat</code> — double-click to run <code className="rounded bg-muted px-1 py-0.5">npm install</code></li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">pair.bat</code> — double-click to generate a pairing code (uses <em>your</em> website address — no typing)</li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">start.bat</code> — double-click to start the service</li>
+                  <li><code className="rounded bg-muted px-1 py-0.5">.gitignore</code> — keeps <code className="rounded bg-muted px-1 py-0.5">node_modules</code> + pairing state local</li>
                 </ul>
+                <p className="mt-1.5 text-amber-700">⭐ Tip: You can skip the typed commands in Steps 3, 4, 6 — just double-click the matching <code className="rounded bg-amber-100 px-1 py-0.5">.bat</code> file instead.</p>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Prefer to browse the source? It&apos;s also on GitHub:{' '}
+                <a href="https://github.com/Arjunyadavsoma/printshop-saas/tree/main/mini-services/native-printer" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">
+                  Arjunyadavsoma/printshop-saas
+                </a>
+                <span className="text-muted-400"> — but the ZIP above is the recommended path (guaranteed to match this website&apos;s version).</span>
+              </p>
             </Step>
 
             {/* Step 3: Install dependencies */}
             <Step number={3} icon={Terminal} title="Install dependencies (one-time)" done={serviceUp || libraryLoaded}>
-              <p className="text-sm text-muted-foreground">Open <strong>PowerShell</strong> in the <code className="rounded bg-muted px-1 py-0.5">native-printer</code> folder (Shift+right-click in the folder → "Open PowerShell window here"), then run:</p>
+              <p className="text-sm text-muted-foreground">
+                Open the <code className="rounded bg-muted px-1 py-0.5">native-printer</code> folder you just extracted. Then either:
+              </p>
+              <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+                <p className="font-medium">Option A — double-click (easiest):</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">install.bat</code> in the folder. It runs <code className="rounded bg-emerald-100 px-1 py-0.5">npm install</code> for you + shows the result.</p>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                <strong>Option B — type the commands</strong> (open PowerShell in the folder via Shift+right-click → &quot;Open PowerShell window here&quot;):
+              </p>
               <CodeBlock code={`cd C:\PrintShop\native-printer\nnpm install`} id="cd-install" copied={copied} onCopy={copyToClipboard} multiline />
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Or run the two commands separately:
@@ -836,7 +873,11 @@ function NativePrinterSection() {
 
             {/* Step 4: Generate the pairing code */}
             <Step number={4} icon={Link2} title="Generate the pairing code" done={isConnected}>
-              <p className="text-sm text-muted-foreground">In the same PowerShell window (inside <code className="rounded bg-muted px-1 py-0.5">native-printer</code>), run this EXACT command — it uses <strong>your</strong> website address:</p>
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+                <p className="font-medium">Option A — double-click (easiest):</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">pair.bat</code> in the folder. It runs the pairing command below with <strong>your</strong> website address pre-filled — no typing.</p>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground"><strong>Option B — type the command</strong> in PowerShell (inside <code className="rounded bg-muted px-1 py-0.5">native-printer</code>):</p>
               <CodeBlock code={pairingCommand} id="pair" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">You should see:</p>
               <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-[10px] leading-relaxed text-zinc-100 sm:text-xs"><code>{`══════════════════════════════════════════════════════
@@ -879,7 +920,11 @@ function NativePrinterSection() {
 
             {/* Step 6: Start the service */}
             <Step number={6} icon={Play} title="Start the service" done={serviceUp}>
-              <p className="text-sm text-muted-foreground">In the same PowerShell window, start the service:</p>
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+                <p className="font-medium">Option A — double-click (easiest):</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">start.bat</code> in the folder. It runs <code className="rounded bg-emerald-100 px-1 py-0.5">node index.js</code> for you + keeps the window open.</p>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground"><strong>Option B — type the command</strong> in PowerShell:</p>
               <CodeBlock code={startCommand} id="start" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">You should see:</p>
               <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-[10px] leading-relaxed text-zinc-100 sm:text-xs"><code>{`══════════════════════════════════════════════════════
@@ -919,13 +964,13 @@ function NativePrinterSection() {
         </CardHeader>
         <CardContent id="ts-np" className="hidden">
           <ul className="space-y-3 text-sm text-muted-foreground">
-            <li><strong className="text-foreground">Service not reachable:</strong> Is <code className="rounded bg-muted px-1.5 py-0.5">node index.js</code> still running? Open <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{healthUrl}</a> — if it fails, the service is down.</li>
-            <li><strong className="text-foreground">Library not loaded:</strong> Run <code className="rounded bg-muted px-1.5 py-0.5">npm install</code> again in the <code className="rounded bg-muted px-1.5 py-0.5">native-printer</code> folder. Check you have Node.js 22+ (<code className="rounded bg-muted px-1.5 py-0.5">node --version</code>).</li>
-            <li><strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website. You are on <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>. Re-run the pairing command with the correct origin.</li>
-            <li><strong className="text-foreground">Pairing code expired:</strong> Codes last 15 minutes. Re-run <code className="rounded bg-muted px-1.5 py-0.5">node index.js pair --origin=...</code> to get a new one.</li>
-            <li><strong className="text-foreground">Token expired (24h):</strong> Click <strong>Disconnect</strong>, then re-run the pairing command + enter the new code.</li>
-            <li><strong className="text-foreground">CORS error in browser console:</strong> The service only accepts requests from the paired origin. If you changed the website URL (e.g. preview deployment), re-pair with the new origin.</li>
-            <li><strong className="text-foreground">Build errors during <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>:</strong> Install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">Visual Studio Build Tools</a> (C++ workload), then re-run <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>.</li>
+            <li><strong className="text-foreground">Service not reachable:</strong> Is <code className="rounded bg-muted px-1.5 py-0.5">node index.js</code> (or <code className="rounded bg-muted px-1.5 py-0.5">start.bat</code>) still running? Open <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{healthUrl}</a> — if it fails, the service is down.</li>
+            <li><strong className="text-foreground">Library not loaded:</strong> Run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>) again in the <code className="rounded bg-muted px-1.5 py-0.5">native-printer</code> folder. Check you have Node.js 22+ (<code className="rounded bg-muted px-1.5 py-0.5">node --version</code>).</li>
+            <li><strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website. You are on <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>. Re-download the ZIP (the <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> inside it has the correct origin) or re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code>.</li>
+            <li><strong className="text-foreground">Pairing code expired:</strong> Codes last 15 minutes. Re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">node index.js pair --origin=...</code>) to get a new one.</li>
+            <li><strong className="text-foreground">Token expired (24h):</strong> Click <strong>Disconnect</strong>, then re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> + enter the new code.</li>
+            <li><strong className="text-foreground">CORS error in browser console:</strong> The service only accepts requests from the paired origin. If you changed the website URL (e.g. a new Vercel preview deployment), re-download the ZIP + re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> with the new origin.</li>
+            <li><strong className="text-foreground">Build errors during <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>:</strong> Install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">Visual Studio Build Tools</a> (C++ workload), then re-run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>).</li>
             <li><strong className="text-foreground">No printers detected:</strong> Install a printer in Windows first (Settings → Bluetooth &amp; devices → Printers → Add device). The native library only lists printers that Windows knows about.</li>
           </ul>
         </CardContent>
