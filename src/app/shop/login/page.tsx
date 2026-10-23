@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Store, Loader2, ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
+import { Store, Loader2, ArrowRight, KeyRound, ShieldCheck, UserPlus } from 'lucide-react';
 
 interface LoginResponse {
   accessToken?: string;
@@ -32,21 +31,18 @@ const DEMO_ACCOUNTS: { email: string; label: string }[] = [
 
 export default function ShopLoginPage() {
   const api = useApiClient();
-  const router = useRouter();
-  const [email, setEmail] = useState('owner@quickprint.demo');
-  const [password, setPassword] = useState('demo1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already authed, bounce to the right portal immediately.
-  useEffect(() => {
-    if (!api.ready) return;
-    if (api.token && api.role === 'owner') {
-      router.replace('/shop/dashboard');
-    } else if (api.token && api.role === 'admin') {
-      router.replace('/admin');
-    }
-  }, [api.ready, api.token, api.role, router]);
+  // NOTE: The auto-redirect ("if already authed, bounce to dashboard") was
+  // REMOVED because it caused a redirect loop with expired tokens. The old
+  // logic checked localStorage presence (not validity) → an expired token
+  // triggered a redirect to /shop/dashboard → 401 → the dashboard showed
+  // "session expired" but the login page kept bouncing the user back. Now
+  // the login page stays put — the user clicks "Sign in" to get a fresh
+  // token. The layout's auth gate handles the redirect for valid tokens.
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +54,6 @@ export default function ShopLoginPage() {
         '/api/v1/auth/login',
         { body: { email, password } },
       );
-      // The API wraps the data in an envelope: { success, data: { accessToken, user } }
       const inner = r.data?.data;
       if (r.status !== 200 || !inner?.accessToken) {
         const msg = r.data?.error?.message ?? 'Login failed — check your email and password.';
@@ -66,15 +61,19 @@ export default function ShopLoginPage() {
         return;
       }
       const accessToken = inner.accessToken;
+      const refreshToken = inner.refreshToken ?? '';
       const role = inner.user?.role ?? 'owner';
       const emailVal = inner.user?.email ?? email;
-      api.setAuth(accessToken, role, emailVal);
+      // Store BOTH access + refresh tokens (the old code discarded the
+      // refresh token — after 15min the access token expired with no way
+      // to refresh. Now the request() method auto-refreshes on 401.)
+      api.setAuth(accessToken, refreshToken, role, emailVal);
 
       // Route by role: admins go to the platform admin portal; owners stay here.
       if (role === 'admin') {
-        router.replace('/admin');
+        window.location.href = '/admin';
       } else {
-        router.replace('/shop/dashboard');
+        window.location.href = '/shop/dashboard';
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
@@ -109,7 +108,7 @@ export default function ShopLoginPage() {
               Sign in
             </CardTitle>
             <CardDescription>
-              Use your shop owner email and password. Demo accounts are listed below.
+              Use your shop owner email and password. New here? Create a shop account below.
             </CardDescription>
           </CardHeader>
           <form onSubmit={submit}>
@@ -121,7 +120,7 @@ export default function ShopLoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="owner@quickprint.demo"
+                  placeholder="you@example.com"
                   autoComplete="email"
                   required
                   disabled={submitting}
@@ -134,7 +133,7 @@ export default function ShopLoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="demo1234"
+                  placeholder="••••••••"
                   autoComplete="current-password"
                   required
                   disabled={submitting}
@@ -162,12 +161,23 @@ export default function ShopLoginPage() {
                 )}
                 {submitting ? 'Signing in…' : 'Sign in'}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Demo password for every account: <code className="font-mono">demo1234</code>
-              </p>
             </CardFooter>
           </form>
         </Card>
+
+        {/* Create Shop Account — the primary CTA for new shopkeepers */}
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-center">
+          <p className="text-sm font-medium text-amber-900">Don't have a shop account?</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Set up your print shop in minutes — 0% commission, customers pay you directly via UPI.
+          </p>
+          <Button asChild className="mt-3 w-full gap-2 border border-amber-600 bg-white text-amber-700 hover:bg-amber-50" variant="outline">
+            <Link href="/shop/register">
+              <UserPlus className="size-4" />
+              Create Shop Account
+            </Link>
+          </Button>
+        </div>
 
         <Card className="mt-4 border-dashed border-amber-300 bg-amber-50/50">
           <CardHeader className="pb-2">

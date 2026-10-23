@@ -153,6 +153,31 @@ export default function ShopSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState('profile');
 
+  // ── Deep-link support ────────────────────────────────────────────────
+  // Allow /shop/settings#profile, #hours, #payment, #qr (or #upi-qr,
+  // #shop-qr) to open the page directly on a specific tab. Purely
+  // additive: if there's no hash (or it's unknown), the default
+  // 'profile' tab is shown — exactly the old behavior. Runs ONCE on
+  // mount so user-initiated tab clicks afterward are not overridden.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (!raw) return;
+    // Map spec-friendly hashes to the internal tab values.
+    const alias: Record<string, string> = {
+      profile: 'profile',
+      hours: 'hours',
+      payment: 'payment',
+      'upi-qr': 'upi-qr',
+      'shop-qr': 'shop-qr',
+      // Spec uses "#qr" → Shop QR Code tab (the actual "qr" is the
+      // shop-ordering QR, not the UPI-QR upload).
+      qr: 'shop-qr',
+    };
+    const mapped = alias[raw];
+    if (mapped && mapped !== tab) setTab(mapped);
+  }, []);
+
   // ── Profile form ──
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

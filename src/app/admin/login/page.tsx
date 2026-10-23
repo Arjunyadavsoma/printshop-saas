@@ -59,8 +59,8 @@ export default function AdminLoginPage() {
         setTimeout(() => router.replace('/shop/login'), 1800);
         return;
       }
-      api.setAuth(data.accessToken, data.user.role, data.user.email);
-      router.replace('/admin');
+      api.setAuth(data.accessToken, data.refreshToken ?? '', data.user.role, data.user.email);
+      window.location.href = '/admin';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

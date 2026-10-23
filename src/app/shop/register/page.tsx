@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,7 +100,6 @@ function passwordStrength(p: string): { score: number; label: string; color: str
 
 export default function ShopRegisterPage() {
   const api = useApiClient();
-  const router = useRouter();
   const [step, setStep] = useState<StepId>('account');
   const [state, setState] = useState<WizardState>(DEFAULT_STATE);
   const [submitting, setSubmitting] = useState(false);
@@ -114,15 +112,11 @@ export default function ShopRegisterPage() {
   // Auto-fill slug from shop name (until the user manually edits the slug field).
   const [slugTouched, setSlugTouched] = useState(false);
 
-  // If already authed, redirect to dashboard — no point in re-registering.
-  useEffect(() => {
-    if (!api.ready) return;
-    if (api.token && api.role === 'owner') {
-      router.replace('/shop/dashboard');
-    } else if (api.token && api.role === 'admin') {
-      router.replace('/admin');
-    }
-  }, [api.ready, api.token, api.role, router]);
+  // NOTE: The auto-redirect ("if already authed, redirect to dashboard") was
+  // REMOVED — it caused a bounce with expired tokens (token in localStorage →
+  // redirect to /shop/dashboard → 401 → dashboard shows "session expired").
+  // A logged-in user who visits /shop/register can navigate to /shop/dashboard
+  // manually. The layout's auth gate handles the redirect for valid tokens.
 
   // Hydrate from localStorage so a refresh doesn't lose progress.
   useEffect(() => {
@@ -272,10 +266,20 @@ export default function ShopRegisterPage() {
         if (r.data?.error?.code === 'SLUG_TAKEN') setStep('business');
         return;
       }
-      // Persist auth + redirect.
-      api.setAuth(inner.accessToken, inner.user?.role ?? 'owner', inner.user?.email ?? state.account.email);
+      // Persist auth + redirect. Store BOTH access + refresh tokens (the old
+      // code discarded the refresh token → 15min expiry with no refresh).
+      api.setAuth(
+        inner.accessToken,
+        inner.refreshToken ?? '',
+        inner.user?.role ?? 'owner',
+        inner.user?.email ?? state.account.email,
+      );
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
-      router.replace('/shop/dashboard');
+      // Use a full-page navigation (not router.replace) to avoid any RSC
+      // transition race — the new AuthContext is shared via React Context,
+      // but a hard navigation guarantees the dashboard mounts fresh with the
+      // new token already in localStorage + context state.
+      window.location.href = '/shop/dashboard';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {

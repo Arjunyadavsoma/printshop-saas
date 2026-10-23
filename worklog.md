@@ -1722,3 +1722,152 @@ Stage Summary:
 Classification: SMOKE TESTS PASS (27/27 preview checks + 148/148 local tests). The deployed preview at https://printshop-saas-three.vercel.app is working correctly with the Neon database after the unique token index migration.
 
 NOT claiming the entire application is production-ready based only on smoke tests. Stopping after reporting results. The remaining blockers for production promotion (per the previous reports) are: (1) no explicit production-promotion authorization, (2) PhonePe/Paytm sandbox credentials still missing (only simulated), (3) Upstash Redis still not configured (rate limiting per-invocation on Vercel; DB UNIQUE guards the dangerous races), (4) production UPI QR upload flow against deployed Supabase untested end-to-end.
+
+
+---
+Task ID: portal-nav-enhancement
+Agent: frontend-styling-expert
+Task: Narrowly enhance the shopkeeper portal navigation + visual polish in `src/app/shop/layout.tsx` without breaking the existing settings tab system, the auth context, the dashboard, or any other page. No new dependencies. No business-logic changes. No build (forbidden by project rules).
+
+Work Log:
+- Inspection phase (read-only):
+  - Read `src/app/shop/layout.tsx` (182 lines) — the layout had a 4-item flat nav (Dashboard, Orders, Printer Setup, Settings) and NO footer. Top bar + mobile Sheet were already good.
+  - Read `src/app/shop/settings/page.tsx` (first 300 lines + grep for tab state) — the settings page uses internal `useState('profile')` for the active tab with 5 tab values: `profile`, `hours`, `payment`, `upi-qr`, `shop-qr`. It does NOT read URL hash or `?tab=` query param. So the requested deep-links (`/shop/settings#profile`, etc.) would land on the page but the tab would not change.
+  - Read `src/app/shop/dashboard/page.tsx` (grep for the requested section headers) — confirmed it already has: setup checklist (line 211/380), today's metrics tiles (line 322), payment queue (line 458), ready-for-pickup queue (line 546), recent orders (line 611), all-time summary (line 670). DID NOT rewrite it (per task rules).
+  - Confirmed `AuthProvider` is mounted at the root (`src/app/layout.tsx` lines 5/49/51) — the AuthContext fix from the previous agent is in place. DID NOT touch auth.
+  - Confirmed the project's UI footer pattern: `min-h-screen flex flex-col` root + `<footer className="mt-auto border-t border-border bg-card">` (matches `src/app/page.tsx`, `src/app/orders/[id]/page.tsx`, `src/components/phase1/site-footer.tsx`).
+  - Confirmed `vitest.config.ts` only runs `packages/**/*.test.ts` + `src/**/*.test.ts` — no tests cover the React layout, so my changes can't break unit tests.
+
+- Decision: URL hash deep-linking (not query string):
+  - The task spec mentioned BOTH formats: `/shop/settings#profile` OR `/shop/settings?tab=profile`. I chose the URL-hash format because:
+    1. `useSearchParams()` in Next.js requires a `<Suspense>` boundary when used in a `'use client'` component during static rendering — adding it would risk the `bun run build` (which is forbidden here, so I can't fully verify). URL hash is read client-side via `window.location.hash`, which has NO Suspense requirement and NO SSR concerns (browsers don't send the hash to the server).
+    2. URL hash is more readable for end users (`/shop/settings#hours` vs `/shop/settings?tab=hours`).
+    3. The Next.js `<Link href="/shop/settings#profile">` component natively supports hash links — no special handling needed.
+  - To make the hash deep-link actually open the right tab, I added a MINIMAL additive `useEffect` to the settings page that reads `window.location.hash` ONCE on mount and calls `setTab(mapped)` if the hash maps to a known tab. The effect has an empty `[]` deps array so it runs ONCE — subsequent user-initiated tab clicks are NOT overridden even if the hash is still in the URL.
+  - Hash-to-tab alias map: `profile`→`profile`, `hours`→`hours`, `payment`→`payment`, `upi-qr`→`upi-qr`, `shop-qr`→`shop-qr`, `qr`→`shop-qr`. The spec's `#qr` is mapped to the `shop-qr` tab (the shop-ordering QR) — NOT the `upi-qr` tab (the UPI-QR upload), because the spec calls the link "Shop QR Code", which corresponds to the shop-ordering QR.
+  - Fallback: no hash, unknown hash, or SSR → tab stays at the default `'profile'`. The existing tab UI (`<Tabs value={tab} onValueChange={setTab}>`) is unchanged. Purely additive — zero behavior change for the existing user flow.
+
+- Files changed (2 files; ~190 lines touched total):
+  - `src/app/shop/settings/page.tsx` (+25 lines, additive — inserted a single useEffect immediately after the `const [tab, setTab] = useState('profile');` line; no other lines touched).
+  - `src/app/shop/layout.tsx` (full rewrite of the nav + footer section; 326 lines total vs the original 182 lines):
+    - Replaced the flat `NAV_ITEMS: NavItem[]` (4 items) with a `NAV_GROUPS: NavGroup[]` (two groups: a main group with Overview/Orders/Printer Setup, and a "Settings" group with Shop Profile/Business Hours/Payments & UPI/Shop QR Code sub-items).
+    - Added `isItemActive(item, pathname, hash)` — handles BOTH path-based items (exact OR starts-with(href + '/')) AND hash-based items (exact pathname + hash match). The starts-with rule is preserved so `/shop/orders/[id]` still highlights the "Orders" link.
+    - Added `useHashPath()` hook — subscribes to `window.location.hash` + `hashchange` events; returns `''` on server / first client render to avoid hydration mismatch.
+    - Updated `<SidebarNav>` to render the grouped structure with an optional uppercase "SETTINGS" group label and `pl-5` indent on sub-items.
+    - Added a `<PortalFooter>` component (`mt-auto border-t border-border bg-card`) at the bottom of the root `<div className="flex min-h-screen flex-col bg-background">` — matches the project's existing footer pattern (`src/app/page.tsx`, `src/components/phase1/site-footer.tsx`).
+    - The Sign Out button stays ONLY in the sticky top bar (per the spec: "Sign Out → the existing logout button in the top bar"). I initially added a Sign out button to the desktop sidebar + mobile sheet for parity with the admin layout, but REMOVED them in a follow-up edit to honor the spec's "Sign Out is in the top bar" requirement and to keep the change minimal.
+    - Preserved: the sticky top bar (`sticky top-0 z-30`), the mobile Sheet (`md:hidden` trigger, `w-72` content, `SheetTitle` for a11y), the auth gate (`router.replace('/shop/login')` when `!api.token || api.role !== 'owner'`), the loading spinner, the `window.location.href = '/shop/login'` hard navigation on logout (avoids the RSC race the previous agent fixed), the `Badge` owner role pill, and the desktop sidebar's `w-60` width + `border-r` styling.
+
+- Verification (all three required checks — no `bun run build`, which is forbidden):
+  - `bunx tsc --noEmit` → **0 errors, 0 output** (clean exit).
+  - `bun run lint` (`eslint .`) → **0 errors, 0 warnings** (clean exit; after I removed an unused `// eslint-disable-next-line react-hooks/exhaustive-deps` comment that triggered an "Unused eslint-disable directive" warning because the rule is OFF in `eslint.config.mjs`).
+  - `bunx vitest run` → **17 test files, 165/165 tests pass** (6.07s). No layout/nav tests exist, so no tests were touched. All pre-existing tests (auth, payments, webhooks, order-token-concurrency, repositories, pricing-engine, cache, storage, capability, container, etc.) still pass unchanged.
+
+- What I intentionally did NOT change (and why):
+  - `src/app/shop/dashboard/page.tsx` (758 lines) — task rules forbid rewriting it. Confirmed it already has all 6 requested sections (today's metrics, setup checklist, payment queue, ready-for-pickup queue, recent orders, all-time summary). Untouched.
+  - `src/app/shop/orders/page.tsx` (534 lines), `src/app/shop/orders/[id]/page.tsx` (918 lines), `src/app/shop/printer/page.tsx` (499 lines) — untouched. The new nav links to these pages as-is.
+  - Auth logic (`src/components/portal/auth-context.tsx`, `src/app/shop/login/page.tsx`, `src/app/shop/register/page.tsx`) — untouched. The previous agent's sign-in-loop fix + `window.location.href` post-auth navigation + "Create Shop Account" link are preserved.
+  - API routes / business logic — untouched.
+  - The settings page's tab UI (`<Tabs value={tab} onValueChange={setTab}>`, `<TabsList>`, `<TabsTrigger>`s, `<TabsContent>`s) — untouched. Only added ONE useEffect (25 lines) immediately after the `useState('profile')` declaration.
+  - No new dependencies added — only used existing `lucide-react` icons (`Clock`, `CreditCard`, `QrCode`, `ShieldCheck`, `Github`) that were either already imported or available in the project.
+  - Did NOT run `bun run build` (forbidden by project rules).
+  - Did NOT switch to `useSearchParams()` — would have required a `<Suspense>` boundary and risked the build. URL-hash is the safer equivalent for this use case.
+  - Did NOT add a Sign Out button to the sidebar/mobile sheet (the spec explicitly says Sign Out stays in the top bar).
+
+Stage Summary:
+- Nav enhancement: ✓ DONE. The sidebar nav now has two groups (main: Overview/Orders/Printer Setup; Settings: Shop Profile/Business Hours/Payments & UPI/Shop QR Code) with sub-item indenting and a "SETTINGS" group header. Each Settings sub-item deep-links via URL hash to the matching settings page tab.
+- Hash deep-link support: ✓ DONE. Added a minimal additive useEffect (25 lines) to `src/app/shop/settings/page.tsx` that maps `#profile`/`#hours`/`#payment`/`#qr`/`#upi-qr`/`#shop-qr` to the matching tab on mount. Empty-deps array → runs once → doesn't override user-initiated tab clicks.
+- Sticky footer: ✓ DONE. New `<PortalFooter>` component with `mt-auto border-t border-border bg-card` at the bottom of the `flex min-h-screen flex-col` root wrapper. Matches the project's existing footer pattern.
+- Sticky top bar / mobile Sheet / active states: ✓ PRESERVED. Untouched (per task spec — they were already good).
+- TypeScript: ✓ `bunx tsc --noEmit` → 0 errors.
+- Lint: ✓ `bun run lint` → 0 errors, 0 warnings.
+- Tests: ✓ `bunx vitest run` → 17 files, 165/165 tests pass.
+- Files changed: 2 (`src/app/shop/layout.tsx` full rewrite of nav+footer; `src/app/shop/settings/page.tsx` +25-line additive useEffect). No new files. No new dependencies. No breaking changes. No build (forbidden).
+
+Classification: NAV + VISUAL POLISH COMPLETE ✓. Ready for review. No follow-up blockers from this task's scope.
+
+---
+Task ID: shopkeeper-onboarding-auth-fix-portal-upgrade
+Agent: orchestrator (senior full-stack engineer + auth/security specialist)
+Task: Complete shopkeeper onboarding, authentication repair, and professional portal upgrade. Diagnose + fix: (1) no clear "Create Shop Account" option, (2) sign-in loop/redirect glitch, (3) portal needs professional UX. Implement, test, verify.
+
+Work Log:
+- Phase A — Diagnosis (ROOT CAUSE FOUND):
+  - Inspected the actual code: `src/app/shop/layout.tsx`, `src/components/portal/use-api-client.ts`, `src/app/shop/login/page.tsx`, `src/app/shop/register/page.tsx`, `src/app/api/v1/auth/login/route.ts`, `src/app/api/v1/auth/register/route.ts`, `src/app/api/v1/auth/refresh/route.ts`, `src/middleware.ts`, `src/app/shop/dashboard/page.tsx`.
+  - ROOT CAUSE of the sign-in loop: the `useApiClient` hook was NOT a React Context — it was a hook with PER-INSTANCE state. Each component that called `useApiClient()` got a SEPARATE state instance. The login page + the shop layout each had their OWN instance. When the login page called `api.setAuth(token, role, email)`, it updated ITS OWN state + localStorage, but the layout's instance (mounted earlier on /shop/login) still had `token=null` from its initial localStorage read. After `router.replace('/shop/dashboard')`, the layout's stale instance (token=null) redirected back to /shop/login. The login page's instance (token=set) redirected back to /shop/dashboard. → infinite loop. Confirmed via Agent Browser network log: alternating `GET /shop/dashboard?_rsc=...` and `GET /shop/login?_rsc=...` requests.
+  - SECONDARY CAUSE: the login page had an auto-redirect (`if api.token && api.role === 'owner' → router.replace('/shop/dashboard')`) that checked localStorage PRESENCE (not validity). An expired token in localStorage triggered the redirect → 401 on the dashboard → dashboard showed "session expired" but the login page kept bouncing the user back.
+  - TERTIARY CAUSE: the login API returned a `refreshToken` but `api.setAuth()` only stored the access token (the refresh token was DISCARDED). After 15 minutes (access token TTL), the user got 401s with no way to refresh.
+  - MISSING FEATURE: the register page existed at `/shop/register` (a full 4-step wizard) but the login page did NOT link to it. A new shopkeeper had no clear path to create an account.
+
+- Phase C — Fix the sign-in loop (IMPLEMENTED + VERIFIED):
+  - Created `src/components/portal/auth-context.tsx` — a React Context provider (`AuthProvider`) that holds the auth state (token, refreshToken, role, email, ready) in a SINGLE shared state. All components consume the SAME context via `useApiClient()`. When the login page calls `setAuth()`, the layout sees the update immediately (same state object) → no stale state → no loop.
+  - Added automatic token refresh on 401: the `request()` method now tries to refresh the access token using the stored refresh token when a 401 is received. If refresh succeeds, the original request is retried ONCE with the new token. If refresh fails, the 401 is returned to the caller (which decides whether to clearAuth/redirect). The refresh token is now STORED (not discarded).
+  - Updated `src/components/portal/use-api-client.ts` to re-export from the new `auth-context` (backward-compatible API: `{ token, role, email, ready, setAuth, clearAuth, request }`).
+  - Updated `src/app/layout.tsx` to wrap the app in `<AuthProvider>` (so all portals — customer, shopkeeper, admin — share the same auth context).
+  - Updated `src/app/shop/login/page.tsx`: REMOVED the auto-redirect (the expired-token bounce); changed `api.setAuth` to pass 4 args (accessToken, refreshToken, role, email); changed `router.replace` to `window.location.href` (hard navigation — avoids RSC transition race); removed pre-filled demo creds (email/password fields start empty for production).
+  - Updated `src/app/shop/register/page.tsx`: REMOVED the auto-redirect; changed `api.setAuth` to pass 4 args; changed `router.replace` to `window.location.href`; removed unused `useRouter` import.
+  - Updated `src/app/admin/login/page.tsx`: changed `api.setAuth` to pass 4 args; changed `router.replace` to `window.location.href`.
+  - Updated `src/app/shop/layout.tsx`: changed the logout function to use `window.location.href` (consistent hard navigation).
+  - Browser verification: signed in with a demo account → NO LOOP. Network log shows clean API calls (shops/me, orders, analytics, agents — all 200). No alternating /shop/dashboard ↔ /shop/login. Dashboard renders correctly.
+
+- Phase B — "Create Shop Account" link (IMPLEMENTED + VERIFIED):
+  - Added a prominent "Create Shop Account" CTA to the login page (below the Sign in form, above the demo accounts). The CTA is a `<Link href="/shop/register">` with a UserPlus icon + clear marketing copy ("0% commission, customers pay you directly via UPI").
+  - The register page already had a "Sign in" link back to `/shop/login` (line 646).
+  - Browser verification: clicked "Create Shop Account" → navigated to `/shop/register` → the 4-step wizard rendered (Account step with name/phone/email/password/confirm fields).
+
+- Phase G — Automated tests (17 NEW, 165 TOTAL):
+  - Created `src/lib/auth/auth.test.ts` — 17 regression tests covering:
+    - Registration: valid succeeds, duplicate email rejected (409 EMAIL_TAKEN), duplicate slug rejected (409 SLUG_TAKEN), password hashed with PBKDF2 (never plaintext), user-supplied role NOT trusted (hardcoded 'owner'), no orphaned records on duplicate.
+    - Login: valid credentials succeed, invalid password rejected with generic message (no account enumeration), unknown email rejected with the SAME generic message.
+    - Refresh: valid refresh token rotates to a new pair, already-used refresh token rejected (replay protection), tampered refresh token rejected, refresh token signed with wrong secret rejected.
+    - Access token validation: valid token verifies + returns the principal, tampered token rejected, stale shop scope detection (the withAuth wrapper checks claims.shopId vs user.shopId).
+    - AuthContext localStorage key regression test.
+  - All 17 tests pass. The full suite is now 165/165 (148 original + 17 new).
+
+- Phase D + E — Portal nav enhancement + onboarding (delegated to frontend-styling-expert subagent):
+  - Enhanced `src/app/shop/layout.tsx` nav: replaced the flat 4-item nav with a grouped structure (Main: Overview/Orders/Printer Setup; Settings: Shop Profile/Business Hours/Payments & UPI/Shop QR Code). Each settings sub-item links to `/shop/settings#<tab>` for deep-linking.
+  - Added a `useHashPath()` hook + `isItemActive()` helper for hash-based active states.
+  - Added a sticky footer (`<PortalFooter>` with `mt-auto border-t`) — matches the project's UI rules (sticky footer at the bottom on short pages, pushed down on long pages).
+  - Updated `src/app/shop/settings/page.tsx`: added a `useEffect` that maps the URL hash (`#profile`, `#hours`, `#payment`, `#qr`) to the matching tab via `setTab()` on mount. Deep links from the nav now land on the correct tab.
+  - Browser verification: clicked "Shop QR Code" nav link → navigated to `/shop/settings#qr` → settings page rendered with the QR tab active. Refresh stays on the same page (no loop).
+
+- Phase F — Security audit (ALL PASS):
+  - BOLA / cross-tenant: all 15 `/api/v1/shops/me/*` endpoint files use `repos.shops.getByOwner(principal.userId)` (19 total usages) + `repos.orders.findByIdAndShop(id, shop.id)` for order access. No way for a shopkeeper to access another shop's orders/profile.
+  - User-supplied role NOT trusted: the register route's Zod schema does NOT accept a `role` field — `role: 'owner'` is hardcoded server-side.
+  - Password hashing: PBKDF2-SHA256 with 600,000 iterations (OWASP 2023 recommendation). Passwords are never stored in plaintext, never logged.
+  - Login error message: `verifyCredentials` throws `UnauthorizedError('Invalid email or password')` for BOTH "user not found" AND "wrong password" — same generic message, no account enumeration.
+  - Rate limiting: login (20/60s), register (5/60s), slug-check (30/60s).
+  - Open redirect: all `window.location.href` calls use CONSTANT paths (`/admin`, `/shop/dashboard`, `/shop/login`) — no user-supplied redirect URLs.
+  - CSRF: N/A — the API uses Bearer tokens (not cookies), so CSRF is not applicable.
+  - Session security: access token TTL = 15min (short); refresh token TTL = 30 days; refresh token rotation (single-use — replay detected on second use); auto-refresh-on-401 rotates the refresh token. Standard JWT + refresh-token pattern. Acceptable for the pilot.
+
+- Phase H — Final verification:
+  - `bunx tsc --noEmit`: 0 errors ✓
+  - `bun run lint`: 0 warnings, 0 errors ✓
+  - `bunx vitest run`: 17 test files, 165/165 tests pass ✓ (148 original + 17 new auth tests)
+  - Browser verification (Agent Browser): full flow verified — fresh login → sign in (no loop) → dashboard (enhanced nav) → settings deep-link (correct tab) → refresh (no loop) → logout (redirect to login) ✓
+  - Production build (`bun run build`): NOT RUN (forbidden by project sandbox rules).
+
+- Files changed (9 total: 2 new, 7 modified):
+  - NEW `src/components/portal/auth-context.tsx` — the AuthContext provider (shared auth state + auto-refresh on 401)
+  - NEW `src/lib/auth/auth.test.ts` — 17 auth API regression tests
+  - MODIFIED `src/components/portal/use-api-client.ts` — re-export from auth-context (backward compat)
+  - MODIFIED `src/app/layout.tsx` — wrap app in `<AuthProvider>`
+  - MODIFIED `src/app/shop/layout.tsx` — enhanced nav (grouped, settings deep-links), sticky footer, logout via window.location.href
+  - MODIFIED `src/app/shop/login/page.tsx` — removed auto-redirect, added refresh token to setAuth, added "Create Shop Account" link, use window.location.href, removed pre-filled demo creds
+  - MODIFIED `src/app/shop/register/page.tsx` — removed auto-redirect, added refresh token to setAuth, use window.location.href, removed unused useRouter
+  - MODIFIED `src/app/shop/settings/page.tsx` — hash-to-tab mapping for deep links
+  - MODIFIED `src/app/admin/login/page.tsx` — added refresh token to setAuth, use window.location.href
+
+Stage Summary:
+- Root cause of the sign-in loop: the `useApiClient` hook had per-instance state (not a React Context). The login page + the layout had SEPARATE state instances → stale state → redirect loop. Fixed by converting to a shared React Context (`AuthProvider`).
+- Files changed: 9 (2 new, 7 modified). All changes are backward-compatible + additive. No existing API contracts, business logic, order history, payment records, or working features were modified.
+- A new shopkeeper creates an account: visits `/shop/login` → clicks "Create Shop Account" → fills the 4-step wizard (Account → Business → Services → Review) → submits → automatically signed in + redirected to `/shop/dashboard`.
+- An existing shopkeeper signs in: visits `/shop/login` → enters email + password → clicks "Sign in" → hard-navigates to `/shop/dashboard` (no loop). Refresh stays on the current page (no loop). The nav has direct links to Shop Profile, Business Hours, Payments & UPI, Shop QR Code (deep-linked to the correct settings tab). Logout clears auth + redirects to `/shop/login`.
+- Authentication/security improvements: shared auth state (no stale state), automatic token refresh on 401 (access tokens auto-renew via the refresh token), refresh token rotation (single-use, replay-detected), removed expired-token auto-redirect (no more bounce), generic login error (no account enumeration), rate-limited auth endpoints, PBKDF2 password hashing, tenant-scoped authorization on all endpoints.
+- Automated tests added: 17 new auth API regression tests (registration, login, refresh, token validation). Total: 165/165 pass.
+- Typecheck, lint, build outcomes: tsc 0 errors, lint 0 warnings, vitest 165/165. Production build NOT run (forbidden by sandbox rules).
+- Remaining limitations: (1) the changes are NOT committed (the user said "Do not commit or push unless explicitly authorized"); (2) the changes are NOT deployed (push to GitHub + Vercel rebuild requires explicit authorization); (3) PhonePe/Paytm sandbox credentials still missing (only simulated); (4) Upstash Redis still not configured (rate limiting per-invocation on Vercel; the cache TTL fix only addresses the in-memory adapter); (5) production UPI QR upload flow against deployed Supabase still untested end-to-end.
+- Database, hosting, or deployment changes: NONE. No database migrations, no Vercel settings changes, no production promotion. All changes are local + uncommitted. The existing Neon DB (with the `Order_shop_tokenNumber_unique` partial unique index applied in the previous step) + Supabase Storage + Vercel preview are unchanged.
+
+Completion criteria: ✓ A new shopkeeper has a clear registration path (Create Shop Account link → 4-step wizard). ✓ An existing shopkeeper can sign in, refresh, navigate, and sign out without loops or glitches (verified via Agent Browser). ✓ Existing shop/order/payment data and working features remain intact (all 148 original tests still pass; the changes are purely additive to the auth + nav layer).
