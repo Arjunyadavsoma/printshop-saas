@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertCircle, ArrowRight, Lock } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { unwrap, type LoginResponse } from '@/components/portal/admin-types';
 import { Button } from '@/components/ui/button';
@@ -15,18 +15,50 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 /**
  * /admin/login — platform admin login.
  *
- * No demo credentials are shown. Admin access is controlled via
- * environment variables (ADMIN_EMAIL + ADMIN_PASSWORD) on the server.
- * The admin login page is not linked from the public homepage —
- * only people who know the URL can access it.
+ * SECURITY LAYERS:
+ * 1. This page is NOT linked from the homepage (hidden URL)
+ * 2. The page only renders if a valid access key is in the URL:
+ *    /admin/login?k=<ADMIN_ACCESS_KEY>
+ *    Without the key, the page shows a 404-style "not found" message.
+ *    The admin bookmarks the URL with the key.
+ * 3. The admin must enter the correct email + password (verified via env vars)
+ * 4. Rate limited: 5 attempts per 60 seconds
+ *
+ * The access key is set via the ADMIN_ACCESS_KEY env var on Vercel.
+ * It's a non-secret configuration value (safe in vercel.json or env).
+ * The real security is the email + password (set as Vercel secrets).
  */
 export default function AdminLoginPage() {
   const api = useApiClient();
   const router = useRouter();
+  const search = useSearchParams();
+  const accessKey = search.get('k');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Check if the access key is valid (the server exposes it via a public
+  // API endpoint that returns whether the key matches). If no key is
+  // provided, show a "not found" page.
+  const [keyValid, setKeyValid] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!accessKey) {
+      setKeyValid(false);
+      return;
+    }
+    // Verify the access key via a lightweight API call.
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/admin/access-check?key=' + encodeURIComponent(accessKey));
+        setKeyValid(res.ok);
+      } catch {
+        setKeyValid(false);
+      }
+    })();
+  }, [accessKey]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,13 +70,12 @@ export default function AdminLoginPage() {
       });
       if (res.status !== 200 || !res.data) {
         const env = res.data as { error?: { message?: string } } | null;
-        throw new Error(env?.error?.message ?? `Login failed (HTTP ${res.status})`);
+        throw new Error(env?.error?.message ?? 'Login failed');
       }
       const data = unwrap<LoginResponse>(res);
       if (data.user.role !== 'admin') {
         api.clearAuth();
-        setError('Admin access required. This portal is for platform admins only.');
-        setTimeout(() => router.replace('/shop/login'), 1800);
+        setError('Admin access required.');
         return;
       }
       api.setAuth(data.accessToken, data.refreshToken ?? '', data.user.role, data.user.email);
@@ -56,6 +87,29 @@ export default function AdminLoginPage() {
     }
   }
 
+  // No access key → show a "not found" page (not the login form).
+  if (keyValid === false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+        <div className="text-center">
+          <Lock className="mx-auto size-12 text-zinc-700" />
+          <h1 className="mt-4 text-xl font-bold text-zinc-600">404</h1>
+          <p className="mt-1 text-sm text-zinc-700">This page does not exist.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Checking the key...
+  if (keyValid === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+        <Loader2 className="size-6 animate-spin text-zinc-600" />
+      </div>
+    );
+  }
+
+  // Key valid → show the login form.
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 py-10">
       <div className="w-full max-w-md">
@@ -76,21 +130,17 @@ export default function AdminLoginPage() {
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="email" className="text-zinc-200">Email</Label>
-                <Input
-                  id="email" type="email" autoComplete="email" required
+                <Input id="email" type="email" autoComplete="email" required
                   value={email} onChange={(e) => setEmail(e.target.value)}
                   className="border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
-                  placeholder="admin@example.com" disabled={submitting}
-                />
+                  placeholder="admin@example.com" disabled={submitting} />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="password" className="text-zinc-200">Password</Label>
-                <Input
-                  id="password" type="password" autoComplete="current-password" required
+                <Input id="password" type="password" autoComplete="current-password" required
                   value={password} onChange={(e) => setPassword(e.target.value)}
                   className="border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
-                  placeholder="••••••••" disabled={submitting}
-                />
+                  placeholder="••••••••" disabled={submitting} />
               </div>
               {error && (
                 <Alert variant="destructive" className="border-red-800 bg-red-950/50 text-red-200">
@@ -109,10 +159,8 @@ export default function AdminLoginPage() {
             <Link href="/" className="inline-flex items-center gap-1 hover:text-zinc-200">
               Back to landing page <ArrowRight className="h-3 w-3" />
             </Link>
-            <p>Shop owner? <Link href="/shop/login" className="text-emerald-400 hover:underline">Sign in here</Link></p>
           </CardFooter>
         </Card>
-
         <p className="mt-6 text-center text-xs text-zinc-500">PrintShop SaaS · Platform admin portal</p>
       </div>
     </div>
