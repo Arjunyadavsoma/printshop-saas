@@ -55,10 +55,20 @@ export function middleware(_req: NextRequest) {
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
 
+  // CSP — branch on NODE_ENV. SEC-005 fix: production gets a tighter policy
+  // (no 'unsafe-eval', 'unsafe-inline' only for style which Next.js needs for
+  // CSS-in-JS injection). Dev keeps 'unsafe-eval' + 'unsafe-inline' for
+  // Turbopack HMR + React DevTools. Previously the same loose policy shipped
+  // to production, where combined with the localStorage-stored JWT (SEC-003)
+  // any HTML injection = full XSS with token theft.
+  const isProduction = process.env.NODE_ENV === 'production';
+  const scriptSrc = isProduction
+    ? "script-src 'self'" // prod: no unsafe-eval, no unsafe-inline
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'"; // dev: Turbopack HMR needs both
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js dev needs unsafe-eval; tighten in prod
-    "style-src 'self' 'unsafe-inline'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline'", // Next.js injects styles inline (required)
     `img-src ${imgSrc}`,
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
@@ -67,6 +77,12 @@ export function middleware(_req: NextRequest) {
     "form-action 'self'",
   ].join('; ');
   res.headers.set('Content-Security-Policy', csp);
+  // COOP/COEP — defense-in-depth against cross-origin window references
+  // (spectre-class attacks). frame-ancestors 'none' already blocks embedding;
+  // COOP same-origin blocks window.opener access; COEP credentialless loads
+  // cross-origin resources without credentials.
+  res.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
   res.headers.set('X-Content-Type-Options', 'nosniff');
   res.headers.set('X-Frame-Options', 'DENY');
   res.headers.set('X-Permitted-Cross-Domain-Policies', 'none');

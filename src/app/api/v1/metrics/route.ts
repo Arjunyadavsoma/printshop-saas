@@ -1,14 +1,21 @@
 import { getContainer } from '@/lib/container';
 import { ok } from '@/lib/api/envelope';
-import { withRateLimit } from '@/lib/api/with-auth';
+import { withAuth } from '@/lib/api/with-auth';
 import { formatINRFromPaise } from '@platform/utils';
 
 /**
  * GET /api/v1/metrics — basic platform metrics (spec §11):
- *   orders/min, avg print time, payment success rate, active agents,
- *   totals. Public (aggregate counts only, no PII).
+ *   orders/min, avg print time, payment success rate, active agents, totals.
+ *
+ * SEC-010 fix: this route exposes total platform revenue, order counts, +
+ * payment success rate — sensitive business intelligence. Previously it was
+ * PUBLIC (anyone could curl it + learn the platform's revenue + order volume,
+ * useful for competitors + for attackers probing for the right attack scale).
+ * Now admin-only (the shopkeeper dashboard doesn't use this — it uses the
+ * shop-scoped /shops/me/analytics route; this is for the platform admin's
+ * operational view).
  */
-export const GET = withRateLimit('metrics', 60, 60, async (_req, _ctx) => {
+export const GET = withAuth(async () => {
   const c = getContainer();
   const now = Date.now();
   const windowMs = 60_000;
@@ -44,4 +51,4 @@ export const GET = withRateLimit('metrics', 60, 60, async (_req, _ctx) => {
     agents: { active: activeAgents, total: agents.length },
     ts: new Date().toISOString(),
   });
-});
+}, ['admin']);

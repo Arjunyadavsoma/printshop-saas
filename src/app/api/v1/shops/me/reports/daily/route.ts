@@ -2,6 +2,7 @@ import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { formatINRFromPaise } from '@platform/utils';
+import { getZonedDayBounds } from '@/lib/utils/timezone';
 
 /**
  * GET /api/v1/shops/me/reports/daily?date=YYYY-MM-DD
@@ -12,6 +13,14 @@ import { formatINRFromPaise } from '@platform/utils';
  *
  * Never counts a customer-submitted UTR as verified revenue — only
  * paidAt + paymentTxnId (set by authorized shopkeeper or verified webhook).
+ *
+ * TIMEZONE-SAFE (DB-002 fix): "today" is computed in the SHOP's timezone
+ * (shop.timezone, default Asia/Kolkata), NOT server-local time. Previously
+ * used `setHours(0,0,0,0)` which on Vercel (UTC) put the Kolkata "today"
+ * boundary at 05:30 IST — misattributing up to 5h30m of orders to the
+ * previous day. Now uses getZonedDayBounds() which computes the UTC instant
+ * of the shop's timezone-local midnight via Intl.DateTimeFormat (correct for
+ * Asia/Kolkata's UTC+5:30 + any DST-observing zone).
  */
 export const GET = withAuth(async (req, _ctx, principal) => {
   try {
@@ -19,9 +28,8 @@ export const GET = withAuth(async (req, _ctx, principal) => {
     const url = new URL(req.url);
     const dateParam = url.searchParams.get('date');
     const tz = shop.timezone || 'Asia/Kolkata';
-    const targetDate = dateParam ? new Date(dateParam + 'T00:00:00') : new Date();
-    const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
+    // Compute the shop's timezone-local midnight as a UTC instant.
+    const { start: startOfDay, end: endOfDay } = getZonedDayBounds(dateParam, tz);
 
     const orders = await repos.orders.listByShop(shop.id, { limit: 1000 });
     const todayOrders = orders.filter(o => {

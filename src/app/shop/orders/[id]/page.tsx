@@ -226,6 +226,16 @@ export default function ShopOrderDetailPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
+  // A11Y-001: keep the tab title in sync with the loaded order so screen-reader
+  // users + browser-history/tab-switcher users see "Order <token> · PrintShop SaaS"
+  // instead of the generic layout default. Re-runs when `order` changes (e.g. on
+  // initial fetch + after any status-action refresh). Falls back to orderId if
+  // the order has no tokenNumber yet (e.g. awaiting_payment before token mint).
+  useEffect(() => {
+    const label = order?.tokenNumber ?? orderId ?? 'Order';
+    document.title = `Order ${label} · PrintShop SaaS`;
+  }, [order, orderId]);
+
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true); else setLoading(true);
     setError(null);
@@ -1234,13 +1244,13 @@ function PrintLatchButton({
       {jobState.status === 'failed' && (
         <div className="flex flex-col items-end">
           <span className="text-[10px] text-destructive">✗ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">Retry</button>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline min-h-[44px] inline-flex items-center">Retry</button>
         </div>
       )}
       {jobState.status === 'unknown' && (
         <div className="flex flex-col items-end">
           <span className="text-[10px] text-amber-700">⚠ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline">Retry after checking queue</button>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline min-h-[44px] inline-flex items-center">Retry after checking queue</button>
         </div>
       )}
     </div>

@@ -24,6 +24,13 @@ interface ShopInfo {
   paymentProvider: string;
   pricingConfig: ShopPricingConfig;
   timezone: string;
+  // A11Y-002: optional SEO/JSON-LD fields surfaced in the shop-info API
+  // payload. They're not used by the UI itself; the LocalBusiness JSON-LD
+  // script (injected below) reads them to give Google's indexers the shop's
+  // contact details. Optional — older shop records may omit them.
+  description?: string;
+  address?: string;
+  phone?: string;
   privacy: {
     filesPrivateByDefault: boolean;
     downloadUrlsExpireSeconds: number;
@@ -89,6 +96,34 @@ export default function ShopDetailPage() {
     if (!api.ready || !slug) return;
     void loadShop();
   }, [api.ready, slug, loadShop]);
+
+  // A11Y-002: inject a LocalBusiness JSON-LD script tag into <head> so search
+  // engines (Google/Bing) can index the shop's name + contact details. The
+  // page is a 'use client' component so we can't use Next's server-side
+  // `metadata` export for this — we have to inject the script manually after
+  // the shop data loads. Cleans up on unmount + on shop change (so navigating
+  // between two shop pages doesn't leave a stale script from the first).
+  useEffect(() => {
+    if (!shop) return;
+    const ld = {
+      '@context': 'https://schema.org',
+      '@type': 'LocalBusiness',
+      name: shop.name,
+      description: shop.description ?? 'Print shop',
+      ...(shop.address ? { address: shop.address } : {}),
+      ...(shop.phone ? { telephone: shop.phone } : {}),
+      paymentAccepted: 'UPI, Cash',
+      currenciesAccepted: 'INR',
+    };
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.text = JSON.stringify(ld);
+    script.dataset.shopLd = shop.id;
+    document.head.appendChild(script);
+    return () => {
+      script.remove();
+    };
+  }, [shop]);
 
   const startOrder = async () => {
     if (!shop) return;

@@ -180,6 +180,7 @@ function PaymentBadge({ status }: { status: PaymentFilter }) {
 
 export default function ShopOrdersPage() {
   const api = useApiClient();
+  useEffect(() => { document.title = 'Orders · PrintShop SaaS'; }, []);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

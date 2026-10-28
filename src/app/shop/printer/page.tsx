@@ -199,6 +199,7 @@ function EnginePicker({ onPick }: { onPick: (e: PrintEngine) => void }) {
 // ═══════════════════════════════════════════════════════════════════════
 
 function PrintLatchSection() {
+  const [tsOpen, setTsOpen] = useState(false);
   const [connState, setConnState] = useState<PrintLatchConnectionState>('not-configured');
   const [health, setHealth] = useState<PrintLatchHealth | null>(null);
   const [printers, setPrinters] = useState<PrintLatchPrinter[] | null>(null);
@@ -595,12 +596,12 @@ function PrintLatchSection() {
       {/* Troubleshooting */}
       <Card>
         <CardHeader>
-          <button onClick={() => { const el = document.getElementById('ts-pl'); el?.classList.toggle('hidden'); }} className="flex w-full items-center justify-between">
+          <button onClick={() => setTsOpen(o => !o)} aria-expanded={tsOpen} aria-controls="ts-pl" className="flex w-full items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="size-4 text-muted-foreground" /> Troubleshooting</CardTitle>
             <ChevronDown className="size-4 text-muted-foreground" />
           </button>
         </CardHeader>
-        <CardContent id="ts-pl" className="hidden">
+        <CardContent id="ts-pl" className={tsOpen ? '' : 'hidden'}>
           <ul className="space-y-3 text-sm text-muted-foreground">
             <li><strong className="text-foreground">Agent not reachable:</strong> Ensure PrintLatch is running — open <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a> to check.</li>
             <li><strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> must match this website. You are on <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>.</li>
@@ -620,6 +621,7 @@ function PrintLatchSection() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function NativePrinterSection() {
+  const [tsOpen, setTsOpen] = useState(false);
   const [connState, setConnState] = useState<NativePrinterConnectionState>('not-configured');
   const [health, setHealth] = useState<NativePrinterHealth | null>(null);
   const [printers, setPrinters] = useState<NativePrinterPrinter[] | null>(null);
@@ -1010,12 +1012,12 @@ function NativePrinterSection() {
       {/* Troubleshooting */}
       <Card>
         <CardHeader>
-          <button onClick={() => { const el = document.getElementById('ts-np'); el?.classList.toggle('hidden'); }} className="flex w-full items-center justify-between">
+          <button onClick={() => setTsOpen(o => !o)} aria-expanded={tsOpen} aria-controls="ts-np" className="flex w-full items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="size-4 text-muted-foreground" /> Troubleshooting</CardTitle>
             <ChevronDown className="size-4 text-muted-foreground" />
           </button>
         </CardHeader>
-        <CardContent id="ts-np" className="hidden">
+        <CardContent id="ts-np" className={tsOpen ? '' : 'hidden'}>
           <ul className="space-y-3 text-sm text-muted-foreground">
             <li><strong className="text-foreground">Service not reachable:</strong> Is <code className="rounded bg-muted px-1.5 py-0.5">node index.js</code> (or <code className="rounded bg-muted px-1.5 py-0.5">start.bat</code>) still running? Open <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{healthUrl}</a> — if it fails, the service is down.</li>
             <li><strong className="text-foreground">Library not loaded:</strong> Run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>) again in the <code className="rounded bg-muted px-1.5 py-0.5">native-printer</code> folder. Check you have Node.js 22+ (<code className="rounded bg-muted px-1.5 py-0.5">node --version</code>).</li>

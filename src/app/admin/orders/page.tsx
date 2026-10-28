@@ -293,7 +293,7 @@ export default function AdminOrdersPage() {
             size="sm"
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0 || loading}
-            className="gap-1"
+            className="min-h-[44px] min-w-[44px] gap-1"
           >
             <ChevronLeft className="h-4 w-4" /> Prev
           </Button>
@@ -305,7 +305,7 @@ export default function AdminOrdersPage() {
             size="sm"
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1 || loading}
-            className="gap-1"
+            className="min-h-[44px] min-w-[44px] gap-1"
           >
             Next <ChevronRight className="h-4 w-4" />
           </Button>

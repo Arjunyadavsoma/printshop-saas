@@ -380,7 +380,7 @@ export function PdfPreview({
           <span>
             Printing {selectedPages.size} of {totalPages} pages
             {selectedPages.size < totalPages && (
-              <span className="ml-1 text-amber-600">
+              <span className="ml-1 text-amber-700">
                 ({totalPages - selectedPages.size} page{totalPages - selectedPages.size > 1 ? 's' : ''} excluded)
               </span>
             )}

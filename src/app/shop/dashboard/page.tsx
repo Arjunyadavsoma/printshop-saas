@@ -148,6 +148,7 @@ function timeAgo(iso: string): string {
 
 export default function ShopDashboardPage() {
   const api = useApiClient();
+  useEffect(() => { document.title = 'Dashboard · PrintShop SaaS'; }, []);
   const [shop, setShop] = useState<ShopInfo | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -621,7 +622,7 @@ export default function ShopDashboardPage() {
                   </div>
                 </div>
                 <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
-                  <Button asChild size="sm" variant="ghost" className="min-h-[36px] flex-1 sm:flex-initial text-[11px]">
+                  <Button asChild size="sm" variant="ghost" className="min-h-[44px] min-w-[44px] flex-1 sm:flex-initial text-[11px]">
                     <Link href={`/shop/orders/${o.id}`}>Open →</Link>
                   </Button>
                   <Button
