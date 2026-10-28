@@ -1,0 +1,17 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "printshop-native-printer",
+      "dependencies": {
+        "windows-pdf-printer-native": "^2.1.1",
+      },
+    },
+  },
+  "packages": {
+    "koffi": ["koffi@2.16.3", "", {}, "sha512-E9y1AsgYGlaxMhcZzHr8y96QF2U5XzA12GGVAfbWqIubTwPNMXQarfBzePNXHe0xtIEtNd6ifAv3GAKYGUeBAQ=="],
+
+    "windows-pdf-printer-native": ["windows-pdf-printer-native@2.1.1", "", { "dependencies": { "koffi": "^2.14.1" }, "os": "win32" }, "sha512-CQlXm43HZW2wfKaNZNmO8y6UeoFfMQRLjujeSt/y850+bBgDJELozV0E1YxI4sZR3sQEfmYCQyxxdGvA8M68QQ=="],
+  }
+}
