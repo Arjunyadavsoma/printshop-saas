@@ -86,7 +86,10 @@ export const GET = withAuth(async (req) => {
       shopEarningsPaise: grossPaidValuePaise, // 0% commission — shop receives full amount
       platformRevenuePaise: 0, // NO commission model — documented
       pendingPaymentVerification: byStatus.awaiting_payment,
-      failedOrDisputed: (byStatus.cancelled ?? 0) + (orders.filter((o) => o.status === 'cancelled').length),
+      // ARCH-006 fix: was `(byStatus.cancelled ?? 0) + orders.filter(... === 'cancelled').length`
+      // — DOUBLE-COUNTED cancelled orders (byStatus.cancelled is ALREADY the
+      // count of cancelled orders; adding the filter result again doubled it).
+      failedOrDisputed: byStatus.cancelled ?? 0,
     },
     shops: Array.from(shopWise.values()).sort((a, b) => b.revenuePaise - a.revenuePaise),
     health: {

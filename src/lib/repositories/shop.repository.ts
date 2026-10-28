@@ -101,6 +101,23 @@ export class ShopRepository extends BaseRepository<ShopRow> {
     return row ? toDomain(row) : null;
   }
 
+  /**
+   * Batch fetch shops by id (ARCH-004 fix — admin orders list was doing
+   * N+1 sequential findById calls to enrich each order row with its shop
+   * name; this does a single WHERE id IN (...) query + returns a Map
+   * for easy per-order lookup).
+   */
+  async findByIds(ids: string[]): Promise<Map<string, Shop>> {
+    const result = new Map<string, Shop>();
+    if (ids.length === 0) return result;
+    const uniqueIds = [...new Set(ids)]; // dedupe — the in-memory adapter's `in` works but no point sending dupes
+    const rows = await this.findMany({ id: { in: uniqueIds } });
+    for (const row of rows) {
+      result.set(row.id, toDomain(row));
+    }
+    return result;
+  }
+
   async findByOwner(ownerUserId: string): Promise<Shop | null> {
     const row = await this.findOne({ ownerUserId });
     return row ? toDomain(row) : null;

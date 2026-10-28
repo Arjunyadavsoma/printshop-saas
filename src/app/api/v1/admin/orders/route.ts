@@ -5,6 +5,15 @@ import { ok } from '@/lib/api/envelope';
 /**
  * GET /api/v1/admin/orders — list ALL orders across all shops (admin only).
  * Supports filtering by status, shopId, and pagination.
+ *
+ * ARCH-004 fix:
+ *   - BATCH shop fetch: previously did N+1 sequential findById calls (one
+ *     per order, with a shopCache mitigating the worst case but not the
+ *     diversity). Now does a single findByIds([...]) query + looks up
+ *     each order's shop from the Map.
+ *   - REAL pagination total: previously returned `enriched.length` (the
+ *     current page size) as `total`, so the UI couldn't tell if there was
+ *     a next page. Now calls countAll(status) for the global total.
  */
 export const GET = withAuth(async (req) => {
   const url = req.nextUrl;
@@ -15,36 +24,37 @@ export const GET = withAuth(async (req) => {
 
   // If shopId is specified, use listByShop (tenant-scoped); otherwise listAll
   const orders = shopId
-    ? await repos.orders.listByShop(shopId, { status: status as any, limit, offset })
+    ? await repos.orders.listByShop(shopId, { status: status as never, limit, offset })
     : await repos.orders.listAll({ status, limit, offset });
 
-  // Enrich with shop names
-  const shopCache = new Map<string, { name: string; slug: string }>();
-  const enriched = await Promise.all(
-    orders.map(async (o) => {
-      if (!shopCache.has(o.shopId)) {
-        const shop = await repos.shops.findById(o.shopId);
-        if (shop) shopCache.set(o.shopId, { name: shop.name, slug: shop.slug });
-      }
-      const shopInfo = shopCache.get(o.shopId);
-      return {
-        id: o.id,
-        shopId: o.shopId,
-        shopName: shopInfo?.name ?? 'Unknown',
-        shopSlug: shopInfo?.slug ?? '',
-        customerToken: o.customerToken,
-        status: o.status,
-        totalAmountPaise: o.totalAmountPaise,
-        currency: o.currency,
-        paymentProvider: o.paymentProvider,
-        paymentTxnId: o.paymentTxnId,
-        paidAt: o.paidAt,
-        customerPhone: o.customerPhone,
-        createdAt: o.createdAt,
-        updatedAt: o.updatedAt,
-      };
-    }),
-  );
+  // BATCH fetch all shops for the page's orders in a SINGLE query (was N+1).
+  const shopsById = await repos.shops.findByIds(orders.map((o) => o.shopId));
 
-  return ok({ orders: enriched, pagination: { limit, offset, total: enriched.length } });
+  const enriched = orders.map((o) => {
+    const shop = shopsById.get(o.shopId);
+    return {
+      id: o.id,
+      shopId: o.shopId,
+      shopName: shop?.name ?? 'Unknown',
+      shopSlug: shop?.slug ?? '',
+      customerToken: o.customerToken,
+      status: o.status,
+      totalAmountPaise: o.totalAmountPaise,
+      currency: o.currency,
+      paymentProvider: o.paymentProvider,
+      paymentTxnId: o.paymentTxnId,
+      paidAt: o.paidAt,
+      customerPhone: o.customerPhone,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+    };
+  });
+
+  // REAL total — countAll with the same status filter (was returning the
+  // current page size, so the UI couldn't tell if there was a next page).
+  const total = shopId
+    ? await repos.orders.countByShop(shopId, status as never)
+    : await repos.orders.countAll(status);
+
+  return ok({ orders: enriched, pagination: { limit, offset, total } });
 }, ['admin']);
