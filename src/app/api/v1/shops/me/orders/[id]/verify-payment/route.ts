@@ -22,9 +22,21 @@ const VerifyPaymentSchema = z.object({
  *
  * Only `owner` role can call this — staff/admins use other paths.
  *
+ * RACE-SAFE (ARCH-001 + DB-004 fix):
+ *   - Deterministic txnId: `manual-${order.id}` (was `manual-${random UUID}`).
+ *     Two concurrent verifies on the same order now produce the SAME txnId,
+ *     so the `paymentTxnId` UNIQUE constraint catches a true duplicate.
+ *   - Conditional update via `repos.orders.transitionStatus(id, shopId,
+ *     'awaiting_payment', patch)` — the `WHERE status='awaiting_payment'`
+ *     precondition means if a concurrent request already flipped the order
+ *     to 'paid', this returns null (0 rows matched) → we skip the audit-log
+ *     write + return the current order state IDEMPOTENTLY (no double-audit).
+ *   - The audit log is written ONLY if the transition actually happened.
+ *
  * On verify:
  *   - status: `awaiting_payment` → `paid`
- *   - paymentTxnId: a synthetic manual-txn id ("manual-<uuid>")
+ *   - paymentTxnId: `manual-<orderId>` (deterministic — same order always
+ *     gets the same txnId, so the UNIQUE constraint is a real replay guard)
  *   - paymentUtr: the shopkeeper-supplied txnReference (UTR/RRN)
  *   - paidAt: now
  *
@@ -47,14 +59,33 @@ export const POST = withAuth<{ id: string }>(
           `Order in status '${order.status}' cannot be manually verified as paid`,
         );
       }
-      const txnId = `manual-${crypto.randomUUID()}`;
-      const updated = await repos.orders.update(order.id, {
-        status: 'paid',
-        paymentProvider: 'googlepay',
-        paymentTxnId: txnId,
-        paymentUtr: body.txnReference ?? null,
-        paidAt: new Date(),
-      });
+      // DETERMINISTIC txnId — same order always gets the same txnId, so the
+      // paymentTxnId UNIQUE constraint catches true duplicates (a second
+      // verify attempt on an already-paid order would try to set the same
+      // value, which is a no-op update).
+      const txnId = `manual-${order.id}`;
+      // CONDITIONAL UPDATE — the WHERE status='awaiting_payment' precondition
+      // is the atomic guard against double-click. If a concurrent verify
+      // already flipped the order to 'paid', this returns null (0 rows) →
+      // we skip the audit-log write + return the current state idempotently.
+      const updated = await repos.orders.transitionStatus(
+        order.id,
+        shop.id,
+        'awaiting_payment',
+        {
+          status: 'paid',
+          paymentProvider: 'googlepay',
+          paymentTxnId: txnId,
+          paymentUtr: body.txnReference ?? null,
+          paidAt: new Date(),
+        },
+      );
+      if (!updated) {
+        // Idempotent skip — a concurrent verify already transitioned the
+        // order to 'paid'. Return the current state without double-auditing.
+        const current = await repos.orders.findByIdAndShop(order.id, shop.id);
+        return ok(current ?? order);
+      }
       await repos.audit.log({
         shopId: shop.id,
         userId: principal.userId,
@@ -78,7 +109,7 @@ export const POST = withAuth<{ id: string }>(
     const newNotes = order.notes
       ? `${order.notes}\n[shopkeeper-reject] ${rejectNote}`
       : `[shopkeeper-reject] ${rejectNote}`;
-    const updated = await repos.orders.update(order.id, { notes: newNotes });
+    const updated = await repos.orders.updateByShop(order.id, shop.id, { notes: newNotes });
     await repos.audit.log({
       shopId: shop.id,
       userId: principal.userId,
@@ -92,7 +123,7 @@ export const POST = withAuth<{ id: string }>(
       },
       ip: req.headers.get('x-forwarded-for') ?? null,
     });
-    return ok(updated);
+    return ok(updated ?? order);
   },
   ['owner'],
 );

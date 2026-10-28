@@ -106,6 +106,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
+        // suppressHydrationWarning — browser extensions (e.g. Monica,
+        // Grammarly, LastPass) inject attributes (monica-id, monica-version,
+        // data-grammarly-host, etc.) into <body> before React hydrates,
+        // causing a "server rendered HTML didn't match the client" error.
+        // This is the standard Next.js fix (browser-extension-induced
+        // hydration errors are not code defects). See:
+        // https://nextjs.org/docs/messages/react-hydration-error
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <AuthProvider>

@@ -1,7 +1,7 @@
 import type { PaymentProvider } from '@platform/core/domain';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { ensurePrintHandler, dispatchToAgent } from '@/lib/services/print.service';
+import { ensurePrintHandler, enqueueFilePrint } from '@/lib/services/print.service';
 import { ValidationError, NotFoundError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
 import { shopChannel } from '@platform/core/interfaces';
@@ -255,74 +255,44 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
   };
 }
 
+/**
+ * Enqueue print jobs for every pending/queued file on a paid order. Delegates
+ * the per-file two-layer idempotency guard (findActiveByFile pre-check +
+ * P2002 catch on the partial unique index `PrintJob_active_file_unique`)
+ * to the shared `enqueueFilePrint` helper in `print.service.ts`.
+ *
+ * ARCH-003 fix: the previous implementation inlined the idempotency logic
+ * here, which the manual `/start` route then duplicated WITHOUT the guard.
+ * Both paths now call the shared helper — the race is closed at a single
+ * source of truth.
+ *
+ * After enqueuing, the order is flipped to 'printing' via a race-safe
+ * conditional update (`transitionStatus` with `expectedCurrentStatus='paid'`).
+ * The webhook only fires after payment is confirmed, so the order SHOULD
+ * still be in 'paid' status. If a concurrent request (e.g. the manual
+ * `/start` route or a duplicate webhook) already flipped it to 'printing',
+ * the conditional update is a no-op (0 rows matched) — we don't overwrite
+ * a more-advanced state or double-write audit logs. The `enqueueFilePrint`
+ * calls themselves are idempotent, so the order's print jobs are guaranteed
+ * consistent regardless of who won the status-flip race.
+ */
 export async function enqueuePaidOrderPrint(orderId: string, shopId: string): Promise<void> {
-  const container = getContainer();
   const files = await repos.files.findByOrder(orderId);
   const pending = files.filter((f) => f.status === 'pending' || f.status === 'queued');
   for (const f of pending) {
-    // IDEMPOTENT JOB CREATION — two-layer guard:
-    //
-    // Layer 1 (application, fast path): check findActiveByFile() before
-    // inserting. Handles the common case (sequential retry) without
-    // needing to catch a DB error.
-    //
-    // Layer 2 (database, race-safe): a PostgreSQL partial unique index
-    // (PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status
-    // IN ('queued','printing')) enforces that at most one ACTIVE job per
-    // file exists. If two concurrent calls both pass Layer 1 (both observe
-    // no active job) and both INSERT, the DB rejects the second with a
-    // unique constraint violation (Prisma P2002 / Postgres 23505). We catch
-    // it and treat the existing job as the winner (re-dispatch, no dup).
-    //
-    // 'completed' and 'needs_review' jobs do NOT block — a shopkeeper
-    // manually re-queuing a file SHOULD get a new PrintJob (the partial
-    // index's WHERE clause excludes these statuses).
-    const existing = await repos.printJobs.findActiveByFile(f.id);
-    if (existing) {
-      await dispatchToAgent(shopId, existing.id, f.id);
-      continue;
-    }
-    try {
-      const job = await repos.printJobs.create({ shopId, fileId: f.id });
-      if (process.env.NODE_ENV !== 'production') {
-        await container.queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId });
-      }
-      await dispatchToAgent(shopId, job.id, f.id);
-    } catch (e) {
-      // Layer 2: a concurrent call won the INSERT — treat as idempotent.
-      if (isUniqueConstraintError(e)) {
-        const winner = await repos.printJobs.findActiveByFile(f.id);
-        if (winner) {
-          await dispatchToAgent(shopId, winner.id, f.id);
-        }
-        // If winner is null here, the concurrent job was claimed + advanced
-        // past 'printing' between our INSERT-fail and this re-check — that's
-        // fine, the agent is already handling it.
-        continue;
-      }
-      throw e; // re-throw non-unique-constraint errors (real failures)
-    }
+    // IDEMPOTENT enqueue — the shared two-layer guard (findActiveByFile
+    // pre-check + P2002 catch on the partial unique index) prevents
+    // duplicate PrintJobs even under concurrent webhook + manual /start
+    // calls. Returns { jobId, created }; we discard the result here —
+    // the agent picks up the job via the dispatch event.
+    await enqueueFilePrint(shopId, f.id);
   }
   if (pending.length > 0) {
-    await repos.orders.update(orderId, { status: 'printing' });
+    // Race-safe conditional update — WHERE status='paid' is the atomic
+    // guard. A concurrent webhook (or the manual /start route) that
+    // already flipped the order to 'printing' makes this a no-op.
+    await repos.orders.transitionStatus(orderId, shopId, 'paid', {
+      status: 'printing',
+    });
   }
-}
-
-/**
- * Detect a unique-constraint violation from Prisma (P2002) or the raw
- * PostgreSQL driver (code 23505). Used by enqueuePaidOrderPrint to handle
- * the concurrent-INSERT race on the partial unique index.
- */
-function isUniqueConstraintError(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false;
-  const err = e as { code?: string; message?: string };
-  // Prisma P2002 = unique constraint violation
-  if (err.code === 'P2002') return true;
-  // PostgreSQL SQLSTATE 23505 = unique_violation
-  if (err.code === '23505') return true;
-  // Fallback: check the message (some adapters surface it as a string)
-  if (typeof err.message === 'string') {
-    return /unique constraint/i.test(err.message) || /duplicate key/i.test(err.message);
-  }
-  return false;
 }

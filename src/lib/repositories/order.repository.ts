@@ -262,4 +262,35 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     const [updated] = await this.updateWhere({ id, shopId }, patch as Partial<OrderRow>);
     return updated ? toDomain(updated) : null;
   }
+
+  /**
+   * Race-safe conditional status transition (DB-004 fix).
+   *
+   * Atomically updates the order ONLY IF its current status ===
+   * `expectedCurrentStatus`. The `WHERE id, shopId, status` filter is the
+   * precondition — if a concurrent request already flipped the status,
+   * this returns `null` (0 rows matched) so the caller can handle the
+   * idempotent-skip case instead of double-writing.
+   *
+   * This is the gold-standard pattern for order state-machine transitions
+   * (verify-payment, start, ready, complete, cancel) — prevents the
+   * read-modify-write race where two concurrent requests both pass
+   * `canTransitionOrder(order.status, X)` then both flip the status,
+   * double-writing audit logs + overwriting each other's paymentTxnId.
+   *
+   * @returns the updated Order, or `null` if the precondition didn't match
+   *   (the order's status is no longer `expectedCurrentStatus`).
+   */
+  async transitionStatus(
+    id: string,
+    shopId: string,
+    expectedCurrentStatus: string,
+    patch: Partial<Order>,
+  ): Promise<Order | null> {
+    const [updated] = await this.updateWhere(
+      { id, shopId, status: expectedCurrentStatus } as Partial<OrderRow>,
+      patch as Partial<OrderRow>,
+    );
+    return updated ? toDomain(updated) : null;
+  }
 }

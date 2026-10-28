@@ -1,7 +1,6 @@
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
-import { getContainer } from '@/lib/container';
-import { ensurePrintHandler, dispatchToAgent } from '@/lib/services/print.service';
+import { ensurePrintHandler, enqueueFilePrint } from '@/lib/services/print.service';
 import { ok } from '@/lib/api/envelope';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
@@ -15,6 +14,14 @@ import { canTransitionOrder } from '@platform/core/domain';
  * without pending files; this one is the more permissive manual-start path.
  *
  * Transition: paid → printing.
+ *
+ * RACE-SAFE (ARCH-001 + ARCH-003 fix):
+ *   - Conditional status transition via `repos.orders.transitionStatus`
+ *     (WHERE status='paid') — a double-click won't double-flip.
+ *   - Idempotent PrintJob creation via the shared `enqueueFilePrint` helper
+ *     (two-layer: findActiveByFile pre-check + P2002 catch). Previously this
+ *     route called `repos.printJobs.create` in a loop WITHOUT the guard,
+ *     creating duplicate jobs on double-click.
  */
 export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   ensurePrintHandler();
@@ -28,22 +35,26 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
     );
   }
 
-  await repos.orders.update(order.id, { status: 'printing' });
+  // CONDITIONAL UPDATE — the WHERE status='paid' precondition is the
+  // atomic guard. If a concurrent /start already flipped the order to
+  // 'printing', this returns null (0 rows) → we still enqueue files (the
+  // enqueueFilePrint helper is idempotent) + return the current state.
+  const updated = await repos.orders.transitionStatus(order.id, shop.id, 'paid', {
+    status: 'printing',
+  });
 
   // Best-effort dispatch: if there ARE pending files, enqueue + push them
   // to the agent (mirrors /print). If not, the order is just marked
   // printing for manual work.
   const files = await repos.files.findByOrder(order.id);
   const pending = files.filter((f) => f.status === 'pending' || f.status === 'queued');
-  const jobs: { jobId: string; fileId: string }[] = [];
-  if (pending.length > 0) {
-    for (const f of pending) {
-      const job = await repos.printJobs.create({ shopId: shop.id, fileId: f.id });
-      if (process.env.NODE_ENV !== 'production') {
-        await getContainer().queue.enqueue('print', { jobId: job.id, fileId: f.id, shopId: shop.id });
-      }
-      await dispatchToAgent(shop.id, job.id, f.id);
-      jobs.push({ jobId: job.id, fileId: f.id });
+  const jobs: { jobId: string; fileId: string; created: boolean }[] = [];
+  for (const f of pending) {
+    // IDEMPOTENT enqueue — the shared two-layer guard prevents duplicate
+    // PrintJobs even under concurrent /start + webhook auto-dispatch.
+    const result = await enqueueFilePrint(shop.id, f.id);
+    if (result.jobId) {
+      jobs.push({ jobId: result.jobId, fileId: f.id, created: result.created });
     }
   }
 
@@ -53,7 +64,7 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
     action: 'order.start_print',
     entityType: 'order',
     entityId: order.id,
-    metadata: { files: pending.length, jobs: jobs.map((j) => j.jobId), source: 'manual' },
+    metadata: { files: pending.length, jobs: jobs.map((j) => j.jobId), source: 'manual', raceSkipped: updated === null },
     ip: req.headers.get('x-forwarded-for') ?? null,
   });
   return ok({ orderId: order.id, status: 'printing', dispatched: jobs });

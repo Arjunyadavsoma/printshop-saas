@@ -2,6 +2,7 @@ import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { shopChannel } from '@platform/core/interfaces';
 import { canTransitionOrder } from '@platform/core/domain';
+import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
 let registered = false;
 
@@ -94,6 +95,74 @@ export async function dispatchToAgent(shopId: string, jobId: string, fileId: str
     paperSize: file.paperSize,
     pageRange: file.pageRange,
   });
+}
+
+/**
+ * Idempotently enqueue a single file for printing (ARCH-003 fix).
+ *
+ * TWO-LAYER GUARD against duplicate PrintJob creation:
+ *
+ *   Layer 1 (application, fast path): check `findActiveByFile(fileId)`
+ *   BEFORE inserting. Handles the common case (sequential retry — the
+ *   shopkeeper clicks "Start" twice, or the webhook fires twice) without
+ *   needing to catch a DB error. If an active job exists, re-dispatch it
+ *   (the agent will claim it) + return early.
+ *
+ *   Layer 2 (database, race-safe): a PostgreSQL partial unique index
+ *   `PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status
+ *   IN ('queued','printing')` enforces that at most one ACTIVE job per
+ *   file exists. If two concurrent calls both pass Layer 1 (both observe
+ *   no active job) and both INSERT, the DB rejects the second with a
+ *   unique-constraint violation (Prisma P2002 / Postgres 23505). We catch
+ *   it + treat the existing job as the winner (re-dispatch, no dup).
+ *
+ * 'completed' and 'needs_review' jobs do NOT block — a shopkeeper
+ * manually re-queuing a file SHOULD get a new PrintJob (the partial
+ * index's WHERE clause excludes these statuses).
+ *
+ * This is the SINGLE source of truth for "create a PrintJob for this file".
+ * Both the webhook's auto-dispatch + the manual /start route call this —
+ * previously the /start route had its own loop WITHOUT the guard,
+ * creating duplicate jobs on double-click.
+ *
+ * @returns the PrintJob id (existing or newly created).
+ */
+export async function enqueueFilePrint(
+  shopId: string,
+  fileId: string,
+): Promise<{ jobId: string; created: boolean }> {
+  // Layer 1: fast-path check.
+  const existing = await repos.printJobs.findActiveByFile(fileId);
+  if (existing) {
+    // Re-dispatch the existing job (the agent may have missed the first push).
+    await dispatchToAgent(shopId, existing.id, fileId);
+    return { jobId: existing.id, created: false };
+  }
+  try {
+    const job = await repos.printJobs.create({ shopId, fileId });
+    if (process.env.NODE_ENV !== 'production') {
+      await getContainer().queue.enqueue('print', { jobId: job.id, fileId, shopId });
+    }
+    await dispatchToAgent(shopId, job.id, fileId);
+    return { jobId: job.id, created: true };
+  } catch (e) {
+    // Layer 2: a concurrent call won the INSERT — treat as idempotent.
+    if (isUniqueConstraintError(e)) {
+      const winner = await repos.printJobs.findActiveByFile(fileId);
+      if (winner) {
+        await dispatchToAgent(shopId, winner.id, fileId);
+        return { jobId: winner.id, created: false };
+      }
+      // If winner is null here, the concurrent job was claimed + advanced
+      // past 'printing' between our INSERT-fail and this re-check — that's
+      // fine, the agent is already handling it. Return a sentinel (no job
+      // to re-dispatch). Callers should handle the null-winner case by
+      // just continuing — the order's files will be picked up on the next
+      // poll if the agent needs them.
+      return { jobId: '', created: false };
+    }
+    throw e; // re-throw non-unique-constraint errors (real failures)
+  }
 }
 
 async function findFileById(id: string) {
