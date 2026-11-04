@@ -4436,3 +4436,310 @@ Task: Phase 11 (honest rating) + Phase 12 (remediation summary) + Phase 13 (depl
 - **Medium confidence** (verified by syntax + API contract, not runtime): the native-printer service's multi-token + origin-flexible CORS (can't run `windows-pdf-printer-native` on Linux).
 - **Low confidence** (cannot verify without production credentials): PhonePe/Paytm webhook, Supabase storage, Upstash Redis rate limiting, the migration SQL drift (needs a fresh DB).
 
+
+---
+
+# Task ID: audit-existing
+# Agent: general-purpose
+# Task: Audit existing PrintShop payment implementation — read every payment-related source file + report what works, what's incomplete, what's broken, + the exact API contracts.
+
+## Work Log (this session)
+
+Read every file in scope (all 18 items + adjacent files for context):
+- `packages/adapters/src/payment/phonepe.adapter.ts` (168 lines) — the live PhonePe adapter
+- `packages/adapters/src/payment/paytm.adapter.ts` (201 lines) — the live Paytm adapter
+- `packages/adapters/src/payment/upi-deeplink.adapter.ts` (93 lines) — UPI deep-link adapter
+- `packages/adapters/src/payment/payment.adapters.ts` (94 lines) — DEAD legacy skeleton (NOT exported from index.ts, NOT imported anywhere — verified with grep)
+- `packages/adapters/src/index.ts` (barrel) — exports only the three per-file adapters above
+- `packages/core/src/interfaces/payment.adapter.ts` — PaymentAdapter interface + PaymentIntent/PaymentVerification/WebhookInput/WebhookResult/RefundInput/RefundResult types
+- `packages/core/src/domain/{enums,order}.ts` — OrderStatus state machine + ALLOWED_ORDER_TRANSITIONS
+- `src/lib/payments/registry.ts` — PaymentAdapterRegistry (per-provider map)
+- `src/lib/payments/webhook.service.ts` (299 lines) — the webhook pipeline + enqueuePaidOrderPrint
+- `src/lib/payments/payments.test.ts` + `webhook-audit.test.ts` — existing tests
+- `src/lib/container.ts` — composition root
+- `src/lib/repositories/{shop,order}.repository.ts` — credential decrypt/encrypt + transitionStatus
+- `src/lib/crypto/credential-encryption.ts` — AES-256-GCM
+- `src/app/api/v1/orders/[id]/checkout/route.ts` — the customer checkout route
+- `src/app/api/v1/payments/{phonepe/webhook,paytm/callback,upi/verify/[orderId],dev/phonepe/simulate,dev/paytm/simulate}/route.ts` — all 5 payment API routes
+- `src/app/api/v1/shops/me/orders/[id]/verify-payment/route.ts` — manual shopkeeper verify
+- `src/app/api/v1/dev/orders/[id]/mark-paid/route.ts` — legacy dev mark-paid (bypass)
+- `src/app/orders/[id]/page.tsx` (1578 lines) — customer checkout UI
+- `prisma/schema.prisma` + `prisma/migrations/20261015172034_init/migration.sql` — Order/Shop/PrintJob models
+- `.env.example` — env vars
+
+## Stage Summary — answers to all 10 audit questions
+
+### Q1. PhonePe adapter — does it actually call the PhonePe API?
+**File**: `packages/adapters/src/payment/phonepe.adapter.ts`
+**Verdict**: WEBHOOK VERIFICATION IS REAL. Everything else is a stub.
+
+- `createPaymentIntent` (L68-92): **DOES NOT** call `/pg/v1/pay`. It constructs a fake `checkoutUrl` = `${host}/pg/v1/pay?merchantId=${c.merchantId}&txnId=${merchantOrderId}` and returns. The real flow (base64 payload + X-VERIFY header + POST to PhonePe + read redirect URL back) is explicitly skipped ("Phase-3-pending-infra"). Generates a fresh `merchantOrderId = crypto.randomUUID()` per attempt — correct.
+- `handleWebhook` (L100-148): **REAL**. Verifies `X-VERIFY = sha256(base64Body + '/pg/v1/status' + saltKey)###saltIndex` via `crypto.subtle.digest('SHA-256', …)` + constant-time hex compare (L43-48). Splits on `###`, checks saltIndex matches `c.saltIndex`, decodes the base64 body, reads `data.state` (COMPLETED/PAID → paid), `data.merchantTransactionId`, `data.transactionId`, `data.amount`, `data.paymentInstrument.utr` (or pgTxnId). Configurable verify path via `PHONEPE_VERIFY_PATH` env (default `/pg/v1/status`).
+- `verifyPayment` (L151-160): **STUB** — returns `{ paid: false, … }` always. Real impl would `GET /pg/v1/status/{merchantId}/{merchantTransactionId}` with a fresh X-VERIFY header. Never called anywhere in the codebase (the `/api/v1/payments/upi/verify/[orderId]` route consults the local DB, NOT this method).
+- `refund` (L162-167): **STUB** — returns `{ refundId: 'phonepe-refund-pending', status: 'pending' }`. Never called anywhere.
+- **Endpoints used**: none (no outbound HTTP). Endpoints referenced in code: `/pg/v1/pay` (URL only), `/pg/v1/status` (X-VERIFY path), `/pg/v1/refund` (comment only).
+
+### Q2. Paytm adapter — does it actually call the Paytm API?
+**File**: `packages/adapters/src/payment/paytm.adapter.ts`
+**Verdict**: WEBHOOK VERIFICATION IS REAL. Intent/token/status are stubs.
+
+- `createPaymentIntent` (L115-134): **DOES NOT** call `/order/genchecksum` to obtain a transaction token. Returns a hardcoded `https://securegw-stage.paytm.in/theia/api/v1/showPaymentPage?mid=${c.merchantId}&orderId=${input.orderId}` URL. Reuses the input `orderId` as `merchantOrderId` (no per-attempt UUID — fine for Paytm because ORDERID is the merchant key, but means re-checkout collides on the PSP side).
+- `handleWebhook` (L141-179): **REAL**. Parses form-urlencoded body into a params object, recomputes CHECKSUMHASH = `AES-128-CBC encrypt(sha256(paramsString + merchantKey))` with `iv = '0123456789012345'` (16-byte ASCII), AES key = first 16 bytes of UTF-8(merchantKey) zero-padded. Constant-time-ish compare (decrypt + string-equals — NOT constant-time on the plaintext compare, but the decrypt failing on tampered ciphertext catches tampering). Renders an HTML response page (Paytm convention, L197-200).
+- `verifyPayment` (L181-188): **STUB** — returns `{ paid: false, … }`. Would `POST /order/status` with a fresh checksum. Never called.
+- `refund` (L190-193): **STUB** — returns "pending". Never called.
+- **Caveat**: the IV `'0123456789012345'` is documented as "the commonly-cited published constants" — it's a magic value that may not match every Paytm registration. Configurable only by editing the source. Real Paytm checksum is salt-prefixed (PG_KEY_PREFIX) — this implementation does NOT prepend the salt. Verified to round-trip with the dev simulate route (L67-79 `generatePaytmChecksum`) but NOT against live Paytm.
+- `generatePaytmChecksum` is exported so the dev simulate route can sign.
+
+### Q3. UPI deep-link adapter — how does it work?
+**File**: `packages/adapters/src/payment/upi-deeplink.adapter.ts`
+**Verdict**: REAL + CORRECT (the demo's primary path).
+
+- `createPaymentIntent` (L23-64): builds `upi://pay?` URI per NPCI BHIM spec via `URLSearchParams` (auto-encodes): `pa` = shop VPA, `pn` = shop name (fallback 'PrintShop'), `am` = amount in rupees (2 decimals via `(paise/100).toFixed(2)`), `cu` = INR, `tn` = "PrintShop order {customerToken}" (or orderId prefix), `tr` = customerToken (or orderId). Sets `qrPayload = upiUri` (the QR generator at `/api/v1/qr` renders it as a PNG). 10-min expiry.
+- `verifyPayment` (L66-81): **STUB** — returns `{ paid: false, … }` ("poll the PSP status API / parse SMS. Phase 3."). Never called.
+- `handleWebhook` (L84-86): returns `{ ok: false, statusCode: 404 }` — UPI has no server-side webhook. **CORRECT**.
+- `refund` (L88-91): returns `{ status: 'failed' }` — UPI refunds are manual. **CORRECT**.
+- **Does NOT auto-mark paid**: ✓ verified. The customer taps "I've paid" (L576-588 of `src/app/orders/[id]/page.tsx`) which only moves the UI to the track step — the order stays `awaiting_payment` until the shopkeeper manually verifies (`/verify-payment` route) or the dev simulate route fires.
+- The 9-test suite `upi-deeplink.adapter.test.ts` covers NPCI compliance: amount precision (₹0.01 step), URL-encoding of special chars (Shop & Sons), Unicode shop names (Hindi), no-secrets-leaked-into-URI, 10-min expiry.
+
+### Q4. Webhook service — is it cache-dependent? Race-safe?
+**File**: `src/lib/payments/webhook.service.ts`
+**Verdict**: CACHE-DEPENDENT for session lookup (unsafe for slow PSPs). TOCTOU-racy on the paid flip. Otherwise solid.
+
+Pipeline (`processWebhook`, L91-256):
+1. Audit-log raw payload FIRST — but only `{path, contentLength, provider}` (verified by `webhook-audit.test.ts` — no raw body, no CHECKSUMHASH, no saltKey). ✓
+2. **merchantOrderId → orderId via CACHE** (L107-115, `lookupPaymentSession` reads `pay:moid:${merchantOrderId}` from `container.cache`, TTL 600s). **UNSAFE**: if a webhook arrives >10 min after checkout (PSP delay, retry queue, network partition), the session is gone → 404. There is NO DB-backed `PaymentAttempt` table — the merchantOrderId mapping lives only in the cache. The container's `validateCacheProvider()` warns about this for Vercel (per-invocation memory = effectively no cache) but does NOT block startup.
+3. Loads shop → `shop.paymentCredentials` (decrypted by `shop.repository.toDomain`).
+4. Verifies signature via `adapter.handleWebhook(rawBody, headers, path, shopCredentials)`.
+5. Idempotency: cache `pay:done:${provider}:${txnId}` (24h) + the `Order.paymentTxnId` UNIQUE constraint (schema L68) as the authoritative guard. The cache check is a fast-path; the DB constraint is the real replay guard. ✓
+6. Amount validation (L181): `if (v.amountPaise !== null && v.amountPaise !== order.totalAmountPaise)` — exact integer-paise match. ✓ But if `v.amountPaise === null` (provider didn't echo the amount), the check is **SKIPPED** — PhonePe sometimes omits amount in certain callback variants. The PhonePe adapter DOES extract `amount` (L130) — if PhonePe sends 0 or omits it, this guard is bypassable.
+7. State-machine check (L191): `canTransitionOrder(order.status, 'paid')` ✓.
+8. **TOCTOU RACE**: the paid flip uses `repos.orders.update(order.id, …)` (L205-211) — NOT `repos.orders.transitionStatus(id, shopId, 'awaiting_payment', …)`. The window between the `canTransitionOrder` read (L191) and the `update` write (L205) is non-atomic. A concurrent webhook + manual `/verify-payment` race (which uses `transitionStatus` with `txnId = manual-${order.id}` — DIFFERENT txnId from the webhook's provider txnId) would not be caught by the `paymentTxnId` UNIQUE constraint because the txnIds differ. The `try/catch` (L212-223) only catches UNIQUE-constraint violations, NOT a race where both passes pass the `canTransitionOrder` check.
+   - The race-safe path used by the manual verify route + `enqueuePaidOrderPrint` is `transitionStatus` (L294), but `processWebhook` itself does NOT use it for the paid flip. This is inconsistent.
+9. **Does NOT verify the provider status API** — relies entirely on the webhook signature. No `verifyPayment()` callback to the PSP as a defense-in-depth check.
+10. Print enqueue (L244-247, `enqueuePaidOrderPrint` at L279-298): for each pending/queued file, calls the shared `enqueueFilePrint(shopId, fileId)` helper (two-layer idempotency). Then `repos.orders.transitionStatus(orderId, shopId, 'paid', { status: 'printing' })` — this part IS race-safe (conditional update). ✓
+11. Realtime push (L240): publishes `order.paid` to `shopChannel(shopId)`.
+
+### Q5. Payment adapter registry — per-shop or global?
+**File**: `src/lib/payments/registry.ts`
+**Verdict**: GLOBAL registry, per-SHOP selection.
+
+- `PaymentAdapterRegistry` (L11-33): a `Map<PaymentProvider, PaymentAdapter>`. Constructed once in `container.buildContainer()` (`src/lib/container.ts` L275) — global singleton.
+- Registered: PhonePe, Paytm, UpiDeepLink (L15-17). All adapters are stateless (credentials are passed per-call via `shopCredentials` parameter), so a single global instance is correct.
+- Selection (checkout route L39): `container.paymentRegistry.get(shop.paymentProvider)`. The shop's `paymentProvider` column (schema L16) drives selection — per-shop multi-tenant. ✓
+- `container.payment` (the legacy single-adapter field, L48 of container.ts) is set to `new UpiDeepLinkPaymentAdapter()` (L274) but is NOT used anywhere in the codebase — only `paymentRegistry.get(...)` is called. Dead field.
+
+### Q6. Multi-tenant credentials — how are they stored/loaded?
+**Files**: `src/lib/crypto/credential-encryption.ts`, `src/lib/repositories/shop.repository.ts`, `prisma/schema.prisma`
+**Verdict**: REAL AES-256-GCM encryption-at-rest, per-shop, with a documented dev fallback.
+
+- Storage: `Shop.paymentCredentials` is a `String` column (schema L17, NOT NULL).
+- Encrypt path (`shop.repository.toRow`, L77-83): if credentials object is non-empty, `encryptCredentials(v)`; else `encryptCredentials({})` (always encrypts, even empty).
+- Crypto (`credential-encryption.ts`): AES-256-GCM with a random 12-byte nonce, 32-byte key from `PAYMENT_ENCRYPTION_KEY` env (base64). Output format `v1:<nonceHex>:<ciphertextHex>:<tagHex>`. Key-versioned for rotation (`needsReencryption`, L61-63). Dev fallback: if env unset and not production, uses `Buffer.alloc(32, 0x41)` (a known dev key — fails-fast in production per `container.validateEncryptionKey()` L152-168).
+- Decrypt path (`shop.repository.toDomain`, L37-44): if the stored value starts with `v1:`, decrypt; else `JSON.parse(row.paymentCredentials || '{}')` — **dev fallback that accepts plaintext JSON**. If decryption fails (key mismatch / corrupted blob), returns `{}` (fail-safe — shop's checkout will throw "missing saltKey/merchantKey" instead of leaking partial creds). ✓
+- Loaded per-shop at webhook time (`webhook.service.ts` L117): `repos.shops.findById(session.shopId)` → `shop.paymentCredentials` (already decrypted). Then passed as the `shopCredentials` arg to `adapter.handleWebhook`.
+- The credential object shape: `{ phonepe: { saltKey, saltIndex, merchantId, env }, paytm: { merchantId, merchantKey, website, industryType?, channelId? } }`. Both providers' creds are stored together under the same encrypted blob.
+- `.env.example` L69-74 documents `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX`, `PHONEPE_MERCHANT_ID`, `PAYTM_MERCHANT_ID`, `PAYTM_MERCHANT_KEY` — but **THESE ARE NOT READ BY THE ADAPTERS**. The adapters exclusively use per-shop credentials from the DB. The env vars in `.env.example` are vestigial documentation; the seeder injects them into the shop's encrypted blob at startup instead.
+
+### Q7. PaymentAttempt / PaymentEvent models — do they exist?
+**Verdict**: NO. Only the cache session + the Order's flat payment columns.
+
+- Prisma schema (`prisma/schema.prisma` L60-82) has Order with: `paymentProvider`, `paymentTxnId` (@unique L68), `paymentUtr`, `paidAt`. That's it.
+- No `PaymentAttempt` model (would track per-attempt: amount, provider, merchantOrderId, status, createdAt, expiresAt).
+- No `PaymentEvent` model (would track every webhook/callback: raw payload, signature, processing result, ts).
+- The merchantOrderId→orderId mapping lives ONLY in the cache (`pay:moid:${merchantOrderId}`, TTL 10 min). **If the cache is wiped (Vercel cold start, Redis flush, memory eviction) between checkout and webhook arrival, the webhook 404s and the payment is lost.**
+- The audit log captures webhook receipt + paid/failed events (`webhook.phonepe.received`, `webhook.phonepe.paid`, `webhook.phonepe.failed`) — but it's an audit trail, not a recoverable attempt log (audit logs are pruned after 30 days by `recoverStaleJobsOnStartup`, container.ts L342-344).
+- Migration SQL (`prisma/migrations/20261015172034_init/migration.sql` L152) confirms: only `Order_paymentTxnId_key` UNIQUE index exists. No payment attempt/event tables. The migration also does NOT contain `Order.shopId_tokenNumber_unique` (tokenNumber drift — flagged in Phase 14 manual steps).
+
+### Q8. Order status transitions — race-safe?
+**File**: `packages/core/src/domain/order.ts`
+**Verdict**: State machine is correct. Webhook flip is NOT atomic (TOCTOU). Manual verify + enqueue ARE race-safe.
+
+State machine (`ALLOWED_ORDER_TRANSITIONS`, L53-61):
+- `awaiting_payment → ['paid', 'cancelled']`
+- `paid → ['printing', 'cancelled', 'refunded']`
+- `printing → ['ready', 'cancelled']`
+- `ready → ['collected', 'cancelled']`
+- `collected/cancelled/refunded → []` (terminal)
+
+Webhook path (`webhook.service.ts` L191-211):
+1. Read order, check `canTransitionOrder(order.status, 'paid')` — passes.
+2. `repos.orders.update(order.id, { status: 'paid', paymentTxnId: v.txnId, … })` — **NON-CONDITIONAL** update (no `WHERE status='awaiting_payment'`).
+- **RACE**: between (1) and (2), a concurrent manual `/verify-payment` call could flip the order to `paid` with `txnId = manual-${order.id}`. Then the webhook's update overwrites `paymentTxnId` with the provider's `v.txnId` — and since the txnIds DIFFER, the UNIQUE constraint does NOT catch it. The order ends up `paid` twice (audit logged twice, paymentTxnId overwritten).
+- The webhook's `try/catch` (L212-223) only catches UNIQUE-constraint violations on `paymentTxnId` — which requires the SAME txnId to be inserted twice. A manual-verify + webhook race produces DIFFERENT txnIds, so the catch never fires.
+
+Manual verify path (`/api/v1/shops/me/orders/[id]/verify-payment/route.ts` L71-88):
+- **RACE-SAFE**: `repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', { status: 'paid', paymentTxnId: 'manual-<orderId>', … })`. Conditional update with `WHERE status='awaiting_payment'`. If a concurrent request already flipped to 'paid', returns null → caller returns current state idempotently (no double-audit). ✓
+- BUT: it uses `txnId = 'manual-${order.id}'` — deterministic per-order. A second verify on an already-paid order is a no-op (same txnId, conditional update returns null). ✓
+
+enqueuePaidOrderPrint (L294): uses `transitionStatus(orderId, shopId, 'paid', { status: 'printing' })` — race-safe. ✓
+
+### Q9. Print queue — does printing start only after verified payment? Durable outbox?
+**Files**: `src/lib/services/{print,durable-queue}.service.ts`
+**Verdict**: Printing starts only after verified payment. NO durable outbox — fire-and-forget enqueue.
+
+- Webhook pipeline (L244-247): `ensurePrintHandler()` + `void enqueuePaidOrderPrint(order.id, shop.id).catch(…)`. Fire-and-forget (the `void` + `.catch` swallows errors). If the print enqueue fails (DB outage, agent offline), the webhook still returns 200 to the PSP — **the payment is confirmed but the print is lost**. There is NO retry queue, NO outbox table, NO tx-outbox pattern.
+- `enqueuePaidOrderPrint` (L279-298): for each `pending`/`queued` file on the order, calls the shared `enqueueFilePrint(shopId, fileId)` helper. Two-layer idempotency:
+  - Layer 1 (app): `findActiveByFile(fileId)` pre-check.
+  - Layer 2 (DB, claimed): partial unique index `PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status IN ('queued','printing')`.
+  - **BUT the partial unique index is NOT in `schema.prisma` AND NOT in the migration SQL** (`prisma/migrations/20261015172034_init/migration.sql` has no such index — verified by grep). The code comments reference it as the race-safety guarantee, but it does NOT exist in the DB. Layer 2 is fiction; only Layer 1 guards duplicates, and Layer 1 has a classic TOCTOU race (two concurrent calls both observe no active job, both insert).
+- Durable queue (`durable-queue.ts`): the `printJob` table IS the queue. `recoverStaleJobs()` on startup moves jobs stuck in `printing` >5 min to `needs_review` (NOT back to `queued` — prevents duplicate printing). Manual re-queue + manual complete from `needs_review`. ✓
+- `ensurePrintHandler()` registers an in-process handler that ONLY runs in dev (`NODE_ENV === 'production'` early-returns at L35-37 unless an agent is online). In production with no online agent, jobs stay `queued` until an agent claims them via the `/agents/jobs/:id/status` state machine. ✓
+- The webhook → enqueue → dispatch chain has NO transactional outbox. If the process crashes after the order is flipped to `paid` but before `enqueuePaidOrderPrint` completes, the order is `paid` but has no PrintJobs. The shopkeeper would see it as paid-but-not-printing; manual recovery is via the `/start` route which calls the same `enqueueFilePrint` helper.
+
+### Q10. Customer checkout UI — what payment options are shown? Pending/success/failure states?
+**File**: `src/app/orders/[id]/page.tsx` (1578 lines)
+**Verdict**: UPI-only, no provider selection. Handles pending/success/failure correctly.
+
+- Step machine (L120, L147-148): `upload → configure → checkout → pay → track`. No `provider-select` step.
+- The provider is chosen by the shop's `paymentProvider` setting (read from `ShopInfo.paymentProvider` L37). The customer sees whatever the shop configured — no in-UI provider switching.
+- Checkout (L537-567): `POST /api/v1/orders/:id/checkout` with `X-Order-Token` header (SEC-001 fix). Stores the returned `CheckoutResponse` (checkoutUrl, upiUri, qrPayload, merchantOrderId, amountPaise, expiresAt). Fetches the shopkeeper's uploaded QR (`GET /api/v1/shops/${slug}/upi-qr`) as the desktop fallback, OR generates a QR from the `upiUri` via `GET /api/v1/qr?data=…`.
+- Pay step (L1154-1268): 
+  - "Pay {amount} with UPI" button (mobile → `window.location.href = upiUri` — OS intercepts to launch the UPI app). 
+  - Desktop QR (shopkeeper's uploaded QR if present, else the generated QR from upiUri). 
+  - Manual UPI ID entry fallback (with the shop's VPA displayed — but currently shows `'<in checkout>'` placeholder at L1228, not the actual `shop.upiId` — minor bug).
+  - Amber notice: "Your payment stays Pending until the shopkeeper confirms receipt. Launching the UPI app does NOT verify payment." ✓
+  - "I've paid — track my order" button (L1263-1266) → moves to track step WITHOUT marking paid. ✓
+- Track step (L596-603): polls `GET /api/v1/orders/:id/status` every 30s until a terminal status (`collected/cancelled/refunded`). Shows two SEPARATE indicators: payment status (paidAt !== null → green checkmark "Payment Confirmed · UTR …"; else amber clock "Payment Pending — the shopkeeper will verify your UPI payment after you pay") AND order-processing status (paid → printing → ready → collected). ✓
+- Dev: a "Simulate payment" link on the track step points to `/api/v1/dev/orders/:id/mark-paid` (gated by `requireDev()`).
+- Failure states: `setCheckoutError` for checkout failures, `setPaymentError` for pay step errors. `setTrackError` for status-poll failures. Amber/red banners rendered inline. ✓
+
+## Prioritized fix list (highest impact first)
+
+### P0 — correctness/safety
+1. **`webhook.service.ts` L205-211**: replace `repos.orders.update(order.id, …)` with `repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', …)` — close the TOCTOU race between webhook paid-flip and manual `/verify-payment`. The `transitionStatus` helper exists, the manual verify route already uses it; the webhook is the inconsistent path. Treat `null` return as idempotent-skip.
+2. **Add a `PaymentAttempt` Prisma model** (id, orderId FK, shopId, provider, merchantOrderId UNIQUE, amountPaise, status enum, txnId, utr, providerRaw JSON, createdAt, updatedAt). Persist at checkout time. Webhook looks up by `merchantOrderId` from the DB, NOT the cache. Eliminates the cache-TTL expiry hazard + survives cold starts + provides a real audit trail.
+3. **Add the missing partial unique index** `PrintJob_active_file_unique ON "PrintJob"("fileId") WHERE status IN ('queued','printing')` to `schema.prisma` AND regenerate the migration. The code at `print.service.ts` L111-117 references it as the Layer-2 race guard — currently it does not exist; Layer 1 (findActiveByFile pre-check) alone is TOCTOU-racy.
+4. **Implement `PhonePePaymentAdapter.verifyPayment`** + **`PaytmPaymentAdapter.verifyPayment`** as real outbound status-API calls (`/pg/v1/status/{merchantId}/{merchantTransactionId}` for PhonePe, `/order/status` for Paytm). Wire the `/api/v1/payments/upi/verify/[orderId]` route to call `adapter.verifyPayment` for shops whose provider is `phonepe`/`paytm`, as a defense-in-depth check before returning the local DB status.
+
+### P1 — completeness
+5. **Implement `PhonePePaymentAdapter.createPaymentIntent` + `refund`** with real outbound HTTP (`POST /pg/v1/pay`, `POST /pg/v1/refund`) — currently stubbed. The `checkoutUrl` returned today is a fake `${host}/pg/v1/pay?merchantId=…&txnId=…` URL that doesn't actually start a PhonePe session.
+6. **Implement `PaytmPaymentAdapter.createPaymentIntent`** to call `/order/genchecksum` for a real transaction token — currently returns a hardcoded `securegw-stage.paytm.in` URL with no token. Also: the Paytm IV `'0123456789012345'` is a magic constant — make it configurable per-shop, and verify the salt-prefix convention against a live Paytm registration.
+7. **Add a transactional outbox for `enqueuePaidOrderPrint`**: the webhook returns 200 to the PSP even if print enqueue fails (fire-and-forget `void`). Either (a) wrap the paid-flip + enqueue in a DB transaction so a failure rolls back the paid state, OR (b) write an `Outbox` row in the same transaction as the paid flip and have a worker drain it. Today: payment confirmed + print lost = silent data divergence.
+8. **Tighten the amount-validation**: in `webhook.service.ts` L181, `if (v.amountPaise !== null && v.amountPaise !== order.totalAmountPaise)` — if the provider omits `amount`, the check is skipped. Make it REQUIRED for `paid: true` outcomes (reject the webhook if `paid && v.amountPaise === null`).
+
+### P2 — cleanup/hygiene
+9. **Delete `packages/adapters/src/payment/payment.adapters.ts`** — the 94-line legacy skeleton with `throw new Error('not implemented until Phase 3')`. NOT exported from `packages/adapters/src/index.ts`, NOT imported anywhere (verified via grep). Confusing dead code that defines a duplicate `PhonePePaymentAdapter` + `UpiDeepLinkPaymentAdapter`.
+10. **Remove the `container.payment` field** (container.ts L48, L274, L305) — set to `new UpiDeepLinkPaymentAdapter()` but never read anywhere. Only `container.paymentRegistry.get(...)` is used.
+11. **Fix the placeholder in `src/app/orders/[id]/page.tsx` L1228** — "UPI ID: `<in checkout>`" should render the actual `shop.upiId` (already available in `ShopInfo.upiId` L36).
+12. **Reconcile `.env.example` L69-74** — the `PHONEPE_SALT_KEY`/`PHONEPE_SALT_INDEX`/`PHONEPE_MERCHANT_ID`/`PAYTM_MERCHANT_ID`/`PAYTM_MERCHANT_KEY` env vars are documented but UNUSED by the adapters (which use per-shop DB credentials only). Either remove them or document that they're only used by the seeder.
+13. **PhonePe verify-path is hardcoded to `/pg/v1/status`** in the adapter comment but configurable via `PHONEPE_VERIFY_PATH` env — wire the env into the adapter constructor (or per-shop credential field) instead of reading `process.env` at webhook time (currently L111). Reading env at request-time means a config change requires a process restart, AND it's a global override (no per-shop path).
+14. **`PaytmPaymentAdapter.verifyPaytmChecksum` L82-98** uses `expected === hashHex` (string equality) AFTER the AES decrypt — not constant-time. The decrypt itself catches tampering (auth tag fails on tampered ciphertext), so this is defense-in-depth, but a constant-time compare would be tidier.
+
+### P3 — tests
+15. **Add a regression test for the webhook-vs-manual-verify race** (the fix from item #1). The existing `payments.test.ts` covers idempotency for the SAME txnId twice; it does NOT cover two DIFFERENT txnIds racing on the same order.
+16. **Add a test for the cache-expiry 404 path** — confirm the webhook returns 404 + does NOT crash when `lookupPaymentSession` returns null.
+17. **Add a test that asserts the Paytm checksum verify REJECTS a Paytm callback where the merchantKey is wrong** (currently only the happy path + a tampered-amount case are tested).
+
+## File-by-file API contract summary (the load-bearing signatures)
+
+- **`PaymentAdapter` interface** (`packages/core/src/interfaces/payment.adapter.ts` L84-121):
+  - `createPaymentIntent(input: { orderId, amountPaise, customerPhone?, shopUpiId, shopName?, customerToken?, shopCredentials }): Promise<PaymentIntent>`
+  - `verifyPayment(input: { merchantOrderId, shopCredentials }): Promise<PaymentVerification>`
+  - `handleWebhook(input: WebhookInput, shopCredentials): Promise<WebhookResult>` where `WebhookInput = { rawBody: string, headers: Record<string,string>, path: string }`
+  - `refund(input: RefundInput, shopCredentials): Promise<RefundResult>`
+- **`PaymentIntent`**: `{ merchantOrderId, orderId, amountPaise, currency, checkoutUrl?, upiUri?, qrPayload?, provider, expiresAt }`
+- **`PaymentVerification` / `WebhookResult.verification`**: `{ paid: boolean, txnId: string|null, utr: string|null, amountPaise: number|null, provider, raw: unknown }`
+- **`processWebhook(input: ProcessWebhookInput): Promise<ProcessWebhookResult>`** (`webhook.service.ts` L91) where input = `{ provider, rawBody, headers, path, ip? }` and result = `{ statusCode, responseBody?, summary, applied: boolean, orderId? }`
+- **`rememberPaymentSession(merchantOrderId, session: StoredPaymentSession): Promise<void>`** (L21) — called by checkout route.
+- **`PaymentAdapterRegistry.get(provider: PaymentProvider): PaymentAdapter`** — throws `AdapterError` if not registered.
+- **`repos.orders.transitionStatus(id, shopId, expectedCurrentStatus, patch): Promise<Order | null>`** (`order.repository.ts` L284-295) — the race-safe conditional update; returns null if the precondition didn't match.
+- **`encryptCredentials(data): string`** / **`decryptCredentials(encrypted): Record<string, unknown>`** — AES-256-GCM, format `v1:<nonceHex>:<ciphertextHex>:<tagHex>`.
+- **`/api/v1/orders/:id/checkout` POST** → `{ orderId, merchantOrderId, amountPaise, currency, provider, checkoutUrl, upiUri, qrPayload, expiresAt }`. Requires `X-Order-Token` header (SEC-001).
+- **`/api/v1/payments/phonepe/webhook` POST** → 200 + body "OK" (text/plain) on success. Unauthenticated, signature-verified.
+- **`/api/v1/payments/paytm/callback` POST** → 200 + HTML page (text/html). Unauthenticated, checksum-verified.
+- **`/api/v1/payments/upi/verify/:orderId` GET** → `{ paid, txnId, utr, amountPaise, status }` from the local DB (NOT the PSP API).
+- **`/api/v1/payments/dev/{phonepe,paytm}/simulate` POST** → dev-only, signs a payload with the shop's dev creds + feeds it through `processWebhook`. Returns `{ sent, processed, note }`.
+- **`/api/v1/shops/me/orders/:id/verify-payment` POST** (owner role only) → body `{ action: 'verify'|'reject', txnReference?, note? }`. Verify flips `awaiting_payment → paid` with `paymentTxnId = manual-${order.id}`. Reject appends `[shopkeeper-reject] …` to order.notes.
+- **`/api/v1/dev/orders/:id/mark-paid` POST** (dev-only) → bypasses signature verification, flips to `paid` with `paymentTxnId = txn_${uuid}`. Uses non-conditional `repos.orders.update` — also TOCTOU-racy but dev-only.
+
+
+---
+
+## Task ID: audit-upipay
+**Agent**: general-purpose
+**Task**: Audit the UPIPay GitHub repo (`https://github.com/iamrobinsharaya/upipay`) — inspect actual source code, not just README. Determine whether it's safe + compatible to install in a Next.js 16 / React 19 / TypeScript 5 / Bun project.
+
+### Work Log
+1. Fetched npm registry metadata (`registry.npmjs.org/upipay`) + download stats (`api.npmjs.org/downloads`).
+2. Downloaded the full repo tarball from `codeload.github.com` and extracted to `/tmp/upipay-repo` (GitHub REST API was rate-limited). Inspected all 20 source files + 3 test files + configs + SECURITY.md + CI workflow.
+3. Read every source file line-by-line: `index.ts`, `client.ts`, `types.ts`, `errors.ts`, `interfaces/psp-adapter.ts`, `adapters/phonepe.ts` (504 lines), `adapters/paytm.ts` (488 lines), `upi/qr.ts`, `utils/{crypto,currency,ip-guard,logger,retry,sanitize,validation}.ts`.
+4. Ran security greps: `http://` usage, hardcoded secrets, `eval`/`Function`/`child_process`, raw `console.log` of secrets.
+5. Installed deps (`npm ci`), ran `tsc --noEmit` (typecheck), `vitest run` (full test suite), `tsup` (build), `npm audit --omit=dev` (vuln scan).
+6. Cross-checked README/CHANGELOG/SECURITY.md claims against the actual implementation.
+7. Inspected the PrintShop project's existing `src/lib/payments/webhook.service.ts` (298 lines) to ground the recommendation in the real integration context.
+
+### Findings (README claims vs. actual source)
+| README/CHANGELOG claim | Verified against source? |
+|:--|:--|
+| Real PhonePe Business API integration | ✅ YES — `POST /pg/v1/pay`, `GET /pg/v1/status/{mid}/{orderId}`, `POST /pg/v1/refund` against `https://api.phonepe.com/apis/hermes` (prod) / `https://api-preprod.phonepe.com/apis/pg-sandbox` (sandbox) |
+| Real Paytm Business API integration | ✅ YES — `/theia/api/v1/initiateTransaction`, `/v3/order/status`, `/v3/order/refund` against `https://secure.paytmpayments.com` (prod) / `https://securestage.paytmpayments.com` (sandbox) |
+| SHA256 webhook verification (PhonePe) | ✅ YES — `X-VERIFY = SHA256(base64Response + saltKey) + "###" + saltIndex`, constant-time compare via `timingSafeEqual` with length-padding |
+| Paytm AES-128-CBC checksum | ✅ YES — implements official `Paytm_Node_Checksum` algorithm (random 4-char salt + SHA256 + AES-128-CBC with static IV `@@@@&&&&####$$$$`, key = first 16 chars of merchantKey). Roundtrip-tested. |
+| Server-side status verification | ✅ YES — `checkStatus()` calls PSP Status API with retry (expponential backoff 1s→2s→4s, 3 attempts) + `expectedAmount` integrity check (throws on mismatch) |
+| Refunds (full + partial) | ✅ YES — `createRefund()`; Paytm correctly requires `providerTransactionId` (txnId, not orderId) |
+| UPI QR + intent links | ✅ YES — NPCI-compliant `upi://pay?pa=&pn=&am=&tr=&cu=INR&mode=04` (mode=04 = fixed/non-editable amount); intent links for PhonePe/GPay/Paytm/BHIM |
+| `rupeesToPaise` float-safe | ✅ YES — validates ≤2 decimal places, `Math.round(rupees*100)` |
+| Constant-time comparison | ✅ YES — `constantTimeEqual` pads both buffers to equal length, compares via `timingSafeEqual`, checks length AFTER (no early return) |
+| Amount-substitution attack prevention | ✅ YES — `expectedAmount` enforced in both `verifyWebhook` and `checkStatus`; warns loudly when omitted |
+| Secret redaction in logs | ✅ YES — `Logger` masks `saltkey/merchantkey/secret/password/token/apikey/salt` keys (case-insensitive, normalized) |
+| Browser-runtime guard | ✅ YES — `UPIPay` constructor throws `InvalidConfigError` if `globalThis.window` or React Native detected; directs to `upipay/qr` for client-side |
+| HTTPS enforced in production | ✅ YES — `validateUrl` blocks `javascript:/data:/vbscript:/file:` schemes; requires `https://` when `environment==='production'` |
+| Order-ID injection prevention | ✅ YES — `/^[a-zA-Z0-9_\-.]{1,128}$/` enforced before path interpolation |
+| IP allowlist middleware | ✅ YES — `createPhonePeWebhookGuard` / `createPaytmWebhookGuard` with PhonePe's 14 published CIDRs; rightmost X-Forwarded-For only when `trustProxy=true` (default false); IPv6-mapped IPv4 unwrapping |
+| No `eval`/`postinstall` scripts | ✅ YES — grep confirmed none; `files` allowlist publishes only `dist/` |
+| 120 tests pass | ✅ YES — verified locally: `tsc --noEmit` exit 0; `vitest run` = 120/120 pass (security: 83, client: 21, qr: 16) in 912ms |
+| TypeScript types shipped | ✅ YES — `dist/index.d.ts` (30.6 KB) + per-subpath `.d.ts`; tsconfig `strict: true`, `noUncheckedIndexedAccess`, `isolatedModules` |
+| Zero commission / 0% MDR | ✅ Accurate — uses the free PhonePe/Paytm Business merchant APIs (govt-mandated 0% MDR on bank-to-bank UPI since 2020) |
+
+**One doc inaccuracy found**: `CHANGELOG.md` says "Webhook replay protection enabled by default — stale webhooks (> 5 minutes) are rejected" but the **code** defaults `enableReplayProtection` to `false` (opt-in). `SECURITY.md` documents it correctly as opt-in. The opt-in default is actually the **safer** design (PSPs embed the transaction timestamp, not delivery time, so a fixed window silently drops legitimate delayed webhooks). This is a CHANGELOG wording bug, not a code defect.
+
+### Stage Summary — Answers to the 10 audit questions
+
+**1. What does UPIPay actually do?**
+It is a **real, full UPI payment SDK** — not just a URI builder. It does ALL of: (a) builds NPCI-compliant UPI deep-link URIs + QR codes, (b) calls the real PhonePe Business + Paytm Business merchant APIs to initiate hosted UPI payment sessions, (c) verifies webhook signatures cryptographically (SHA256 for PhonePe, AES-128-CBC for Paytm) using constant-time comparison, (d) polls the PSP Status API for server-side payment confirmation, (e) initiates full/partial refunds, and (f) ships Express-compatible IP-allowlist middleware for webhook endpoints.
+
+**2. Is it a real payment SDK or just a UPI URI builder?**
+**Real payment SDK.** The `UPIPay` client + `PhonePeAdapter`/`PaytmAdapter` make authenticated server-to-server HTTPS calls to the PSPs (`/pg/v1/pay`, `/pg/v1/status`, `/pg/v1/refund`, `/v3/order/status`, `/v3/order/refund`, `/theia/api/v1/initiateTransaction`). The `upi/qr` sub-module is the standalone URI-builder+QR part (useful for the no-merchant-account flow). Both are present and clearly separated.
+
+**3. npm package version + last publish date?**
+Version **1.0.0** (only version ever published). Published **2026-06-03**. ~174 weekly downloads / ~439 monthly. Single maintainer (`robinsharaya`). MIT license. **Red flag (mild)**: brand-new package, no maintenance track record yet, no patch releases. Mitigated by: small readable codebase (~2.9k LOC), MIT (forkable), 0 vulns, npm provenance attestation, deterministic crypto verifiable against official PSP docs.
+
+**4. TypeScript-compatible?**
+**Yes, fully.** Ships `.d.ts` for every export subpath (`./`, `./phonepe`, `./paytm`, `./qr`, `./utils`). `tsconfig.json` uses `strict: true` + `noUncheckedIndexedAccess` + `isolatedModules` + `target: ES2020`. Dual ESM/CJS build via `tsup`. `sideEffects: false` (tree-shakeable). `tsc --noEmit` passes with 0 errors (verified locally).
+
+**5. Actual exported method signatures**
+- `class UPIPay` — `constructor(config: UPIPayConfig)`; `createPayment(req: CreatePaymentRequest): Promise<CreatePaymentResponse>`; `checkStatus(orderId: string, opts?: CheckStatusOptions): Promise<PaymentStatusResponse>`; `verifyWebhook(payload: string|Buffer, signature: string, opts?: WebhookVerifyOptions): WebhookEvent`; `createRefund(req: CreateRefundRequest): Promise<RefundResponse>`; `generateQR(req: UPIQRRequest): Promise<UPIQRResponse>`; `buildUPILink(req): string`; `buildIntentLinks(req): UPIIntentLink`; `getAdapter(): IPSPAdapter`.
+- `class PhonePeAdapter` / `class PaytmAdapter` — same `createPayment/checkStatus/verifyWebhook/createRefund` surface (implement `IPSPAdapter`).
+- Standalone: `generateUPIQR`, `generateUPIQRSvg`, `generateUPIQRBuffer`, `buildUPIUri`, `buildIntentLinks`, `rupeesToPaise`, `createPhonePeWebhookGuard`, `createPaytmWebhookGuard`, errors (`UPIPayError`/`InvalidConfigError`/`PaymentError`/`WebhookVerificationError`/`NetworkError`/`RefundError`).
+- `CreatePaymentRequest`: `{ amount: number (paise), orderId, customerPhone, customerName?, customerEmail?, callbackUrl, redirectUrl, idempotencyKey?, metadata? }`. `WebhookVerifyOptions`: `{ enableReplayProtection?, timestampToleranceSeconds?=300, timestamp?, expectedAmount? }`. `CheckStatusOptions`: `{ expectedAmount?, maxRetries?=3, retryDelayMs?=1000 }`.
+
+**6. Does it verify PhonePe/Paytm webhook signatures?**
+**Yes, both, correctly.** PhonePe: `SHA256(response + saltKey) + "###" + saltIndex` compared with `timingSafeEqual` (buffers padded to equal length, length checked AFTER compare to avoid timing leaks). Handles both raw base64 and the `{"response":"..."}` JSON envelope. Paytm: full official `Paytm_Node_Checksum` algorithm — AES-128-CBC decrypt the checksum, extract 4-char salt, recompute `SHA256(paramsString + "|" + salt)`, constant-time compare. Handles both JSON and form-encoded callback bodies, strips `CHECKSUMHASH` before verifying. Oversized signatures (>512 chars) rejected before buffer allocation. Missing/invalid signatures fail-closed (`{verified:false}`).
+
+**7. Does it call the PhonePe/Paytm status API?**
+**Yes — both.** PhonePe: `GET /pg/v1/status/{merchantId}/{orderId}` with `X-VERIFY` + `X-MERCHANT-ID` headers. Paytm: `POST /v3/order/status` with signed JSON body. Both wrapped in `withRetry` (exponential backoff, 3 attempts, retriable only on `NetworkError`/HTTP 5xx). Both enforce `expectedAmount` integrity (throw `PaymentError` on mismatch — prevents the ₹1-pays-for-₹10000-order attack). Both warn loudly if `expectedAmount` is omitted.
+
+**8. Dependencies?**
+**One runtime dependency: `qrcode@^1.5.4`** (transitive: dijkstrajs, pngjs, yargs@15). `npm audit --omit=dev` = **0 vulnerabilities**. No `postinstall`/`preinstall` scripts. `files` allowlist publishes only `dist/` + README/CHANGELOG/LICENSE. Dev deps (tsup, typescript, vitest, @types/qrcode, @types/node) are build-only. Notably the PrintShop project **already depends on `qrcode@^1.5.4` + `@types/qrcode@^1.5.6`**, so adding upipay introduces **zero new transitive deps**.
+
+**9. Tests?**
+**Yes — real, comprehensive, passing.** 120 tests across 3 files (security.test.ts: 83, client.test.ts: 21, qr.test.ts: 16) — 1,176 lines of test code. Verified locally: `vitest run` = 120/120 pass in 912ms; `tsc --noEmit` = 0 errors. Tests cover: known SHA256/HMAC vectors, constant-time-compare edge cases (unicode, null-padding, length-mismatch), Paytm AES roundtrip + tamper rejection + wrong-key rejection, webhook JSON-envelope vs raw-base64, replay-protection (fresh/stale timestamps for both PSPs), amount-mismatch rejection, PhonePe IP-guard CIDR matching, config validation (placeholder detection, https enforcement, dangerous schemes). CI matrix runs Node 18/20/22 with `npm publish --provenance`.
+
+**10. Should we install it?**
+**RECOMMENDATION: INSTALL** (full adoption as the PSP-communication + crypto layer).
+
+**Reasoning**: The code is production-grade — correct constant-time crypto, the exact official Paytm AES-128-CBC algorithm, real PSP API calls, amount-integrity enforcement, secret masking, browser-runtime guard, IP allowlisting, retry with backoff, 0 vulnerabilities, 120 passing tests, strict TypeScript with shipped `.d.ts`, MIT, npm provenance. It is fully compatible with the PrintShop stack (Next.js 16 / React 19 / TS 5 / Bun / Node 18+) and adds **zero new transitive deps** (project already uses `qrcode@^1.5.4`). The hand-rolled alternative is higher-risk than this audited SDK. The only real concern is **newness** (v1.0.0, single maintainer, ~4 weeks old, low downloads) — mitigate by pinning to exact `1.0.0`, running `npm audit` in CI, and keeping the PrintShop-specific orchestration layer (`webhook.service.ts` session/idempotency/order-state) intact underneath.
+
+**Integration plan** (preserve existing orchestration, delegate the risky crypto to upipay):
+- `bun add upipay@1.0.0` (pin exact).
+- In `webhook.service.ts`: replace the hand-rolled PhonePe/Paytm signature math with `client.verifyWebhook(rawBody, signature, { expectedAmount: session.amountPaise })`. Keep `rememberPaymentSession`/`lookupPaymentSession`/`extractReference`/`enqueueFilePrint`/`transitionStatus` — those are PrintShop-specific.
+- Add `client.checkStatus(orderId, { expectedAmount })` as the post-webhook authoritative confirmation (currently the project relies on the webhook alone — adding status polling closes the trust gap).
+- Use `client.createPayment()` in the checkout route to get the hosted payment URL (replaces any hand-rolled PhonePe/PayPe payment-initiation).
+- Use `upipay/qr` for the sticker/QR route QR generation (replaces direct `qrcode` lib calls — same dep, cleaner API).
+- Optionally wire `createPhonePeWebhookGuard({ trustProxy: true })` before `express.raw()` on the webhook route for defense-in-depth.
+- Pin version, add `npm audit` + `bunx tsc --noEmit` to CI, and revisit on first upipay patch release.
+
+**Caveats to flag to the team**:
+- (a) CHANGELOG says replay protection is on by default; **code has it off by default** (opt-in via `enableReplayProtection:true`). The opt-in default is the safer choice — rely on DB unique-constraint on `transactionId` for replay prevention (the project already has `print-job-idempotency` infra).
+- (b) Single maintainer / brand-new — if long-term vendor risk is unacceptable, the codebase is small enough (~2.9k LOC, MIT) to vendor/fork into `packages/adapters/upipay` as a defensive measure.
+- (c) `UPIPay` (the credential-holding client) is server-only by design (throws in browser) — only import it in route handlers / server components / server actions, never in `'use client'` modules. The `upipay/qr` subpath is browser-safe.
