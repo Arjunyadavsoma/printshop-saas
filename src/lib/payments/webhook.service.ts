@@ -5,6 +5,7 @@ import { ensurePrintHandler, enqueueFilePrint } from '@/lib/services/print.servi
 import { ValidationError, NotFoundError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
 import { shopChannel } from '@platform/core/interfaces';
+import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
 /** A merchant-order-id → order mapping stored at checkout so the webhook
  *  can find the order without trusting the (unverified) payload. */
@@ -178,7 +179,22 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     logger.error('webhook: tenant mismatch', { orderShopId: order.shopId, webhookShopId: shop.id });
     return { statusCode: 403, summary: 'tenant mismatch', applied: false };
   }
-  if (v.amountPaise !== null && v.amountPaise !== order.totalAmountPaise) {
+  // AMOUNT VALIDATION (Phase 4 fix — was skipped when amountPaise === null):
+  // A paid webhook MUST include the exact amount. Previously the check was
+  // `if (v.amountPaise !== null && ...)` which SKIPPED validation when the
+  // PSP omitted the amount — allowing a ₹0 payment to mark a ₹500 order paid.
+  // Now: if the amount is missing OR doesn't match, REJECT.
+  if (v.amountPaise === null) {
+    logger.warn('webhook: amount missing — rejecting (cannot verify amount integrity)', { provider: input.provider });
+    return {
+      statusCode: 400,
+      responseBody: result.responseBody,
+      summary: 'amount missing in webhook payload — cannot verify payment integrity',
+      applied: false,
+      orderId: session.orderId,
+    };
+  }
+  if (v.amountPaise !== order.totalAmountPaise) {
     logger.warn('webhook: amount mismatch', { expected: order.totalAmountPaise, got: v.amountPaise });
     return {
       statusCode: 400,
@@ -199,27 +215,47 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     };
   }
 
-  // 7. Flip to paid. The UNIQUE(payment_txn_id) constraint is the final
-  //    replay guard — a concurrent duplicate would fail here.
+  // 7. Flip to paid — RACE-SAFE (Phase 4 fix): uses transitionStatus with
+  //    WHERE status='awaiting_payment' precondition. Previously used
+  //    repos.orders.update (non-conditional) → a concurrent manual verify
+  //    + webhook could both flip the order, double-writing audit logs +
+  //    overwriting each other's paymentTxnId.
   try {
-    await repos.orders.update(order.id, {
+    const updated = await repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', {
       status: 'paid',
       paidAt: new Date(),
       paymentTxnId: v.txnId,
       paymentUtr: v.utr,
       paymentProvider: input.provider,
     });
+    // transitionStatus returns null if a concurrent request already flipped
+    // the order (WHERE status='awaiting_payment' didn't match). This is the
+    // race-safe idempotent skip — no duplicate audit log, no double-enqueue.
+    if (!updated) {
+      logger.info('webhook: order already paid by concurrent request (idempotent)', { txnId: v.txnId });
+      return {
+        statusCode: 200,
+        responseBody: result.responseBody,
+        summary: 'order already paid (concurrent request won)',
+        applied: false,
+        orderId: session.orderId,
+      };
+    }
   } catch (err) {
     // A UNIQUE-constraint violation means this txn was already applied
-    // (e.g., concurrent webhook) — treat as idempotent.
-    logger.info('webhook: payment_txn_id already exists (idempotent)', { txnId: v.txnId, err: String(err) });
-    return {
-      statusCode: 200,
-      responseBody: result.responseBody,
-      summary: 'payment_txn_id already applied (idempotent)',
-      applied: false,
-      orderId: session.orderId,
-    };
+    // (e.g., concurrent webhook with the SAME txnId) — treat as idempotent.
+    if (isUniqueConstraintError(err)) {
+      logger.info('webhook: payment_txn_id already exists (idempotent)', { txnId: v.txnId });
+      return {
+        statusCode: 200,
+        responseBody: result.responseBody,
+        summary: 'payment_txn_id already applied (idempotent)',
+        applied: false,
+        orderId: session.orderId,
+      };
+    }
+    // Non-unique-constraint errors are real failures — re-throw.
+    throw err;
   }
 
   // 8. Mark processed + audit.

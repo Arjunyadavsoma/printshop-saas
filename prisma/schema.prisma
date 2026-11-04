@@ -38,6 +38,7 @@ model Shop {
   printJobs             PrintJob[]
   subscription          Subscription?
   users                 User[]
+  paymentAttempts       PaymentAttempt[]
 
   @@index([slug])
 }
@@ -75,6 +76,7 @@ model Order {
   updatedAt        DateTime    @updatedAt
   shop             Shop        @relation(fields: [shopId], references: [id])
   files            PrintFile[]
+  paymentAttempts  PaymentAttempt[]
 
   @@unique([shopId, tokenNumber])
   @@index([shopId, status])
@@ -170,4 +172,53 @@ model AuditLog {
   shop       Shop?    @relation(fields: [shopId], references: [id])
 
   @@index([shopId, createdAt])
+}
+
+// ─── Payment persistence (Phase 4 — durable webhook mapping) ───────
+// Previously the merchantOrderId→orderId mapping lived ONLY in a 10-min
+// cache session. Slow PSPs (>10min) or Vercel cold starts (per-invocation
+// memory) made delayed webhooks impossible to resolve. These models move
+// the mapping into durable DB records.
+
+model PaymentAttempt {
+  id                   String    @id @default(uuid())
+  shopId               String
+  orderId              String
+  provider             String   // 'phonepe' | 'paytm' | 'googlepay' (UPI deep-link)
+  merchantOrderId      String   @unique // our per-attempt UUID; the PSP references this
+  providerTransactionId String? // PSP's transaction id (set on webhook/status)
+  amountPaise          Int
+  currency             String   @default("INR")
+  status              String   @default("created") // created|pending|paid|failed|expired
+  idempotencyKey       String?  // optional PSP idempotency token
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  shop                 Shop     @relation(fields: [shopId], references: [id])
+  order                Order    @relation(fields: [orderId], references: [id])
+  events               PaymentEvent[]
+
+  @@index([shopId, status])
+  @@index([orderId])
+  @@index([providerTransactionId])
+}
+
+model PaymentEvent {
+  id                   String    @id @default(uuid())
+  attemptId            String
+  provider             String
+  eventId              String?   // PSP's event id (for dedup)
+  merchantOrderId      String?
+  providerTransactionId String?
+  eventType            String    // webhook|status_check|reconciliation
+  signatureValid       Boolean   @default(false)
+  processingStatus     String    @default("received") // received|processed|skipped|failed
+  receivedAt           DateTime  @default(now())
+  processedAt          DateTime?
+  errorMessage         String?
+  attempt              PaymentAttempt @relation(fields: [attemptId], references: [id])
+
+  @@unique([provider, eventId])
+  @@index([attemptId])
+  @@index([merchantOrderId])
 }
