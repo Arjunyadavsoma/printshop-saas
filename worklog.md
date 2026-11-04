@@ -4743,3 +4743,221 @@ Version **1.0.0** (only version ever published). Published **2026-06-03**. ~174 
 - (a) CHANGELOG says replay protection is on by default; **code has it off by default** (opt-in via `enableReplayProtection:true`). The opt-in default is the safer choice — rely on DB unique-constraint on `transactionId` for replay prevention (the project already has `print-job-idempotency` infra).
 - (b) Single maintainer / brand-new — if long-term vendor risk is unacceptable, the codebase is small enough (~2.9k LOC, MIT) to vendor/fork into `packages/adapters/upipay` as a defensive measure.
 - (c) `UPIPay` (the credential-holding client) is server-only by design (throws in browser) — only import it in route handlers / server components / server actions, never in `'use client'` modules. The `upipay/qr` subpath is browser-safe.
+
+
+---
+
+## Task ID: inspect-payments
+**Agent**: general-purpose
+**Task**: Inspect the existing payment settings architecture (settings page UI, encryption, shop repository, /shops/me routes, UPI QR upload pattern, container/registry, PhonePe/Paytm adapters, Prisma schema, webhook service, withAuth, .env.example) so the next task knows exactly what to build on. Read the ACTUAL files — do not guess.
+
+### Work Log
+1. Read `/home/z/my-project/worklog.md` lines 4595–4745 (the audit-upipay findings + Phase-4 prioritised fix list) for context on the recent PhonePe v1/v2 + Paytm adapter work + the PaymentAttempt/PaymentEvent models.
+2. Read all 13 inspection targets line-by-line (where size allowed) or via targeted Grep:
+   - `src/app/shop/settings/page.tsx` (1102 lines — Grep'd for `payment|Payment|upi|provider|TabsTrigger`, then read L155–259, L381–409, L890–977).
+   - `src/lib/crypto/credential-encryption.ts` (63 lines, full).
+   - `src/lib/repositories/shop.repository.ts` (161 lines, full).
+   - `src/app/api/v1/shops/me/route.ts` (97 lines, full).
+   - `src/app/api/v1/shops/me/upi-qr/route.ts` (162 lines, full).
+   - `src/lib/container.ts` (348 lines, full).
+   - `src/lib/payments/registry.ts` (33 lines, full).
+   - `packages/adapters/src/payment/phonepe.adapter.ts` (417 lines, full).
+   - `packages/adapters/src/payment/paytm.adapter.ts` (345 lines, full).
+   - `prisma/schema.prisma` (224 lines, full).
+   - `src/lib/payments/webhook.service.ts` (334 lines, full).
+   - `src/lib/api/with-auth.ts` (158 lines, full).
+   - `src/lib/repositories/audit-log.repository.ts` (109 lines, full).
+   - `.env.example` (117 lines, full).
+   - Bonus: confirmed webhook route paths by reading `src/app/api/v1/payments/phonepe/webhook/route.ts` + `src/app/api/v1/payments/paytm/callback/route.ts`.
+
+### Findings — Answers to the 8 questions
+
+**1. Settings page — does it have a payment tab? What does it show?**
+YES — a `payment` TabsContent exists (page.tsx L892–977, opened via `#payment` hash). It contains ONLY four fields, all `Shop` profile fields written through the generic `PATCH /api/v1/shops/me`:
+- `upiId` (UPI VPA, regex `^[\w.\-]+@[\w.\-]+$`)
+- `paymentPhone` (Indian phone, "for UPI verification")
+- `paymentInstructions` (free-text shown to customer after pay)
+- `cashOnPickup` (Switch)
+
+There is NO provider picker, NO PhonePe credentials form, NO Paytm credentials form, NO test/activate button. `paymentProvider` is loaded into `ShopInfo` (L61) but is read-only — it's never settable from the UI. `paymentCredentials` is never read or written by the settings page. A separate `upi-qr` tab (L980) handles the QR image upload. The "Save payment" button (L968) PATCHes only the 4 fields above.
+
+**2. Encryption — format, env var, startup validation, missing-key behaviour**
+- Format: `v1:<nonceHex>:<ciphertextHex>:<tagHex>` (credential-encryption.ts L41). Single key version `KEY_VERSION='1'`; `needsReencryption(encrypted)` checks the prefix (L61).
+- Algorithm: AES-256-GCM, 12-byte random nonce, auth-tag appended.
+- Env var: `PAYMENT_ENCRYPTION_KEY` — 32 raw bytes, base64-encoded. Generate with `openssl rand 32 | base64`.
+- Missing-key behaviour:
+  - In `production`: `getEncryptionKey()` THROWS `FATAL: PAYMENT_ENCRYPTION_KEY is required in production` (L22).
+  - In non-production: returns `Buffer.alloc(32, 0x41)` (a deterministic dev default — all 0x41 bytes).
+- Startup validation: `container.ts` `validateEncryptionKey()` (L152–168) runs at container boot. In production it throws FATAL if missing, throws FATAL if base64-decoded length ≠ 32, with the hint `openssl rand 32 | base64`.
+- Wrong format on decrypt: throws `Invalid encrypted credential format` (4 parts required) or `Unknown encryption key version` (only `v1` accepted) — but `toDomain` in shop.repository.ts L42–44 CATCHES all decrypt errors and falls back to `{}` (fail-safe — credentials blank, payments fail downstream, no crash).
+
+**3. Shop model — `paymentCredentials` field type**
+- Prisma `Shop.paymentCredentials` is `String` (NOT NULL, no default — schema.prisma L17). Stored as a single encrypted blob.
+- Domain shape (`packages/core/src/domain/shop.ts`): `paymentCredentials: Record<string, unknown>` — decrypted, free-form.
+- Repository layer (`shop.repository.ts`):
+  - `toRow()` (L74–91): if `paymentCredentials` is non-empty → `encryptCredentials(v)`; if empty/undefined → `encryptCredentials({})` (the DB column is NOT NULL, so an encrypted empty object is stored — never raw `{}` or NULL).
+  - `toDomain()` (L35–71): if the stored string starts with `v1:` → `decryptCredentials`; else → `JSON.parse` (dev/legacy fallback for plain JSON); on any error → `{}`.
+- The adapters expect a NESTED structure: `shopCredentials.phonepe` (PhonePe adapter `creds()` L60–71) and `shopCredentials.paytm` (Paytm adapter `creds()` L100–105). So the encrypted JSON shape is `{ phonepe?: PhonePeCredentials, paytm?: PaytmCredentials }` — the registry routes by `shop.paymentProvider` to pick which key to read.
+
+**4. Existing APIs — save/update/test payment credentials?**
+- `PATCH /api/v1/shops/me` (route.ts L67): the `PatchShopSchema` (L23–38) allows `name, upiId, pricingConfig, address, phone, description, businessHours, logoUrl, upiQrStorageKey, servicesJson, paymentPhone, paymentInstructions, cashOnPickup`. **`paymentCredentials` and `paymentProvider` are NOT in the schema** — they cannot be set through this endpoint. The `toRow()` encryption path exists in the repo, but no API exposes it.
+- `GET /api/v1/shops/me` (L40): returns `paymentProvider` but NOT `paymentCredentials` (correctly stripped — creds never sent to client).
+- `POST/GET /api/v1/shops/me/upi-qr` (upi-qr/route.ts): only the QR image upload/fetch — multipart/form-data or JSON base64 → storage key on `Shop.upiQrStorageKey`. Pattern reference for authenticated, storage-backed shop settings routes.
+- **NO routes exist** for: saving PhonePe/Paytm credentials, validating them, testing the connection (sandbox ping), activating/deactivating a provider, or rotating the encryption key.
+
+**5. Adapter credentials — exact PhonePe v1/v2 + Paytm shapes**
+
+PhonePe (`packages/adapters/src/payment/phonepe.adapter.ts` L28–39):
+```ts
+interface PhonePeCredentials {
+  // v1 (Standard API)
+  saltKey?: string;
+  saltIndex?: string;
+  // v2 (Business API — OAuth2)
+  clientId?: string;
+  clientSecret?: string;
+  clientVersion?: string | number;
+  // Common
+  merchantId: string;        // REQUIRED in both modes
+  env?: 'prod' | 'sandbox';
+}
+```
+- Auto-detection: `isV2(c) = !!(c.clientId && c.clientSecret)` (L47). If `clientId` present → v2 (OAuth2 `/oauth/v1/token` → Bearer → `/pg/v2/pay|status|refund`). Else → v1 (UPIPay SDK → `/pg/v1/pay|status|refund`).
+- v1 required: `saltKey + saltIndex + merchantId`. v2 required: `clientId + clientSecret + merchantId` (`clientVersion` defaults to `'1'`).
+- Webhook signature verification: for v1 uses UPIPay `verifyWebhook`; for v2 (no saltKey) falls back to base64-decoding the body and trusting HTTPS transport + the post-webhook `verifyPayment` status-API call (defense-in-depth).
+- Per-process OAuth2 token cache keyed by `clientId`, refreshes 60s before expiry (L94–129).
+
+Paytm (`packages/adapters/src/payment/paytm.adapter.ts` L14–22):
+```ts
+interface PaytmCredentials {
+  merchantId: string;        // REQUIRED
+  merchantKey: string;       // REQUIRED
+  website: string;           // 'WEBSTAGING' (sandbox) or 'DEFAULT' (prod)
+  industryType?: string;
+  channelId?: string;
+  env?: 'prod' | 'sandbox';
+}
+```
+- All real API calls go through UPIPay (`makeClient()` L110–121 — constructs `new UPIPay({ provider:'paytm', environment, credentials:{merchantId,merchantKey,website} })`).
+- Webhook: uses the HAND-ROLLED `verifyPaytmChecksum` (AES-128-CBC over `sha256(paramsString + '|' + merchantKey)`, IV = `Buffer.from('0123456789012345')` L29) — NOT UPIPay's `verifyWebhook` (deliberately preserved because the dev simulate route + tests use the same IV; UPIPay uses a different IV `@@@@&&&&####$$$$`). Flagged as cleanup item in the prior audit.
+
+**6. Auth pattern — how `withAuth` works + supported roles**
+- `withAuth(handler, allowedRoles?)` (with-auth.ts L52): wraps a Next.js route handler.
+  - Extracts `Bearer <token>` from `authorization` header.
+  - `container.auth.verifyAccessToken(token)` → JWT claims (HS256).
+  - If `allowedRoles` is passed and `claims.role` isn't in it → `ForbiddenError` (403).
+  - Loads the user from DB (`repos.users.findById(claims.sub)`); if missing → 401. If `claims.shopId !== user.shopId` → 401 (stale-token guard).
+  - Builds `Principal { userId, shopId, role, email, user }` and passes to handler.
+  - Wraps the call in `timed()` which: generates/propagates `X-Request-Id`, times + logs the request, catches thrown errors → `fail(toAppError(cause))` envelope.
+- Supported roles: `UserRole` from `@platform/core/domain` (per the User model `role` defaults to `'owner'`; admin routes use `'admin'`). The shopkeeper settings routes call `withAuth(handler)` with NO `allowedRoles` arg — any authenticated user (owner or admin) can call. Owner-scoped by `principal.shopId`.
+- Sibling wrappers: `withDeviceAuth` (print-agent SHA-256 token), `withRateLimit` (public, rate-limited), `withHandle` (try/catch → envelope, no auth).
+
+**7. Webhook URL paths**
+- PhonePe: **`POST /api/v1/payments/phonepe/webhook`** (route file `src/app/api/v1/payments/phonepe/webhook/route.ts`). Expects `X-VERIFY` header, raw body. Returns `text/plain` body `"OK"` on success.
+- Paytm: **`POST /api/v1/payments/paytm/callback`** (route file `src/app/api/v1/payments/paytm/callback/route.ts`). Form-urlencoded body with `CHECKSUMHASH`. Returns `text/html` page (NOT JSON) — success/failure rendered to the customer's browser.
+- ⚠️ **BUG FOUND**: `paytm.adapter.ts` L161 sets `callbackUrl = ${base}/api/v1/payments/paytm/webhook` — but the actual route is `/api/v1/payments/paytm/callback`. The Paytm checkout flow tells Paytm to POST to a non-existent path. (PhonePe adapter L167 correctly uses `/api/v1/payments/phonepe/webhook`.)
+- Dev simulate routes: `POST /api/v1/payments/dev/phonepe/simulate` + `POST /api/v1/payments/dev/paytm/simulate` (gated by `requireDev()`).
+
+**8. Audit logging — `repos.audit.log` shape**
+- Signature (`audit-log.repository.ts` L18–42):
+```ts
+repos.audit.log({
+  shopId?: string | null;      // null for cross-shop/webhook-received events
+  userId?: string | null;      // null for system/webhook events
+  action: string;              // e.g. 'shop.update', 'webhook.phonepe.paid'
+  entityType: string;          // e.g. 'shop', 'order', 'payment'
+  entityId: string;            // e.g. shop.id, order.id, 'pending'
+  metadata?: Record<string, unknown>;  // JSON-stringified at rest
+  ip?: string | null;          // from x-forwarded-for
+}): Promise<void>
+```
+- NEVER throws — wraps `insertOne` in try/catch and swallows errors (audit must never break the request flow).
+- Stored in `AuditLog` table: `id, shopId, userId, action, entityType, entityId, metadata (JSON string), ip, createdAt`. Indexed on `(shopId, createdAt)`.
+- Auto-pruned: `recoverStaleJobsOnStartup()` (container.ts L329) deletes audit logs older than 30 days on first API request.
+- Existing patterns in the codebase: `'shop.update'` with `metadata: { fields: [...] }`; `'shop.upi-qr.upload'` with `metadata: { storageKey, mimeType, sizeBytes }`; `'webhook.{provider}.received|.failed|.paid'` with various metadata. The new payment-settings endpoints should follow: `'shop.payment_credentials.save'`, `'shop.payment_credentials.test'`, `'shop.payment_provider.activate'` etc.
+
+### What's missing for the payment settings feature (prioritised)
+
+**P0 — required to ship the feature at all:**
+1. **New API route: `PUT /api/v1/shops/me/payment-credentials`** (or extend `PATCH /shops/me` schema). Body: `{ provider: 'phonepe'|'paytm', credentials: PhonePeCredentials | PaytmCredentials, env: 'sandbox'|'prod', activate?: boolean }`. Must:
+   - Validate per-provider (zod schema mirroring the adapter `creds()` guards — `merchantId` required for both; v1 needs `saltKey+saltIndex`; v2 needs `clientId+clientSecret`; Paytm needs `merchantId+merchantKey+website`).
+   - Encrypt via `repos.shops.update(id, { paymentCredentials: { phonepe: …, paytm: … } })` — the repo already encrypts.
+   - If `activate: true`, also set `paymentProvider` on the shop.
+   - Audit-log `'shop.payment_credentials.save'` with `metadata: { provider, env, fields: [...redacted] }` — NEVER log plaintext values.
+   - Return `{ ok: true, provider, env, hasCredentials: true }` (NEVER echo back the secrets).
+2. **New API route: `POST /api/v1/shops/me/payment-credentials/test`** — pings the PSP sandbox with the (saved or supplied) credentials. For PhonePe v1/v2: call `adapter.verifyPayment` with a throwaway merchantOrderId and expect a clean 404/not-found response (proves auth works). For Paytm: same. Returns `{ ok, provider, env, latencyMs?, error? }`.
+3. **Settings page — add a "Payment provider" sub-tab or section inside the `payment` tab** with:
+   - Provider picker (None/UPI-only/PhonePe v1/PhonePe v2/Paytm).
+   - Conditional credential forms (render the right fields based on selected provider+version).
+   - Env toggle (sandbox/prod).
+   - "Test connection" button → calls the test API.
+   - "Save & activate" button → calls the save API.
+   - Status badge showing the currently-active provider + last-tested-at.
+   - NEVER pre-fill secret fields from the API (the GET route already correctly omits `paymentCredentials`). Show "•••••••• (saved)" placeholders instead.
+
+**P1 — quality:**
+4. **Fix the Paytm callbackUrl bug** (paytm.adapter.ts L161) — change `/api/v1/payments/paytm/webhook` → `/api/v1/payments/paytm/callback`. Otherwise the entire Paytm production flow is broken (Paytm POSTs to a 404).
+5. **Add a `lastValidatedAt` + `lastValidationError` field** to `Shop` (or a separate `PaymentProviderConfig` model) so the settings UI can show "Last verified 2h ago" without re-testing.
+6. **Audit-log redaction helper** — centralise the `{ fields: ['merchantId','saltKey',...] }` pattern so future cred-touching routes can't accidentally log a secret value.
+7. **Key rotation endpoint** — `needsReencryption()` already exists; add a `POST /api/v1/admin/shops/[id]/reencrypt` route that decrypts with the old key + re-encrypts with the current key. Currently impossible to rotate.
+
+**P2 — cleanup:**
+8. **Remove the duplicate PAYMENT_ENCRYPTION_KEY entries** in `.env.example` (L56 + L117 — same var documented twice with different generation commands: `openssl rand 32 | base64` vs `openssl rand -hex 32` — the latter is WRONG, produces 64 hex chars = 32 bytes only when base64'd… actually `openssl rand -hex 32` produces 64 hex characters which is 32 bytes of entropy but base64-decoded length would be wrong). Use ONLY `openssl rand 32 | base64`.
+9. **Move the per-shop `PHONEPE_VERIFY_PATH` env override** out of process.env (currently read at request-time in the adapter) — make it a per-shop credential field if needed.
+10. **Switch Paytm webhook verification to UPIPay's `verifyWebhook`** (the official `@@@@&&&&####$$$$` IV algorithm) — requires also switching the dev simulate route's `generatePaytmChecksum` to the official algorithm. Eliminates the hand-rolled crypto path entirely.
+
+---
+
+**Task ID:** build-payment-ui
+**Agent:** frontend-developer
+**Scope:** Add Payment Provider Management section to the top of the `payment` tab on `/shop/settings`.
+
+## Files changed
+
+- **NEW** `src/components/portal/payment-provider-settings.tsx` — self-contained client component (~730 lines).
+- **EDIT** `src/app/shop/settings/page.tsx`:
+  - Imported `PaymentProviderSettings` (after `@platform/core/domain` import, L55).
+  - Rendered `<PaymentProviderSettings />` at the TOP of `<TabsContent value="payment">` (L893–895), BEFORE the existing UPI fields Card.
+
+## API contract consumed (all already implemented by prior backend task)
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/v1/shops/me/payment-credentials` | Load masked status on mount + after each mutation |
+| PUT | `/api/v1/shops/me/payment-credentials` | Save credentials (per-provider + auth-version) |
+| POST | `/api/v1/shops/me/payment-credentials/test` | Test connection against the SAVED creds |
+| POST | `/api/v1/shops/me/payment-credentials/activate` | Activate a connected provider |
+| DELETE | `/api/v1/shops/me/payment-credentials?provider=X` | Disconnect (auto-fallback to `googlepay` if was active) |
+
+## UX summary
+
+- On mount: `GET` → masked status; skeleton cards while loading; amber-bordered retry card on error.
+- Two provider cards (PhonePe Business + Paytm Business) with: Active badge (amber), Connected/Not connected, auth-version badge (`v2 · OAuth2` / `v1 · Standard` / `Standard`), env badge (Sandbox / Production), masked identifiers.
+- Expandable credential forms: PhonePe has a v1/v2 selector; v2 needs Client ID/Secret/Version/Merchant ID/Env; v1 needs Merchant ID/Salt Key/Salt Index/Env; Paytm needs Merchant ID/Merchant Key/Website/Env (Website auto-suggests `WEBSTAGING`/`DEFAULT` when env toggles).
+- Form actions: `Test connection` (disabled until saved), `Save`, `Save & Activate` (amber primary). All show spinners when busy.
+- Inline test-result banner (green success with latency / rose failure with reason) + sonner toast.
+- Disconnect uses an `AlertDialog` confirmation; warns about the fallback to manual UPI if the provider was active.
+- Webhook configuration card: absolute URLs (`window.location.origin` + relative path) for both providers, each with a Copy button → `navigator.clipboard.writeText` + sonner toast.
+- Security notice card (amber): AES-256-GCM encryption blurb, "PrintShop will never ask for UPI PIN/OTP/bank password/payment-app password" warning, note that secret fields are never pre-filled.
+- Onboarding guides: native `<details>`/`<summary>` step-by-step for PhonePe Business + Paytm Business dashboards (external links rel=noopener noreferrer).
+
+## Design / code-quality decisions
+
+- **Self-contained**: zero shared state with the parent settings page; fetches its own status on mount.
+- **Secrets never pre-filled**: all form drafts start empty (`emptyV2`/`emptyV1`/`emptyPaytm`); placeholder `••••••••••••`; matches API which requires all fields on PUT (Zod `.min(1)`).
+- **amber-600 accent** throughout (primary buttons, Active badge, card title icons, security card border, onboarding summary) — matches the rest of the settings page.
+- **Mobile-responsive**: `grid sm:grid-cols-2` for forms, `flex-col sm:flex-row` for card headers, input heights `h-11 sm:h-9`, ≥44px tap targets.
+- **sonner toasts** for every success/failure (`<Toaster />` already mounted in `src/app/layout.tsx`).
+- **useApiClient()** hook (shared AuthContext) → benefits from auto 401-refresh.
+- **No new dependencies** — only existing shadcn/ui components + lucide-react icons.
+
+## Verifications
+
+- `bunx tsc --noEmit` → **0 errors**.
+- `bun run lint` → **0 warnings** (exit 0).
+- `bunx vitest run` → **218/218 pass** (21 test files).
+- `dev.log` shows healthy `GET / 200` responses; no compile errors.
+
+## User impact
+
+Before this change, the `payment` tab only had manual UPI fields (UPI ID, payment phone, instructions, cash-on-pickup). Now the shopkeeper can connect PhonePe Business (v1 or v2) or Paytm Business directly, test the connection, activate one provider at a time (replacing the manual "send screenshot to WhatsApp" verification loop for new checkouts), copy webhook URLs, and follow inline onboarding instructions — all without leaving `/shop/settings#payment`.
