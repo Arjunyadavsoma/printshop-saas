@@ -158,7 +158,7 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
 
     try {
       const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';
-      const callbackUrl = `${base}/api/v1/payments/paytm/webhook`;
+      const callbackUrl = `${base}/api/v1/payments/paytm/callback`;
       const redirectUrl = `${base}/orders/${input.orderId}?provider=paytm`;
 
       const response = await client.createPayment({

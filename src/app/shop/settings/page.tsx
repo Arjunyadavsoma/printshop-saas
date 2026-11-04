@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
+import { PaymentProviderSettings } from '@/components/portal/payment-provider-settings';
 
 interface ShopInfo {
   id: string;
@@ -890,6 +891,8 @@ export default function ShopSettingsPage() {
 
         {/* ── Payment tab ── */}
         <TabsContent value="payment">
+          {/* Payment Provider Management (PhonePe / Paytm) — must be at the TOP of the tab. */}
+          <PaymentProviderSettings />
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
