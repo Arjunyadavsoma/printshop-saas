@@ -92,9 +92,9 @@ describe('PhonePe webhook — real X-VERIFY verification', () => {
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 50000, provider: 'phonepe' });
 
     const txnId = 'TXN' + Date.now();
-    const payload = { data: { merchantTransactionId: orderId, transactionId: txnId, amount: 50000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: txnId }, responseCode: 'PAYMENT_SUCCESS' } };
+    const payload = { code: 'PAYMENT_SUCCESS', data: { merchantTransactionId: orderId, transactionId: txnId, amount: 50000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: txnId } } };
     const base64Body = btoa(JSON.stringify(payload));
-    const xVerify = (await sha256Hex(base64Body + '/pg/v1/status' + SALT_KEY)) + '###1';
+    const xVerify = (await sha256Hex(base64Body + SALT_KEY)) + '###1';
 
     const result = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/api/v1/payments/phonepe/webhook', ip: null });
     expect(result.statusCode).toBe(200);
@@ -110,10 +110,10 @@ describe('PhonePe webhook — real X-VERIFY verification', () => {
     const orderId = await makeOrder(30000);
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 30000, provider: 'phonepe' });
 
-    const payload = { data: { merchantTransactionId: orderId, transactionId: 'T1', amount: 30000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: 'T1' } } };
+    const payload = { code: 'PAYMENT_SUCCESS', data: { merchantTransactionId: orderId, transactionId: 'T1', amount: 30000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: 'T1' } } };
     const base64Body = btoa(JSON.stringify(payload));
     // Wrong salt key → signature won't match.
-    const xVerify = (await sha256Hex(base64Body + '/pg/v1/status' + 'WRONG-SALT')) + '###1';
+    const xVerify = (await sha256Hex(base64Body + 'WRONG-SALT')) + '###1';
 
     const result = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/api/v1/payments/phonepe/webhook', ip: null });
     expect(result.statusCode).toBe(401);
@@ -128,9 +128,9 @@ describe('PhonePe webhook — real X-VERIFY verification', () => {
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 20000, provider: 'phonepe' });
 
     const txnId = 'IDEMP' + Date.now();
-    const payload = { data: { merchantTransactionId: orderId, transactionId: txnId, amount: 20000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: txnId } } };
+    const payload = { code: 'PAYMENT_SUCCESS', data: { merchantTransactionId: orderId, transactionId: txnId, amount: 20000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: txnId } } };
     const base64Body = btoa(JSON.stringify(payload));
-    const xVerify = (await sha256Hex(base64Body + '/pg/v1/status' + SALT_KEY)) + '###1';
+    const xVerify = (await sha256Hex(base64Body + SALT_KEY)) + '###1';
 
     const r1 = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/x', ip: null });
     const r2 = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/x', ip: null });
@@ -143,9 +143,9 @@ describe('PhonePe webhook — real X-VERIFY verification', () => {
   it('rejects a wrong salt index', async () => {
     const orderId = await makeOrder(10000);
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 10000, provider: 'phonepe' });
-    const payload = { data: { merchantTransactionId: orderId, transactionId: 'X', amount: 10000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: 'X' } } };
+    const payload = { code: 'PAYMENT_SUCCESS', data: { merchantTransactionId: orderId, transactionId: 'X', amount: 10000, state: 'COMPLETED', paymentInstrument: { type: 'UPI', utr: 'X' } } };
     const base64Body = btoa(JSON.stringify(payload));
-    const xVerify = (await sha256Hex(base64Body + '/pg/v1/status' + SALT_KEY)) + '###99';
+    const xVerify = (await sha256Hex(base64Body + SALT_KEY)) + '###99';
     const r = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/x', ip: null });
     expect(r.statusCode).toBe(401);
   });
@@ -153,9 +153,9 @@ describe('PhonePe webhook — real X-VERIFY verification', () => {
   it('leaves order in awaiting_payment when state=FAILED', async () => {
     const orderId = await makeOrder(15000);
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 15000, provider: 'phonepe' });
-    const payload = { data: { merchantTransactionId: orderId, transactionId: 'F1', amount: 15000, state: 'FAILED', paymentInstrument: { type: 'UPI', utr: 'F1' } } };
+    const payload = { code: 'PAYMENT_ERROR', data: { merchantTransactionId: orderId, transactionId: 'F1', amount: 15000, state: 'FAILED', paymentInstrument: { type: 'UPI', utr: 'F1' } } };
     const base64Body = btoa(JSON.stringify(payload));
-    const xVerify = (await sha256Hex(base64Body + '/pg/v1/status' + SALT_KEY)) + '###1';
+    const xVerify = (await sha256Hex(base64Body + SALT_KEY)) + '###1';
     const r = await processWebhook({ provider: 'phonepe', rawBody: base64Body, headers: { 'x-verify': xVerify }, path: '/x', ip: null });
     expect(r.applied).toBe(false);
     expect(r.summary).toContain('not completed');

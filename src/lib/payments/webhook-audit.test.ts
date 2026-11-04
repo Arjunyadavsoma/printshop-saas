@@ -118,6 +118,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
     const txnId = 'TXN-' + Date.now();
     const utr = 'UTR-' + Date.now();
     const payload = {
+      code: state === 'COMPLETED' ? 'PAYMENT_SUCCESS' : 'PAYMENT_ERROR',
       data: {
         merchantId: 'AUDITMID',
         merchantTransactionId: orderId, // matches the session key
@@ -125,13 +126,13 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
         amount: 500,
         state,
         paymentInstrument: { type: 'UPI', utr },
-        responseCode: state === 'COMPLETED' ? 'PAYMENT_SUCCESS' : 'PAYMENT_ERROR',
       },
     };
     const base64Body = btoa(JSON.stringify(payload));
-    // sha256(base64Body + verifyPath + saltKey)###saltIndex
-    const verifyPath = '/pg/v1/status';
-    const mac = createHash('sha256').update(base64Body + verifyPath + SALT_KEY).digest('hex');
+    // PhonePe callback X-VERIFY = sha256(base64Body + saltKey)###saltIndex
+    // (NO path — the callback signature doesn't include /pg/v1/status; only
+    // the status API does. UPIPay's verifyWebhook uses the correct format.)
+    const mac = createHash('sha256').update(base64Body + SALT_KEY).digest('hex');
     return { rawBody: base64Body, xVerify: `${mac}###1`, txnId, utr };
   }
 
