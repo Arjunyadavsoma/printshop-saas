@@ -5151,3 +5151,295 @@ Files reviewed:
 7. **No fix needed** — PhonePe v1 + Paytm status-API approach is correct (TEST-005); cross-tenant access via `getByOwner(principal.userId)` is sound (TENANT-001, TENANT-002, TENANT-006).
 
 No code changes were made — audit only, per task instructions.
+
+---
+Task ID: ux-audit
+Agent: general-purpose (UX auditor)
+Task: Audit UX of all 15 page files in src/app/{page,shops/[slug],orders/[id],shop/*,admin/*} across usability / mobile / a11y / conversion / trust / consistency.
+
+Files reviewed (line counts in parens):
+- src/app/page.tsx (326) — customer landing/discovery
+- src/app/shops/[slug]/page.tsx (399) — public shop page
+- src/app/orders/[id]/page.tsx (1578) — customer order flow (upload→configure→checkout→pay→track)
+- src/app/shop/register/page.tsx (714) — shopkeeper registration wizard
+- src/app/shop/login/page.tsx (223) — shopkeeper login
+- src/app/shop/dashboard/page.tsx (888) — shopkeeper dashboard
+- src/app/shop/orders/page.tsx (1051) — shop orders list w/ batch print
+- src/app/shop/orders/[id]/page.tsx (1259) — shop order detail
+- src/app/shop/printer/page.tsx (1140) — printer setup (PrintLatch + Native)
+- src/app/shop/settings/page.tsx (1106) — settings (5 tabs: profile/hours/payment/upi-qr/shop-qr)
+- src/app/shop/reports/page.tsx (201) — daily reconciliation report
+- src/app/admin/login/page.tsx (159) — admin login (?k= access-key gated)
+- src/app/admin/page.tsx (458) — admin dashboard
+- src/app/admin/orders/page.tsx (317) — admin global orders
+- src/app/admin/shops/page.tsx (294) — admin shops directory
+Plus: src/app/shop/layout.tsx, src/app/admin/layout.tsx, src/app/globals.css, src/components/portal/{status-badge,admin-types,pdf-preview,payment-provider-settings,use-api-client,auth-context}.tsx
+
+## A. Per-page scorecard (1–10 average of usability/mobile/a11y/conversion/trust/consistency)
+
+| # | Page | User | Purpose (1 line) | Score | Loading | Empty | Error | Mobile | Kbd nav |
+|---|------|------|------------------|-------|---------|-------|-------|--------|---------|
+| 1 | / | customer | Discover shops, browse pricing | 7.5 | Skeleton×6 ✓ | ✓ two empty states | ✓ Try-again card | ✓ responsive grid | ✓ ShopCard role=button tabIndex=0 Enter/Space |
+| 2 | /shops/[slug] | customer | View shop + start order | 7.8 | ShopSkeleton ✓ | n/a | ✓ fatal+retry | ✓ 1.4fr/1fr sticky | ✓ Link focus rings |
+| 3 | /orders/[id] | customer | 5-step order flow | **5.4** | Skeleton ✓ | ✓ upload empty | ✓ per-step errors | ✓ min-h-[44px] | ⚠ no focus trap in AlertDialog |
+| 4 | /shop/register | shopkeeper | 4-step wizard | 7.2 | Progress+Skeleton ✓ | n/a | ✓ inline errors | ✓ 2-col→1-col | ✓ Field labels htmlFor |
+| 5 | /shop/login | shopkeeper | Email+password + demo accounts | 7.0 | spinner in button ✓ | n/a | ✓ Alert role="alert" | ✓ max-w-md | ✓ form onSubmit |
+| 6 | /shop/dashboard | shopkeeper | Today's overview, queues, agents | 7.6 | Skeleton grid ✓ | ✓ "No orders yet" | ✓ retry card | ✓ responsive tiles | ✓ buttons min-h-44 |
+| 7 | /shop/orders | shopkeeper | Orders list + batch print | 7.0 | Skeleton×10 ✓ | ✓ "No orders match" | ✓ error card | ✓ horizontal scroll table | ✓ pagination kbd |
+| 8 | /shop/orders/[id] | shopkeeper | Order detail + status actions | 7.3 | Skeleton ✓ | ✓ "Order not found" + "No files" | ✓ retry | ✓ AlertDialogs min-h-44 | ✓ AlertDialog focus mgmt |
+| 9 | /shop/printer | shopkeeper | Engine picker + setup guides | 7.0 | inline ✓ | n/a | ⚠ inline only (no error boundary) | ✓ grid sm:2 | ✓ focus:ring on buttons |
+| 10 | /shop/settings | shopkeeper | 5-tab settings | 6.8 | Skeleton ✓ | n/a | ✓ per-tab errors | ✓ tabs scroll on mobile | ⚠ tabs not keyboard-arrowable |
+| 11 | /shop/reports | shopkeeper | Daily report + CSV export | **5.8** | spinner only (no skeleton) | ✓ "No orders on this date" row | ✓ error card | ⚠ uses native <input type=date> + raw <table> not shadcn | ✓ date input native |
+| 12 | /admin/login | admin | Hidden admin login (?k=key) | 7.5 | spinner ✓ | n/a | ✓ Alert destructive | ✓ max-w-md dark | ✓ form onSubmit |
+| 13 | /admin | admin | Platform KPIs + recent orders | 7.6 | Skeleton×8 ✓ | ✓ "No orders yet" | ✓ error card | ✓ KPI grid 2/3/4-col | ✓ link/tab nav |
+| 14 | /admin/orders | admin | Global orders explorer | 7.0 | Skeleton×10 ✓ | ✓ "No orders match" | ✓ error card | ✓ horizontal scroll | ✓ pagination |
+| 15 | /admin/shops | admin | Shops directory | 6.6 | Skeleton×8 ✓ | ✓ "No shops match" | ✓ error card | ✓ horizontal scroll | ⚠ row has 6 nested <Link> cells, no row-level keyboard activation |
+
+## B. Top 20 prioritized issues (sorted by severity)
+
+### CRITICAL
+
+**UX-001 — Customer order Pay step shows literal placeholder text instead of UPI ID**
+- Page: /orders/[id] (PayStep, line 1228)
+- Severity: CRITICAL
+- Issue: `<p>UPI ID: <code className="font-mono">{props.checkout ? '<in checkout>' : '—'}</code></p>` — the UPI ID string is never rendered; customers using the manual-payment fallback have no idea what UPI ID to send money to.
+- Fix: Render `shop?.upiId` (already in scope at the page level) — `<code>{shop?.upiId ?? '—'}</code>`.
+
+**UX-002 — Plaintext password persisted to localStorage in registration wizard**
+- Page: /shop/register (lines 138–143, STORAGE_KEY='printshop_register_wizard')
+- Severity: CRITICAL (security + trust)
+- Issue: `setState` includes `account.password` and `account.passwordConfirm`; the entire state is `JSON.stringify`'d to localStorage on every keystroke. A refresh restores the password. Anyone with disk/DevTools access (shared device, library PC, browser extension) can read it.
+- Fix: Strip `password` + `passwordConfirm` before persisting, or use sessionStorage and clear on step advance, or only persist `email/name/phone` + the `business` step.
+
+**UX-003 — customerToken leaked as visible header badge when no tokenNumber**
+- Page: /orders/[id] (lines 639–641)
+- Severity: CRITICAL (security/trust)
+- Issue: `{order?.customerToken && !order?.tokenNumber && (<Badge variant="secondary" className="ml-1 font-mono">{order.customerToken}</Badge>)}` — the customerToken is the per-order bearer secret (X-Order-Token). Showing it in plaintext in the page header leaks the access credential to anyone glancing at the screen / screenshot / browser tab title.
+- Fix: Remove the badge entirely (the truncated orderId at line 635 is enough context), or show only `tokenNumber` once assigned.
+
+**UX-004 — "Demo payment — no real money is charged" notice shown unconditionally**
+- Page: /orders/[id] (lines 673–685, shown for all steps except track)
+- Severity: CRITICAL (conversion + trust)
+- Issue: The amber notice says "This portal is a sandbox. The Pay step simulates a UPI webhook using the dev PhonePe simulator. No money leaves your account." It is NOT gated on NODE_ENV === 'development'. In production, every customer sees this and concludes the shop is fake → no payment.
+- Fix: Gate on `process.env.NODE_ENV === 'development'` (Next.js inlines this at build time so the production bundle drops it).
+
+### HIGH
+
+**UX-005 — Track step auto-poll interval mismatch with copy**
+- Page: /orders/[id] (TrackStep line 1290 says "every 2.5 seconds"; actual interval at line 601 is 30_000 ms)
+- Severity: HIGH (trust + conversion)
+- Issue: Customer reads "Refreshed automatically every 2.5 seconds while printing" but the page only polls every 30 s. A customer waiting at the counter sees stale "Printing now" for up to 30 s after the shopkeeper marks ready → customer leaves the counter thinking it's stuck.
+- Fix: Either bump poll to 2.5 s while status === 'printing' (with exponential backoff after ready/collected), OR fix the copy to "Refreshed every 30 seconds". The former is correct.
+
+**UX-006 — File card shows ₹0 while customer edits print settings**
+- Page: /orders/[id] (ConfigureStep line 1000)
+- Severity: HIGH (conversion)
+- Issue: `{formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}` — the moment a user changes copies/colour/duplex, the per-file price flips to "₹0.00" until the server PATCH returns. Customers think their edit cleared the price → abandon.
+- Fix: Show a `Loader2 size-3 animate-spin` + "Updating…" instead of `0`, or show the optimistic client-side estimate from `clientEstimate(f)`.
+
+**UX-007 — quickReady on dashboard has no toast feedback (verify/reject do)**
+- Page: /shop/dashboard (lines 328–346, no toast on success)
+- Severity: HIGH (usability + trust)
+- Issue: `quickVerify` shows a `toast.success('✓ Payment verified', …)` (line 309) but `quickReady` (line 328) just calls `load(true)` silently. Shopkeeper clicks "Mark ready" → button disabled briefly → order disappears from queue with no confirmation that the click landed.
+- Fix: Add `toast.success('Marked ready', { description: 'Order ready for pickup. Customer tracking page updated.' })` to quickReady, mirroring quickVerify.
+
+**UX-008 — Admin pages do not auto-refresh; shop pages do**
+- Pages: /admin, /admin/orders, /admin/shops (no setInterval); /shop/dashboard polls every 15 s, /shop/orders every 20 s, /shop/orders/[id] every 5 s
+- Severity: HIGH (consistency + trust)
+- Issue: An admin viewing /admin/orders sees a "awaiting_payment" order; a webhook verifies payment 2 s later; the admin tab shows stale data until manual Refresh. Shopkeeper tabs refresh; admin tabs don't.
+- Fix: Add a 30 s `setInterval(load, 30_000)` to /admin, /admin/orders, /admin/shops (slower than shop pages since admin views are heavier).
+
+**UX-009 — Admin shops table row has 6 separate <Link> cells, no row-level keyboard activation**
+- Page: /admin/shops (lines 204–254)
+- Severity: HIGH (a11y)
+- Issue: Each cell wraps its content in a separate `<Link href="/admin/shops/${s.id}">` (6 links per row). The row has `cursor-pointer hover:bg-emerald-50/40` (looks clickable) but a screen-reader / Tab user must Tab 6 times per row, and there's no Enter-to-open on the row itself.
+- Fix: Make the row a single `<Link>` (wrap `<TableRow>` in `<Link asChild>` or use `onClick` + `role="button"` + `tabIndex=0` + onKeyDown).
+
+**UX-010 — Reports page uses native <table> + <input type="date"> instead of shadcn Table/DatePicker**
+- Page: /shop/reports (lines 91, 142–167)
+- Severity: HIGH (consistency)
+- Issue: Every other list page imports `Table/TableHeader/TableRow` from `@/components/ui/table`. Reports hand-rolls `<table className="w-full min-w-[600px]">` with mismatched typography/padding/border-radius. The date input is bare `<Input type="date" className="w-auto">` — no calendar icon, no label, no min/max.
+- Fix: Use the shadcn Table primitives; add a `<Label htmlFor="report-date">Date</Label>` + a Calendar icon prefix.
+
+### MEDIUM
+
+**UX-011 — "By Status" MetricCard renders a broken concatenated string**
+- Page: /shop/reports (line 123)
+- Severity: MEDIUM (visual)
+- Issue: `value={Object.entries(report.summary.byStatus).map(([k,v]) => \`${k}:${v}\`).join(' ')}` renders e.g. `awaiting_payment:2 paid:3 printing:1` in a card sized for a single 2-digit number, with `small` xs text. Overflows / wraps ugly.
+- Fix: Move "By Status" to its own Card with a small grid (like dashboard's Status breakdown at line 832), drop it from the MetricCard row.
+
+**UX-012 — Homepage "Customer app" link points to the current page (/)**
+- Page: / page.tsx (line 251)
+- Severity: MEDIUM (navigation clarity)
+- Issue: `<Link href="/">Customer app</Link>` in the footer — the user is already on /. The link does nothing / reloads. Confusing.
+- Fix: Remove the link, or change to "/orders" / "Browse shops" anchor.
+
+**UX-013 — Admin login dark zinc-950 page; admin portal uses zinc-50 light background**
+- Page: /admin/login (zinc-950 bg) vs /admin/layout.tsx (bg-zinc-50 with zinc-900 sidebar)
+- Severity: MEDIUM (consistency)
+- Issue: User logs in on a stark black page, then transitions to a bright white admin shell with dark sidebar. Jarring.
+- Fix: Either make /admin/login zinc-50 with a dark card (mirroring /shop/login's amber-on-white), or keep the dark login and make /admin layout consistently dark.
+
+**UX-014 — Settings page is 1106 lines / 5 tabs in a single file**
+- Page: /shop/settings (1106 lines)
+- Severity: MEDIUM (performance + maintainability)
+- Issue: Single 'use client' page renders 5 tabs (profile/hours/payment/upi-qr/shop-qr) all mounted client-side. Switching tabs doesn't unmount others if Tabs component holds them. Initial JS bundle includes all tab code.
+- Fix: Lazy-load each tab with `React.lazy(() => import('./settings/ProfileTab'))` + Suspense, OR extract to a route-based tab (/shop/settings/profile, /shop/settings/hours etc.).
+
+**UX-015 — Order detail page is 1259 lines + embeds PrintLatchButton + Activity timeline in-file**
+- Page: /shop/orders/[id] (1259 lines)
+- Severity: MEDIUM (performance + reuse)
+- Issue: PrintLatchButton, Metric, Instruction, PaymentBadge, ACTION_LABELS, ActivityEntry rendering are all in-file. The order list page also reimplements its own PaymentBadge (line 160) and the order detail reimplements its own (line 164). Two divergent badge styles for the same concept.
+- Fix: Extract `PaymentBadge`, `StatusBadge`, `PrintLatchButton`, `ActivityTimeline` into `/components/portal/`. Reuse across /shop/orders, /shop/orders/[id], /shop/dashboard.
+
+**UX-016 — Customer order flow has no toast system (shop pages use sonner)**
+- Page: /orders/[id] (no `import { toast } from 'sonner'`)
+- Severity: MEDIUM (consistency + UX feedback)
+- Issue: Upload failures, checkout errors, payment errors all show as inline cards in the relevant step. If the customer scrolls up, they may miss an error toast from a PATCH. Shop pages use sonner for transient feedback.
+- Fix: Add `<Toaster />` from sonner to the root layout (or just /orders/[id]) and emit `toast.error(msg)` alongside the inline state for upload/checkout/payment failures.
+
+**UX-017 — Heavy background polling across multiple shop tabs (5 s + 15 s + 20 s + 30 s)**
+- Pages: /shop/dashboard (15s), /shop/orders (20s), /shop/orders/[id] (5s), /orders/[id] track (30s)
+- Severity: MEDIUM (performance)
+- Issue: A shopkeeper with dashboard + orders list + 2 order detail tabs open fires ~ 4 + 3 + 12 = ~19 requests/min just from polling. Free-tier DB / PSP rate limits could be hit at 500 shops.
+- Fix: Use `document.visibilityState === 'visible'` guard in each setInterval, and pause polling when the tab is hidden. Also collapse to a single shared WebSocket/SSE channel for status updates.
+
+**UX-018 — Demo accounts visible on /shop/login even in production**
+- Page: /shop/login (lines 25–30, DEMO_ACCOUNTS array; rendered as a clickable card at lines 182–211)
+- Severity: MEDIUM (trust)
+- Issue: 4 demo shop accounts + admin account are listed with "password: demo1234" hint. In production this advertises test credentials and undermines the "0% commission, pay the shopkeeper directly" trust message.
+- Fix: Gate the entire Demo accounts card on `process.env.NODE_ENV === 'development'` (Next.js inlines this at build → production bundle drops it).
+
+### LOW
+
+**UX-019 — Polling effect deps omit load callback identity; load is recreated each render**
+- Page: /shop/dashboard (line 197: `useEffect(() => { void load(); const id = setInterval(() => void load(true), 15_000); return () => clearInterval(id); }, [])` — `load` is not in deps)
+- Severity: LOW (latent bug)
+- Issue: `load` is defined inline (not useCallback), so its identity changes every render. The effect runs once with the initial `load` closure. Mostly works because `load` only uses `api` + setState, but if `load` is ever refactored to read fresh state, the polling timer would call a stale version.
+- Fix: Wrap `load` in `useCallback([...])` and add it to the effect deps, OR keep `load` as-is but reference it via a ref (`loadRef.current = load`) inside the interval.
+
+**UX-020 — Token tracking-widest + break-words can overflow narrow mobile widths**
+- Page: /orders/[id] (line 1296: `font-mono text-3xl font-bold tracking-widest break-words`)
+- Severity: LOW (mobile layout)
+- Issue: A long token like "PRINTSHOP-AB12CD34" with `tracking-widest` can exceed viewport on 320 px screens even with `break-words`. The same pattern is used in shop order detail (line 505).
+- Fix: Drop `tracking-widest` on mobile (`sm:tracking-widest`), or reduce to `text-2xl` on `<sm`.
+
+## C. Cross-cutting findings
+
+### Design consistency
+- **Accent colors are consistent within each portal:** customer/shop = amber-600; admin = emerald-600. ✓
+- **Dark mode:** admin pages use `dark:` Tailwind variants throughout (STATUS_COLORS map at /admin/page.tsx:62 has `dark:bg-amber-950 dark:text-amber-300` etc.); shop + customer pages have NO `dark:` variants — they're light-only. The shop layout's `bg-background` could flip with `prefers-color-scheme` but globals.css has no dark theme block. Inconsistent.
+- **Typography:** card titles consistently `text-base sm:text-lg`; KPI numbers consistently `text-xl sm:text-2xl tabular-nums`. ✓
+- **Spacing:** all pages use `max-w-{4xl,5xl,6xl,7xl}` containers with `px-4 sm:px-6 py-6 sm:py-8`. ✓
+
+### Navigation clarity
+- **Shop portal sidebar** (/shop/layout.tsx): two groups (main + Settings sub-items with `#hash` deep-links). Active state computed from `pathname + hash`. ✓ Excellent.
+- **Admin sidebar** (/admin/layout.tsx): flat list (Dashboard, Shops, Orders, Analytics, Monitoring). Active state from pathname startsWith. ✓
+- **Customer pages have NO persistent nav** — just per-page header with "Back to shops" / "Home" links. Acceptable for a 3-page customer flow, but no breadcrumb on /orders/[id] showing which shop the order belongs to (only the order ID + token in the header).
+- **No "you are here" indicator on /shop/settings tabs** when navigated via sidebar hash deep-link — the sidebar item highlights but the page tab itself must be visually scanned.
+
+### Component reuse — DUPLICATED (should be shared)
+- **PaymentBadge**: defined inline in /shop/orders/page.tsx:160 AND /shop/orders/[id]/page.tsx:164 AND /shop/dashboard/page.tsx:875 (`PaymentMiniBadge`). Three divergent implementations of the same concept.
+- **StatusBadge**: shared via `@/components/portal/status-badge` for shop pages, BUT /admin/page.tsx:76, /admin/orders/page.tsx:74, /admin/orders/[id]/page.tsx:95, /admin/shops/[id]/page.tsx:70 all redefine their own StatusBadge with `STATUS_COLORS` map. 5 implementations.
+- **STATUS_COLORS map**: duplicated in 4 admin files (admin/page.tsx:62, admin/orders/page.tsx:60, admin/orders/[id]/page.tsx:67, admin/shops/[id]/page.tsx:60) — identical content.
+- **`inr()` helper** (safe INR formatter): duplicated in 4 admin files.
+- **`truncate()` helper**: duplicated in 3 admin files with different default lengths (8 vs 10).
+- **`formatDateTime()` helper**: duplicated in 3 admin files.
+- **`InfoRow` component**: defined in /admin/orders/[id]/page.tsx:110 AND /admin/shops/[id]/page.tsx:88 (slightly different shapes).
+- **isToday / withinDays / timeAgo helpers**: re-implemented in /shop/dashboard, /shop/orders, /shop/orders/[id].
+
+**Recommendation:** Extract `PaymentBadge`, `StatusBadge` (with STATUS_COLORS), `inr`, `truncate`, `formatDateTime`, `InfoRow`, `timeAgo`, `isToday` into `/components/portal/admin-types.ts` or a new `/components/portal/shared.tsx`. Saves ~400 lines across admin pages.
+
+### Performance
+- **All 15 page files are `'use client'`** — no server components. The entire customer order flow (1578 lines, imports PdfPreview which renders PDF.js) ships to the browser even on the homepage. Next.js can't RSC-split it.
+- **/shop/settings (1106 lines)** and **/shop/printer (1140 lines)** mount all sub-components client-side. Settings tabs should be lazy-loaded.
+- **PdfPreview** is imported at top of /orders/[id]/page.tsx (line 16) but only used in the ConfigureStep. Should be `const PdfPreview = lazy(() => import('@/components/portal/pdf-preview'))` wrapped in Suspense — PDF.js is ~200 KB.
+- **Polling intervals (5 s / 15 s / 20 s / 30 s) don't pause on tab-hide** — see UX-017.
+- **No Suspense boundaries** for client-side data fetching — every page shows a Skeleton until the XHR resolves. Acceptable, but server-side prefetch + RSC streaming would be faster.
+- **Re-bundled lucide-react**: each page imports ~20 named icons. Tree-shaking handles this, but the icon list across files is large; consider a single `icons.ts` barrel.
+
+## D. Per-page "has state" matrix
+
+| Page | Loading | Empty | Error | Mobile | Kbd nav |
+|------|---------|-------|-------|--------|---------|
+| Landing | ✓ Skeleton×6 | ✓ 2 states | ✓ retry | ✓ grid | ✓ role=button |
+| Shop detail | ✓ ShopSkeleton | n/a | ✓ fatal+retry | ✓ sticky sidebar | ✓ Link focus |
+| Order flow | ✓ Skeleton | ✓ upload empty | ✓ per-step | ✓ min-h-44 | ⚠ AlertDialog no focus trap |
+| Register | ✓ Progress | n/a | ✓ inline | ✓ 2col→1col | ✓ Field htmlFor |
+| Shop login | ✓ spinner | n/a | ✓ alert | ✓ max-w-md | ✓ form |
+| Dashboard | ✓ Skeleton grid | ✓ "No orders" | ✓ retry | ✓ tiles | ✓ min-h-44 |
+| Orders list | ✓ Skeleton×10 | ✓ "No match" | ✓ error card | ✓ scroll | ✓ pagination |
+| Order detail | ✓ Skeleton | ✓ 404 + no-files | ✓ retry | ✓ AlertDialogs | ✓ focus mgmt |
+| Printer | ✓ inline | n/a | ⚠ no boundary | ✓ grid | ✓ focus:ring |
+| Settings | ✓ Skeleton | n/a | ✓ per-tab | ✓ tabs scroll | ⚠ no arrow keys |
+| Reports | ⚠ spinner only | ✓ row msg | ✓ card | ⚠ raw <table> | ✓ date native |
+| Admin login | ✓ spinner | n/a | ✓ Alert | ✓ max-w-md | ✓ form |
+| Admin dash | ✓ Skeleton×8 | ✓ "No orders" | ✓ card | ✓ KPI grid | ✓ links |
+| Admin orders | ✓ Skeleton×10 | ✓ "No match" | ✓ card | ✓ scroll | ✓ pagination |
+| Admin shops | ✓ Skeleton×8 | ✓ "No match" | ✓ card | ✓ scroll | ⚠ 6 Link/row |
+
+## E. No code changes were made by this audit — findings are observational and require owner approval before patching (per audit-only scope).
+
+Recommended next actions (in priority order):
+1. (Critical) UX-001: render shop.upiId in PayStep manual fallback.
+2. (Critical) UX-002: strip password from registration wizard localStorage persistence.
+3. (Critical) UX-003: remove customerToken header badge.
+4. (Critical) UX-004: gate "Demo payment" notice on NODE_ENV==='development'.
+5. (High) UX-005: fix track poll interval or copy ("every 2.5s" vs 30 s actual).
+6. (High) UX-006: replace "₹0 while dirty" with optimistic client estimate or Updating spinner.
+7. (High) UX-007: add toast to quickReady (parity with quickVerify).
+8. (High) UX-008: add 30 s polling to /admin, /admin/orders, /admin/shops.
+9. (High) UX-009: collapse 6 <Link> cells per admin shops row → 1 row-level Link.
+10. (High) UX-010: migrate /shop/reports to shadcn Table + Label.
+11. (Medium) UX-011–018: see individual fixes above.
+12. (Low) UX-019, UX-020: see above.
+13. (Refactor) Extract duplicated PaymentBadge/StatusBadge/inr/truncate/formatDateTime into /components/portal/shared.tsx — saves ~400 lines.
+14. (Performance) Lazy-load PdfPreview in /orders/[id]; lazy-load settings tabs.
+15. (A11y) Add visible focus trap + Escape-to-close to all AlertDialogs (currently only the shadcn defaults).
+16. (A11y) Add keyboard arrow-key navigation to Settings Tabs.
+17. (Performance) Pause polling when document.visibilityState !== 'visible'.
+18. (Trust) Gate demo accounts card on /shop/login behind NODE_ENV==='development'.
+19. (Trust) Add a "Pay directly to {shopkeeper UPI}" trust badge to the PayStep above the fold.
+20. (Conversion) Add a "How this works" 3-step explainer (scan → upload → pay) to the homepage hero — currently jumps straight to shop discovery without explaining the QR-scan use case.
+
+---
+Task ID: browser-test
+Agent: browser-test (general-purpose)
+Task: Production UX audit of https://printshop-saas-three.vercel.app via agent-browser — desktop (1280px) + mobile (375px) on 5 routes, checking console errors, horizontal overflow, broken layouts, missing images, hydration errors, and failed network requests.
+
+Work Log:
+- Tool: agent-browser 0.41.1 (headless Chromium). Screenshots saved to `test-screenshots/` (9 PNGs).
+- Note: API `/api/v1/shops?limit=50` returns only ONE shop — `arjun-print-hub` (slug `arjun-print-hub`, owner email not exposed). No `quickprint`/`copycenter`/`prinithub` shops exist in the DB despite being advertised on the login page as demo accounts. This is the root cause of the auth failures below.
+- Tests run for each route: desktop snapshot (1280×800), full-page screenshot, mobile viewport 375×812 reload, JS-eval overflow scan (every element bounding-rect vs viewport), console + page-error capture, network-request status scan, `<img>` broken-load scan.
+
+Per-route findings:
+1. `/` (landing)
+   - PASS desktop + mobile. No console errors. No page errors. No failed network requests. Zero horizontal overflow at 375px (`htmlWidth=375`, `bodyScrollWidth=375`, `overflowCount=0`). Hero, search, shops list, shopkeeper/customer portal links render cleanly. API GET `/api/v1/shops?limit=50` returns 200.
+2. `/shops/arjun-print-hub` (shop detail — used in lieu of `/shops/quickprint` which does not exist)
+   - PASS desktop + mobile. Pricing table (8 rows: A4/A3/Letter/Legal × B&W/Colour) renders responsively — no horizontal overflow at 375px despite being a `<table>`. "Start order" button present. No console errors. API GET `/api/v1/shops/arjun-print-hub` returns 200.
+3. `/shop/login` (shopkeeper portal)
+   - Layout PASS desktop + mobile (no overflow). No console errors. NO hydration errors.
+   - FUNCTIONAL BUG: Demo account buttons advertise `password: demo1234` for 4 accounts (owner@quickprint.demo, owner@copycenter.demo, owner@prinithub.demo, admin@printshop.demo). Clicking a button correctly autofills email+password. Clicking "Sign in" → POST `/api/v1/auth/login` returns **401 "Invalid email or password"** for ALL FOUR demo accounts. Inline `<alert>` toast correctly displays "Invalid email or password". User is not redirected. This is a critical demo/seed data gap — the advertised demo accounts are not in the production DB.
+4. `/shop/register` (shopkeeper registration)
+   - PASS desktop + mobile (no overflow). No console errors. No hydration errors.
+   - Functional smoke test: filled step 1 (name/phone/email/password/confirm) → "Continue" button enabled → clicked → step 2 (shop name, slug, description, UPI ID, address, payment-mode buttons: UPI only / Cash only / UPI+Cash / Split pay, accept-terms switch) renders correctly. Multi-step flow works as designed.
+5. `/admin/login` (admin portal)
+   - **BUG — 404 / not-found page rendered.** Page shows heading "404". HTTP status is **200 (soft-404)** — Next.js `notFound()` rendered the default 404 page but kept the 200 status code (SEO/crawler footgun). No console errors.
+   - Probed `/admin`, `/admin/login`, `/admin/dashboard`, `/admin/signin` — ALL return the same 404 page. The admin section does not exist in production.
+   - Compounding bug: The shop page footer "Admin portal" link and the shopkeeper login help text ("Admin accounts are redirected to /admin after login") both direct users to `/admin/login` — a dead link. Users who click "Admin portal" land on a 404.
+
+Cross-route summary:
+- Console errors: ZERO across all 5 routes.
+- Page errors: ZERO across all 5 routes.
+- Hydration errors: ZERO (no React hydration warnings).
+- Missing images: ZERO (app uses zero `<img>` tags — SVG icons + text only, so nothing to break).
+- Horizontal overflow at 375px: ZERO on every route tested (no broken mobile layouts).
+- Failed network requests: Only the 401s from `/api/v1/auth/login` caused by the broken demo accounts above. No 5xx, no aborted/CORS/timeout requests.
+- Mobile responsiveness of the pricing `<table>` on the shop page is notably well-handled.
+
+Bugs / next actions:
+- **[BLOCKER] Demo accounts not seeded in production DB.** Either seed `owner@quickprint.demo` / `owner@copycenter.demo` / `owner@prinithub.demo` / `admin@printshop.demo` with password `demo1234`, or remove the demo-account UI block from `/shop/login`. Currently every demo login fails with 401 and there is no working way to evaluate the shopkeeper dashboard without registering a new shop.
+- **[BLOCKER] Admin portal missing entirely.** `/admin/*` returns 404. Either ship the admin app or remove the "Admin portal" link from the shop page footer AND remove the "Platform Admin admin@printshop.demo" demo button AND remove the "/admin after login" help text from `/shop/login`.
+- **[MINOR] Soft-404 returns HTTP 200.** Configure Next.js to emit a real 404 status for `notFound()` routes (or add a custom `not-found.tsx` that calls `response.status(404)`), otherwise crawlers will index 404 pages as successful.
+- **[INFO] Only 1 shop (`arjun-print-hub`) in production** — fine for a demo but worth confirming the seed script ran completely.

@@ -94,7 +94,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
       servicesJson: null,
       paymentPhone: null,
       paymentInstructions: null,
-      cashOnPickup: false,
+      cashOnPickup: false, paymentMethods: "both", pamphletEnabled: false, pamphletPricePaise: 0, pamphletName: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

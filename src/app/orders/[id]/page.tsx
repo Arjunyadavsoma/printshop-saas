@@ -1128,26 +1128,11 @@ function PayStep(props: {
 }) {
   const amount = props.checkout ? formatINRFromPaise(props.checkout.amountPaise) : '—';
   const upiUri = props.checkout?.upiUri ?? null;
-  // The shopkeeper's ACTUAL uploaded QR is preferred for desktop display.
-  // The generated QR (from the upiUri) is the fallback.
   const desktopQr = props.shopkeeperQrUrl ?? props.qrDataUrl;
   const isShopkeeperQr = !!props.shopkeeperQrUrl;
 
-  // Mobile detection (client-side only — for prioritizing the UPI button).
-  // The button is ALWAYS shown; this just affects the layout emphasis.
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const check = () => setIsMobile(window.matchMedia('(max-width: 768px)').matches);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
   const launchUpi = () => {
     if (!upiUri) return;
-    // On mobile, this navigates to upi:// which the OS intercepts to launch
-    // the installed UPI app or app chooser. On desktop, it typically does
-    // nothing (no UPI app handler) — the customer falls back to the QR.
     window.location.href = upiUri;
   };
 
@@ -1156,61 +1141,63 @@ function PayStep(props: {
       <Card className="border-amber-300">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <QrCode className="h-5 w-5 text-amber-600" /> Step 4 · Pay {props.shopName ? props.shopName : 'the shopkeeper'}
+            <QrCode className="h-5 w-5 text-amber-600" /> Step 4 · Pay {props.shopName ?? 'the shopkeeper'}
           </CardTitle>
           <CardDescription>Pay directly to the shopkeeper&apos;s UPI — 0% commission.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Amount + order reference — prominent */}
+          {/* Amount — prominent */}
           <div className="rounded-lg bg-amber-50 p-4 text-center ring-1 ring-amber-200">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
             <p className="mt-1 text-3xl font-bold text-foreground sm:text-4xl lg:text-5xl">{amount}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
-            {props.checkout?.merchantOrderId && (
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                Order ref: <code className="font-mono">{props.checkout.merchantOrderId.slice(0, 8)}…</code>
-              </p>
-            )}
           </div>
 
-          {/* PRIMARY: Pay with UPI button (mobile-first) */}
-          {upiUri && (
-            <div className="space-y-2">
+          {/* TWO payment options — clearly separated */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Option 1: Pay by UPI App (button) */}
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50/40 p-5 text-center">
+              <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                <Smartphone className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">Option 1: Pay by UPI App</p>
+              <p className="text-[11px] text-muted-foreground">Opens your UPI app (GPay, PhonePe, Paytm) with the amount prefilled.</p>
               <button
                 type="button"
                 onClick={launchUpi}
-                disabled={props.busy}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-4 text-base font-semibold text-white shadow-md transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:opacity-50 sm:py-3"
+                disabled={props.busy || !upiUri}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-emerald-700 disabled:opacity-50 min-h-[44px]"
                 aria-label={`Pay ${amount} with UPI`}
               >
-                <Smartphone className="h-5 w-5" />
+                <Smartphone className="h-4 w-4" />
                 Pay {amount} with UPI
               </button>
-              <p className="text-center text-[11px] text-muted-foreground">
-                {isMobile
-                  ? 'Tapping this opens your UPI app with the amount prefilled.'
-                  : 'On mobile, this opens your UPI app. On desktop, scan the QR below with your phone.'}
-              </p>
+              {!upiUri && (
+                <p className="text-[10px] text-amber-700">UPI app payment not available — use the QR instead.</p>
+              )}
             </div>
-          )}
 
-          {/* DESKTOP FALLBACK: the shopkeeper's uploaded UPI QR */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col items-center justify-center">
+            {/* Option 2: Scan QR Code */}
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-5 text-center">
+              <div className="flex size-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <QrCode className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">Option 2: Scan QR Code</p>
+              <p className="text-[11px] text-muted-foreground">Scan with any UPI app to pay the exact amount.</p>
               {desktopQr ? (
                 <div className="rounded-lg bg-white p-2 ring-1 ring-border">
                   <img
                     src={desktopQr}
                     alt="UPI payment QR code"
-                    className="mx-auto h-40 w-40 max-w-[200px] sm:h-44 sm:w-44"
+                    className="mx-auto h-36 w-36 sm:h-40 sm:w-40"
                   />
                 </div>
               ) : props.checkout ? (
-                <div className="flex h-40 w-40 items-center justify-center rounded-lg bg-muted/60 sm:h-44 sm:w-44">
+                <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-muted/60 sm:h-40 sm:w-40">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground sm:h-44 sm:w-44">
+                <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-muted/60 text-xs text-muted-foreground sm:h-40 sm:w-40">
                   No QR
                 </div>
               )}
@@ -1230,14 +1217,14 @@ function PayStep(props: {
             )}
           </div>
 
-          {/* Payment-security notice */}
+          {/* Payment notice */}
           <div className="rounded-lg border border-amber-400 bg-amber-100 p-3 text-xs text-amber-900">
             <div className="flex items-start gap-2">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
                 <p className="font-semibold">After paying, tap &quot;I&apos;ve paid&quot; below.</p>
                 <p className="mt-0.5 text-amber-800">
-                  Your payment stays <strong>Pending</strong> until the shopkeeper confirms receipt. Launching the UPI app or returning here does <strong>not</strong> verify payment.
+                  Your payment stays <strong>Pending</strong> until verified. The shopkeeper will confirm receipt (or the system auto-verifies if a payment provider is connected).
                 </p>
               </div>
             </div>
@@ -1311,10 +1298,20 @@ function TrackStep(props: {
               {props.order.paidAt ? 'Payment Confirmed' : 'Payment Pending'}
             </p>
             {props.order.paidAt ? (
-              <p className="mt-0.5 text-[11px] text-emerald-600">
-                Confirmed {props.order.paidAt ? new Date(props.order.paidAt).toLocaleString('en-IN') : ''}
-                {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
-              </p>
+              <>
+                <p className="mt-0.5 text-[11px] text-emerald-600">
+                  Confirmed {new Date(props.order.paidAt).toLocaleString('en-IN')}
+                  {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
+                </p>
+                {/* Auto/Manual verification badge */}
+                <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  props.order.paymentTxnId?.startsWith('manual-')
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {props.order.paymentTxnId?.startsWith('manual-') ? ' Manual verification' : ' Auto-verified'}
+                </span>
+              </>
             ) : (
               <p className="mt-0.5 text-[11px] text-amber-700">
                 The shopkeeper will verify your UPI payment after you pay.
