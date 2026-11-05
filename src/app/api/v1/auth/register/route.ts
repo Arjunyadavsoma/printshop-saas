@@ -170,6 +170,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
   } catch (cause) {
+    // Log the FULL error server-side so it shows in Vercel logs — the
+    // toAppError envelope strips details from the client response.
+    console.error('[register] FAILED:', cause instanceof Error ? cause.message : String(cause));
+    if (cause instanceof Error && cause.stack) {
+      console.error('[register] stack:', cause.stack.split('\n').slice(0, 5).join('\n'));
+    }
     return fail(toAppError(cause));
   }
 }
