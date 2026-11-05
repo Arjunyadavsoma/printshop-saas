@@ -46,6 +46,24 @@ export const POST = withRateLimit<{ id: string }>(
       shopCredentials: shop.paymentCredentials,
     });
 
+    // FALLBACK: if the provider adapter didn't return a upiUri (e.g. PhonePe
+    // API failed, Paytm API failed, or the adapter returned a degraded
+    // intent without a checkoutUrl), generate a UPI deep-link URI from the
+    // shop's UPI ID so the customer can ALWAYS pay via UPI app or QR scan.
+    // This ensures the payment step always has working UPI payment options.
+    if (!intent.upiUri && shop.upiId) {
+      const upiParams = new URLSearchParams();
+      upiParams.set('pa', shop.upiId);
+      upiParams.set('pn', shop.name);
+      upiParams.set('am', (order.totalAmountPaise / 100).toFixed(2));
+      upiParams.set('cu', 'INR');
+      upiParams.set('tn', order.customerToken);
+      upiParams.set('tr', intent.merchantOrderId);
+      const fallbackUpiUri = `upi://pay?${upiParams.toString()}`;
+      intent.upiUri = fallbackUpiUri;
+      intent.qrPayload = fallbackUpiUri;
+    }
+
     // Remember the merchantOrderId → order mapping so the (later) webhook can
     // find the order + shop's credentials without trusting the payload.
     await rememberPaymentSession(intent.merchantOrderId, {
