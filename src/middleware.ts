@@ -55,15 +55,14 @@ export function middleware(_req: NextRequest) {
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
 
-  // CSP — branch on NODE_ENV. SEC-005 fix: production gets a tighter policy
-  // (no 'unsafe-eval', 'unsafe-inline' only for style which Next.js needs for
-  // CSS-in-JS injection). Dev keeps 'unsafe-eval' + 'unsafe-inline' for
-  // Turbopack HMR + React DevTools. Previously the same loose policy shipped
-  // to production, where combined with the localStorage-stored JWT (SEC-003)
-  // any HTML injection = full XSS with token theft.
+  // CSP — Next.js 16 requires 'unsafe-inline' in script-src for its inline
+  // hydration scripts (SSR data, RSC payload, etc.). Without it, the page
+  // renders blank + the browser console shows "Executing inline script
+  // violates Content Security Policy directive". We keep 'unsafe-eval' out
+  // of production (it's only needed for Turbopack HMR in dev).
   const isProduction = process.env.NODE_ENV === 'production';
   const scriptSrc = isProduction
-    ? "script-src 'self'" // prod: no unsafe-eval, no unsafe-inline
+    ? "script-src 'self' 'unsafe-inline'" // prod: unsafe-inline required by Next.js, no unsafe-eval
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'"; // dev: Turbopack HMR needs both
   const csp = [
     "default-src 'self'",
