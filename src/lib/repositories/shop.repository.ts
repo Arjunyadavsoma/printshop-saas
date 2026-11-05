@@ -27,6 +27,10 @@ interface ShopRow {
   paymentPhone: string | null;
   paymentInstructions: string | null;
   cashOnPickup: boolean | null;
+  paymentMethods: string | null;
+  pamphletEnabled: boolean | null;
+  pamphletPricePaise: number | null;
+  pamphletName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,6 +82,10 @@ function toDomain(row: ShopRow): Shop {
     paymentPhone: row.paymentPhone,
     paymentInstructions: row.paymentInstructions,
     cashOnPickup: row.cashOnPickup ?? false,
+    paymentMethods: row.paymentMethods ?? 'both',
+    pamphletEnabled: row.pamphletEnabled ?? false,
+    pamphletPricePaise: row.pamphletPricePaise ?? 0,
+    pamphletName: row.pamphletName ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

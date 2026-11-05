@@ -104,6 +104,12 @@ export interface Shop {
   paymentInstructions: string | null;
   /** New: whether the shop accepts cash on pickup. */
   cashOnPickup: boolean;
+  // Payment method customization
+  paymentMethods: string;
+  // Pamphlet / cover sheet feature
+  pamphletEnabled: boolean;
+  pamphletPricePaise: number;
+  pamphletName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

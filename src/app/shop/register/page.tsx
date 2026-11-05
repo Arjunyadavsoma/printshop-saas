@@ -6,6 +6,7 @@ import { useApiClient } from '@/components/portal/use-api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
@@ -43,6 +44,12 @@ interface BusinessStep {
   description: string;
   upiId: string;
   address: string;
+  // Payment method selection during registration
+  paymentMethods: 'upi' | 'cash' | 'both' | 'split';
+  // Pamphlet / cover sheet
+  pamphletEnabled: boolean;
+  pamphletPricePaise: number;
+  pamphletName: string;
 }
 type ServicesStep = string[];
 
@@ -56,7 +63,13 @@ const STORAGE_KEY = 'printshop_register_wizard';
 
 const DEFAULT_STATE: WizardState = {
   account: { email: '', password: '', passwordConfirm: '', phone: '', name: '' },
-  business: { shopName: '', slug: '', description: '', upiId: '', address: '' },
+  business: {
+    shopName: '', slug: '', description: '', upiId: '', address: '',
+    paymentMethods: 'both',
+    pamphletEnabled: false,
+    pamphletPricePaise: 1000, // ₹10 default
+    pamphletName: 'Pamphlet / Cover Sheet',
+  },
   services: ['bw_print', 'color_print'],
 };
 
@@ -255,6 +268,10 @@ export default function ShopRegisterPage() {
           upiId: state.business.upiId,
           address: state.business.address,
           services: state.services,
+          paymentMethods: state.business.paymentMethods,
+          pamphletEnabled: state.business.pamphletEnabled,
+          pamphletPricePaise: state.business.pamphletEnabled ? state.business.pamphletPricePaise : 0,
+          pamphletName: state.business.pamphletEnabled ? state.business.pamphletName : null,
         },
       });
       const inner = r.data?.data;
@@ -511,6 +528,72 @@ export default function ShopRegisterPage() {
                   placeholder="Shop 12, MG Road, Bengaluru"
                   disabled={submitting}
                 />
+
+                {/* Payment method selection */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Payment methods you accept</Label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {[
+                      { val: 'upi', label: 'UPI only', desc: 'Online payment via UPI app' },
+                      { val: 'cash', label: 'Cash only', desc: 'Pay at pickup' },
+                      { val: 'both', label: 'UPI + Cash', desc: 'Customer chooses' },
+                      { val: 'split', label: 'Split pay', desc: 'Partial UPI + partial cash' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setState((s) => ({ ...s, business: { ...s.business, paymentMethods: opt.val as 'upi' | 'cash' | 'both' | 'split' } }))}
+                        className={`rounded-lg border-2 p-2 text-center transition ${state.business.paymentMethods === opt.val ? 'border-amber-400 bg-amber-50' : 'border-border hover:border-amber-200'}`}
+                      >
+                        <p className="text-xs font-medium text-foreground">{opt.label}</p>
+                        <p className="text-[10px] text-muted-foreground">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
+                </div>
+
+                {/* Pamphlet / cover sheet */}
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-xs">Offer pamphlet / cover sheet</Label>
+                      <p className="text-[10px] text-muted-foreground">A folder/cover where printed pages are kept. Useful when customers print from home + pick up later.</p>
+                    </div>
+                    <Switch
+                      checked={state.business.pamphletEnabled}
+                      onCheckedChange={(checked) => setState((s) => ({ ...s, business: { ...s.business, pamphletEnabled: checked } }))}
+                    />
+                  </div>
+                  {state.business.pamphletEnabled && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px]" htmlFor="pamphlet-name">Pamphlet name</Label>
+                        <Input
+                          id="pamphlet-name"
+                          value={state.business.pamphletName}
+                          onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletName: e.target.value } }))}
+                          placeholder="Cover Sheet"
+                          className="h-11 sm:h-9"
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px]" htmlFor="pamphlet-price">Price (₹)</Label>
+                        <Input
+                          id="pamphlet-price"
+                          type="number"
+                          min={0}
+                          value={state.business.pamphletPricePaise / 100}
+                          onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletPricePaise: Math.round(parseFloat(e.target.value || '0') * 100) } }))}
+                          placeholder="10"
+                          className="h-11 sm:h-9"
+                          disabled={submitting}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

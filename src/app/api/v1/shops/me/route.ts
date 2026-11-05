@@ -35,6 +35,12 @@ const PatchShopSchema = z.object({
   paymentPhone: IndianPhoneSchema.nullable().optional(),
   paymentInstructions: z.string().max(2000).nullable().optional(),
   cashOnPickup: z.boolean().optional(),
+  // Payment method customization
+  paymentMethods: z.enum(['upi', 'cash', 'both', 'split']).optional(),
+  // Pamphlet / cover sheet feature
+  pamphletEnabled: z.boolean().optional(),
+  pamphletPricePaise: z.number().int().min(0).max(100000).optional(),
+  pamphletName: z.string().max(100).nullable().optional(),
 });
 
 export const GET = withAuth(async (_req, _ctx, principal) => {

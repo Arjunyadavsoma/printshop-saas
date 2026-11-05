@@ -80,6 +80,10 @@ export async function seedDemoData(): Promise<{
       paymentPhone: null,
       paymentInstructions: null,
       cashOnPickup: false,
+      paymentMethods: 'both',
+      pamphletEnabled: false,
+      pamphletPricePaise: 0,
+      pamphletName: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

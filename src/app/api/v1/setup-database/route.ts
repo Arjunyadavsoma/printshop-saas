@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS "Shop" (
     "description" TEXT, "businessHours" TEXT, "logoUrl" TEXT, "upiQrStorageKey" TEXT,
     "servicesJson" TEXT, "paymentPhone" TEXT, "paymentInstructions" TEXT,
     "cashOnPickup" BOOLEAN NOT NULL DEFAULT false,
+    "paymentMethods" TEXT NOT NULL DEFAULT 'both',
+    "pamphletEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "pamphletPricePaise" INTEGER NOT NULL DEFAULT 0,
+    "pamphletName" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "Shop_pkey" PRIMARY KEY ("id")
 );
@@ -156,5 +160,10 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT IF NOT EXISTS "AuditLog_userId_fkey" FOREI
 ALTER TABLE "AuditLog" ADD CONSTRAINT IF NOT EXISTS "AuditLog_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "PaymentAttempt" ADD CONSTRAINT IF NOT EXISTS "PaymentAttempt_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PaymentAttempt" ADD CONSTRAINT IF NOT EXISTS "PaymentAttempt_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "PaymentEvent" ADD CONSTRAINT IF NOT EXISTS "PaymentEvent_attemptId_fkey" FOREIGN KEY ("attemptId") REFERENCES "PaymentAttempt"("id") ON DELETE CASCADE ON UPDATE CASCADE
+ALTER TABLE "PaymentEvent" ADD CONSTRAINT IF NOT EXISTS "PaymentEvent_attemptId_fkey" FOREIGN KEY ("attemptId") REFERENCES "PaymentAttempt"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- Add new columns to existing Shop table (migration for existing databases)
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "paymentMethods" TEXT NOT NULL DEFAULT 'both';
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletPricePaise" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletName" TEXT
 `;

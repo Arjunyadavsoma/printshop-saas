@@ -30,6 +30,17 @@ model Shop {
   paymentPhone          String?
   paymentInstructions   String?
   cashOnPickup          Boolean       @default(false)
+  // ── Payment method customization ──
+  // 'upi' = UPI only, 'cash' = cash only, 'both' = UPI + cash,
+  // 'split' = split payment (partial UPI + partial cash)
+  paymentMethods        String        @default("both")
+  // ── Pamphlet / cover sheet feature ──
+  // Shopkeeper can offer a pamphlet (folder/cover) where printed pages are
+  // kept. Customer can add it during checkout (extra charge). Useful when
+  // customer prints from home + picks up later.
+  pamphletEnabled       Boolean       @default(false)
+  pamphletPricePaise    Int           @default(0)
+  pamphletName          String?
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   auditLogs             AuditLog[]

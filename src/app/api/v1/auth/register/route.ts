@@ -36,6 +36,12 @@ const RegisterSchema = z.object({
   address: z.string().max(300).default(''),
   // Services — list of strings (bw, color, scan, laminate, binding, photo, document)
   services: z.array(z.string().max(40)).max(20).default([]),
+  // Payment method customization (shopkeeper selects during registration)
+  paymentMethods: z.enum(['upi', 'cash', 'both', 'split']).default('both'),
+  // Pamphlet / cover sheet feature
+  pamphletEnabled: z.boolean().default(false),
+  pamphletPricePaise: z.number().int().min(0).max(100000).default(0),
+  pamphletName: z.string().max(100).nullable().optional(),
 });
 
 const ALLOWED_SERVICES = new Set([
@@ -127,7 +133,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       servicesJson,
       paymentPhone: null,
       paymentInstructions: null,
-      cashOnPickup: false,
+      cashOnPickup: body.paymentMethods === 'cash' || body.paymentMethods === 'both' || body.paymentMethods === 'split',
+      paymentMethods: body.paymentMethods,
+      pamphletEnabled: body.pamphletEnabled,
+      pamphletPricePaise: body.pamphletPricePaise,
+      pamphletName: body.pamphletName ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as Parameters<typeof repos.shops.create>[0]);

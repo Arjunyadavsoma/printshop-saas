@@ -46,7 +46,7 @@ function makeShop(overrides: Partial<Shop> = {}): Shop {
     servicesJson: null,
     paymentPhone: null,
     paymentInstructions: null,
-    cashOnPickup: false,
+    cashOnPickup: false, paymentMethods: "both", pamphletEnabled: false, pamphletPricePaise: 0, pamphletName: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
