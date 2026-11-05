@@ -24,6 +24,8 @@ import { ValidationError, NotFoundError } from '@platform/core/errors';
  */
 
 // ─── Zod schemas ─────────────────────────────────────────────────
+// Use authVersion as the discriminator (unique per schema: v1, v2, standard).
+// Previously used 'provider' which had duplicate 'phonepe' values → Zod error.
 
 const PhonePeV2Schema = z.object({
   provider: z.literal('phonepe'),
@@ -55,7 +57,9 @@ const PaytmSchema = z.object({
   env: z.enum(['sandbox', 'prod']).default('sandbox'),
 });
 
-const SaveCredentialsSchema = z.discriminatedUnion('provider', [
+// Discriminate on 'authVersion' (unique: v2, v1, standard) — NOT 'provider'
+// (which has duplicate 'phonepe' for both v1 + v2).
+const SaveCredentialsSchema = z.discriminatedUnion('authVersion', [
   PhonePeV2Schema,
   PhonePeV1Schema,
   PaytmSchema,
