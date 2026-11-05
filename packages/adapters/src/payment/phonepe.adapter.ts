@@ -321,7 +321,14 @@ export class PhonePePaymentAdapter implements PaymentAdapter {
         if (!res.ok) {
           throw new Error(`PhonePe v2 status failed (HTTP ${res.status})`);
         }
-        const data = (await res.json()) as { success?: boolean; code?: string; data?: { state?: string; transactionId?: string; amount?: number; paymentInstrument?: { utr?: string } } };
+        const data = (await res.json()) as { success?: boolean; code?: string; message?: string; data?: { state?: string; transactionId?: string; amount?: number; paymentInstrument?: { utr?: string } } };
+        // TEST-002 fix: a 200 response with { success: false } means the PSP
+        // rejected the request (e.g. AUTHORIZATION_FAILED, BAD_REQUEST) — the
+        // credentials are invalid OR the merchantId is wrong. Previously this
+        // was treated as "credentials valid" because only !res.ok was checked.
+        if (data.success === false) {
+          throw new Error(`PhonePe v2 status API rejected: ${data.code ?? data.message ?? 'unknown error'}`);
+        }
         return {
           paid: data.code === 'PAYMENT_SUCCESS' || data.data?.state === 'COMPLETED',
           txnId: data.data?.transactionId ?? null,

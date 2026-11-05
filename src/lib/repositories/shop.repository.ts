@@ -35,12 +35,25 @@ interface ShopRow {
 function toDomain(row: ShopRow): Shop {
   let paymentCredentials: Record<string, unknown>;
   try {
-    // Try decrypting (production path — encrypted at rest).
-    paymentCredentials = row.paymentCredentials && row.paymentCredentials.startsWith('v1:')
-      ? decryptCredentials(row.paymentCredentials)
-      : JSON.parse(row.paymentCredentials || '{}'); // dev fallback (plain JSON)
-  } catch {
-    paymentCredentials = {}; // decryption failed — return empty (fail-safe)
+    if (row.paymentCredentials && row.paymentCredentials.startsWith('v1:')) {
+      // Encrypted path (production) — decrypt with AES-256-GCM.
+      paymentCredentials = decryptCredentials(row.paymentCredentials);
+    } else if (process.env.NODE_ENV === 'production') {
+      // ENC-001 fix: in production, a non-encrypted (non-v1: prefixed) credential
+      // blob is a SECURITY ERROR — refuse to serve plaintext credentials in prod.
+      // Previously this silently parsed as plaintext JSON regardless of NODE_ENV,
+      // which could expose credentials if a migration left them un-encrypted.
+      console.error('[shop.repository] FATAL: unencrypted paymentCredentials in production — refusing to serve. Shop:', row.id);
+      paymentCredentials = {};
+    } else {
+      // Dev fallback: plaintext JSON (for local dev without PAYMENT_ENCRYPTION_KEY).
+      paymentCredentials = JSON.parse(row.paymentCredentials || '{}');
+    }
+  } catch (e) {
+    // ENC-003 fix: log the decrypt failure (without leaking secrets) so
+    // key-rotation incidents are visible. Previously this was silent.
+    console.error('[shop.repository] credential decrypt failed:', e instanceof Error ? e.message : String(e), '— shop:', row.id);
+    paymentCredentials = {}; // fail-safe — empty credentials, no secrets exposed
   }
   return {
     id: row.id,

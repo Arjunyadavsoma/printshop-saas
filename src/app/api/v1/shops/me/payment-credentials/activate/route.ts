@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { withAuth } from '@/lib/api/with-auth';
+import { withAuth, withRateLimit } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 import { ValidationError } from '@platform/core/errors';
@@ -25,7 +25,7 @@ const ActivateSchema = z.object({
   provider: z.enum(['phonepe', 'paytm']),
 });
 
-export const POST = withAuth(async (req, _ctx, principal) => {
+export const POST = withRateLimit('pay-creds-activate', 10, 60, withAuth(async (req, _ctx, principal) => {
   const body = ActivateSchema.parse(await req.json());
   const shop = await repos.shops.getByOwner(principal.userId);
 
@@ -54,4 +54,4 @@ export const POST = withAuth(async (req, _ctx, principal) => {
   });
 
   return ok({ ok: true, activeProvider: body.provider });
-});
+}, ['owner']));

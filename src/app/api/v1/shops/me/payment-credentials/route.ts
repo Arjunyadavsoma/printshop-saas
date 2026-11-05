@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { withAuth } from '@/lib/api/with-auth';
+import { withAuth, withRateLimit } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { ValidationError, NotFoundError } from '@platform/core/errors';
@@ -135,16 +135,16 @@ function buildStatus(shop: {
 
 // ─── GET: payment credentials status (masked) ────────────────────
 
-export const GET = withAuth(async (_req, _ctx, principal) => {
+export const GET = withRateLimit('pay-creds-get', 30, 60, withAuth(async (_req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
   // shop.paymentCredentials is already decrypted by toDomain() — but we
   // only return MASKED values (buildStatus strips all secrets).
   return ok(buildStatus(shop));
-});
+}, ['owner']));
 
 // ─── PUT: save/update credentials ────────────────────────────────
 
-export const PUT = withAuth(async (req, _ctx, principal) => {
+export const PUT = withRateLimit('pay-creds-save', 10, 60, withAuth(async (req, _ctx, principal) => {
   const body = SaveCredentialsSchema.parse(await req.json());
   const shop = await repos.shops.getByOwner(principal.userId);
 
@@ -212,11 +212,11 @@ export const PUT = withAuth(async (req, _ctx, principal) => {
   // Return the masked status (not the saved credentials).
   const updatedShop = await repos.shops.getByOwner(principal.userId);
   return ok(buildStatus(updatedShop));
-});
+}, ['owner']));
 
 // ─── DELETE: disconnect (remove credentials for a provider) ──────
 
-export const DELETE = withAuth(async (req, _ctx, principal) => {
+export const DELETE = withRateLimit('pay-creds-delete', 10, 60, withAuth(async (req, _ctx, principal) => {
   const url = new URL(req.url);
   const provider = url.searchParams.get('provider');
   if (!provider || !['phonepe', 'paytm'].includes(provider)) {
@@ -253,4 +253,4 @@ export const DELETE = withAuth(async (req, _ctx, principal) => {
 
   const updatedShop = await repos.shops.getByOwner(principal.userId);
   return ok(buildStatus(updatedShop));
-});
+}, ['owner']));
