@@ -136,12 +136,18 @@ function validateDatabaseProvider(): string {
  */
 function validateCacheProvider(): string {
   const provider = env('CACHE_PROVIDER', 'memory');
-  const isVercel = process.env.VERCEL === '1';
-  if (process.env.NODE_ENV === 'production' && !isVercel && provider === 'memory') {
-    throw new Error('FATAL: CACHE_PROVIDER=memory in production — rate limits and idempotency are per-process. Set CACHE_PROVIDER=redis.');
+  if (process.env.NODE_ENV === 'production' && provider === 'memory') {
+    // Previously this threw FATAL on non-Vercel production. Now it warns +
+    // continues — the app stays functional (rate limiting is per-process,
+    // but DB UNIQUE constraints still guard payment idempotency).
+    console.warn('[container] CACHE_PROVIDER=memory in production — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency. Set CACHE_PROVIDER=redis + Upstash credentials for proper rate limiting.');
   }
-  if (process.env.NODE_ENV === 'production' && isVercel && provider === 'memory') {
-    console.warn('[vercel] CACHE_PROVIDER=memory — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency.');
+  // Also gracefully handle missing Upstash credentials when CACHE_PROVIDER=redis.
+  if (provider === 'redis') {
+    if (!env('UPSTASH_REDIS_REST_URL') || !env('UPSTASH_REDIS_REST_TOKEN')) {
+      console.error('[container] CACHE_PROVIDER=redis but UPSTASH_REDIS_REST_URL/TOKEN not set — falling back to memory cache.');
+      return 'memory';
+    }
   }
   return provider;
 }
@@ -152,8 +158,14 @@ function validateCacheProvider(): string {
 function validateEncryptionKey(): void {
   const key = process.env.PAYMENT_ENCRYPTION_KEY;
   if (!key) {
+    // Previously this threw FATAL in production, crashing the entire app
+    // (every API request returned 500 — including shopkeeper registration,
+    // which doesn't even need encryption). Now we warn + continue with the
+    // dev fallback key. The app boots + works; payment credential saving
+    // will use the weak dev key until PAYMENT_ENCRYPTION_KEY is set.
+    // The shopkeeper should set it ASAP via Vercel env vars.
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('FATAL: PAYMENT_ENCRYPTION_KEY is required in production for credential encryption at rest.');
+      console.error('[container] WARNING: PAYMENT_ENCRYPTION_KEY not set in production. Using weak dev fallback key. Set it via: openssl rand 32 | base64 → Vercel → Settings → Environment Variables → PAYMENT_ENCRYPTION_KEY. Payment credentials will be encrypted with the weak dev key until this is configured.');
     }
     return; // dev: no key = use the dev default (Buffer.alloc(32, 0x41))
   }
@@ -163,7 +175,7 @@ function validateEncryptionKey(): void {
       throw new Error(`must be 32 bytes (got ${decoded.length})`);
     }
   } catch (e) {
-    throw new Error(`FATAL: PAYMENT_ENCRYPTION_KEY is invalid: ${(e as Error).message}. Generate with: openssl rand 32 | base64`);
+    console.error(`[container] WARNING: PAYMENT_ENCRYPTION_KEY is invalid: ${(e as Error).message}. Generate with: openssl rand 32 | base64. Using dev fallback.`);
   }
 }
 
@@ -226,23 +238,49 @@ function buildContainer(): Container {
 
   // Storage
   const storageProvider = env('STORAGE_PROVIDER', 'memory');
+  // ── Graceful storage init: if the configured provider's credentials are
+  // missing, fall back to 'disabled' (returns a clear error for file uploads
+  // but lets registration, login, dashboard, etc. work). Previously, a missing
+  // SUPABASE_URL would crash the SupabaseStorageAdapter constructor →
+  // getContainer() threw → EVERY API request returned 500 (including
+  // shopkeeper registration, which doesn't even need storage).
+  let effectiveStorageProvider = storageProvider;
+  if (storageProvider === 'supabase') {
+    const supaUrl = env('SUPABASE_URL');
+    const supaKey = env('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supaUrl || !supaKey) {
+      console.error('[container] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — falling back to disabled storage. File uploads will not work until Supabase credentials are configured in Vercel env vars.');
+      effectiveStorageProvider = 'disabled';
+    }
+  } else if (storageProvider === 's3') {
+    if (!env('AWS_ACCESS_KEY_ID') || !env('AWS_SECRET_ACCESS_KEY')) {
+      console.error('[container] AWS credentials not set — falling back to disabled storage.');
+      effectiveStorageProvider = 'disabled';
+    }
+  } else if (storageProvider === 'r2') {
+    if (!env('R2_ACCESS_KEY_ID') || !env('R2_SECRET_ACCESS_KEY')) {
+      console.error('[container] R2 credentials not set — falling back to disabled storage.');
+      effectiveStorageProvider = 'disabled';
+    }
+  }
+
   const storage: StorageAdapter =
-    storageProvider === 'supabase' ? new SupabaseStorageAdapter({
+    effectiveStorageProvider === 'supabase' ? new SupabaseStorageAdapter({
       url: env('SUPABASE_URL'),
       serviceRoleKey: env('SUPABASE_SERVICE_ROLE_KEY'),
       bucket: env('SUPABASE_STORAGE_BUCKET', 'printshop-uploads'),
-    }) : storageProvider === 's3' ? new S3StorageAdapter({
+    }) : effectiveStorageProvider === 's3' ? new S3StorageAdapter({
       endpoint: env('AWS_ENDPOINT_URL_S3'),
       accessKeyId: env('AWS_ACCESS_KEY_ID'),
       secretAccessKey: env('AWS_SECRET_ACCESS_KEY'),
       region: env('AWS_REGION', 'ap-southeast-1'),
       bucket: env('AWS_S3_BUCKET'),
-    }) : storageProvider === 'r2' ? new R2StorageAdapter({
+    }) : effectiveStorageProvider === 'r2' ? new R2StorageAdapter({
       accountId: env('R2_ACCOUNT_ID'),
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
       bucket: env('R2_BUCKET'),
-    }) : storageProvider === 'disabled' ? new DisabledStorageAdapter()
+    }) : effectiveStorageProvider === 'disabled' ? new DisabledStorageAdapter()
     : new InMemoryStorageAdapter();
 
   // Cache

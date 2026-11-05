@@ -82,21 +82,27 @@ describe('Container startup validation', () => {
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString('base64');
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
-    expect(() => { void getContainer(); }).toThrow('CACHE_PROVIDER=memory');
+    // Previously this threw FATAL. Now it warns + continues (the app should
+    // stay functional even with memory cache in production — rate limiting
+    // is per-process but DB UNIQUE constraints guard idempotency).
+    expect(() => { void getContainer(); }).not.toThrow();
   });
 
-  it('throws if PAYMENT_ENCRYPTION_KEY is wrong length', () => {
+  it('warns (does NOT throw) if PAYMENT_ENCRYPTION_KEY is wrong length', () => {
+    // Previously this threw FATAL, crashing the entire app. Now it warns +
+    // continues with the dev fallback key so the app stays functional.
     setNodeEnv('production');
     process.env.DATABASE_PROVIDER = 'prisma';
     process.env.DATABASE_URL = 'postgresql://user:pass@host:5432/db';
-    process.env.STORAGE_PROVIDER = 'r2';
-    process.env.CACHE_PROVIDER = 'redis';
+    process.env.STORAGE_PROVIDER = 'disabled';
+    process.env.CACHE_PROVIDER = 'memory';
     process.env.JWT_ACCESS_SECRET = 'strong-secret-123';
     process.env.JWT_REFRESH_SECRET = 'strong-refresh-456';
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(16, 0x42).toString('base64');
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
-    expect(() => { void getContainer(); }).toThrow('PAYMENT_ENCRYPTION_KEY');
+    // Should NOT throw — the app should boot with a warning.
+    expect(() => { void getContainer(); }).not.toThrow();
   });
 
   it('does NOT throw in dev with all defaults', () => {
