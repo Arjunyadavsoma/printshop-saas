@@ -179,11 +179,13 @@ export default function ShopLoginPage() {
           </Button>
         </div>
 
+        {/* Demo accounts — only visible in development (not production) */}
+        {process.env.NODE_ENV !== 'production' && (
         <Card className="mt-4 border-dashed border-amber-300 bg-amber-50/50">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ShieldCheck className="size-4 text-amber-700" />
-              Demo accounts
+              Demo accounts (dev only)
             </CardTitle>
             <CardDescription className="text-xs">
               Click any account to autofill the form (password: demo1234).
@@ -209,6 +211,7 @@ export default function ShopLoginPage() {
             Admin accounts are redirected to <code className="font-mono">/admin</code> after login.
           </CardFooter>
         </Card>
+        )}
 
         <div className="mt-4 text-center text-xs text-muted-foreground">
           Customer?{' '}

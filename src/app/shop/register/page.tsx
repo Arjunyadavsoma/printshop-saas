@@ -138,7 +138,15 @@ export default function ShopRegisterPage() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      // SECURITY: strip password fields before persisting to localStorage.
+      // Previously the FULL state (including password + passwordConfirm) was
+      // saved to localStorage on every keystroke — a plaintext password leak.
+      const { password, passwordConfirm, ...safeAccount } = state.account;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        account: safeAccount,
+        business: state.business,
+        services: state.services,
+      }));
     } catch { /* ignore */ }
   }, [state, hydrated]);
 

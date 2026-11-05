@@ -636,9 +636,7 @@ export default function OrderFlowPage() {
             {order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
             )}
-            {order?.customerToken && !order?.tokenNumber && (
-              <Badge variant="secondary" className="ml-1 font-mono">{order.customerToken}</Badge>
-            )}
+            {/* customerToken is a BEARER SECRET — never display it. Only show tokenNumber (the shop-facing sequential token). */}
           </div>
         </div>
       </header>
@@ -669,15 +667,15 @@ export default function OrderFlowPage() {
               {/* Stepper */}
               <OrderStepper current={step} />
 
-              {/* Payment notice — always visible until payment */}
-              {step !== 'track' && (
+              {/* Payment notice — only shown in development (sandbox) */}
+              {step !== 'track' && process.env.NODE_ENV !== 'production' && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
                   <div className="flex items-start gap-2">
                     <Info className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
-                      <p className="font-medium">Demo payment — no real money is charged.</p>
+                      <p className="font-medium">Dev mode — simulated payment available.</p>
                       <p className="mt-0.5 text-amber-800">
-                        {'This portal is a sandbox. The Pay step simulates a UPI webhook using the dev PhonePe simulator. No money leaves your account.'}
+                        {'The Pay step can use the dev simulator for testing. In production, real UPI payment is used.'}
                       </p>
                     </div>
                   </div>
@@ -736,6 +734,7 @@ export default function OrderFlowPage() {
                   qrDataUrl={qrDataUrl}
                   shopkeeperQrUrl={shopkeeperQrUrl}
                   shopName={shop?.name ?? null}
+                  shopUpiId={shop?.upiId ?? null}
                   busy={busy}
                   error={paymentError}
                   simulated={simulated}
@@ -1120,6 +1119,7 @@ function PayStep(props: {
   qrDataUrl: string | null;
   shopkeeperQrUrl: string | null;
   shopName: string | null;
+  shopUpiId: string | null;
   busy: boolean;
   error: string | null;
   simulated: boolean;
@@ -1221,19 +1221,13 @@ function PayStep(props: {
               </p>
             </div>
 
-            {/* Manual UPI ID entry fallback */}
-            <div className="flex flex-col items-center justify-center gap-2 rounded-lg bg-muted/40 p-4 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Or pay manually</p>
-              <p className="text-sm font-medium text-foreground">
-                UPI ID: <code className="font-mono">{props.checkout ? '<in checkout>' : '—'}</code>
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Open your UPI app, tap Send, enter the shop&apos;s UPI ID + the exact amount <strong>{amount}</strong>, then send.
-              </p>
-              <p className="text-[10px] text-muted-foreground">
-                Reference: your order token (shown on the next page).
-              </p>
+            {/* UPI ID manual fallback */}
+            {props.shopUpiId && (
+            <div className="rounded-lg bg-muted/40 p-3 text-center">
+              <p className="text-[11px] text-muted-foreground">Or enter UPI ID manually in your app:</p>
+              <p className="mt-0.5 font-mono text-sm font-medium text-foreground">{props.shopUpiId}</p>
             </div>
+            )}
           </div>
 
           {/* Payment-security notice */}
@@ -1287,13 +1281,13 @@ function TrackStep(props: {
             {done ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : cancelled ? <XCircle className="h-5 w-5 text-destructive" /> : <Loader2 className="h-5 w-5 animate-spin text-amber-600" />}
             Step 5 · Track your order
           </CardTitle>
-          <CardDescription>Refreshed automatically every 2.5 seconds while printing.</CardDescription>
+          <CardDescription>Refreshed automatically every 30 seconds.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
-            <p className="font-mono text-3xl font-bold tracking-widest break-words text-amber-600 sm:text-4xl">
+            <p className="font-mono text-2xl font-bold break-words text-amber-600 sm:text-3xl sm:tracking-widest">
               {props.order.tokenNumber ?? props.order.customerToken}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>

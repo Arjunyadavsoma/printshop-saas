@@ -334,12 +334,19 @@ export default function ShopDashboardPage() {
         `/api/v1/shops/me/orders/${orderId}/ready`,
       );
       if (r.status >= 400) {
-        setActionError(r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`);
+        const msg = r.data?.error?.message ?? `Action failed (HTTP ${r.status}).`;
+        setActionError(msg);
+        toast.error('Could not mark ready', { description: msg });
         return;
       }
+      toast.success('✓ Marked ready for pickup', {
+        description: 'The customer will see the update on their tracking page.',
+      });
       await load(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Network error');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setActionError(msg);
+      toast.error('Network error', { description: msg });
     } finally {
       setVerifyBusy(null);
     }
