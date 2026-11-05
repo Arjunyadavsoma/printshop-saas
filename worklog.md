@@ -4961,3 +4961,193 @@ repos.audit.log({
 ## User impact
 
 Before this change, the `payment` tab only had manual UPI fields (UPI ID, payment phone, instructions, cash-on-pickup). Now the shopkeeper can connect PhonePe Business (v1 or v2) or Paytm Business directly, test the connection, activate one provider at a time (replacing the manual "send screenshot to WhatsApp" verification loop for new checkouts), copy webhook URLs, and follow inline onboarding instructions — all without leaving `/shop/settings#payment`.
+
+---
+Task ID: audit-encryption
+Agent: security-auditor (encryption end-to-end)
+Task: Final audit of AES-256-GCM credential encryption — plaintext leaks, nonce reuse, missing tag validation, key config.
+
+Scope (files inspected):
+- src/lib/crypto/credential-encryption.ts (encryption impl + tests)
+- src/lib/repositories/shop.repository.ts (toRow/toDomain encrypt/decrypt)
+- src/app/api/v1/shops/me/payment-credentials/route.ts (GET/PUT/DELETE)
+- src/app/api/v1/shops/me/payment-credentials/activate/route.ts
+- src/app/api/v1/shops/me/payment-credentials/test/route.ts — DOES NOT EXIST (UI calls it; 404). See ENC-005.
+- src/lib/payments/webhook.service.ts (webhook pipeline + audit log)
+- src/lib/container.ts (startup validation)
+- src/lib/api/envelope.ts + with-auth.ts (error response sanitisation)
+- src/lib/api/require-dev.ts (dev-route guard)
+- src/app/api/v1/payments/dev/{phonepe,paytm}/simulate/route.ts (dev routes that touch credentials)
+- src/components/portal/payment-provider-settings.tsx (client form)
+- grep across src/ for saltKey|merchantKey|clientSecret|paymentCredentials in console.log/logger/client code
+
+Findings (prioritised):
+
+ENC-001  Medium  — Dev plaintext-read fallback is gated by string prefix, not by NODE_ENV
+  File: src/lib/repositories/shop.repository.ts:39-41
+  Code:
+    paymentCredentials = row.paymentCredentials && row.paymentCredentials.startsWith('v1:')
+      ? decryptCredentials(row.paymentCredentials)
+      : JSON.parse(row.paymentCredentials || '{}'); // dev fallback (plain JSON)
+  Impact: Any DB row whose `paymentCredentials` column does not start with `v1:` is parsed as plain JSON regardless of environment. If an operator deploys with NODE_ENV unset/staging (or any value !== 'production'), `validateEncryptionKey()` in container.ts:155 ALSO skips its production hard-fail, so the dev zero-key (Buffer.alloc(32, 0x41)) is silently used AND plaintext fallback is active. A migrated/legacy plaintext row would be served unencrypted with no warning.
+  Fix: Make the plaintext branch explicit to dev — replace the prefix check with: `if (process.env.NODE_ENV === 'production') throw/encrypt-empty; else parse plain`. Or move the prefix check into a dev-only helper and require encrypted values in prod (throw on missing `v1:` prefix in production).
+
+ENC-002  Low     — Dev fallback key is a hardcoded constant not in the production blocklist
+  File: src/lib/crypto/credential-encryption.ts:25  +  src/lib/container.ts:152-168
+  Code: return Buffer.alloc(32, 0x41);  // 32 bytes of 0x41 ("AAAA…")
+  Impact: `validateEncryptionKey()` checks only "present + 32 bytes" — it does NOT reject the known dev key (base64 of `Buffer.alloc(32, 0x41)` = `QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB`). If an operator copy-pastes that base64 value into production PAYMENT_ENCRYPTION_KEY, the app boots and every credential is decryptable by anyone who reads the source. Compare with JWT_SECRET path in container.ts:65-86 which DOES maintain a DEV_DEFAULTS blocklist.
+  Fix: Add the base64 of `Buffer.alloc(32, 0x41)` to DEV_DEFAULTS and reuse `requireSecret('PAYMENT_ENCRYPTION_KEY')` semantics; or hardcode an explicit `if (key.equals(DEV_KEY)) throw new Error('FATAL: dev fallback key in production')` in validateEncryptionKey().
+
+ENC-003  Low     — Silent decrypt-failure swallows key-mismatch / rotation bugs
+  File: src/lib/repositories/shop.repository.ts:42-44
+  Code: } catch { paymentCredentials = {}; // decryption failed — return empty (fail-safe) }
+  Impact: If the production key is rotated (or misconfigured) without re-encrypting existing rows, every shop silently appears to have no credentials — no error logged, no metric, the shop's checkout just falls back to UPI/manual. Operationally this is a debugging blind spot that could mask a serious KMS rotation incident for hours.
+  Fix: In production, log a structured `logger.error('credential decrypt failed', { shopId, provider })` (NO plaintext, NO key material) and emit a metric so an alarm fires. Keep the fail-safe `{}` return for safety.
+
+ENC-004  Info    — Key versioning scaffolded but no rotation flow wired
+  File: src/lib/crypto/credential-encryption.ts:48-50, 61-63  (`needsReencryption()` exported)
+  Impact: `needsReencryption()` exists but is never imported anywhere — there is no admin script / migration that re-encrypts `v1:` rows when the key bumps to `v2`. Today decrypt() throws `Unknown encryption key version: v2` if you try to rotate. Rotation would require a manual SQL/script sweep.
+  Fix: Add a one-shot admin endpoint or migration script that iterates shops, calls `decryptCredentials` with the v1 key, re-encrypts with the v2 key, and writes back via `toRow`.
+
+ENC-005  Info    — `payment-credentials/test/route.ts` is missing; UI "Test connection" returns 404
+  File: src/components/portal/payment-provider-settings.tsx:375  calls  POST /api/v1/shops/me/payment-credentials/test
+        Filesystem: src/app/api/v1/shops/me/payment-credentials/  contains only `route.ts` + `activate/route.ts` — no `test/route.ts`
+  Impact: Functionality gap, not a security bug. The UI's "Test connection" button shows a generic "HTTP 404" toast. No credential leak (404 returns nothing).
+  Fix: Either implement the test route (call adapter.ping() / status endpoint with decrypted creds, never log creds, return only `{ ok, latencyMs }`) OR remove the button from the UI.
+
+Verified-clean items (no findings):
+
+✓ AES-256-GCM used (createCipheriv('aes-256-gcm')) — not CBC/CTR.
+✓ Nonces unique per encryption — randomBytes(12); test "produces different ciphertext for the same input" asserts `a !== b`.
+✓ Auth tag validated on decrypt — setAuthTag(Buffer) then decipher.final() throws on tamper; test "throws on tampered ciphertext (auth tag mismatch)" passes.
+✓ Wrong key on decrypt → GCM tag mismatch → throws; test "throws on wrong key" passes.
+✓ Key format: 32 bytes base64, validated on read (key.length !== 32 throws).
+✓ Missing key in production → FATAL throw in both getEncryptionKey() and validateEncryptionKey().
+✓ No plaintext logged in credential-encryption.ts (no console/logger at all).
+✓ Error messages from the crypto module are generic ("Invalid encrypted credential format", "Unknown encryption key version: v2") — never echo plaintext, key bytes, or credential fragments.
+✓ toRow() encrypts before DB write for EVERY value including empty {} (NOT NULL column requires an encrypted empty object) — shop.repository.ts:77-83.
+✓ toDomain() decrypts on read — shop.repository.ts:39-40.
+✓ GET response masks all secrets via buildStatus() — merchantId maskId (first 4 + last 4), saltKey/clientSecret maskSecret (•••••••• + last 4), merchantKey never returned at all.
+✓ PUT does NOT log request body — zero console.log/logger calls in payment-credentials/route.ts.
+✓ Audit log records field NAMES only — `fields: Object.keys(providerCreds).filter(k => !['clientSecret','saltKey','merchantKey'].includes(k))` — secret field names excluded, values never serialised.
+✓ DELETE preserves other provider's credentials (destructuring `const { [provider]: _removed, ...remaining } = existingCreds`).
+✓ Webhook service audit-logs ONLY `{path, contentLength, provider}` on receipt — verified by webhook-audit.test.ts asserting meta keys === ['contentLength','path','provider'] AND `not.toContain('saltKey'|'CHECKSUMHASH'|'merchantTransactionId'|rawBody.slice(0,20))`.
+✓ Webhook service never logs decrypted shop credentials — shop.paymentCredentials is passed straight to adapter.handleWebhook(); no logger.* call references it.
+✓ Webhook "paid" audit event stores only `{txnId, utr, amountPaise}` (reconciliation record) — no raw body, no credential fragments; verified by test.
+✓ Application logger (StubLoggerAdapter in tests, JsonConsoleLogger in prod) never receives rawBody / utr / CHECKSUMHASH / saltKey — verified by test scanning every log call.
+✓ Dev simulate routes (/api/v1/payments/dev/{phonepe,paytm}/simulate) that DO use decrypted credentials to compute X-VERIFY are guarded by requireDev() which fails-closed unless NODE_ENV === 'development'.
+✓ Zod validation errors on PUT body do not echo credential values — Zod 3 issues contain only path+message (and expected/received for enum mismatches, which don't apply to secret string fields with `.min(1).max(N)`).
+✓ captureSentry() stub logs only `err.message` + 200-char stack — generic Error messages from crypto/repository paths; no credential values reachable.
+✓ Client components in src/app/shop/ contain zero references to `paymentCredentials` (grep returned no matches).
+✓ The only client component that references saltKey/merchantKey/clientSecret is src/components/portal/payment-provider-settings.tsx — and these are FORM INPUT FIELDS the shop owner types into their own settings page (starts empty every mount, never pre-filled, placeholder `••••••••••••`). The displayed values come back MASKED from the API.
+✓ Admin orders detail page (src/app/admin/orders/[id]/page.tsx:281) mentions "saltKey / merchantKey" only in a security-notice string explaining they are NOT exposed — no actual values rendered.
+
+Recommended next actions (in priority order):
+1. (Medium) ENC-001: gate the plaintext-read branch on NODE_ENV !== 'production' explicitly, AND make validateEncryptionKey() throw on the known dev base64 value (combines with ENC-002).
+2. (Low) ENC-003: add a structured `logger.error('credential decrypt failed', { shopId })` in toDomain's catch block in production — keep the fail-safe `{}` return.
+3. (Low) ENC-002: add the base64 of Buffer.alloc(32, 0x41) to DEV_DEFAULTS in container.ts and reuse requireSecret() for PAYMENT_ENCRYPTION_KEY.
+4. (Info) ENC-005: implement `payment-credentials/test/route.ts` OR remove the UI button.
+5. (Info) ENC-004: add a one-shot re-encryption admin script for future key rotation.
+
+No code changes were made by this audit — findings are observational and require owner approval before patching (per audit-only scope).
+
+---
+Task ID: audit-test-tenant
+Agent: general-purpose (security auditor)
+Task: Final security audit — (A) Test Connection implementation + (B) cross-tenant authorization for payment-credentials API routes.
+
+Files reviewed:
+- src/app/api/v1/shops/me/payment-credentials/route.ts (GET/PUT/DELETE)
+- src/app/api/v1/shops/me/payment-credentials/test/route.ts (POST)
+- src/app/api/v1/shops/me/payment-credentials/activate/route.ts (POST)
+- packages/adapters/src/payment/phonepe.adapter.ts (v1 + v2)
+- packages/adapters/src/payment/paytm.adapter.ts
+- src/lib/api/with-auth.ts
+- src/lib/api/rate-limit.ts
+- src/lib/repositories/shop.repository.ts (getByOwner / findByOwner)
+
+## A. Test Connection audit — findings
+
+### TEST-001 — PhonePe v2 OAuth2 token is cached, so re-tests within ~10 min do not re-validate clientId/clientSecret
+- Severity: Medium
+- File: packages/adapters/src/payment/phonepe.adapter.ts:94-128 (tokenCache + getOAuth2Token) + src/app/api/v1/shops/me/payment-credentials/test/route.ts:52-55
+- Evidence: `getOAuth2Token()` caches the access token per `clientId` for `expires_in - 60s` (typically ~9 min). The Test route calls `verifyPayment()`, which calls `getOAuth2Token()` as a side effect. On the 2nd…Nth test within the cache window, the cached token is reused and the OAuth2 token endpoint is NOT hit — only `/pg/v2/status` is hit. If `clientSecret` is revoked server-side at PhonePe, the cached token may still work until expiry.
+- Impact: A shopkeeper who clicks "Test" twice within 10 minutes gets a false "OK" on the second click even if the OAuth2 creds have just been revoked. The first test after expiry does validate.
+- Recommended fix: Add a `validateCredentials()` method to the `PaymentAdapter` interface that, for PhonePe v2, forces a fresh `getOAuth2Token()` (bypass cache) — OR have the test route clear the tokenCache entry for the shop's clientId before calling verifyPayment. Preferred: expose a dedicated non-financial validation method per provider.
+
+### TEST-002 — PhonePe v2 status path doesn't inspect `data.success`/`data.code`; a 200 with an error body is treated as success
+- Severity: Medium-High
+- File: packages/adapters/src/payment/phonepe.adapter.ts:313-332
+- Evidence: The v2 status path only throws if `!res.ok` (HTTP non-2xx). For a 200 response with body `{ success:false, code:'AUTHORIZATION_FAILED' }` or `INVALID_MERCHANT`, the adapter returns `{ paid:false, raw:data }` (raw is non-null). The Test route's success check is `result.raw !== null` → it reports SUCCESS.
+- Impact: If the OAuth2 creds are valid but the `merchantId` is wrong (or the merchantId is not linked to the clientId's account), PhonePe may return 200 with an error code. The Test Connection would falsely report "credentials valid", and the shopkeeper would activate a broken integration.
+- Recommended fix: In `verifyPayment()` v2 path, also check `if (!data.success && data.code && data.code !== 'PAYMENT_NOT_FOUND' && data.code !== 'TRANSACTION_NOT_FOUND') throw new Error(...)`. Or — better — implement a dedicated `validateCredentials()` that calls `getOAuth2Token()` (validates clientId/clientSecret) AND a lightweight call that validates merchantId (e.g. a merchant-self GET endpoint, or the status API with strict error-code handling).
+
+### TEST-003 — Error detection via `result.raw === null` is fragile (relies on undocumented UPIPay contract)
+- Severity: Medium
+- File: src/app/api/v1/shops/me/payment-credentials/test/route.ts:65-74; phonepe.adapter.ts:346-357, 332; paytm.adapter.ts:290-301, 288
+- Evidence: Both adapters swallow errors in a try/catch and return `{ paid:false, raw:null }` on failure. The Test route infers failure purely from `raw === null`. This depends on (a) UPIPay's `checkStatus().rawResponse` always being non-null on HTTP success, and (b) the PhonePe v2 fetch always returning a non-null parsed `data`. If either contract changes (SDK upgrade, empty body on a 204, refactor), the test could either false-positive (raw non-null on error) or false-negative (raw null on success).
+- Impact: A future SDK change could silently break Test Connection's correctness with no compile-time signal.
+- Recommended fix: Change the adapter contract to either (a) throw on errors (let the route's outer try/catch handle it) or (b) return an explicit `{ ok: boolean, error?: string }` discriminator. Stop relying on `raw === null` as an error signal.
+
+### TEST-004 — Test route docstring claims it calls the OAuth2 token endpoint for PhonePe v2; actually it calls verifyPayment (OAuth2 is a side effect)
+- Severity: Low (documentation drift)
+- File: src/app/api/v1/shops/me/payment-credentials/test/route.ts:8-24
+- Evidence: The JSDoc says "For PhonePe v2, this calls the OAuth2 token endpoint". The implementation actually calls `adapter.verifyPayment({ merchantOrderId, shopCredentials })` (line 52) — which internally hits the OAuth2 endpoint as a prerequisite to the status call. The docstring is technically true only on first call (before token cache warms).
+- Recommended fix: Update the docstring AND implement TEST-001's fix so the docstring becomes accurate.
+
+### TEST-005 — For Paytm + PhonePe v1 the status-API approach is correct (no fix needed)
+- Severity: None (informational)
+- The Paytm `/v3/order/status` API signs the request with the AES-128-CBC checksum derived from `merchantKey`. PhonePe v1's `/pg/v1/status` uses X-VERIFY derived from `saltKey+saltIndex`. A "transaction not found" response still requires a valid signature, so a successful HTTP response (even with `paid:false`) genuinely proves the credentials are valid. The current `verifyPayment()` is the right non-financial validation for these two providers — the only improvements are TEST-002/TEST-003 (error-code inspection + robust error propagation).
+
+## B. Cross-tenant authorization audit — findings
+
+### TENANT-001 — All 5 routes use `withAuth` and resolve the shop via `repos.shops.getByOwner(principal.userId)` (no client-supplied shopId)
+- Severity: Pass (no finding)
+- Evidence:
+  - GET payment-credentials: withAuth (route.ts:138) → `repos.shops.getByOwner(principal.userId)` (route.ts:139)
+  - PUT payment-credentials: withAuth (route.ts:147) → `getByOwner(principal.userId)` (route.ts:149, 213)
+  - DELETE payment-credentials: withAuth (route.ts:219) → `getByOwner(principal.userId)` (route.ts:226, 254)
+  - POST test: withAuth (test/route.ts:30) → `getByOwner(principal.userId)` (test/route.ts:32)
+  - POST activate: withAuth (activate/route.ts:28) → `getByOwner(principal.userId)` (activate/route.ts:30)
+- `getByOwner` (shop.repository.ts:145-149) throws `NotFoundError` if no shop owned by the user. The shopId comes from `principal.userId`, which comes from the JWT's `claims.sub` (with-auth.ts:69-76) — verified server-side. A shopkeeper cannot forge another user's JWT.
+
+### TENANT-002 — Cross-tenant read/update/delete is impossible
+- Severity: Pass (no finding)
+- Evidence: `ShopRepository.findByOwner(ownerUserId)` queries `{ ownerUserId }` (shop.repository.ts:121-124). The query is scoped by the JWT-derived userId — there's no path for shop A's JWT to read shop B's `paymentCredentials`. PUT/DELETE operate on `shop.id` resolved from the owner-scoped query, never from the request body.
+
+### TENANT-003 — A customer (no JWT, or `role:'customer'` JWT) cannot access credentials
+- Severity: Pass (with caveat — see TENANT-004)
+- Evidence: with-auth.ts:60-64 rejects missing tokens with 401. A `customer` role JWT passes withAuth (allowedRoles undefined → all roles allowed), but `getByOwner(customerUserId)` returns null → 404 NotFoundError. The customer cannot read/modify any shop's credentials.
+
+### TENANT-004 — No `allowedRoles` restriction on any of the 5 routes (defense-in-depth gap)
+- Severity: Low
+- File: all 5 routes (none pass a 2nd arg to `withAuth`)
+- Evidence: Grep for `allowedRoles` in `src/app/api/v1/shops/me/` → 0 matches. withAuth's signature `withAuth(handler, allowedRoles?)` defaults to "any authenticated role". A customer or admin JWT passes auth, then fails at `getByOwner` (404). Functionally secure but relies on the DB query as the ONLY access-control gate.
+- Impact: A stolen customer-role JWT could spam these endpoints (churning audit logs, DB load, PSP outbound calls on POST /test) before hitting the 404. Also makes the access-control intent less explicit in code.
+- Recommended fix: Pass `['shopkeeper']` (or `['shopkeeper','admin']`) as the 2nd arg to `withAuth` on all 5 routes. Admins should use the dedicated `/api/v1/admin/shops/[id]` routes.
+
+### TENANT-005 — None of the 5 routes are rate-limited (especially POST /test, which makes outbound PSP calls)
+- Severity: Medium (for POST /test) / Low (for GET/PUT/DELETE)
+- File: all 5 routes — grep for `withRateLimit` in `src/app/api/v1/shops/me/` → 0 matches.
+- Evidence: `withRateLimit` (with-auth.ts:130-144) is described as "for public (unauthenticated) handlers". None of the authenticated routes use it. The Test route makes an outbound call to PhonePe/Paytm on every invocation — no per-user or per-IP throttle.
+- Impact:
+  - Denial-of-wallet: PSPs may bill per API call; a stolen JWT could rack up charges.
+  - Brute-force / timing oracle: an attacker could probe credential values via repeated Tests.
+  - DB churn: PUT/DELETE generate audit-log rows on every call — an attacker with a stolen JWT could flood the audit table.
+- Recommended fix: Add a per-principal rate limit (e.g. 5 test-connection calls / minute / user) using the existing `rateLimit()` helper, keyed by `principal.userId` (NOT just IP — IP can be shared/NAT'd). For PUT/DELETE, a lower limit (e.g. 30/min/user) prevents audit-log flooding.
+
+### TENANT-006 — Stale-token defense is in place (pass)
+- Severity: Pass
+- Evidence: with-auth.ts:74-76 rejects the JWT if `claims.shopId !== user.shopId`. If a shopkeeper is reassigned to a different shop (or their shop is deleted), the JWT is invalidated immediately even before expiry. Good defense.
+
+## Summary — prioritized action list
+
+1. **TEST-002** (Medium-High) — PhonePe v2 verifyPayment must check `data.success`/`data.code`, not just `res.ok`. A 200 with an error body is currently treated as success → false "credentials valid" for wrong merchantId.
+2. **TENANT-005** (Medium) — Add per-principal rate limiting to POST /test (outbound PSP call) at minimum; ideally to all 5 routes.
+3. **TEST-001** (Medium) — PhonePe v2 OAuth2 token cache means re-tests within ~10 min don't re-validate clientId/clientSecret. Add a `validateCredentials()` adapter method that bypasses the cache.
+4. **TEST-003** (Medium) — Replace `raw === null` error heuristic with an explicit error contract (throw or `{ ok, error }` discriminator).
+5. **TENANT-004** (Low) — Pass `allowedRoles=['shopkeeper']` to `withAuth` on all 5 routes for defense-in-depth.
+6. **TEST-004** (Low) — Update test route docstring to match implementation; fix TEST-001 to make the docstring accurate.
+7. **No fix needed** — PhonePe v1 + Paytm status-API approach is correct (TEST-005); cross-tenant access via `getByOwner(principal.userId)` is sound (TENANT-001, TENANT-002, TENANT-006).
+
+No code changes were made — audit only, per task instructions.
