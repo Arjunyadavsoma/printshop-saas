@@ -10,9 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { formatINRFromPaise } from '@platform/utils';
+import { cn } from '@/lib/utils';
 import {
   Search, MapPin, Printer, UploadCloud, ShieldCheck, Smartphone,
-  Store, ArrowRight, Github, Sparkles, Loader2, AlertCircle,
+  QrCode, Store, ArrowRight, Github, Loader2, AlertCircle,
+  Wallet, FileCheck, Clock,
 } from 'lucide-react';
 
 interface PricingSummary {
@@ -40,11 +42,62 @@ interface ShopsListResponse {
 }
 
 const TIER_STYLES: Record<ShopListItem['subscriptionTier'], string> = {
-  free: 'bg-zinc-200 text-zinc-800 border-zinc-300',
-  starter: 'bg-amber-100 text-amber-900 border-amber-300',
-  pro: 'bg-emerald-100 text-emerald-900 border-emerald-300',
-  enterprise: 'bg-violet-100 text-violet-900 border-violet-300',
+  free: 'bg-muted text-muted-foreground border-border',
+  starter: 'bg-brand-soft text-brand-foreground border-brand/30',
+  pro: 'bg-success-soft text-success-foreground border-success/30',
+  enterprise: 'bg-info-soft text-info-foreground border-info/30',
 };
+
+const HOW_IT_WORKS = [
+  {
+    step: 1,
+    icon: QrCode,
+    title: 'Scan the shop QR',
+    body: 'Every PrintShop shop has a QR code on the counter. Scan it with any phone camera — no app to install.',
+  },
+  {
+    step: 2,
+    icon: UploadCloud,
+    title: 'Upload your PDFs',
+    body: 'Pick documents from your phone or cloud. Choose black-and-white or colour, copies, duplex, page range.',
+  },
+  {
+    step: 3,
+    icon: Wallet,
+    title: 'Pay via UPI',
+    body: 'Pay the shopkeeper directly to their UPI ID. PrintShop takes 0% commission — your money goes straight to the shop.',
+  },
+  {
+    step: 4,
+    icon: FileCheck,
+    title: 'Collect your prints',
+    body: 'Track progress live. When your order is ready, collect it from the counter. Files auto-delete on collection.',
+  },
+];
+
+const TRUST_INDICATORS = [
+  {
+    icon: ShieldCheck,
+    label: '0% commission',
+    detail: 'Money goes straight to the shopkeeper',
+  },
+  {
+    icon: Smartphone,
+    label: 'No app install',
+    detail: 'Works in any phone browser',
+  },
+  {
+    icon: FileCheck,
+    label: 'Files auto-delete',
+    detail: 'Removed when you collect your prints',
+  },
+  {
+    icon: Clock,
+    label: 'Live order tracking',
+    body: 'Watch from upload to collection',
+    detail: 'Know exactly when your prints are ready',
+  },
+];
 
 const FEATURES = [
   {
@@ -55,7 +108,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: 'Pay the shopkeeper directly',
-    body: 'Money goes straight to the shopkeeper\u2019s UPI. Zero commission, zero middlemen, zero hidden fees.',
+    body: 'Money goes straight to the shopkeeper’s UPI. Zero commission, zero middlemen, zero hidden fees.',
   },
   {
     icon: Smartphone,
@@ -77,7 +130,14 @@ export default function HomePage() {
     setError(null);
     const r = await api.request<{ data?: ShopsListResponse; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
     if (r.status >= 400 || !r.data?.data) {
-      setError(r.data?.error?.message ?? 'Could not load shops. Try again.');
+      // Never surface raw API error messages to customers — they may contain
+      // stack traces, file paths, or internal config (e.g. Prisma errors with
+      // DATABASE_URL). Show a friendly sentinel + log the detail for devs only.
+      const raw = r.data?.error?.message;
+      if (raw && process.env.NODE_ENV !== 'production') {
+        console.error('[shops] load failed:', raw);
+      }
+      setError('load-failed'); // truthy sentinel — error card renders with friendly copy
     } else {
       setShops(r.data.data.shops);
     }
@@ -98,53 +158,95 @@ export default function HomePage() {
   }, [shops, query]);
 
   const onShopClick = (slug: string) => router.push(`/shops/${slug}`);
+  const scrollToDiscovery = () => document.getElementById('shop-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       {/* Hero */}
-      <header className="border-b border-border bg-gradient-to-b from-amber-50 to-background">
-        <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-4 py-8 sm:gap-6 sm:px-6 sm:py-16 lg:py-20">
-          <Badge variant="outline" className="border-amber-300 bg-amber-100/80 text-amber-900">
-            <Sparkles className="h-3 w-3" />
+      <header className="border-b border-border bg-brand-soft">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16 lg:py-20">
+          <Badge variant="outline" className="border-brand/30 bg-background/70 text-brand-foreground">
+            <QrCode className="size-3" aria-hidden="true" />
             QR-powered print shops for India
           </Badge>
-          <div className="max-w-3xl space-y-4">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+
+          <div className="max-w-3xl space-y-5">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
               Find a print shop, upload, and pay the shopkeeper directly.
             </h1>
-            <p className="text-sm text-muted-foreground sm:text-lg">
-              {'PrintShop is a customer portal for Indian print and Xerox shops. Scan a shop QR, upload your PDFs, set print options, and pay via UPI — with zero commission and files that auto-delete the moment you collect.'}
+            <p className="text-base text-muted-foreground sm:text-lg leading-relaxed">
+              PrintShop is a customer portal for Indian print and Xerox shops. Scan a shop QR, upload your PDFs, set print options, and pay via UPI — with zero commission and files that auto-delete the moment you collect.
             </p>
-            <div className="flex w-full flex-wrap items-center gap-3 pt-2 sm:w-auto">
-              <Button size="lg" className="w-full sm:w-auto min-h-[44px]" onClick={() => document.getElementById('shop-discovery')?.scrollIntoView({ behavior: 'smooth' })}>
-                <Search className="h-4 w-4" />
+            <div className="flex w-full flex-wrap items-center gap-3 pt-1 sm:w-auto">
+              <Button size="lg" className="min-h-[44px] bg-brand text-brand-foreground hover:bg-brand/90" onClick={scrollToDiscovery}>
+                <Search className="size-4" aria-hidden="true" />
                 Find a shop
+              </Button>
+              <Button asChild variant="outline" size="lg" className="min-h-[44px]">
+                <Link href="/shop/login">
+                  <Store className="size-4" aria-hidden="true" />
+                  I run a print shop
+                </Link>
               </Button>
             </div>
           </div>
 
-          {/* Feature cards */}
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-            {FEATURES.map((f) => (
-              <Card key={f.title} className="border-border shadow-sm">
-                <CardContent className="flex flex-col gap-2 p-4">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-600 text-white">
-                    <f.icon className="h-4 w-4" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-foreground">{f.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{f.body}</p>
-                </CardContent>
-              </Card>
+          {/* Trust indicators */}
+          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            {TRUST_INDICATORS.map((t) => (
+              <div
+                key={t.label}
+                className="flex flex-col gap-1.5 rounded-lg border border-border bg-background/60 p-3 sm:p-4"
+              >
+                <t.icon className="size-5 text-brand" aria-hidden="true" />
+                <p className="text-sm font-semibold text-foreground">{t.label}</p>
+                <p className="text-xs text-muted-foreground leading-snug">{t.detail}</p>
+              </div>
             ))}
           </div>
         </div>
       </header>
 
+      {/* How it works */}
+      <section aria-labelledby="how-it-works-heading" className="border-b border-border bg-card">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <div className="flex flex-col gap-2">
+            <h2 id="how-it-works-heading" className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              How it works
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              From scan to collection in under two minutes. No app, no sign-up, no commission.
+            </p>
+          </div>
+
+          <ol className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {HOW_IT_WORKS.map((step) => (
+              <li key={step.step}>
+                <Card className="h-full border-border shadow-sm">
+                  <CardContent className="flex flex-col gap-3 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-foreground">
+                        <step.icon className="size-4" aria-hidden="true" />
+                      </div>
+                      <span className="font-mono text-xs text-muted-foreground" aria-label={`Step ${step.step}`}>
+                        {String(step.step).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground">{step.title}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{step.body}</p>
+                  </CardContent>
+                </Card>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
       {/* Shop discovery */}
       <main className="flex-1">
-        <section id="shop-discovery" className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-14">
+        <section id="shop-discovery" aria-labelledby="discover-heading" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-2">
-            <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h2 id="discover-heading" className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               Discover print shops
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -155,17 +257,23 @@ export default function HomePage() {
           {/* Search bar */}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <Input
                 type="search"
-                placeholder={'Search by shop name or address…'}
+                placeholder="Search by shop name or address…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-11 pl-9 sm:h-auto"
-                aria-label="Search shops"
+                className="h-11 pl-10 sm:h-auto"
+                aria-label="Search print shops by name or address"
               />
             </div>
-            <Button variant="outline" size="sm" className="w-full sm:w-auto min-h-[44px]" onClick={() => setQuery('')} disabled={!query}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 w-full sm:w-auto"
+              onClick={() => setQuery('')}
+              disabled={!query}
+            >
               Clear
             </Button>
           </div>
@@ -173,31 +281,33 @@ export default function HomePage() {
           {/* Shops grid */}
           <div className="mt-8">
             {loading ? (
-              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Card key={i} className="border-border">
-                    <CardContent className="flex flex-col gap-3 p-4">
+                    <CardContent className="flex flex-col gap-3 p-5">
                       <Skeleton className="h-5 w-2/3" />
                       <Skeleton className="h-3 w-full" />
                       <Skeleton className="h-3 w-3/4" />
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-9 w-full" />
                       </div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
             ) : error ? (
-              <Card className="border-destructive/40 bg-destructive/5">
+              <Card className="border-danger/40 bg-danger-soft/40">
                 <CardContent className="flex flex-col items-start gap-3 p-6">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <AlertCircle className="h-5 w-5" />
-                    <span className="font-medium">Failed to load shops</span>
+                  <div className="flex items-center gap-2 text-danger">
+                    <AlertCircle className="size-5" aria-hidden="true" />
+                    <span className="font-medium">We couldn&apos;t load shops right now</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">{error}</p>
-                  <Button onClick={loadShops} size="sm" variant="outline">
-                    <Loader2 className="h-4 w-4" />
+                  <p className="text-sm text-muted-foreground break-words">
+                    This is usually temporary. Please try again in a moment.
+                  </p>
+                  <Button onClick={loadShops} size="sm" variant="outline" className="h-11">
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                     Try again
                   </Button>
                 </CardContent>
@@ -205,12 +315,12 @@ export default function HomePage() {
             ) : filtered.length === 0 ? (
               <Card className="border-dashed border-border">
                 <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-                  <Store className="h-8 w-8 text-muted-foreground" />
+                  <Store className="size-8 text-muted-foreground" aria-hidden="true" />
                   <div>
                     <p className="font-medium text-foreground">
                       {shops.length === 0 ? 'No shops available yet' : 'No shops match your search'}
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {shops.length === 0
                         ? 'Check back later or ask your local print shop to sign up.'
                         : 'Try a different name or address.'}
@@ -219,11 +329,13 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" role="list">
                 {filtered.map((shop) => (
-                  <ShopCard key={shop.id} shop={shop} onClick={() => onShopClick(shop.slug)} />
+                  <li key={shop.id}>
+                    <ShopCard shop={shop} onClick={() => onShopClick(shop.slug)} />
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         </section>
@@ -233,29 +345,34 @@ export default function HomePage() {
       <footer className="mt-auto border-t border-border bg-card">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-600 font-bold text-white">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-brand font-bold text-brand-foreground" aria-hidden="true">
               P
             </div>
             <div>
               <p className="font-semibold text-foreground">PrintShop SaaS</p>
               <p className="text-xs text-muted-foreground">
-                {'QR-based print shop management · 0% commission · MIT licensed'}
+                QR-based print shop management · 0% commission · MIT licensed
               </p>
             </div>
           </div>
-          <nav className="flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
-            <Link href="/shop/login" className="inline-flex items-center gap-1.5 hover:text-foreground">
-              <Store className="h-3.5 w-3.5" />
+          <nav className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1" aria-label="Footer">
+            <Link href="/shop/login" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground">
+              <Store className="size-3.5" aria-hidden="true" />
               Shopkeeper portal
             </Link>
-            <Link href="/" className="inline-flex items-center gap-1.5 hover:text-foreground">
-              <ArrowRight className="h-3.5 w-3.5" />
-              Customer app
+            <Link href="/shop/register" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground">
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+              Register a shop
             </Link>
-            <span className="inline-flex items-center gap-1.5">
-              <Github className="h-3.5 w-3.5" />
-              See README.md
-            </span>
+            <a
+              href="https://github.com/Arjunyadavsoma/printshop-saas"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground"
+            >
+              <Github className="size-3.5" aria-hidden="true" />
+              Source code
+            </a>
           </nav>
         </div>
       </footer>
@@ -276,21 +393,26 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
           onClick();
         }
       }}
-      className="group cursor-pointer border-border transition-all hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Visit ${shop.name} — ${shop.address}`}
+      className={cn(
+        'group h-full cursor-pointer border-border shadow-sm transition-all',
+        'hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+      )}
     >
       <CardHeader className="pb-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Printer className="h-4 w-4 shrink-0 text-amber-600" />
+              <Printer className="size-4 shrink-0 text-brand" aria-hidden="true" />
               <span className="truncate">{shop.name}</span>
             </h3>
-            <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
-              <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+            <p className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
+              <MapPin className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
               <span className="line-clamp-2">{shop.address}</span>
             </p>
           </div>
-          <Badge variant="outline" className={`shrink-0 ${TIER_STYLES[shop.subscriptionTier]}`}>
+          <Badge variant="outline" className={cn('shrink-0', TIER_STYLES[shop.subscriptionTier])}>
             {tierLabel}
           </Badge>
         </div>
@@ -298,26 +420,26 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
       <CardContent className="pt-4">
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">B&W / page</p>
-            <p className="mt-0.5 text-sm font-semibold text-foreground">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
+            <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
               {formatINRFromPaise(shop.pricingSummary.bwA4PerPage)}
             </p>
           </div>
           <div className="rounded-lg bg-muted/60 p-2.5">
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Colour / page</p>
-            <p className="mt-0.5 text-sm font-semibold text-foreground">
+            <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
               {formatINRFromPaise(shop.pricingSummary.colorA4PerPage)}
             </p>
           </div>
         </div>
         <p className="mt-2 text-[11px] break-words text-muted-foreground">
-          {'Min. order '}{formatINRFromPaise(shop.pricingSummary.minOrderValue)}{' · UPI '}{shop.upiId}
+          Min. order {formatINRFromPaise(shop.pricingSummary.minOrderValue)} · UPI {shop.upiId}
         </p>
       </CardContent>
       <CardFooter className="pt-0">
-        <span className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-amber-700 transition-all group-hover:gap-2">
+        <span className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand transition-all group-hover:gap-2">
           Visit shop
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="size-3.5" aria-hidden="true" />
         </span>
       </CardFooter>
     </Card>

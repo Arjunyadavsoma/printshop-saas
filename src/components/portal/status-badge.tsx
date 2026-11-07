@@ -3,15 +3,29 @@
 import { Badge } from '@/components/ui/badge';
 import type { OrderStatus } from '@platform/core/domain';
 
-/** Stable colour mapping for every order status across the portal. */
+/**
+ * Stable colour mapping for every order status across the portal.
+ *
+ * Uses the PrintShop semantic design tokens (docs/DESIGN_SYSTEM.md):
+ *   awaiting_payment → muted   (neutral, action needed)
+ *   paid             → info    (settled, calm)
+ *   printing         → warning (in-progress, attention)
+ *   ready            → success (action: collect)
+ *   collected        → success (terminal, success)
+ *   cancelled        → danger  (terminal, negative)
+ *   refunded         → muted   (terminal, neutral)
+ *
+ * These tokens are defined in src/app/globals.css :root + .dark and
+ * bridged into Tailwind utilities via @theme inline.
+ */
 export const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
-  awaiting_payment: 'bg-zinc-200 text-zinc-700 border-zinc-300',
-  paid: 'bg-sky-100 text-sky-800 border-sky-200',
-  printing: 'bg-amber-100 text-amber-800 border-amber-200',
-  ready: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  collected: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  cancelled: 'bg-rose-100 text-rose-700 border-rose-200',
-  refunded: 'bg-violet-100 text-violet-800 border-violet-200',
+  awaiting_payment: 'bg-muted text-muted-foreground border-border',
+  paid: 'bg-info-soft text-info-foreground border-info/30',
+  printing: 'bg-warning-soft text-warning-foreground border-warning/30',
+  ready: 'bg-success-soft text-success-foreground border-success/30',
+  collected: 'bg-success/10 text-success-foreground border-success/20',
+  cancelled: 'bg-danger-soft text-danger-foreground border-danger/30',
+  refunded: 'bg-muted text-muted-foreground border-border',
 };
 
 /** Human label for each status — keeps capitalisation consistent. */
@@ -29,8 +43,8 @@ export function StatusBadge({ status }: { status: OrderStatus | string }) {
   const cls = STATUS_BADGE_CLASS[status as OrderStatus] ?? 'bg-muted text-muted-foreground border-border';
   const label = STATUS_LABEL[status as OrderStatus] ?? status;
   return (
-    <Badge variant="outline" className={`gap-1 font-medium ${cls}`}>
-      <span className="inline-block size-1.5 rounded-full bg-current opacity-70" />
+    <Badge variant="outline" className={`gap-1.5 font-medium ${cls}`} aria-label={`Order status: ${label}`}>
+      <span className="inline-block size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
       {label}
     </Badge>
   );
