@@ -6,6 +6,30 @@
       "sourceType": "github",
       "skillPath": "skills/neon-postgres/SKILL.md",
       "computedHash": "0d936096676b18674d47828a87b21fcabf37cf0d7e3ed002e46e169eb7e0a7da"
+    },
+    "search-expert": {
+      "source": "tianxiao1430-jpg/zai-skills",
+      "sourceType": "github",
+      "skillPath": "skills/search-expert/SKILL.md",
+      "computedHash": "d327d8f01a01f7353b56af0bfc0769c045c619f86a612c8d8ea959224b78f4f1"
+    },
+    "vision-expert": {
+      "source": "tianxiao1430-jpg/zai-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vision-expert/SKILL.md",
+      "computedHash": "79ad10efaf58f7d0b5bd6c4b90e0e333aa329eac55323df0931932c2a7e600ed"
+    },
+    "zai-orchestrator": {
+      "source": "tianxiao1430-jpg/zai-skills",
+      "sourceType": "github",
+      "skillPath": "skills/zai-orchestrator/SKILL.md",
+      "computedHash": "c1ebd41f5df317bd51a9dce94170f01559bf233b8b858d73c9ae63a152228b0f"
+    },
+    "zread-expert": {
+      "source": "tianxiao1430-jpg/zai-skills",
+      "sourceType": "github",
+      "skillPath": "skills/zread-expert/SKILL.md",
+      "computedHash": "029990dedcf3bd66e8840f42ccea3e4e4fb98c06911bfc8dfdf7864a2e9a64b5"
     }
   }
 }
