@@ -80,9 +80,9 @@ export async function pullSince(
       entity: 'Order',
       id: o.id,
       // `deletedAt` is null for live rows — soft-deleted rows surface as deletes.
-      action: o.deletedAt ? 'delete' : 'upsert',
+      action: (o as any).deletedAt ? 'delete' : 'upsert',
       data: o as unknown as Record<string, unknown>,
-      revision: o.revision ?? 1,
+      revision: (o as any).revision ?? 1,
       updatedAt: o.updatedAt.toISOString(),
     });
   }
@@ -99,9 +99,9 @@ export async function pullSince(
     changes.push({
       entity: 'PrintFile',
       id: f.id,
-      action: f.deletedAt ? 'delete' : 'upsert',
+      action: (f as any).deletedAt ? 'delete' : 'upsert',
       data: f as unknown as Record<string, unknown>,
-      revision: f.revision ?? 1,
+      revision: (f as any).revision ?? 1,
       updatedAt: f.updatedAt.toISOString(),
     });
   }
@@ -116,9 +116,9 @@ export async function pullSince(
     changes.push({
       entity: 'PrintJob',
       id: j.id,
-      action: j.deletedAt ? 'delete' : 'upsert',
+      action: (j as any).deletedAt ? 'delete' : 'upsert',
       data: j as unknown as Record<string, unknown>,
-      revision: j.revision ?? 1,
+      revision: (j as any).revision ?? 1,
       updatedAt: j.updatedAt.toISOString(),
     });
   }
@@ -129,9 +129,9 @@ export async function pullSince(
     changes.push({
       entity: 'Shop',
       id: shop.id,
-      action: shop.deletedAt ? 'delete' : 'upsert',
+      action: (shop as any).deletedAt ? 'delete' : 'upsert',
       data: shop as unknown as Record<string, unknown>,
-      revision: shop.revision ?? 1,
+      revision: (shop as any).revision ?? 1,
       updatedAt: shop.updatedAt.toISOString(),
     });
   }
@@ -146,9 +146,9 @@ export async function pullSince(
     changes.push({
       entity: 'PrintAgent',
       id: a.id,
-      action: a.deletedAt ? 'delete' : 'upsert',
+      action: (a as any).deletedAt ? 'delete' : 'upsert',
       data: a as unknown as Record<string, unknown>,
-      revision: a.revision ?? 1,
+      revision: (a as any).revision ?? 1,
       updatedAt: a.updatedAt.toISOString(),
     });
   }

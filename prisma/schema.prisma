@@ -41,12 +41,9 @@ model Shop {
   pamphletEnabled       Boolean       @default(false)
   pamphletPricePaise    Int           @default(0)
   pamphletName          String?
-  // ── Sync infrastructure (Phase 5) ──
-  // revision: monotonically-increasing per-row version — used by the
-  // bidirectional sync protocol for change detection + conflict resolution.
-  // deletedAt: soft-delete marker — a sync pull surfaces these as `delete`.
-  revision              Int           @default(1)
-  deletedAt             DateTime?
+  // NOTE: revision + deletedAt removed from existing models to avoid
+  // breaking production (DB migration not yet run). See docs/MIGRATION_PLAN.md.
+  // These will be re-added when `bun run db:push` is executed.
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   auditLogs             AuditLog[]
@@ -89,9 +86,6 @@ model Order {
   customerPhone    String?
   notes            String?
   tokenNumber      String?
-  // ── Sync infrastructure (Phase 5) ──
-  revision         Int         @default(1)
-  deletedAt        DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   shop             Shop        @relation(fields: [shopId], references: [id])
@@ -119,9 +113,6 @@ model PrintFile {
   pricePaise       Int        @default(0)
   status           String     @default("pending")
   printedAt        DateTime?
-  // ── Sync infrastructure (Phase 5) ──
-  revision         Int        @default(1)
-  deletedAt        DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   order            Order      @relation(fields: [orderId], references: [id])
@@ -141,9 +132,6 @@ model PrintJob {
   queuedAt    DateTime  @default(now())
   startedAt   DateTime?
   completedAt DateTime?
-  // ── Sync infrastructure (Phase 5) ──
-  revision    Int       @default(1)
-  deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   file        PrintFile @relation(fields: [fileId], references: [id])
@@ -163,9 +151,6 @@ model PrintAgent {
   isOnline    Boolean   @default(false)
   version     String?
   os          String?
-  // ── Sync infrastructure (Phase 5) ──
-  revision    Int       @default(1)
-  deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   shop        Shop      @relation(fields: [shopId], references: [id])
