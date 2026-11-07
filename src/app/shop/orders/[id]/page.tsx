@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { StatusBadge } from '@/components/portal/status-badge';
+import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
   Card,
   CardContent,
@@ -150,46 +151,31 @@ function isToday(iso: string): boolean {
 }
 
 const ACTION_LABELS: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; tone: string }> = {
-  'order.create':               { label: 'Order created',        icon: ShoppingBag,   tone: 'text-zinc-700' },
-  'order.payment.verify':       { label: 'Payment verified',     icon: ShieldCheck,   tone: 'text-emerald-700' },
-  'order.payment.reject':       { label: 'Payment rejected',     icon: XCircle,       tone: 'text-rose-700' },
-  'order.print':                { label: 'Sent to print',        icon: PrinterIcon,   tone: 'text-amber-700' },
-  'order.start_print':          { label: 'Printing started',     icon: PlayCircle,    tone: 'text-amber-700' },
-  'order.ready':                { label: 'Marked ready',         icon: PackageCheck,  tone: 'text-emerald-700' },
-  'order.complete':             { label: 'Marked collected',     icon: CheckCircle2,  tone: 'text-emerald-700' },
-  'order.cancel':               { label: 'Order cancelled',     icon: XCircle,       tone: 'text-rose-700' },
-  'order.update_notes':         { label: 'Notes updated',        icon: StickyNote,    tone: 'text-zinc-700' },
+  'order.create':               { label: 'Order created',        icon: ShoppingBag,   tone: 'text-muted-foreground' },
+  'order.payment.verify':       { label: 'Payment verified',     icon: ShieldCheck,   tone: 'text-success' },
+  'order.payment.reject':       { label: 'Payment rejected',     icon: XCircle,       tone: 'text-danger' },
+  'order.print':                { label: 'Sent to print',        icon: PrinterIcon,   tone: 'text-brand' },
+  'order.start_print':          { label: 'Printing started',     icon: PlayCircle,    tone: 'text-brand' },
+  'order.ready':                { label: 'Marked ready',         icon: PackageCheck,  tone: 'text-success' },
+  'order.complete':             { label: 'Marked collected',     icon: CheckCircle2,  tone: 'text-success' },
+  'order.cancel':               { label: 'Order cancelled',     icon: XCircle,       tone: 'text-danger' },
+  'order.update_notes':         { label: 'Notes updated',        icon: StickyNote,    tone: 'text-muted-foreground' },
 };
 
-function PaymentBadge({ status, paidAt }: { status: OrderStatus; paidAt: string | null }) {
-  // Map order status → payment status:
-  //   awaiting_payment = pending (gray)
-  //   paid/printing/ready/collected = paid (green)
-  //   cancelled = rejected (red)  — only if it was cancelled from awaiting_payment
-  //   refunded = refunded (violet)
-  let cls = 'bg-zinc-200 text-zinc-700 border-zinc-300';
-  let label = 'Pending';
-  if (status === 'awaiting_payment') {
-    // If we have a transaction reference but no verification yet, amber.
-    label = 'Pending payment';
-  } else if (paidAt) {
-    cls = 'bg-emerald-100 text-emerald-800 border-emerald-200';
-    label = 'Paid';
-  }
-  if (status === 'cancelled') {
-    cls = 'bg-rose-100 text-rose-700 border-rose-200';
-    label = 'Rejected';
-  }
-  if (status === 'refunded') {
-    cls = 'bg-violet-100 text-violet-800 border-violet-200';
-    label = 'Refunded';
-  }
-  return (
-    <Badge variant="outline" className={`gap-1 font-medium ${cls}`}>
-      <span className="inline-block size-1.5 rounded-full bg-current opacity-70" />
-      {label}
-    </Badge>
-  );
+/**
+ * Map an order's status + paidAt to the canonical payment-status string
+ * consumed by the shared <PaymentBadge /> (see @/components/portal/payment-badge).
+ *   awaiting_payment        → 'pending'
+ *   cancelled               → 'failed'   (was 'rejected' inline; closest shared key)
+ *   refunded                → 'refunded'
+ *   paid/printing/...+paidAt → 'paid'
+ */
+function paymentStatusForOrder(status: OrderStatus, paidAt: string | null): string {
+  if (status === 'awaiting_payment') return 'pending';
+  if (status === 'cancelled') return 'failed';
+  if (status === 'refunded') return 'refunded';
+  if (paidAt) return 'paid';
+  return 'pending';
 }
 
 export default function ShopOrderDetailPage() {
@@ -440,12 +426,12 @@ export default function ShopOrderDetailPage() {
 
   if (notFound) {
     return (
-      <Card className="border-amber-300 bg-amber-50">
+      <Card className="border-brand/30 bg-brand-soft">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-amber-800">
+          <CardTitle className="flex items-center gap-2 text-base text-brand">
             <AlertTriangle className="size-5" /> Order not found
           </CardTitle>
-          <CardDescription className="text-amber-700">
+          <CardDescription className="text-brand">
             This order may belong to another shop, or it has been deleted.
           </CardDescription>
         </CardHeader>
@@ -460,10 +446,10 @@ export default function ShopOrderDetailPage() {
 
   if (error && !order) {
     return (
-      <Card className="border-rose-200 bg-rose-50">
+      <Card className="border-danger/30 bg-danger-soft">
         <CardHeader>
-          <CardTitle className="text-base text-rose-800">Couldn't load this order</CardTitle>
-          <CardDescription className="text-rose-700">{error}</CardDescription>
+          <CardTitle className="text-base text-danger">Couldn't load this order</CardTitle>
+          <CardDescription className="text-danger">{error}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
@@ -502,26 +488,26 @@ export default function ShopOrderDetailPage() {
         <CardContent className="flex flex-col items-center justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
           <div className="flex flex-col items-center gap-1 text-center sm:items-start sm:text-left">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Token number</span>
-            <span className="break-words font-mono text-3xl font-bold tracking-tight text-amber-700 sm:text-4xl lg:text-5xl">
+            <span className="break-words font-mono text-3xl font-bold tracking-tight text-brand sm:text-4xl lg:text-5xl">
               {displayToken}
             </span>
             <span className="break-all font-mono text-[10px] text-muted-foreground">id: {order.id}</span>
           </div>
           <div className="flex flex-col items-center gap-2 sm:items-end">
             <StatusBadge status={order.status} />
-            <PaymentBadge status={order.status} paidAt={order.paidAt} />
+            <PaymentBadge status={paymentStatusForOrder(order.status, order.paidAt)} paidAt={order.paidAt} />
           </div>
         </CardContent>
       </Card>
 
       {/* ── Payment verification panel ── */}
       {order.status === 'awaiting_payment' && (
-        <Card className="border-amber-300 bg-amber-50/60">
+        <Card className="border-brand/30 bg-brand-soft">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-amber-900">
+            <CardTitle className="flex items-center gap-2 text-base text-brand">
               <ShieldCheck className="size-5" /> Payment verification
             </CardTitle>
-            <CardDescription className="text-amber-800">
+            <CardDescription className="text-brand">
               Check your UPI app for the customer's payment of <strong className="font-mono">{formatINRFromPaise(order.totalAmountPaise)}</strong>
               {order.customerPhone && <> from <span className="font-mono">{order.customerPhone}</span></>}.
               Verify once the money has landed in your account.
@@ -546,7 +532,7 @@ export default function ShopOrderDetailPage() {
               <Button
                 onClick={() => void runVerify('verify')}
                 disabled={verifyAction !== null}
-                className="w-full min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+                className="w-full min-h-[44px] gap-1.5 bg-success text-success-foreground hover:bg-success/90 sm:w-auto"
               >
                 {verifyAction === 'verify' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                 Verify payment
@@ -555,13 +541,13 @@ export default function ShopOrderDetailPage() {
                 onClick={() => void runVerify('reject')}
                 disabled={verifyAction !== null}
                 variant="outline"
-                className="w-full min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:w-auto"
+                className="w-full min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft sm:w-auto"
               >
                 {verifyAction === 'reject' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
                 Reject
               </Button>
             </div>
-            {verifyError && <p className="text-sm text-rose-700">⚠ {verifyError}</p>}
+            {verifyError && <p className="text-sm text-danger">⚠ {verifyError}</p>}
           </CardContent>
         </Card>
       )}
@@ -580,7 +566,7 @@ export default function ShopOrderDetailPage() {
           {canStart && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto" disabled={statusAction !== null}>
+                <Button className="w-full min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'start' ? <Loader2 className="size-4 animate-spin" /> : <PrinterIcon className="size-4" />}
                   Start printing
                 </Button>
@@ -595,7 +581,7 @@ export default function ShopOrderDetailPage() {
                 <AlertDialogFooter>
                   <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="min-h-[44px] bg-amber-600 text-white hover:bg-amber-600/90"
+                    className="min-h-[44px] bg-brand text-brand-foreground hover:bg-brand/90"
                     onClick={(e) => { e.preventDefault(); void runStatusAction('start'); }}
                   >
                     Yes, start printing
@@ -608,7 +594,7 @@ export default function ShopOrderDetailPage() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'ready' ? <Loader2 className="size-4 animate-spin" /> : <PackageCheck className="size-4 text-emerald-700" />}
+                  {statusAction === 'ready' ? <Loader2 className="size-4 animate-spin" /> : <PackageCheck className="size-4 text-success" />}
                   Mark ready for pickup
                 </Button>
               </AlertDialogTrigger>
@@ -632,7 +618,7 @@ export default function ShopOrderDetailPage() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'complete' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4 text-emerald-700" />}
+                  {statusAction === 'complete' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4 text-success" />}
                   Mark collected
                 </Button>
               </AlertDialogTrigger>
@@ -655,7 +641,7 @@ export default function ShopOrderDetailPage() {
           {canCancel && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:w-auto" disabled={statusAction !== null}>
+                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft sm:w-auto" disabled={statusAction !== null}>
                   {statusAction === 'cancel' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
                   Cancel order
                 </Button>
@@ -680,7 +666,7 @@ export default function ShopOrderDetailPage() {
                 <AlertDialogFooter>
                   <AlertDialogCancel className="min-h-[44px]" onClick={() => setCancelReason('')}>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="min-h-[44px] bg-rose-600 text-white hover:bg-rose-600/90"
+                    className="min-h-[44px] bg-danger text-danger-foreground hover:bg-danger/90"
                     onClick={(e) => { e.preventDefault(); void runStatusAction('cancel'); }}
                   >
                     Yes, cancel order
@@ -692,8 +678,8 @@ export default function ShopOrderDetailPage() {
           {!canStart && !canReady && !canComplete && !canCancel && (
             <p className="text-sm text-muted-foreground">No manual status actions available — this order is in a terminal state.</p>
           )}
-          {statusError && <p className="self-center text-xs text-rose-700">⚠ {statusError}</p>}
-          {downloadError && <p className="self-center text-xs text-rose-700">⚠ {downloadError}</p>}
+          {statusError && <p className="self-center text-xs text-danger">⚠ {statusError}</p>}
+          {downloadError && <p className="self-center text-xs text-danger">⚠ {downloadError}</p>}
         </CardContent>
       </Card>
 
@@ -712,7 +698,7 @@ export default function ShopOrderDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Settings2 className="size-4 text-amber-600" /> Documents &amp; print instructions
+            <Settings2 className="size-4 text-brand" /> Documents &amp; print instructions
           </CardTitle>
           <CardDescription className="text-xs">
             {order.files.length} file(s) · download each print-ready file or send the whole order to the printer.
@@ -759,8 +745,8 @@ export default function ShopOrderDetailPage() {
                           <Badge
                             variant="outline"
                             className={f.colorMode === 'color'
-                              ? 'border-sky-200 bg-sky-50 text-sky-700'
-                              : 'border-zinc-200 bg-zinc-50 text-zinc-700'}
+                              ? 'border-info/30 bg-info-soft text-info'
+                              : 'border-border bg-muted text-muted-foreground'}
                           >
                             {f.colorMode === 'color' ? 'Colour' : 'B&W'}
                           </Badge>
@@ -768,7 +754,7 @@ export default function ShopOrderDetailPage() {
                         <TableCell className="text-sm uppercase">{f.paperSize}</TableCell>
                         <TableCell className="text-sm">
                           {f.duplex
-                            ? <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">duplex</Badge>
+                            ? <Badge variant="outline" className="border-success/30 bg-success-soft text-success">duplex</Badge>
                             : <span className="text-muted-foreground">simplex</span>}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(f.pricePaise)}</TableCell>
@@ -823,9 +809,9 @@ export default function ShopOrderDetailPage() {
                     </div>
                   ))}
                 </div>
-                <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                  <span className="text-emerald-800">Total order value</span>
-                  <span className="font-mono font-semibold text-emerald-900">{formatINRFromPaise(order.totalAmountPaise)}</span>
+                <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
+                  <span className="text-success">Total order value</span>
+                  <span className="font-mono font-semibold text-success">{formatINRFromPaise(order.totalAmountPaise)}</span>
                 </div>
               </div>
             </>
@@ -837,7 +823,7 @@ export default function ShopOrderDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <StickyNote className="size-4 text-amber-600" /> Internal notes
+            <StickyNote className="size-4 text-brand" /> Internal notes
           </CardTitle>
           <CardDescription className="text-xs">
             Private to you and your staff — never shown to the customer. Useful for "VIP customer, expedite" or "ask about binding".
@@ -857,12 +843,12 @@ export default function ShopOrderDetailPage() {
               onClick={() => void saveNotes()}
               disabled={notesSaving}
               size="sm"
-              className="gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+              className="gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
             >
               {notesSaving ? <Loader2 className="size-4 animate-spin" /> : notesSaved ? <CheckCircle2 className="size-4" /> : <Save className="size-4" />}
               {notesSaving ? 'Saving…' : notesSaved ? 'Saved' : 'Save note'}
             </Button>
-            {notesError && <span className="text-xs text-rose-700">⚠ {notesError}</span>}
+            {notesError && <span className="text-xs text-danger">⚠ {notesError}</span>}
           </div>
         </CardContent>
       </Card>
@@ -871,7 +857,7 @@ export default function ShopOrderDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <History className="size-4 text-amber-600" /> Activity timeline
+            <History className="size-4 text-brand" /> Activity timeline
           </CardTitle>
           <CardDescription className="text-xs">
             Every action on this order, oldest first. Derived from the audit log.
@@ -883,7 +869,7 @@ export default function ShopOrderDetailPage() {
           ) : (
             <ol className="relative space-y-4 border-l border-border pl-4">
               {activity.map((e) => {
-                const meta = ACTION_LABELS[e.action] ?? { label: e.action, icon: Hash, tone: 'text-zinc-700' };
+                const meta = ACTION_LABELS[e.action] ?? { label: e.action, icon: Hash, tone: 'text-muted-foreground' };
                 const Icon = meta.icon;
                 return (
                   <li key={e.id} className="relative">
@@ -924,7 +910,7 @@ export default function ShopOrderDetailPage() {
           <div className="flex flex-col gap-0.5">
             <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer phone</span>
             {order.customerPhone ? (
-              <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-sm font-mono text-amber-700 hover:underline">
+              <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-sm font-mono text-brand hover:underline">
                 <Phone className="size-3" /> {order.customerPhone}
               </a>
             ) : <span className="text-sm">—</span>}
@@ -1104,7 +1090,7 @@ function PrintLatchButton({
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <PrinterIcon className="size-5 text-amber-600" />
+              <PrinterIcon className="size-5 text-brand" />
               Confirm Print
             </AlertDialogTitle>
             <AlertDialogDescription className="sr-only">Review the document and print settings before sending to the printer.</AlertDialogDescription>
@@ -1114,13 +1100,13 @@ function PrintLatchButton({
             // ── Printing in progress / terminal state ──
             <div className="space-y-3 py-2">
               <div className="flex items-center gap-2 text-sm">
-                {jobState.status === 'fetching-url' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Preparing document…</>}
-                {jobState.status === 'fetching-pdf' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Fetching PDF…</>}
-                {jobState.status === 'submitting' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Sending to printer…</>}
-                {jobState.status === 'polling' && <><Loader2 className="size-4 animate-spin text-amber-600" /> Waiting for print queue…</>}
-                {jobState.status === 'completed' && <><CheckCircle2 className="size-4 text-emerald-600" /> <span className="text-emerald-700 font-medium">Printed successfully</span></>}
+                {jobState.status === 'fetching-url' && <><Loader2 className="size-4 animate-spin text-brand" /> Preparing document…</>}
+                {jobState.status === 'fetching-pdf' && <><Loader2 className="size-4 animate-spin text-brand" /> Fetching PDF…</>}
+                {jobState.status === 'submitting' && <><Loader2 className="size-4 animate-spin text-brand" /> Sending to printer…</>}
+                {jobState.status === 'polling' && <><Loader2 className="size-4 animate-spin text-brand" /> Waiting for print queue…</>}
+                {jobState.status === 'completed' && <><CheckCircle2 className="size-4 text-success" /> <span className="text-success font-medium">Printed successfully</span></>}
                 {jobState.status === 'failed' && <><AlertCircle className="size-4 text-destructive" /> <span className="text-destructive">{jobState.error}</span></>}
-                {jobState.status === 'unknown' && <><AlertCircle className="size-4 text-amber-600" /> <span className="text-amber-700">{jobState.error ?? 'Unknown status — check printer queue'}</span></>}
+                {jobState.status === 'unknown' && <><AlertCircle className="size-4 text-brand" /> <span className="text-brand">{jobState.error ?? 'Unknown status — check printer queue'}</span></>}
               </div>
               {jobState.agentJobId && (
                 <p className="text-[10px] text-muted-foreground">Job ID: <code className="font-mono">{jobState.agentJobId.slice(0, 12)}</code></p>
@@ -1131,19 +1117,19 @@ function PrintLatchButton({
             <div className="space-y-3 py-2">
               {/* Preflight warnings */}
               {file.sizeBytes > 10 * 1024 * 1024 && (
-                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800">
+                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Large file ({(file.sizeBytes / 1024 / 1024).toFixed(1)} MB) — printing may take longer.</span>
                 </div>
               )}
               {!file.pageCount && (
-                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800">
+                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Page count unknown — PrintLatch will print all pages. Verify before confirming.</span>
                 </div>
               )}
               {file.mimeType !== 'application/pdf' && (
-                <div className="flex items-start gap-2 rounded-md border border-rose-300 bg-rose-50 p-2 text-[11px] text-rose-700">
+                <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft p-2 text-[11px] text-danger">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Not a PDF ({file.mimeType}) — PrintLatch only accepts PDF files. Convert it first.</span>
                 </div>
@@ -1203,7 +1189,7 @@ function PrintLatchButton({
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 text-[11px] text-amber-700">No printers detected — will use the default printer.</p>
+                  <p className="mt-1 text-[11px] text-brand">No printers detected — will use the default printer.</p>
                 )}
               </div>
 
@@ -1220,7 +1206,7 @@ function PrintLatchButton({
                 <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => void handlePrint()}
-                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                 >
                   <PrinterIcon className="size-4" />
                   Confirm Print
@@ -1240,17 +1226,17 @@ function PrintLatchButton({
       </AlertDialog>
 
       {/* Compact status (shown after dialog closes) */}
-      {jobState.status === 'completed' && <span className="text-[10px] text-emerald-600">✓ Printed</span>}
+      {jobState.status === 'completed' && <span className="text-[10px] text-success">✓ Printed</span>}
       {jobState.status === 'failed' && (
         <div className="flex flex-col items-end">
           <span className="text-[10px] text-destructive">✗ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline min-h-[44px] inline-flex items-center">Retry</button>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-brand hover:underline min-h-[44px] inline-flex items-center">Retry</button>
         </div>
       )}
       {jobState.status === 'unknown' && (
         <div className="flex flex-col items-end">
-          <span className="text-[10px] text-amber-700">⚠ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-amber-700 hover:underline min-h-[44px] inline-flex items-center">Retry after checking queue</button>
+          <span className="text-[10px] text-brand">⚠ {jobState.error}</span>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-brand hover:underline min-h-[44px] inline-flex items-center">Retry after checking queue</button>
         </div>
       )}
     </div>

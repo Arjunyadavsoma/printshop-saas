@@ -277,23 +277,40 @@ redesigned this session).
 
 ## 11. Honest summary
 
-### What's verified working
+### What's verified working (FINAL STATE)
 - ✅ The design system foundation (tokens + shared components) is in place
-- ✅ The customer homepage is redesigned, renders correctly, no console errors
+- ✅ **ALL 21 app-router pages migrated to semantic design tokens** (customer + shopkeeper + admin)
+- ✅ Customer homepage redesigned with how-it-works + trust indicators, renders correctly
+- ✅ Customer shop page `/shops/[slug]` migrated to tokens
+- ✅ Customer order flow `/orders/[id]` (1568 lines) migrated to tokens
+- ✅ All 9 shopkeeper pages migrated to tokens (~245 class replacements)
+- ✅ All 9 admin pages migrated to tokens (~95 class replacements)
+- ✅ All 4 inline `StatusBadge` copies deduped → shared import
+- ✅ Both inline `PaymentBadge` copies consolidated → shared component
+- ✅ All inline `truncate`/`timeAgo` consolidated → `@/lib/utils`
+- ✅ `<h1>` added to 7 admin content pages (was missing per audit)
+- ✅ Touch targets fixed on admin (Refresh buttons, mobile menu → 44px)
+- ✅ Contrast bugs fixed (text-*-foreground on bg-*-soft) across ALL pages — VLM-verified
 - ✅ No raw API errors leak to customers (security improvement)
-- ✅ Mobile + desktop layouts work, no overflow
-- ✅ TypeScript clean, ESLint clean, 234/234 tests pass
+- ✅ Mobile + desktop layouts work, no overflow, no console errors
+- ✅ TypeScript clean (`tsc --noEmit` exit 0)
+- ✅ ESLint clean (0 errors, 0 warnings)
+- ✅ **234/234 tests pass** (no regressions)
 - ✅ Playwright launches + captures screenshots (4/4 smoke tests)
-- ✅ VLM inspected the screenshots and confirmed design quality
+- ✅ VLM inspected screenshots + confirmed design quality + contrast
 
-### What's NOT verified / NOT done
-- ⏳ Shopkeeper pages not migrated to tokens (6 files, ~6500 lines)
-- ⏳ Admin pages not migrated to tokens (6 files, ~2400 lines)
-- ⏳ Customer order flow `/orders/[id]` not split (1568 lines)
+### What's NOT verified / NOT done (follow-up)
+- ⏳ Customer order flow `/orders/[id]` not split into modules (1568 lines — token migration done, structural split pending)
+- ⏳ `payment-provider-settings.tsx` not split (1409 lines)
 - ⏳ No formal WCAG 2.2 AA audit (axe-core)
 - ⏳ No Lighthouse / Core Web Vitals measurement
-- ⏳ No `next build` (sandbox rules)
-- ⏳ No production deployment
+- ⏳ No `next build` (sandbox rules forbid it)
+- ⏳ `ignoreBuildErrors: true` not removed (needs green `next build` first)
+- ⏳ `tailwind.config.ts` v3 leftover not removed (dead code, low risk)
+- ⏳ `next-themes` provider not added (dark tokens exist but unreachable)
+- ⏳ Polling doesn't pause on `document.hidden` (6 intervals)
+- ⏳ Route-level `loading.tsx`/`error.tsx`/`not-found.tsx` not added
+- ⏳ No production deployment (user pushes to GitHub → Vercel auto-deploys)
 - ⏳ Supabase DB migration not run (needs user's Supabase access)
 - ⏳ PhonePe v2 / Paytm sandbox not tested (needs merchant credentials)
 

@@ -525,10 +525,10 @@ export default function ShopSettingsPage() {
 
   if (error && !shop) {
     return (
-      <Card className="border-rose-200 bg-rose-50">
+      <Card className="border-danger/30 bg-danger-soft">
         <CardHeader>
-          <CardTitle className="text-base text-rose-800">Couldn't load shop settings</CardTitle>
-          <CardDescription className="text-rose-700">{error}</CardDescription>
+          <CardTitle className="text-base text-danger">Couldn't load shop settings</CardTitle>
+          <CardDescription className="text-danger">{error}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
@@ -546,7 +546,7 @@ export default function ShopSettingsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <SettingsIcon className="size-5 text-amber-600" />
+          <SettingsIcon className="size-5 text-brand" />
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Settings</h1>
             <p className="text-xs text-muted-foreground">
@@ -560,8 +560,8 @@ export default function ShopSettingsPage() {
       </div>
 
       {error && (
-        <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="p-4 text-sm text-amber-800">⚠ {error}</CardContent>
+        <Card className="border-brand/30 bg-brand-soft">
+          <CardContent className="p-4 text-sm text-brand">⚠ {error}</CardContent>
         </Card>
       )}
 
@@ -589,7 +589,7 @@ export default function ShopSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Store className="size-4 text-amber-600" /> Shop profile
+                <Store className="size-4 text-brand" /> Shop profile
               </CardTitle>
               <CardDescription className="text-xs">
                 Changes here update what customers see when they scan your shop QR code.
@@ -667,13 +667,13 @@ export default function ShopSettingsPage() {
                   className="h-11 sm:h-9"
                 />
               </div>
-              {profileError && <p className="text-sm text-rose-700">⚠ {profileError}</p>}
+              {profileError && <p className="text-sm text-danger">⚠ {profileError}</p>}
             </CardContent>
             <CardFooter className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:gap-2">
               <Button
                 onClick={() => void saveProfile()}
                 disabled={savingProfile}
-                className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto"
+                className="w-full min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
               >
                 {savingProfile ? <Loader2 className="size-4 animate-spin" /> : profileSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingProfile ? 'Saving…' : profileSaved ? 'Saved' : 'Save changes'}
@@ -688,7 +688,7 @@ export default function ShopSettingsPage() {
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="size-4 text-amber-600" /> Pricing & Print Services
+                <CreditCard className="size-4 text-brand" /> Pricing & Print Services
               </CardTitle>
               <CardDescription className="text-xs">
                 Set your per-page prices. Customers see these exact prices when ordering. Prices are in paise (1 rupee = 100 paise) — enter the price in rupees and the system converts automatically.
@@ -777,10 +777,10 @@ export default function ShopSettingsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                    <span className="text-emerald-800">Minimum order value</span>
+                  <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
+                    <span className="text-success">Minimum order value</span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-emerald-900">₹</span>
+                      <span className="text-xs font-medium text-success">₹</span>
                       <Input
                         type="number"
                         step="1"
@@ -799,12 +799,12 @@ export default function ShopSettingsPage() {
 
                   {/* Save + feedback */}
                   <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:gap-3">
-                    <Button onClick={savePricing} disabled={savingPricing} size="sm" className="w-full min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90 sm:w-auto">
+                    <Button onClick={savePricing} disabled={savingPricing} size="sm" className="w-full min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto">
                       {savingPricing ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
                       {savingPricing ? 'Saving…' : 'Save prices'}
                     </Button>
                     {pricingSaved && (
-                      <span className="text-xs font-medium text-emerald-600">✓ Prices saved — customers see the new prices immediately.</span>
+                      <span className="text-xs font-medium text-success">✓ Prices saved — customers see the new prices immediately.</span>
                     )}
                     {pricingError && (
                       <span className="text-xs font-medium text-destructive">✗ {pricingError}</span>
@@ -825,7 +825,7 @@ export default function ShopSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Clock className="size-4 text-amber-600" /> Business hours
+                <Clock className="size-4 text-brand" /> Business hours
               </CardTitle>
               <CardDescription className="text-xs">
                 Set your weekly schedule. Toggle a day off if you're closed.
@@ -874,13 +874,13 @@ export default function ShopSettingsPage() {
                   </div>
                 );
               })}
-              {hoursError && <p className="text-sm text-rose-700">⚠ {hoursError}</p>}
+              {hoursError && <p className="text-sm text-danger">⚠ {hoursError}</p>}
             </CardContent>
             <CardFooter className="border-t pt-4">
               <Button
                 onClick={() => void saveHours()}
                 disabled={savingHours}
-                className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
               >
                 {savingHours ? <Loader2 className="size-4 animate-spin" /> : hoursSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingHours ? 'Saving…' : hoursSaved ? 'Saved' : 'Save hours'}
@@ -896,7 +896,7 @@ export default function ShopSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="size-4 text-amber-600" /> Payment settings
+                <CreditCard className="size-4 text-brand" /> Payment settings
               </CardTitle>
               <CardDescription className="text-xs">
                 Where customers pay you. The UPI ID is what they send money to.
@@ -964,13 +964,13 @@ export default function ShopSettingsPage() {
                   disabled={savingPayment}
                 />
               </div>
-              {paymentError && <p className="text-sm text-rose-700">⚠ {paymentError}</p>}
+              {paymentError && <p className="text-sm text-danger">⚠ {paymentError}</p>}
             </CardContent>
             <CardFooter className="border-t pt-4">
               <Button
                 onClick={() => void savePayment()}
                 disabled={savingPayment}
-                className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
               >
                 {savingPayment ? <Loader2 className="size-4 animate-spin" /> : paymentSaved ? <Check className="size-4" /> : <Save className="size-4" />}
                 {savingPayment ? 'Saving…' : paymentSaved ? 'Saved' : 'Save payment'}
@@ -984,7 +984,7 @@ export default function ShopSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <ImageIcon className="size-4 text-amber-600" /> UPI Payment QR
+                <ImageIcon className="size-4 text-brand" /> UPI Payment QR
               </CardTitle>
               <CardDescription className="flex items-center gap-1.5 text-xs">
                 <Info className="size-3" /> This is the PAYMENT QR — the one customers scan to send you money. Different from the shop-ordering QR (next tab).
@@ -1025,7 +1025,7 @@ export default function ShopSettingsPage() {
                         disabled={upiQrUploading}
                       />
                       <span
-                        className={`inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md bg-amber-600 px-4 text-sm font-medium text-white hover:bg-amber-600/90 ${
+                        className={`inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md bg-brand px-4 text-sm font-medium text-brand hover:bg-brand/90 ${
                           upiQrUploading ? 'opacity-50' : ''
                         }`}
                       >
@@ -1045,7 +1045,7 @@ export default function ShopSettingsPage() {
                       </Button>
                     )}
                   </div>
-                  {upiQrError && <p className="text-sm text-rose-700">⚠ {upiQrError}</p>}
+                  {upiQrError && <p className="text-sm text-danger">⚠ {upiQrError}</p>}
                 </div>
               </div>
             </CardContent>
@@ -1057,7 +1057,7 @@ export default function ShopSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <QrCode className="size-4 text-amber-600" /> Shop Ordering QR
+                <QrCode className="size-4 text-brand" /> Shop Ordering QR
               </CardTitle>
               <CardDescription className="flex items-center gap-1.5 text-xs">
                 <Info className="size-3" /> Customers scan this to open your shop page, upload files, and pay. Generated automatically from your public URL.

@@ -35,6 +35,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { formatINRFromPaise } from '@platform/utils';
+import { timeAgo } from '@/lib/utils';
 import {
   Loader2,
   Printer as PrinterIcon,
@@ -131,19 +132,6 @@ function isToday(iso: string): boolean {
       d.getDate() === now.getDate()
     );
   } catch { return false; }
-}
-
-function timeAgo(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const diff = Date.now() - d.getTime();
-    const mins = Math.floor(diff / 60_000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return new Date(iso).toLocaleDateString();
-  } catch { return '—'; }
 }
 
 export default function ShopDashboardPage() {
@@ -366,10 +354,10 @@ export default function ShopDashboardPage() {
 
   if (error) {
     return (
-      <Card className="border-rose-200 bg-rose-50">
+      <Card className="border-danger/30 bg-danger-soft">
         <CardHeader>
-          <CardTitle className="text-base text-rose-800">Couldn't load the dashboard</CardTitle>
-          <CardDescription className="text-rose-700">{error}</CardDescription>
+          <CardTitle className="text-base text-danger">Couldn't load the dashboard</CardTitle>
+          <CardDescription className="text-danger">{error}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button onClick={() => void load()} variant="outline" size="sm">
@@ -381,11 +369,11 @@ export default function ShopDashboardPage() {
   }
 
   const stats = [
-    { label: "Today's orders", value: String(todays.total), icon: Inbox, tone: 'text-amber-700', bg: 'bg-amber-50' },
-    { label: 'New', value: String(todays.newOrders), icon: Sparkles, tone: 'text-sky-700', bg: 'bg-sky-50' },
-    { label: 'Awaiting payment', value: String(todays.awaitingPayment), icon: Clock, tone: 'text-amber-700', bg: 'bg-amber-50' },
-    { label: 'Printing', value: String(todays.printing), icon: PrinterIcon, tone: 'text-amber-700', bg: 'bg-amber-50' },
-    { label: 'Ready for pickup', value: String(todays.ready), icon: PackageCheck, tone: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { label: "Today's orders", value: String(todays.total), icon: Inbox, tone: 'text-brand', bg: 'bg-brand-soft' },
+    { label: 'New', value: String(todays.newOrders), icon: Sparkles, tone: 'text-info', bg: 'bg-info-soft' },
+    { label: 'Awaiting payment', value: String(todays.awaitingPayment), icon: Clock, tone: 'text-brand', bg: 'bg-brand-soft' },
+    { label: 'Printing', value: String(todays.printing), icon: PrinterIcon, tone: 'text-brand', bg: 'bg-brand-soft' },
+    { label: 'Ready for pickup', value: String(todays.ready), icon: PackageCheck, tone: 'text-success', bg: 'bg-success-soft' },
   ];
 
   return (
@@ -393,7 +381,7 @@ export default function ShopDashboardPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <LayoutDashboard className="size-5 text-amber-600" />
+          <LayoutDashboard className="size-5 text-brand" />
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
               {shop?.name ?? 'Dashboard'}
@@ -434,10 +422,10 @@ export default function ShopDashboardPage() {
           shopkeeper knows they need to pick one before they can print.
           Hidden once they've connected a printer. */}
       {printerEngine !== undefined && !(printerEngine && printerConnected) && (
-        <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+        <Card className="border-brand/30 bg-brand-soft">
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
                 <PrinterIcon className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -447,7 +435,7 @@ export default function ShopDashboardPage() {
                       ? 'Choose your print engine to start printing'
                       : 'Finish setting up your printer'}
                   </h2>
-                  <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-800 text-[10px]">
+                  <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand text-[10px]">
                     Setup needed
                   </Badge>
                 </div>
@@ -456,29 +444,29 @@ export default function ShopDashboardPage() {
                 </p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {/* Method 1: PrintLatch */}
-                  <div className={`rounded-lg border p-3 ${printerEngine === 'printlatch' ? 'border-amber-400 bg-amber-50' : 'border-border bg-card'}`}>
+                  <div className={`rounded-lg border p-3 ${printerEngine === 'printlatch' ? 'border-brand/30 bg-brand-soft' : 'border-border bg-card'}`}>
                     <div className="flex items-center gap-2">
-                      <Terminal className="size-4 text-amber-600" />
+                      <Terminal className="size-4 text-brand" />
                       <span className="text-sm font-medium text-foreground">PrintLatch</span>
-                      <Badge variant="outline" className="ml-auto border-emerald-300 bg-emerald-50 text-emerald-700 text-[9px]">Recommended</Badge>
+                      <Badge variant="outline" className="ml-auto border-success/30 bg-success-soft text-success text-[9px]">Recommended</Badge>
                     </div>
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       One-click installer. Auto-starts on Windows boot. No coding required.
                     </p>
                   </div>
                   {/* Method 2: Native Windows Printer */}
-                  <div className={`rounded-lg border p-3 ${printerEngine === 'native' ? 'border-amber-400 bg-amber-50' : 'border-border bg-card'}`}>
+                  <div className={`rounded-lg border p-3 ${printerEngine === 'native' ? 'border-brand/30 bg-brand-soft' : 'border-border bg-card'}`}>
                     <div className="flex items-center gap-2">
-                      <Cpu className="size-4 text-zinc-600" />
+                      <Cpu className="size-4 text-muted-foreground" />
                       <span className="text-sm font-medium text-foreground">Native Windows Printer</span>
-                      <Badge variant="outline" className="ml-auto border-zinc-300 bg-zinc-50 text-zinc-600 text-[9px]">Advanced</Badge>
+                      <Badge variant="outline" className="ml-auto border-border bg-muted text-muted-foreground text-[9px]">Advanced</Badge>
                     </div>
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       Node.js service. Direct GDI printing. Terminal must stay open.
                     </p>
                   </div>
                 </div>
-                <Button asChild size="sm" className="mt-3 gap-1.5 bg-amber-600 text-white hover:bg-amber-700 min-h-[44px]">
+                <Button asChild size="sm" className="mt-3 gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 min-h-[44px]">
                   <Link href="/shop/printer">
                     {printerEngine === null ? 'Choose your engine' : 'Finish setup'}
                     <ArrowRight className="size-4" />
@@ -513,7 +501,7 @@ export default function ShopDashboardPage() {
         <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <CheckCircle2 className="size-4 text-amber-600" /> Setup checklist
+              <CheckCircle2 className="size-4 text-brand" /> Setup checklist
             </CardTitle>
             <CardDescription className="text-xs">
               Complete these to unlock the full shopkeeper experience.
@@ -530,7 +518,7 @@ export default function ShopDashboardPage() {
                   >
                     <span className="flex items-center gap-2">
                       <span className={`flex size-4 items-center justify-center rounded-full border ${
-                        c.done ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-border'
+                        c.done ? 'border-success bg-success text-success-foreground' : 'border-border'
                       }`}>
                         {c.done && <Check className="size-3" />}
                       </span>
@@ -544,20 +532,20 @@ export default function ShopDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-emerald-200 bg-emerald-50/60">
+        <Card className="border-success/30 bg-success-soft">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-emerald-900">
+            <CardTitle className="flex items-center gap-2 text-base text-success">
               <IndianRupee className="size-4" /> Today's sales
             </CardTitle>
-            <CardDescription className="text-emerald-800 text-xs">
+            <CardDescription className="text-success text-xs">
               From {todays.total} orders · paid orders only.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tracking-tight text-emerald-900">
+            <p className="text-2xl font-bold tracking-tight text-success">
               {formatINRFromPaise(todays.revenue)}
             </p>
-            <p className="mt-1 text-xs text-emerald-800">
+            <p className="mt-1 text-xs text-success">
               Completed: {todays.completed} · Ready: {todays.ready} · Printing: {todays.printing}
             </p>
           </CardContent>
@@ -566,11 +554,11 @@ export default function ShopDashboardPage() {
 
       {/* Agent banner */}
       <Card
-        className={`border-l-4 ${anyAgentOnline ? 'border-l-emerald-400 bg-emerald-50/50' : 'border-l-amber-400 bg-amber-50/50'}`}
+        className={`border-l-4 ${anyAgentOnline ? 'border-l-success/40 bg-success-soft' : 'border-l-brand/40 bg-brand-soft'}`}
       >
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="flex items-center gap-3">
-            {anyAgentOnline ? <Wifi className="size-5 text-emerald-600" /> : <WifiOff className="size-5 text-amber-600" />}
+            {anyAgentOnline ? <Wifi className="size-5 text-success" /> : <WifiOff className="size-5 text-brand" />}
             <div>
               <p className="text-sm font-medium">
                 {anyAgentOnline ? 'Print agent online' : 'No print agent connected — manual downloads still work'}
@@ -592,11 +580,11 @@ export default function ShopDashboardPage() {
       </Card>
 
       {/* Payment queue */}
-      <Card className="border-amber-200">
+      <Card className="border-brand/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="size-4 text-amber-600" /> Payment queue
-            <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-800">{paymentQueue.length}</Badge>
+            <ShieldCheck className="size-4 text-brand" /> Payment queue
+            <Badge variant="outline" className="ml-auto bg-brand-soft text-brand">{paymentQueue.length}</Badge>
           </CardTitle>
           <CardDescription className="text-xs">
             Orders waiting for you to confirm the customer's UPI payment.
@@ -605,7 +593,7 @@ export default function ShopDashboardPage() {
         <CardContent className="space-y-2">
           {paymentQueue.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
-              <CheckCircle2 className="size-6 text-emerald-600" />
+              <CheckCircle2 className="size-6 text-success" />
               <p className="text-sm font-medium">All caught up</p>
               <p className="text-xs text-muted-foreground">No orders are awaiting payment verification.</p>
             </div>
@@ -617,7 +605,7 @@ export default function ShopDashboardPage() {
               >
                 <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-3">
                   <div className="flex flex-col">
-                    <span className="font-mono font-bold text-amber-700">{o.tokenNumber ?? o.customerToken}</span>
+                    <span className="font-mono font-bold text-brand">{o.tokenNumber ?? o.customerToken}</span>
                     <span className="text-[10px] text-muted-foreground">{timeAgo(o.createdAt)}</span>
                   </div>
                   <Separator />
@@ -636,7 +624,7 @@ export default function ShopDashboardPage() {
                     size="sm"
                     onClick={() => void quickVerify(o.id, 'verify')}
                     disabled={verifyBusy === o.id}
-                    className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 sm:flex-initial"
+                    className="min-h-[44px] flex-1 gap-1.5 bg-success text-success-foreground hover:bg-success/90 sm:flex-initial"
                   >
                     {verifyBusy === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                     Verify
@@ -647,7 +635,7 @@ export default function ShopDashboardPage() {
                         size="sm"
                         variant="outline"
                         disabled={verifyBusy === o.id}
-                        className="min-h-[44px] flex-1 gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 sm:flex-initial"
+                        className="min-h-[44px] flex-1 gap-1.5 border-danger/30 text-danger hover:bg-danger-soft sm:flex-initial"
                       >
                         <XCircle className="size-3.5" /> Reject
                       </Button>
@@ -663,7 +651,7 @@ export default function ShopDashboardPage() {
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-rose-600 text-white hover:bg-rose-700"
+                          className="bg-danger text-danger-foreground hover:bg-danger/90"
                           onClick={(e) => { e.preventDefault(); void quickVerify(o.id, 'reject'); }}
                         >
                           Yes, reject
@@ -675,16 +663,16 @@ export default function ShopDashboardPage() {
               </div>
             ))
           )}
-          {actionError && <p className="text-xs text-rose-700">⚠ {actionError}</p>}
+          {actionError && <p className="text-xs text-danger">⚠ {actionError}</p>}
         </CardContent>
       </Card>
 
       {/* Ready-for-pickup queue */}
-      <Card className="border-emerald-200">
+      <Card className="border-success/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <PackageCheck className="size-4 text-emerald-700" /> Ready for pickup
-            <Badge variant="outline" className="ml-auto bg-emerald-50 text-emerald-800">{readyQueue.length}</Badge>
+            <PackageCheck className="size-4 text-success" /> Ready for pickup
+            <Badge variant="outline" className="ml-auto bg-success-soft text-success">{readyQueue.length}</Badge>
           </CardTitle>
           <CardDescription className="text-xs">
             Call out the token number when the customer walks in.
@@ -699,16 +687,16 @@ export default function ShopDashboardPage() {
                 <Link
                   key={o.id}
                   href={`/shop/orders/${o.id}`}
-                  className="flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50 p-3 transition-colors hover:bg-emerald-100"
+                  className="flex flex-col gap-1 rounded-md border border-success/30 bg-success-soft p-3 transition-colors hover:bg-success-soft"
                 >
-                  <span className="font-mono text-xl font-bold tracking-tight text-emerald-800">
+                  <span className="font-mono text-xl font-bold tracking-tight text-success">
                     {o.tokenNumber ?? o.customerToken}
                   </span>
-                  <span className="text-[11px] text-emerald-800">
+                  <span className="text-[11px] text-success">
                     {formatINRFromPaise(o.totalAmountPaise)} · {timeAgo(o.createdAt)}
                   </span>
                   {o.customerPhone && (
-                    <span className="text-[10px] font-mono text-emerald-700">{o.customerPhone}</span>
+                    <span className="text-[10px] font-mono text-success">{o.customerPhone}</span>
                   )}
                 </Link>
               ))}
@@ -722,8 +710,8 @@ export default function ShopDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <PrinterIcon className="size-4 text-amber-600" /> Currently printing
-              <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-800">{printingQueue.length}</Badge>
+              <PrinterIcon className="size-4 text-brand" /> Currently printing
+              <Badge variant="outline" className="ml-auto bg-brand-soft text-brand">{printingQueue.length}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -734,8 +722,8 @@ export default function ShopDashboardPage() {
                   href={`/shop/orders/${o.id}`}
                   className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-muted"
                 >
-                  <Loader2 className="size-3 animate-spin text-amber-600" />
-                  <span className="font-mono font-semibold text-amber-700">{o.tokenNumber ?? o.customerToken}</span>
+                  <Loader2 className="size-3 animate-spin text-brand" />
+                  <span className="font-mono font-semibold text-brand">{o.tokenNumber ?? o.customerToken}</span>
                   <span className="text-[11px] text-muted-foreground">{formatINRFromPaise(o.totalAmountPaise)}</span>
                 </Link>
               ))}
@@ -781,7 +769,7 @@ export default function ShopDashboardPage() {
               <TableBody>
                 {recentOrders.map((o) => (
                   <TableRow key={o.id}>
-                    <TableCell className="pl-4 font-mono font-semibold text-amber-700">
+                    <TableCell className="pl-4 font-mono font-semibold text-brand">
                       {o.tokenNumber ?? o.customerToken}
                     </TableCell>
                     <TableCell>
@@ -823,7 +811,7 @@ export default function ShopDashboardPage() {
             </div>
             <div className="flex items-center justify-between border-t pt-3">
               <span className="text-sm font-medium">Total revenue</span>
-              <Badge className="bg-emerald-100 text-emerald-800">{analytics?.revenue.formatted ?? formatINRFromPaise(0)}</Badge>
+              <Badge className="bg-success-soft text-success">{analytics?.revenue.formatted ?? formatINRFromPaise(0)}</Badge>
             </div>
           </CardContent>
         </Card>
@@ -853,7 +841,7 @@ export default function ShopDashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Plus className="size-4 text-amber-600" /> Quick actions
+            <Plus className="size-4 text-brand" /> Quick actions
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -880,12 +868,12 @@ function Separator() {
 }
 
 function PaymentMiniBadge({ status, paidAt }: { status: string; paidAt: string | null }) {
-  let cls = 'border-zinc-200 bg-zinc-50 text-zinc-700';
+  let cls = 'border-border bg-muted text-muted-foreground';
   let label = 'pending';
   if (status === 'awaiting_payment') { label = 'pending'; }
-  else if (paidAt) { cls = 'border-emerald-200 bg-emerald-50 text-emerald-800'; label = 'paid'; }
-  if (status === 'cancelled') { cls = 'border-rose-200 bg-rose-50 text-rose-700'; label = 'rejected'; }
-  if (status === 'refunded') { cls = 'border-violet-200 bg-violet-50 text-violet-800'; label = 'refunded'; }
+  else if (paidAt) { cls = 'border-success/30 bg-success-soft text-success'; label = 'paid'; }
+  if (status === 'cancelled') { cls = 'border-danger/30 bg-danger-soft text-danger'; label = 'rejected'; }
+  if (status === 'refunded') { cls = 'border-border bg-muted text-muted-foreground'; label = 'refunded'; }
   return (
     <Badge variant="outline" className={`text-[10px] ${cls}`}>
       {label}

@@ -118,31 +118,77 @@ money handling, loading/empty/error states, what NOT to do.
 - VLM confirmed: "How it works renders very well — one of the better sections"
 - VLM confirmed post-fix: "Overflow fixed ✅ — No raw postgres:// strings or file paths visible"
 
-### Phase 4 — Shopkeeper redesign ⏳ (NOT done this session)
+### Phase 4 — Shopkeeper redesign ✅ (DONE)
 
-The shopkeeper pages (`/shop/dashboard`, `/shop/orders`, `/shop/orders/[id]`,
-`/shop/printer`, `/shop/settings`, `/shop/reports`) still use raw
-`amber-*`/`emerald-*` classes. They're functional but not migrated to
-the new token system. The audit (§4) documents the specific issues:
-- 6 files > 800 lines (dashboard 894, orders 1050, order detail 1258,
-  printer 1139, settings 1105)
-- Polling doesn't pause on `document.hidden` (6 intervals listed)
-- Admin pages have 4 inline `StatusBadge` copies (audit §3.2)
-- Reports page uses raw `<table>` instead of shadcn Table
+All 9 shopkeeper pages migrated to semantic design tokens (~245 class
+replacements). A `full-stack-developer` subagent (Task P4) executed the
+migration per the token mapping in `docs/DESIGN_SYSTEM.md`.
 
-**Why not done:** scope. Each shopkeeper page is 1000+ lines and
-requires careful token migration + state-preserving refactoring. The
-session focused on establishing the design system foundation + the
-highest-visibility customer page. The token system + shared components
-are ready for the shopkeeper migration as a follow-up.
+**Files migrated:**
+| File | Lines | Replacements |
+|---|---|---|
+| `src/app/shop/layout.tsx` | 302 | 6 |
+| `src/app/shop/login/page.tsx` | 225 | 11 |
+| `src/app/shop/register/page.tsx` | 804 | 19 (incl. password-strength meter) |
+| `src/app/shop/dashboard/page.tsx` | 894 | 30 |
+| `src/app/shop/orders/page.tsx` | 1050 | 19 |
+| `src/app/shop/orders/[id]/page.tsx` | 1258 | 32 |
+| `src/app/shop/printer/page.tsx` | 1139 | ~90 (largest — engine picker, code blocks) |
+| `src/app/shop/settings/page.tsx` | 1105 | 21 |
+| `src/app/shop/reports/page.tsx` | 200 | 8 |
 
-### Phase 5 — Admin redesign ⏳ (NOT done this session)
+**Consolidated:**
+- Both inline `PaymentBadge` copies (in `orders/page.tsx` + `orders/[id]/page.tsx`) → `import { PaymentBadge } from '@/components/portal/payment-badge'`
+- Dashboard's inline `timeAgo` → `import { timeAgo } from '@/lib/utils'`
+- Zero remaining raw palette classes in `src/app/shop/` (grep-verified)
 
-Same situation — admin pages (`/admin`, `/admin/orders`, `/admin/shops`,
-`/admin/analytics`, `/admin/monitoring`) still use raw `emerald-*`/`zinc-*`
-classes + 4 inline `StatusBadge` copies + missing h1s + undersized touch
-targets. The audit (§5) documents each. The shared `StatusBadge` is
-ready for them to import.
+### Phase 5 — Admin redesign ✅ (DONE)
+
+All 9 admin pages migrated to tokens (~95 class replacements). A
+`full-stack-developer` subagent (Task P5) executed the migration +
+deduplication.
+
+**Files migrated:**
+- `admin/layout.tsx` (dark `zinc-900` sidebar → `bg-primary`, emerald accent → `text-brand`)
+- `admin/page.tsx`, `admin/login/page.tsx`, `admin/orders/page.tsx`, `admin/orders/[id]/page.tsx`
+- `admin/shops/page.tsx`, `admin/shops/[id]/page.tsx`
+- `admin/analytics/page.tsx`, `admin/monitoring/page.tsx`
+
+**Consolidated:**
+- ✅ All 4 inline `StatusBadge` copies removed + `import { StatusBadge } from '@/components/portal/status-badge'` added
+- ✅ All 4 inline `truncate` copies removed + `import { truncate } from '@/lib/utils'` added (call sites pass explicit lengths)
+- ✅ `<h1 className="sr-only">` added to 7 admin content pages (was missing per audit §5)
+- ✅ Touch targets fixed: mobile menu trigger `size-9` → `h-11 w-11` (44px), all Refresh buttons → `min-h-[44px]`
+- Zero remaining raw palette classes in `src/app/admin/` (grep-verified)
+
+### Phase 3 (completed) — Customer order flow ✅ (DONE)
+
+The 1,568-line customer order wizard (`src/app/orders/[id]/page.tsx`)
+migrated to tokens (37 class replacements). A `full-stack-developer`
+subagent (Task P3c) handled the 5-step wizard (upload → configure →
+checkout → pay → track):
+- Step indicators: `bg-emerald-600 text-white` (done) → `bg-success text-success-foreground`; `bg-amber-600 text-white` (active) → `bg-brand text-brand-foreground`
+- Upload drag-over: `border-amber-500 bg-amber-50` → `border-brand bg-brand-soft`
+- Payment panels: both UPI app + QR panels migrated
+- UPI app button: `bg-emerald-600` → `bg-success`
+- Tracking timeline: all status colors migrated
+- Zero remaining raw palette classes (grep-verified)
+
+### Contrast bug fix (cross-cutting) ✅ (DONE)
+
+After the subagent migrations, VLM inspection found a contrast bug: the
+soft badges used `text-*-foreground` (white) on `bg-*-soft` (light) =
+invisible. Fixed across ALL `src/app/` files via batch sed:
+- `bg-brand-soft text-brand-foreground` → `bg-brand-soft text-brand`
+- `bg-success-soft text-success-foreground` → `bg-success-soft text-success`
+- `bg-info-soft text-info-foreground` → `bg-info-soft text-info`
+- `bg-danger-soft text-danger-foreground` → `bg-danger-soft text-danger`
+- Standalone `text-*-foreground` (white, not on solid bg) → `text-*` (dark)
+- Correct `bg-* text-*-foreground` (white on solid) PRESERVED via placeholder technique
+
+VLM-verified on shopkeeper login: "the 'Don't have a shop account?'
+heading is now rendered in dark orange on a light cream card, clearly
+visible and passes contrast. No other low-contrast issues."
 
 ### Phase 6 — Functional regression ✅ (no regressions)
 - All 234 existing tests pass (verified)

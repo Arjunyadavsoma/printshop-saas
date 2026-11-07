@@ -80,11 +80,11 @@ export default function AdminLoginPage() {
   // No access key → show a "not found" page (not the login form).
   if (keyValid === false) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+      <div className="flex min-h-screen items-center justify-center bg-primary px-4">
         <div className="text-center">
-          <Lock className="mx-auto size-12 text-zinc-700" />
-          <h1 className="mt-4 text-xl font-bold text-zinc-600">404</h1>
-          <p className="mt-1 text-sm text-zinc-700">This page does not exist.</p>
+          <Lock className="mx-auto size-12 text-muted-foreground" />
+          <h1 className="mt-4 text-xl font-bold text-muted-foreground">404</h1>
+          <p className="mt-1 text-sm text-muted-foreground">This page does not exist.</p>
         </div>
       </div>
     );
@@ -93,43 +93,43 @@ export default function AdminLoginPage() {
   // Checking the key...
   if (keyValid === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <Loader2 className="size-6 animate-spin text-zinc-600" />
+      <div className="flex min-h-screen items-center justify-center bg-primary">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   // Key valid → show the login form.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-primary px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-lg shadow-brand/20">
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">PrintShop Admin</h1>
-          <p className="mt-1 text-sm text-zinc-400">Platform administration portal</p>
+          <h1 className="text-2xl font-bold tracking-tight text-primary-foreground">PrintShop Admin</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Platform administration portal</p>
         </div>
 
-        <Card className="border-zinc-800 bg-zinc-900 text-zinc-100 shadow-xl">
+        <Card className="border-primary-foreground/10 bg-primary/90 text-primary-foreground shadow-xl">
           <CardHeader>
-            <CardTitle className="text-zinc-100">Sign in</CardTitle>
-            <CardDescription className="text-zinc-400">Use your platform admin credentials.</CardDescription>
+            <CardTitle className="text-primary-foreground">Sign in</CardTitle>
+            <CardDescription className="text-muted-foreground">Use your platform admin credentials.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="email" className="text-zinc-200">Email</Label>
+                <Label htmlFor="email" className="text-primary-foreground">Email</Label>
                 <Input id="email" type="email" autoComplete="email" required
                   value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
+                  className="border-primary-foreground/10 bg-primary text-primary-foreground placeholder:text-muted-foreground"
                   placeholder="admin@example.com" disabled={submitting} />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="password" className="text-zinc-200">Password</Label>
+                <Label htmlFor="password" className="text-primary-foreground">Password</Label>
                 <Input id="password" type="password" autoComplete="current-password" required
                   value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
+                  className="border-primary-foreground/10 bg-primary text-primary-foreground placeholder:text-muted-foreground"
                   placeholder="••••••••" disabled={submitting} />
               </div>
               {error && (
@@ -139,19 +139,19 @@ export default function AdminLoginPage() {
                   <AlertDescription className="text-red-200">{error}</AlertDescription>
                 </Alert>
               )}
-              <Button type="submit" disabled={submitting} className="gap-2 bg-emerald-600 text-white hover:bg-emerald-500 min-h-[44px]">
+              <Button type="submit" disabled={submitting} className="gap-2 bg-brand text-brand-foreground hover:bg-brand/90 min-h-[44px]">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                 {submitting ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex flex-col gap-2 text-xs text-zinc-400">
-            <Link href="/" className="inline-flex items-center gap-1 hover:text-zinc-200">
+          <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground">
+            <Link href="/" className="inline-flex items-center gap-1 hover:text-primary-foreground">
               Back to landing page <ArrowRight className="h-3 w-3" />
             </Link>
           </CardFooter>
         </Card>
-        <p className="mt-6 text-center text-xs text-zinc-400">PrintShop SaaS · Platform admin portal</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground">PrintShop SaaS · Platform admin portal</p>
       </div>
     </div>
   );

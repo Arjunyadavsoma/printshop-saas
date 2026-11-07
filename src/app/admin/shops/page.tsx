@@ -114,17 +114,18 @@ export default function AdminShopsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Shop directory</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Store className="h-5 w-5 text-emerald-600" />
+            <Store className="h-5 w-5 text-brand" />
             <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Shop directory</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             All shops on the platform ({shops.length} total).
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -202,10 +203,10 @@ export default function AdminShopsPage() {
               </TableHeader>
               <TableBody>
                 {pageItems.map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20">
+                  <TableRow key={s.id} className="cursor-pointer hover:bg-success-soft/40">
                     <TableCell>
                       <Link href={`/admin/shops/${s.id}`} className="block">
-                        <div className="font-medium text-zinc-900 hover:text-emerald-700 dark:text-zinc-100 dark:hover:text-emerald-400">
+                        <div className="font-medium text-foreground hover:text-brand">
                           {s.name}
                         </div>
                         <div className="text-xs text-muted-foreground">{s.subscriptionTier} tier</div>
@@ -225,11 +226,11 @@ export default function AdminShopsPage() {
                     <TableCell>
                       <Link href={`/admin/shops/${s.id}`} className="block">
                         {s.isActive ? (
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+                          <Badge variant="outline" className="border-success/30 bg-success-soft text-success">
                             Active
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                          <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
                             Inactive
                           </Badge>
                         )}
@@ -241,7 +242,7 @@ export default function AdminShopsPage() {
                       <Link href={`/admin/shops/${s.id}`} className="block">
                         <div className="flex items-center gap-1.5 text-xs">
                           {s.stats.agentsOnline > 0 ? (
-                            <Wifi className="h-3.5 w-3.5 text-emerald-600" />
+                            <Wifi className="h-3.5 w-3.5 text-success" />
                           ) : (
                             <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
                           )}

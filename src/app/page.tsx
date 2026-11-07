@@ -43,9 +43,9 @@ interface ShopsListResponse {
 
 const TIER_STYLES: Record<ShopListItem['subscriptionTier'], string> = {
   free: 'bg-muted text-muted-foreground border-border',
-  starter: 'bg-brand-soft text-brand-foreground border-brand/30',
-  pro: 'bg-success-soft text-success-foreground border-success/30',
-  enterprise: 'bg-info-soft text-info-foreground border-info/30',
+  starter: 'bg-brand-soft text-brand border-brand/30',
+  pro: 'bg-success-soft text-success border-success/30',
+  enterprise: 'bg-info-soft text-info border-info/30',
 };
 
 const HOW_IT_WORKS = [
@@ -165,7 +165,7 @@ export default function HomePage() {
       {/* Hero */}
       <header className="border-b border-border bg-brand-soft">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16 lg:py-20">
-          <Badge variant="outline" className="border-brand/30 bg-background/70 text-brand-foreground">
+          <Badge variant="outline" className="border-brand/30 bg-background/70 text-brand">
             <QrCode className="size-3" aria-hidden="true" />
             QR-powered print shops for India
           </Badge>
@@ -345,7 +345,7 @@ export default function HomePage() {
       <footer className="mt-auto border-t border-border bg-card">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-8">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-brand font-bold text-brand-foreground" aria-hidden="true">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-brand font-bold text-brand" aria-hidden="true">
               P
             </div>
             <div>

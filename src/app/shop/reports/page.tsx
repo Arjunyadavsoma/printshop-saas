@@ -102,7 +102,7 @@ export default function ReportsPage() {
 
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-amber-600" />
+          <Loader2 className="size-6 animate-spin text-brand" />
         </div>
       )}
 
@@ -117,18 +117,18 @@ export default function ReportsPage() {
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
             <MetricCard label="Total Orders" value={String(report.summary.totalOrders)} icon={IndianRupee} tone="text-foreground" />
-            <MetricCard label="Verified" value={String(report.summary.verifiedPayments)} icon={CheckCircle2} tone="text-emerald-600" />
-            <MetricCard label="Pending" value={String(report.summary.pendingPayments)} icon={Clock} tone="text-amber-600" />
-            <MetricCard label="Cancelled" value={String(report.summary.cancelledOrders)} icon={XCircle} tone="text-rose-600" />
+            <MetricCard label="Verified" value={String(report.summary.verifiedPayments)} icon={CheckCircle2} tone="text-success" />
+            <MetricCard label="Pending" value={String(report.summary.pendingPayments)} icon={Clock} tone="text-brand" />
+            <MetricCard label="Cancelled" value={String(report.summary.cancelledOrders)} icon={XCircle} tone="text-danger" />
             <MetricCard label="By Status" value={Object.entries(report.summary.byStatus).map(([k,v]) => `${k}:${v}`).join(' ')} icon={IndianRupee} tone="text-muted-foreground" small />
           </div>
 
           {/* Financial totals */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MoneyCard label="Total Order Value" value={report.totals.totalOrderValue} tone="text-foreground" />
-            <MoneyCard label="Verified Collections" value={report.totals.verifiedCollections} tone="text-emerald-700" />
-            <MoneyCard label="Outstanding" value={report.totals.outstanding} tone="text-amber-700" />
-            <MoneyCard label="Cancelled Value" value={report.totals.cancelledValue} tone="text-rose-700" />
+            <MoneyCard label="Verified Collections" value={report.totals.verifiedCollections} tone="text-success" />
+            <MoneyCard label="Outstanding" value={report.totals.outstanding} tone="text-brand" />
+            <MoneyCard label="Cancelled Value" value={report.totals.cancelledValue} tone="text-danger" />
           </div>
 
           {/* Order list */}
@@ -158,7 +158,7 @@ export default function ReportsPage() {
                         <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{o.status}</Badge></td>
                         <td className="px-3 py-2 text-right font-mono">{o.totalAmount}</td>
                         <td className="px-3 py-2 text-center">
-                          {o.paymentVerified ? <CheckCircle2 className="mx-auto size-4 text-emerald-600" /> : <Clock className="mx-auto size-4 text-amber-600" />}
+                          {o.paymentVerified ? <CheckCircle2 className="mx-auto size-4 text-success" /> : <Clock className="mx-auto size-4 text-brand" />}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{o.paymentUtr ?? '—'}</td>
                       </tr>

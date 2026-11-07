@@ -84,10 +84,10 @@ export default function PrinterSetupPage() {
       ) : (
         <>
           {/* Switch-engine banner */}
-          <Card className="border-amber-200 bg-amber-50/50">
+          <Card className="border-brand/30 bg-brand-soft">
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
                   {engine === 'printlatch' ? <Terminal className="size-4" /> : <Cpu className="size-4" />}
                 </div>
                 <div>
@@ -124,7 +124,7 @@ function EnginePicker({ onPick }: { onPick: (e: PrintEngine) => void }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <HelpCircle className="size-5 text-amber-600" /> Which print engine do you want to use?
+            <HelpCircle className="size-5 text-brand" /> Which print engine do you want to use?
           </CardTitle>
           <CardDescription>
             Both engines print customer PDFs directly from your browser to your Windows printer. Pick the one that fits your shop.
@@ -135,49 +135,49 @@ function EnginePicker({ onPick }: { onPick: (e: PrintEngine) => void }) {
             {/* PrintLatch option */}
             <button
               onClick={() => onPick('printlatch')}
-              className="group flex flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-left transition hover:border-amber-400 hover:bg-amber-50/40 focus:outline-none focus:ring-2 focus:ring-amber-400 min-h-[220px]"
+              className="group flex flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-left transition hover:border-brand/40 hover:bg-brand-soft focus:outline-none focus:ring-2 focus:ring-brand min-h-[220px]"
             >
               <div className="flex items-center justify-between">
-                <div className="flex size-11 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <div className="flex size-11 items-center justify-center rounded-full bg-brand-soft text-brand">
                   <Terminal className="size-5" />
                 </div>
-                <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700">Recommended</Badge>
+                <Badge variant="outline" className="border-success/30 bg-success-soft text-success">Recommended</Badge>
               </div>
               <div>
                 <h3 className="text-base font-semibold text-foreground">PrintLatch</h3>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">One-click installer · auto-starts on boot</p>
               </div>
               <ul className="mt-1 space-y-1.5 text-xs text-muted-foreground">
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> Download + run one installer</li>
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> Starts automatically on Windows boot</li>
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> No Node.js or coding required</li>
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> Dashboard + diagnostic built in</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> Download + run one installer</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> Starts automatically on Windows boot</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> No Node.js or coding required</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> Dashboard + diagnostic built in</li>
               </ul>
-              <p className="mt-auto pt-2 text-xs font-medium text-amber-700 group-hover:underline">Choose PrintLatch →</p>
+              <p className="mt-auto pt-2 text-xs font-medium text-brand group-hover:underline">Choose PrintLatch →</p>
             </button>
 
             {/* Native Windows Printer option */}
             <button
               onClick={() => onPick('native')}
-              className="group flex flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-left transition hover:border-amber-400 hover:bg-amber-50/40 focus:outline-none focus:ring-2 focus:ring-amber-400 min-h-[220px]"
+              className="group flex flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-left transition hover:border-brand/40 hover:bg-brand-soft focus:outline-none focus:ring-2 focus:ring-brand min-h-[220px]"
             >
               <div className="flex items-center justify-between">
-                <div className="flex size-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-700">
+                <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
                   <Cpu className="size-5" />
                 </div>
-                <Badge variant="outline" className="border-zinc-300 bg-zinc-50 text-zinc-600">Advanced</Badge>
+                <Badge variant="outline" className="border-border bg-muted text-muted-foreground">Advanced</Badge>
               </div>
               <div>
                 <h3 className="text-base font-semibold text-foreground">Native Windows Printer</h3>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">Node.js service · direct GDI printing</p>
               </div>
               <ul className="mt-1 space-y-1.5 text-xs text-muted-foreground">
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> Direct GDI32 + PDFium rendering</li>
-                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-600" /> Per-job duplex, copies, color, paper size</li>
-                <li className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3 shrink-0 text-amber-600" /> Requires Node.js 22+ installed</li>
-                <li className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3 shrink-0 text-amber-600" /> Terminal must stay open while printing</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> Direct GDI32 + PDFium rendering</li>
+                <li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" /> Per-job duplex, copies, color, paper size</li>
+                <li className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3 shrink-0 text-brand" /> Requires Node.js 22+ installed</li>
+                <li className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-3 shrink-0 text-brand" /> Terminal must stay open while printing</li>
               </ul>
-              <p className="mt-auto pt-2 text-xs font-medium text-amber-700 group-hover:underline">Choose Native Windows Printer →</p>
+              <p className="mt-auto pt-2 text-xs font-medium text-brand group-hover:underline">Choose Native Windows Printer →</p>
             </button>
           </div>
 
@@ -311,12 +311,12 @@ function PrintLatchSection() {
   return (
     <div className="space-y-6">
       {/* Connection status card */}
-      <Card className={isConnected ? 'border-emerald-300' : isDisconnected ? 'border-amber-300' : 'border-border'}>
+      <Card className={isConnected ? 'border-success/30' : isDisconnected ? 'border-brand/30' : 'border-border'}>
         <CardHeader>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <PrinterIcon className="size-5 text-amber-600" /> PrintLatch Agent
+                <PrinterIcon className="size-5 text-brand" /> PrintLatch Agent
               </CardTitle>
               <CardDescription className="mt-1">The local agent that sends print jobs to your Windows printer.</CardDescription>
             </div>
@@ -336,11 +336,11 @@ function PrintLatchSection() {
         <CardContent>
           <div className="flex flex-wrap items-center gap-3">
             {isConnected ? (
-              <Badge className="gap-1.5 bg-emerald-100 text-emerald-700"><CheckCircle2 className="size-3.5" /> Connected</Badge>
+              <Badge className="gap-1.5 bg-success-soft text-success"><CheckCircle2 className="size-3.5" /> Connected</Badge>
             ) : isDisconnected ? (
-              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700"><AlertCircle className="size-3.5" /> Not Connected</Badge>
+              <Badge variant="outline" className="gap-1.5 border-brand/30 bg-brand-soft text-brand"><AlertCircle className="size-3.5" /> Not Connected</Badge>
             ) : needsPairing ? (
-              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700"><Link2 className="size-3.5" /> Pairing Required</Badge>
+              <Badge variant="outline" className="gap-1.5 border-brand/30 bg-brand-soft text-brand"><Link2 className="size-3.5" /> Pairing Required</Badge>
             ) : (
               <Badge variant="outline" className="gap-1.5"><Loader2 className="size-3.5 animate-spin" /> Checking…</Badge>
             )}
@@ -352,7 +352,7 @@ function PrintLatchSection() {
           {statusError && <p className="mt-2 break-words text-sm text-destructive">{statusError}</p>}
           {isConnected && (
             <div className="mt-2 flex items-center justify-between">
-              <p className="text-sm text-emerald-600">✓ Your printer is connected. Go to any order and click <strong>Print</strong>.</p>
+              <p className="text-sm text-success">✓ Your printer is connected. Go to any order and click <strong>Print</strong>.</p>
             </div>
           )}
         </CardContent>
@@ -362,13 +362,13 @@ function PrintLatchSection() {
       {isConnected && printers && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-amber-600" /> Print Mode</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-brand" /> Print Mode</CardTitle>
             <CardDescription className="text-xs">Choose how print jobs are routed to your printers.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div className="flex items-center gap-2">
-                {prefs.mode === 'manual' ? <Hand className="size-4 text-amber-600" /> : <Zap className="size-4 text-emerald-600" />}
+                {prefs.mode === 'manual' ? <Hand className="size-4 text-brand" /> : <Zap className="size-4 text-success" />}
                 <div>
                   <p className="text-sm font-medium text-foreground">{prefs.mode === 'manual' ? 'Manual Mode' : 'Auto Mode'}</p>
                   <p className="text-[11px] text-muted-foreground">
@@ -395,7 +395,7 @@ function PrintLatchSection() {
                   ))}
                 </div>
                 {prefs.autoPrinterIds.length === 0 && (
-                  <p className="mt-2 text-[11px] text-amber-700">No printers selected — auto mode will use the default printer.</p>
+                  <p className="mt-2 text-[11px] text-brand">No printers selected — auto mode will use the default printer.</p>
                 )}
               </div>
             )}
@@ -427,9 +427,9 @@ function PrintLatchSection() {
                 {testPrintState === 'submitting' || testPrintState === 'polling' ? <Loader2 className="size-3.5 animate-spin" /> : <TestTube className="size-3.5" />}
                 {testPrintState === 'submitting' ? 'Sending…' : testPrintState === 'polling' ? 'Waiting…' : 'Test Print'}
               </Button>
-              {testPrintState === 'completed' && <span className="ml-2 text-xs text-emerald-600">✓ Test successful!</span>}
+              {testPrintState === 'completed' && <span className="ml-2 text-xs text-success">✓ Test successful!</span>}
               {testPrintState === 'failed' && <span className="ml-2 text-xs text-destructive">✗ {testPrintError}</span>}
-              {testPrintState === 'unknown' && <span className="ml-2 text-xs text-amber-700">⚠ {testPrintError}</span>}
+              {testPrintState === 'unknown' && <span className="ml-2 text-xs text-brand">⚠ {testPrintError}</span>}
             </div>
           </CardContent>
         </Card>
@@ -439,7 +439,7 @@ function PrintLatchSection() {
       {isConnected && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><Boxes className="size-4 text-amber-600" /> Supply Tracking</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><Boxes className="size-4 text-brand" /> Supply Tracking</CardTitle>
             <CardDescription className="text-xs">Manually entered estimates — not automatically detected from your printer hardware.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -480,13 +480,13 @@ function PrintLatchSection() {
                             {restockId === s.id ? (
                               <>
                                 <Input type="number" min={1} value={restockAmount} onChange={(e) => setRestockAmount(e.target.value)} placeholder="+sheets" className="h-9 w-20" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleRestock(s.id); if (e.key === 'Escape') { setRestockId(null); setRestockAmount(''); } }} />
-                                <Button size="sm" variant="outline" onClick={() => handleRestock(s.id)} className="gap-1.5 min-h-[44px]"><Check className="size-3.5 text-emerald-600" /> Add</Button>
+                                <Button size="sm" variant="outline" onClick={() => handleRestock(s.id)} className="gap-1.5 min-h-[44px]"><Check className="size-3.5 text-success" /> Add</Button>
                                 <Button size="sm" variant="ghost" onClick={() => { setRestockId(null); setRestockAmount(''); }} className="min-h-[44px]">Cancel</Button>
                               </>
                             ) : (
                               <>
                                 <Button size="sm" variant="outline" onClick={() => { setRestockId(s.id); setRestockAmount(''); }} className="gap-1.5 min-h-[44px]" title="Add to the starting stock"><PackagePlus className="size-3.5" /> Restock</Button>
-                                <Button size="sm" variant="ghost" onClick={() => removeSupply(s.id)} className="min-h-[44px]" title="Remove this supply row"><Trash2 className="size-3.5 text-rose-600" /></Button>
+                                <Button size="sm" variant="ghost" onClick={() => removeSupply(s.id)} className="min-h-[44px]" title="Remove this supply row"><Trash2 className="size-3.5 text-danger" /></Button>
                               </>
                             )}
                           </div>
@@ -524,7 +524,7 @@ function PrintLatchSection() {
                   <Input id="supply-threshold" type="number" min={0} value={newSupply.lowStockThreshold} onChange={(e) => setNewSupply((p) => ({ ...p, lowStockThreshold: e.target.value }))} placeholder="50" className="h-11 sm:h-9" />
                 </div>
               </div>
-              <Button size="sm" className="mt-3 gap-1.5 min-h-[44px] bg-amber-600 text-white hover:bg-amber-700" onClick={addSupply} disabled={!newSupply.startingStock || parseInt(newSupply.startingStock, 10) < 0}>
+              <Button size="sm" className="mt-3 gap-1.5 min-h-[44px] bg-brand text-brand-foreground hover:bg-brand/90" onClick={addSupply} disabled={!newSupply.startingStock || parseInt(newSupply.startingStock, 10) < 0}>
                 <PackagePlus className="size-4" /> Add Supply
               </Button>
             </div>
@@ -544,13 +544,13 @@ function PrintLatchSection() {
           </CardHeader>
           <CardContent className="space-y-6">
             <Step number={1} icon={Download} title="Download + Install PrintLatch" done={isConnected || needsPairing}>
-              <p className="text-sm text-muted-foreground">Download from the <a href="https://github.com/arturict/printlatch/releases/latest" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">GitHub releases page</a>. Extract the ZIP, then in PowerShell run:</p>
+              <p className="text-sm text-muted-foreground">Download from the <a href="https://github.com/arturict/printlatch/releases/latest" target="_blank" rel="noopener noreferrer" className="text-brand underline">GitHub releases page</a>. Extract the ZIP, then in PowerShell run:</p>
               <CodeBlock code={installCommand} id="install" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">This installs PrintLatch, registers an auto-start task (starts on Windows boot), and starts the agent in the background.</p>
             </Step>
             <Step number={2} icon={Monitor} title="Verify PrintLatch is running" done={isConnected || needsPairing}>
               <p className="text-sm text-muted-foreground">Open the PrintLatch dashboard — it should show <Badge variant="outline" className="gap-1">Agent connected</Badge>:</p>
-              <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-amber-700 hover:underline">
+              <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-brand hover:underline">
                 <ExternalLink className="size-3.5" /> {PRINTLATCH_DASHBOARD_URL}
               </a>
               <p className="mt-2 text-[11px] text-muted-foreground">If it doesn't open, start the agent manually:</p>
@@ -562,20 +562,20 @@ function PrintLatchSection() {
               <p className="text-sm text-muted-foreground">Open <strong>Windows PowerShell</strong> and run this EXACT command (it uses YOUR website address):</p>
               <CodeBlock code={pairingCommand} id="pair" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">You should see: <code className="rounded bg-muted px-1.5 py-0.5">Pairing code: PL-XXXX-XXXX-XXXX-XXXX</code></p>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
-                <strong>Important:</strong> The <code>--origin</code> must match this website's address exactly. You are on: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{typeof window !== 'undefined' ? window.location.origin : ''}</code>
+              <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
+                <strong>Important:</strong> The <code>--origin</code> must match this website's address exactly. You are on: <code className="rounded bg-brand-soft px-1.5 py-0.5 text-brand">{typeof window !== 'undefined' ? window.location.origin : ''}</code>
               </div>
             </Step>
             <Step number={4} icon={ClipboardCheck} title="Enter the pairing code" done={isConnected}>
               <p className="text-sm text-muted-foreground">Copy the pairing code from PowerShell + paste it here:</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <Input type="text" value={pairingCode} onChange={(e) => setPairingCode(e.target.value)} placeholder="PL-XXXX-XXXX-XXXX-XXXX" className="font-mono h-11 sm:h-9" disabled={pairingConfirming} />
-                <Button onClick={() => void handleConfirmPairing()} disabled={pairingConfirming || !pairingCode.trim()} className="min-h-[44px] w-full gap-1.5 bg-amber-600 text-white hover:bg-amber-700 sm:w-auto">
+                <Button onClick={() => void handleConfirmPairing()} disabled={pairingConfirming || !pairingCode.trim()} className="min-h-[44px] w-full gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto">
                   {pairingConfirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {pairingConfirming ? 'Confirming…' : 'Confirm'}
                 </Button>
               </div>
-              {pairingResult?.success && <p className="mt-2 text-sm text-emerald-600">✓ Pairing confirmed! You can now print.</p>}
+              {pairingResult?.success && <p className="mt-2 text-sm text-success">✓ Pairing confirmed! You can now print.</p>}
               {pairingResult && !pairingResult.success && <p className="mt-2 break-words text-sm text-destructive">✗ {pairingResult.error}</p>}
             </Step>
             <Step number={5} icon={PrinterIcon} title="Select your print mode + printers" done={isConnected}>
@@ -603,7 +603,7 @@ function PrintLatchSection() {
         </CardHeader>
         <CardContent id="ts-pl" className={tsOpen ? '' : 'hidden'}>
           <ul className="space-y-3 text-sm text-muted-foreground">
-            <li><strong className="text-foreground">Agent not reachable:</strong> Ensure PrintLatch is running — open <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{PRINTLATCH_DASHBOARD_URL}</a> to check.</li>
+            <li><strong className="text-foreground">Agent not reachable:</strong> Ensure PrintLatch is running — open <a href={PRINTLATCH_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" className="text-brand underline">{PRINTLATCH_DASHBOARD_URL}</a> to check.</li>
             <li><strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> must match this website. You are on <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>.</li>
             <li><strong className="text-foreground">Pairing expired:</strong> Re-run the pairing command + enter the new code.</li>
             <li><strong className="text-foreground">PowerShell error:</strong> Use <code className="rounded bg-muted px-1.5 py-0.5">&amp;</code> + <code className="rounded bg-muted px-1.5 py-0.5">$env:</code> syntax (see the command above).</li>
@@ -699,12 +699,12 @@ function NativePrinterSection() {
   return (
     <div className="space-y-6">
       {/* Connection status card */}
-      <Card className={isConnected ? 'border-emerald-300' : isDisconnected ? 'border-amber-300' : 'border-border'}>
+      <Card className={isConnected ? 'border-success/30' : isDisconnected ? 'border-brand/30' : 'border-border'}>
         <CardHeader>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Cpu className="size-5 text-amber-600" /> Native Printer Service
+                <Cpu className="size-5 text-brand" /> Native Printer Service
               </CardTitle>
               <CardDescription className="mt-1">The Node.js service at <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{healthUrl}</code> that sends PDFs to your Windows printer.</CardDescription>
             </div>
@@ -728,27 +728,27 @@ function NativePrinterSection() {
         <CardContent>
           <div className="flex flex-wrap items-center gap-3">
             {isConnected ? (
-              <Badge className="gap-1.5 bg-emerald-100 text-emerald-700"><Wifi className="size-3.5" /> Connected</Badge>
+              <Badge className="gap-1.5 bg-success-soft text-success"><Wifi className="size-3.5" /> Connected</Badge>
             ) : isDisconnected ? (
-              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700"><WifiOff className="size-3.5" /> Service Down</Badge>
+              <Badge variant="outline" className="gap-1.5 border-brand/30 bg-brand-soft text-brand"><WifiOff className="size-3.5" /> Service Down</Badge>
             ) : needsPairing ? (
-              <Badge variant="outline" className="gap-1.5 border-amber-400 bg-amber-50 text-amber-700"><Link2 className="size-3.5" /> Pairing Required</Badge>
+              <Badge variant="outline" className="gap-1.5 border-brand/30 bg-brand-soft text-brand"><Link2 className="size-3.5" /> Pairing Required</Badge>
             ) : (
               <Badge variant="outline" className="gap-1.5"><Loader2 className="size-3.5 animate-spin" /> Checking…</Badge>
             )}
             {serviceUp && (
               <Badge variant="outline" className="gap-1.5">
-                <Power className="size-3.5 text-emerald-600" /> Service running
+                <Power className="size-3.5 text-success" /> Service running
               </Badge>
             )}
             {serviceUp && (
-              <Badge variant="outline" className={libraryLoaded ? 'gap-1.5 border-emerald-300 text-emerald-700' : 'gap-1.5 border-amber-400 text-amber-700'}>
+              <Badge variant="outline" className={libraryLoaded ? 'gap-1.5 border-success/30 text-success' : 'gap-1.5 border-brand/30 text-brand'}>
                 <FileCode2 className="size-3.5" /> {libraryLoaded ? 'Native library loaded' : 'Library missing'}
               </Badge>
             )}
             {serviceUp && health?.tokenCount != null && (
               <Badge variant="outline" className="gap-1.5">
-                <ShieldCheck className="size-3.5 text-emerald-600" /> {health.tokenCount} token(s)
+                <ShieldCheck className="size-3.5 text-success" /> {health.tokenCount} token(s)
               </Badge>
             )}
             {printers && printers.length > 0 && (
@@ -758,7 +758,7 @@ function NativePrinterSection() {
           {/* Inline test-connection result — shows the full diagnostic so the
               shopkeeper can see exactly what's working + what isn't. */}
           {testResult && (
-            <div className={`mt-3 rounded-md border p-3 text-xs ${testResult.reachable && testResult.tokenValid ? 'border-emerald-300 bg-emerald-50' : testResult.reachable ? 'border-amber-300 bg-amber-50' : 'border-rose-300 bg-rose-50'}`}>
+            <div className={`mt-3 rounded-md border p-3 text-xs ${testResult.reachable && testResult.tokenValid ? 'border-success/30 bg-success-soft' : testResult.reachable ? 'border-brand/30 bg-brand-soft' : 'border-danger/30 bg-danger-soft'}`}>
               <p className="font-medium text-foreground">
                 {testResult.reachable && testResult.tokenValid ? '✓ Connection healthy' : testResult.reachable ? '⚠ Service is up but not fully paired' : '✗ Cannot reach the service'}
               </p>
@@ -780,10 +780,10 @@ function NativePrinterSection() {
           )}
           {statusError && <p className="mt-2 break-words text-sm text-destructive">{statusError}</p>}
           {isConnected && (
-            <p className="mt-2 text-sm text-emerald-600">✓ Your printer is connected. Keep this terminal window open while printing. Go to any order and click <strong>Print</strong>.</p>
+            <p className="mt-2 text-sm text-success">✓ Your printer is connected. Keep this terminal window open while printing. Go to any order and click <strong>Print</strong>.</p>
           )}
           {needsPairing && serviceUp && (
-            <p className="mt-2 text-sm text-amber-700">The service is running but you haven't paired yet. Follow the setup guide below — start at Step 4.</p>
+            <p className="mt-2 text-sm text-brand">The service is running but you haven't paired yet. Follow the setup guide below — start at Step 4.</p>
           )}
         </CardContent>
       </Card>
@@ -792,7 +792,7 @@ function NativePrinterSection() {
       {isConnected && printers && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><PrinterIcon className="size-4 text-amber-600" /> Available Printers</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><PrinterIcon className="size-4 text-brand" /> Available Printers</CardTitle>
             <CardDescription className="text-xs">Printers detected by the native library on this computer.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -813,7 +813,7 @@ function NativePrinterSection() {
                   {printers.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>{p.isDefault ? <Badge variant="outline" className="gap-1 border-emerald-300 text-emerald-700"><Check className="size-3" /> Default</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell>{p.isDefault ? <Badge variant="outline" className="gap-1 border-success/30 text-success"><Check className="size-3" /> Default</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{p.status ?? 'unknown'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground break-all">{p.driverName ?? '—'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground break-all">{p.portName ?? '—'}</TableCell>
@@ -843,11 +843,11 @@ function NativePrinterSection() {
             {/* Step 1: Install Node.js 22+ */}
             <Step number={1} icon={Download} title="Install Node.js 22+ (one-time)" done={false}>
               <p className="text-sm text-muted-foreground">
-                Open <a href="https://nodejs.org/en/download" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">nodejs.org/en/download</a> and download the <strong>Node.js 22 LTS</strong> Windows Installer (.msi). Run it with default options.
+                Open <a href="https://nodejs.org/en/download" target="_blank" rel="noopener noreferrer" className="text-brand underline">nodejs.org/en/download</a> and download the <strong>Node.js 22 LTS</strong> Windows Installer (.msi). Run it with default options.
               </p>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+              <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft p-3 text-[11px] text-brand">
                 <p className="font-medium">Why Node.js 22+?</p>
-                <p className="mt-0.5">The <code className="rounded bg-amber-100 px-1 py-0.5">windows-pdf-printer-native</code> library uses native Node.js addons (N-API) that require Node.js 22 or newer. Older Node versions will fail to load the library.</p>
+                <p className="mt-0.5">The <code className="rounded bg-brand-soft px-1 py-0.5">windows-pdf-printer-native</code> library uses native Node.js addons (N-API) that require Node.js 22 or newer. Older Node versions will fail to load the library.</p>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">Verify the installation — open <strong>PowerShell</strong> and run:</p>
               <CodeBlock code="node --version" id="node-ver" copied={copied} onCopy={copyToClipboard} />
@@ -862,7 +862,7 @@ function NativePrinterSection() {
               <a
                 href="/api/v1/downloads/native-printer"
                 download
-                className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-brand shadow-sm transition hover:bg-brand/90 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
               >
                 <Download className="size-4" />
                 Download native-printer.zip
@@ -870,12 +870,12 @@ function NativePrinterSection() {
               <p className="mt-3 text-[11px] text-muted-foreground">
                 The ZIP downloads to your <strong>Downloads</strong> folder as <code className="rounded bg-muted px-1 py-0.5">printshop-native-printer-v1.0.0.zip</code>.
               </p>
-              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+              <div className="mt-3 rounded-md border border-brand/30 bg-brand-soft p-3 text-[11px] text-brand">
                 <p className="font-medium">After it downloads — extract + move it:</p>
                 <ol className="mt-1.5 list-decimal space-y-1 pl-5">
                   <li>Open <strong>File Explorer</strong> → go to your <strong>Downloads</strong> folder.</li>
-                  <li>Right-click <code className="rounded bg-amber-100 px-1 py-0.5">printshop-native-printer-v1.0.0.zip</code> → <strong>Extract All…</strong> → click <strong>Extract</strong>.</li>
-                  <li>This creates a <code className="rounded bg-amber-100 px-1 py-0.5">native-printer</code> folder. Move it somewhere permanent, e.g. <code className="rounded bg-amber-100 px-1 py-0.5">C:\PrintShop\native-printer</code>.</li>
+                  <li>Right-click <code className="rounded bg-brand-soft px-1 py-0.5">printshop-native-printer-v1.0.0.zip</code> → <strong>Extract All…</strong> → click <strong>Extract</strong>.</li>
+                  <li>This creates a <code className="rounded bg-brand-soft px-1 py-0.5">native-printer</code> folder. Move it somewhere permanent, e.g. <code className="rounded bg-brand-soft px-1 py-0.5">C:\PrintShop\native-printer</code>.</li>
                 </ol>
               </div>
               <div className="mt-2 rounded-md border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground">
@@ -889,11 +889,11 @@ function NativePrinterSection() {
                   <li><code className="rounded bg-muted px-1 py-0.5">start.bat</code> — double-click to start the service</li>
                   <li><code className="rounded bg-muted px-1 py-0.5">.gitignore</code> — keeps <code className="rounded bg-muted px-1 py-0.5">node_modules</code> + pairing state local</li>
                 </ul>
-                <p className="mt-1.5 text-amber-700">⭐ Tip: You can skip the typed commands in Steps 3, 4, 6 — just double-click the matching <code className="rounded bg-amber-100 px-1 py-0.5">.bat</code> file instead.</p>
+                <p className="mt-1.5 text-brand">⭐ Tip: You can skip the typed commands in Steps 3, 4, 6 — just double-click the matching <code className="rounded bg-brand-soft px-1 py-0.5">.bat</code> file instead.</p>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
                 Prefer to browse the source? It&apos;s also on GitHub:{' '}
-                <a href="https://github.com/Arjunyadavsoma/printshop-saas/tree/main/mini-services/native-printer" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">
+                <a href="https://github.com/Arjunyadavsoma/printshop-saas/tree/main/mini-services/native-printer" target="_blank" rel="noopener noreferrer" className="text-brand underline">
                   Arjunyadavsoma/printshop-saas
                 </a>
                 <span className="text-muted-400"> — but the ZIP above is the recommended path (guaranteed to match this website&apos;s version).</span>
@@ -905,9 +905,9 @@ function NativePrinterSection() {
               <p className="text-sm text-muted-foreground">
                 Open the <code className="rounded bg-muted px-1 py-0.5">native-printer</code> folder you just extracted. Then either:
               </p>
-              <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+              <div className="mt-2 rounded-md border border-success/30 bg-success-soft p-3 text-[11px] text-success">
                 <p className="font-medium">Option A — double-click (easiest):</p>
-                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">install.bat</code> in the folder. It runs <code className="rounded bg-emerald-100 px-1 py-0.5">npm install</code> for you + shows the result.</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-success-soft px-1 py-0.5">install.bat</code> in the folder. It runs <code className="rounded bg-success-soft px-1 py-0.5">npm install</code> for you + shows the result.</p>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
                 <strong>Option B — type the commands</strong> (open PowerShell in the folder via Shift+right-click → &quot;Open PowerShell window here&quot;):
@@ -921,21 +921,21 @@ function NativePrinterSection() {
                 <CodeBlock code={installCommand} id="npm-install" copied={copied} onCopy={copyToClipboard} />
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">This downloads <code className="rounded bg-muted px-1 py-0.5">windows-pdf-printer-native</code> + its native binaries. It can take 1–2 minutes the first time.</p>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
-                <strong>Heads up:</strong> If you see <code className="rounded bg-amber-100 px-1 py-0.5">node-gyp</code> or build errors, install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="underline">Visual Studio Build Tools</a> (C++ workload) and re-run <code className="rounded bg-amber-100 px-1 py-0.5">npm install</code>.
+              <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
+                <strong>Heads up:</strong> If you see <code className="rounded bg-brand-soft px-1 py-0.5">node-gyp</code> or build errors, install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="underline">Visual Studio Build Tools</a> (C++ workload) and re-run <code className="rounded bg-brand-soft px-1 py-0.5">npm install</code>.
               </div>
             </Step>
 
             {/* Step 4: Generate the pairing code */}
             <Step number={4} icon={Link2} title="Generate the pairing code" done={isConnected}>
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+              <div className="rounded-md border border-success/30 bg-success-soft p-3 text-[11px] text-success">
                 <p className="font-medium">Option A — double-click (easiest):</p>
-                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">pair.bat</code> in the folder. It runs the pairing command below with <strong>your</strong> website address pre-filled — no typing.</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-success-soft px-1 py-0.5">pair.bat</code> in the folder. It runs the pairing command below with <strong>your</strong> website address pre-filled — no typing.</p>
               </div>
               <p className="mt-2 text-sm text-muted-foreground"><strong>Option B — type the command</strong> in PowerShell (inside <code className="rounded bg-muted px-1 py-0.5">native-printer</code>):</p>
               <CodeBlock code={pairingCommand} id="pair" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">You should see:</p>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-[10px] leading-relaxed text-zinc-100 sm:text-xs"><code>{`══════════════════════════════════════════════════════
+              <pre className="mt-1 overflow-x-auto rounded-lg bg-primary p-3 text-[10px] leading-relaxed text-primary-foreground sm:text-xs"><code>{`══════════════════════════════════════════════════════
   PrintShop Native Printer — Pairing Code
 ══════════════════════════════════════════════════════
 
@@ -947,8 +947,8 @@ function NativePrinterSection() {
     3. Paste this code into the "Pairing code" field
     4. Click "Confirm pairing"
     5. Start the service:  node index.js`}</code></pre>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
-                <strong>Important:</strong> The <code>--origin</code> must match this website's address exactly. You are on: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{typeof window !== 'undefined' ? window.location.origin : ''}</code>
+              <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
+                <strong>Important:</strong> The <code>--origin</code> must match this website's address exactly. You are on: <code className="rounded bg-brand-soft px-1.5 py-0.5 text-brand">{typeof window !== 'undefined' ? window.location.origin : ''}</code>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">The code is saved to <code className="rounded bg-muted px-1 py-0.5">.pairing-state.json</code> on your computer and is valid for 15 minutes.</p>
             </Step>
@@ -961,12 +961,12 @@ function NativePrinterSection() {
                   type="text" value={pairingCode} onChange={(e) => setPairingCode(e.target.value)}
                   placeholder="PS-XXXXXXXX-XXXXXXXX-XXXXXXXX" className="font-mono h-11 sm:h-9" disabled={pairingConfirming}
                 />
-                <Button onClick={() => void handleConfirmPairing()} disabled={pairingConfirming || !pairingCode.trim()} className="min-h-[44px] w-full gap-1.5 bg-amber-600 text-white hover:bg-amber-700 sm:w-auto">
+                <Button onClick={() => void handleConfirmPairing()} disabled={pairingConfirming || !pairingCode.trim()} className="min-h-[44px] w-full gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto">
                   {pairingConfirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {pairingConfirming ? 'Confirming…' : 'Confirm pairing'}
                 </Button>
               </div>
-              {pairingResult?.success && <p className="mt-2 text-sm text-emerald-600">✓ Pairing confirmed! Now start the service (Step 6) if it's not running yet.</p>}
+              {pairingResult?.success && <p className="mt-2 text-sm text-success">✓ Pairing confirmed! Now start the service (Step 6) if it's not running yet.</p>}
               {pairingResult && !pairingResult.success && <p className="mt-2 break-words text-sm text-destructive">✗ {pairingResult.error}</p>}
               <p className="mt-2 text-[11px] text-muted-foreground">
                 Tip: you can pair first (here) and start the service second — the code is saved on your computer. Or start the service first, then pair. Either order works as long as the service is running when you click <strong>Confirm pairing</strong>.
@@ -975,26 +975,26 @@ function NativePrinterSection() {
 
             {/* Step 6: Start the service */}
             <Step number={6} icon={Play} title="Start the service" done={serviceUp}>
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+              <div className="rounded-md border border-success/30 bg-success-soft p-3 text-[11px] text-success">
                 <p className="font-medium">Option A — double-click (easiest):</p>
-                <p className="mt-0.5">Double-click <code className="rounded bg-emerald-100 px-1 py-0.5">start.bat</code> in the folder. It runs <code className="rounded bg-emerald-100 px-1 py-0.5">node index.js</code> for you + keeps the window open.</p>
+                <p className="mt-0.5">Double-click <code className="rounded bg-success-soft px-1 py-0.5">start.bat</code> in the folder. It runs <code className="rounded bg-success-soft px-1 py-0.5">node index.js</code> for you + keeps the window open.</p>
               </div>
               <p className="mt-2 text-sm text-muted-foreground"><strong>Option B — type the command</strong> in PowerShell:</p>
               <CodeBlock code={startCommand} id="start" copied={copied} onCopy={copyToClipboard} />
               <p className="mt-1 text-[11px] text-muted-foreground">You should see:</p>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-[10px] leading-relaxed text-zinc-100 sm:text-xs"><code>{`══════════════════════════════════════════════════════
+              <pre className="mt-1 overflow-x-auto rounded-lg bg-primary p-3 text-[10px] leading-relaxed text-primary-foreground sm:text-xs"><code>{`══════════════════════════════════════════════════════
   PrintShop Native Printer service running
   → http://127.0.0.1:32192
   → Health check: http://127.0.0.1:32192/health
   → Paired origin: https://printshop-saas-three.vercel.app
   → Press Ctrl+C to stop.
 ══════════════════════════════════════════════════════`}</code></pre>
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+              <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft p-3 text-[11px] text-brand">
                 <p className="font-medium">⚠️ Leave this window open!</p>
                 <p className="mt-0.5">Closing the PowerShell window stops the service and prints will fail. To run it in the background, use Windows Terminal's "new tab" feature or a tool like <a href="https://github.com/winsw/winsw" target="_blank" rel="noopener noreferrer" className="underline">WinSW</a> to wrap it as a Windows service.</p>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">Verify the service is reachable — open this URL in your browser:</p>
-              <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex min-h-[44px] items-center gap-1.5 break-all text-sm font-medium text-amber-700 hover:underline">
+              <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex min-h-[44px] items-center gap-1.5 break-all text-sm font-medium text-brand hover:underline">
                 <ExternalLink className="size-3.5 shrink-0" /> {healthUrl}
               </a>
               <p className="mt-1 text-[11px] text-muted-foreground">You should see JSON with <code className="rounded bg-muted px-1 py-0.5">"service":"printshop-native-printer"</code> and <code className="rounded bg-muted px-1 py-0.5">"libraryLoaded":true</code>.</p>
@@ -1019,13 +1019,13 @@ function NativePrinterSection() {
         </CardHeader>
         <CardContent id="ts-np" className={tsOpen ? '' : 'hidden'}>
           <ul className="space-y-3 text-sm text-muted-foreground">
-            <li><strong className="text-foreground">Service not reachable:</strong> Is <code className="rounded bg-muted px-1.5 py-0.5">node index.js</code> (or <code className="rounded bg-muted px-1.5 py-0.5">start.bat</code>) still running? Open <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">{healthUrl}</a> — if it fails, the service is down.</li>
+            <li><strong className="text-foreground">Service not reachable:</strong> Is <code className="rounded bg-muted px-1.5 py-0.5">node index.js</code> (or <code className="rounded bg-muted px-1.5 py-0.5">start.bat</code>) still running? Open <a href={healthUrl} target="_blank" rel="noopener noreferrer" className="text-brand underline">{healthUrl}</a> — if it fails, the service is down.</li>
             <li><strong className="text-foreground">Library not loaded:</strong> Run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>) again in the <code className="rounded bg-muted px-1.5 py-0.5">native-printer</code> folder. Check you have Node.js 22+ (<code className="rounded bg-muted px-1.5 py-0.5">node --version</code>).</li>
             <li><strong className="text-foreground">Origin mismatch:</strong> The <code className="rounded bg-muted px-1.5 py-0.5">--origin</code> in the pairing command must match this website. You are on <code className="rounded bg-muted px-1.5 py-0.5">{typeof window !== 'undefined' ? window.location.origin : ''}</code>. Re-download the ZIP (the <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> inside it has the correct origin) or re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code>.</li>
             <li><strong className="text-foreground">Pairing code expired:</strong> Codes last 15 minutes. Re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">node index.js pair --origin=...</code>) to get a new one.</li>
             <li><strong className="text-foreground">Token expired (24h):</strong> Click <strong>Disconnect</strong>, then re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> + enter the new code.</li>
             <li><strong className="text-foreground">CORS error in browser console:</strong> The service only accepts requests from the paired origin. If you changed the website URL (e.g. a new Vercel preview deployment), re-download the ZIP + re-run <code className="rounded bg-muted px-1.5 py-0.5">pair.bat</code> with the new origin.</li>
-            <li><strong className="text-foreground">Build errors during <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>:</strong> Install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="text-amber-700 underline">Visual Studio Build Tools</a> (C++ workload), then re-run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>).</li>
+            <li><strong className="text-foreground">Build errors during <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>:</strong> Install the <a href="https://visualstudio.microsoft.com/visual-cpp-build-tools/" target="_blank" rel="noopener noreferrer" className="text-brand underline">Visual Studio Build Tools</a> (C++ workload), then re-run <code className="rounded bg-muted px-1.5 py-0.5">install.bat</code> (or <code className="rounded bg-muted px-1.5 py-0.5">npm install</code>).</li>
             <li><strong className="text-foreground">No printers detected:</strong> Install a printer in Windows first (Settings → Bluetooth &amp; devices → Printers → Add device). The native library only lists printers that Windows knows about.</li>
           </ul>
         </CardContent>
@@ -1092,9 +1092,9 @@ function getPrintCount(): number {
 
 function SupplyStatusBadge({ status }: { status: SupplyStatus }) {
   const cls =
-    status === 'in-stock' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' :
-    status === 'low' ? 'border-amber-300 bg-amber-50 text-amber-700' :
-    'border-rose-300 bg-rose-50 text-rose-700';
+    status === 'in-stock' ? 'border-success/30 bg-success-soft text-success' :
+    status === 'low' ? 'border-brand/30 bg-brand-soft text-brand' :
+    'border-danger/30 bg-danger-soft text-danger';
   const label = status === 'in-stock' ? 'In Stock' : status === 'low' ? 'Low' : 'Out';
   return (
     <Badge variant="outline" className={`text-[11px] ${cls}`}>
@@ -1110,7 +1110,7 @@ function Step({ number, icon: Icon, title, done, children }: { number: number; i
   return (
     <div className="flex gap-3 sm:gap-4">
       <div className="flex flex-col items-center">
-        <div className={`flex size-10 shrink-0 items-center justify-center rounded-full ${done ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-700'}`}>
+        <div className={`flex size-10 shrink-0 items-center justify-center rounded-full ${done ? 'bg-success-soft text-success' : 'bg-brand-soft text-brand'}`}>
           {done ? <CheckCircle2 className="size-5" /> : <Icon className="size-5" />}
         </div>
         {number < 7 && <div className="mt-1 h-full w-px flex-1 bg-border" />}
@@ -1118,7 +1118,7 @@ function Step({ number, icon: Icon, title, done, children }: { number: number; i
       <div className="min-w-0 flex-1 pb-4">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-muted-foreground">STEP {number}</span>
-          {done && <Badge variant="outline" className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-700"><Check className="size-3" /> Done</Badge>}
+          {done && <Badge variant="outline" className="gap-1 border-success/30 bg-success-soft text-success"><Check className="size-3" /> Done</Badge>}
         </div>
         <h3 className="mt-1 text-base font-semibold text-foreground">{title}</h3>
         <div className="mt-2">{children}</div>
@@ -1130,9 +1130,9 @@ function Step({ number, icon: Icon, title, done, children }: { number: number; i
 function CodeBlock({ code, id, copied, onCopy, multiline }: { code: string; id: string; copied: string | null; onCopy: (text: string, id: string) => void; multiline?: boolean }) {
   return (
     <div className="mt-2 flex items-start gap-2">
-      <code className={`block flex-1 overflow-x-auto rounded-lg bg-zinc-900 p-2 text-[10px] text-zinc-100 sm:text-xs ${multiline ? 'whitespace-pre' : 'break-all'}`}>{code}</code>
+      <code className={`block flex-1 overflow-x-auto rounded-lg bg-primary p-2 text-[10px] text-primary-foreground sm:text-xs ${multiline ? 'whitespace-pre' : 'break-all'}`}>{code}</code>
       <Button variant="outline" size="sm" onClick={() => onCopy(code, id)} className="min-h-[44px] shrink-0 gap-1.5">
-        {copied === id ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+        {copied === id ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
       </Button>
     </div>
   );

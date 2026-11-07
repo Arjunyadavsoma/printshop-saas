@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "frontend-design": {
+      "source": "huang-x-h/z-skills",
+      "sourceType": "github",
+      "skillPath": "frontend-design/SKILL.md",
+      "computedHash": "3f9011d1eb0508234e8738c87f4d39ffd206c86013880011df68d3b6cf5dceef"
+    },
     "neon-postgres": {
       "source": "neondatabase/agent-skills",
       "sourceType": "github",

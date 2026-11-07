@@ -18,6 +18,8 @@ import {
   type AdminShopListResponse,
   type OrderStatus,
 } from '@/components/portal/admin-types';
+import { StatusBadge } from '@/components/portal/status-badge';
+import { truncate } from '@/lib/utils';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -57,31 +59,9 @@ function formatDateTime(s: string | null | undefined): string {
   }
 }
 
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  awaiting_payment: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  paid: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  ready: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  collected: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
-  cancelled: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  refunded: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-};
-
 const ALL_STATUSES: OrderStatus[] = [
   'awaiting_payment', 'paid', 'printing', 'ready', 'collected', 'cancelled', 'refunded',
 ];
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  return (
-    <Badge variant="outline" className={`${STATUS_COLORS[status]} border-transparent font-medium`}>
-      {status.replace('_', ' ')}
-    </Badge>
-  );
-}
-
-function truncate(s: string, n = 10): string {
-  return s.length <= n ? s : `${s.slice(0, n)}…`;
-}
 
 const PAGE_SIZE = 25;
 
@@ -149,10 +129,11 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">All orders</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <ShoppingBag className="h-5 w-5 text-emerald-600" />
+            <ShoppingBag className="h-5 w-5 text-brand" />
             <h2 className="text-xl font-bold tracking-tight sm:text-2xl">All orders</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -255,7 +236,7 @@ export default function AdminOrdersPage() {
                   {pageItems.map((o) => (
                     <TableRow key={o.id}>
                       <TableCell>
-                        <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                        <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
                           {truncate(o.id, 10)}
                         </Link>
                       </TableCell>

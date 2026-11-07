@@ -107,8 +107,8 @@ function passwordStrength(p: string): { score: number; label: string; color: str
   if (/[0-9]/.test(p)) score++;
   if (/[^A-Za-z0-9]/.test(p)) score++;
   const labels = ['Too short', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent'];
-  const colors = ['bg-rose-500', 'bg-rose-500', 'bg-amber-500', 'bg-amber-500', 'bg-emerald-500', 'bg-emerald-600'];
-  return { score, label: labels[score] ?? 'Too short', color: colors[score] ?? 'bg-rose-500' };
+  const colors = ['bg-danger', 'bg-danger', 'bg-warning', 'bg-warning', 'bg-success', 'bg-success'];
+  return { score, label: labels[score] ?? 'Too short', color: colors[score] ?? 'bg-danger' };
 }
 
 export default function ShopRegisterPage() {
@@ -314,11 +314,11 @@ export default function ShopRegisterPage() {
 
   // ── Render ──
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-background px-4 py-6 sm:py-8">
+    <div className="flex min-h-screen items-center justify-center bg-brand-soft px-4 py-6 sm:py-8">
       <div className="w-full max-w-2xl">
         {/* Brand */}
         <div className="mb-5 flex flex-col items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-amber-600 text-white shadow-sm">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
             <Store className="size-6" />
           </div>
           <h1 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl">Start your print shop</h1>
@@ -341,9 +341,9 @@ export default function ShopRegisterPage() {
                       <div
                         className={`flex size-7 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors sm:size-8 ${
                           active
-                            ? 'border-amber-500 bg-amber-600 text-white'
+                            ? 'border-brand bg-brand text-brand-foreground'
                             : done
-                              ? 'border-emerald-400 bg-emerald-100 text-emerald-700'
+                              ? 'border-success/30 bg-success-soft text-success'
                               : 'border-border bg-card text-muted-foreground'
                         }`}
                         aria-current={active ? 'step' : undefined}
@@ -372,7 +372,7 @@ export default function ShopRegisterPage() {
             {step === 'account' && (
               <>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <User className="size-4 text-amber-600" /> Account details
+                  <User className="size-4 text-brand" /> Account details
                 </CardTitle>
                 <CardDescription className="text-xs">
                   Your sign-in credentials. The email becomes your login — pick something you check often.
@@ -453,7 +453,7 @@ export default function ShopRegisterPage() {
             {step === 'business' && (
               <>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Store className="size-4 text-amber-600" /> Business profile
+                  <Store className="size-4 text-brand" /> Business profile
                 </CardTitle>
                 <CardDescription className="text-xs">
                   What customers see when they scan your shop QR.
@@ -491,20 +491,20 @@ export default function ShopRegisterPage() {
                     </p>
                   )}
                   {slugStatus === 'ok' && (
-                    <p className="flex items-center gap-1 text-[11px] text-emerald-700">
+                    <p className="flex items-center gap-1 text-[11px] text-success">
                       <CheckCircle2 className="size-3" /> URL is available.
                     </p>
                   )}
                   {slugStatus === 'taken' && (
-                    <p className="flex items-center gap-1 text-[11px] text-rose-700">
+                    <p className="flex items-center gap-1 text-[11px] text-danger">
                       <AlertCircle className="size-3" /> This URL is already taken — pick another.
                     </p>
                   )}
                   {slugStatus === 'invalid' && (
-                    <p className="text-[11px] text-rose-700">Lowercase letters, digits and hyphens only.</p>
+                    <p className="text-[11px] text-danger">Lowercase letters, digits and hyphens only.</p>
                   )}
                   {businessErrors.slug && slugStatus === 'idle' && (
-                    <p className="text-[11px] text-rose-700">{businessErrors.slug}</p>
+                    <p className="text-[11px] text-danger">{businessErrors.slug}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -551,7 +551,7 @@ export default function ShopRegisterPage() {
                         key={opt.val}
                         type="button"
                         onClick={() => setState((s) => ({ ...s, business: { ...s.business, paymentMethods: opt.val as 'upi' | 'cash' | 'both' | 'split' } }))}
-                        className={`rounded-lg border-2 p-2 text-center transition ${state.business.paymentMethods === opt.val ? 'border-amber-400 bg-amber-50' : 'border-border hover:border-amber-200'}`}
+                        className={`rounded-lg border-2 p-2 text-center transition ${state.business.paymentMethods === opt.val ? 'border-brand/30 bg-brand-soft' : 'border-border hover:border-brand/30'}`}
                       >
                         <p className="text-xs font-medium text-foreground">{opt.label}</p>
                         <p className="text-[10px] text-muted-foreground">{opt.desc}</p>
@@ -608,7 +608,7 @@ export default function ShopRegisterPage() {
             {step === 'services' && (
               <>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Wrench className="size-4 text-amber-600" /> Services you offer
+                  <Wrench className="size-4 text-brand" /> Services you offer
                 </CardTitle>
                 <CardDescription className="text-xs">
                   Pick at least one. You can change these later from Settings. The selected services appear on your public shop page.
@@ -624,13 +624,13 @@ export default function ShopRegisterPage() {
                         aria-pressed={checked}
                         className={`flex items-start gap-2.5 rounded-md border p-3 text-left transition-colors ${
                           checked
-                            ? 'border-amber-400 bg-amber-50'
+                            ? 'border-brand/30 bg-brand-soft'
                             : 'border-border bg-card hover:bg-muted'
                         }`}
                       >
                         <div
                           className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${
-                            checked ? 'border-amber-600 bg-amber-600 text-white' : 'border-border'
+                            checked ? 'border-brand bg-brand text-brand-foreground' : 'border-border'
                           }`}
                         >
                           {checked && <Check className="size-3" />}
@@ -644,7 +644,7 @@ export default function ShopRegisterPage() {
                   })}
                 </div>
                 {state.services.length === 0 && (
-                  <p className="text-xs text-rose-700">Pick at least one service to continue.</p>
+                  <p className="text-xs text-danger">Pick at least one service to continue.</p>
                 )}
               </>
             )}
@@ -652,7 +652,7 @@ export default function ShopRegisterPage() {
             {step === 'review' && (
               <>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardCheck className="size-4 text-amber-600" /> Review &amp; create
+                  <ClipboardCheck className="size-4 text-brand" /> Review &amp; create
                 </CardTitle>
                 <CardDescription className="text-xs">
                   Confirm the details below. You can edit any of this later from Settings.
@@ -675,7 +675,7 @@ export default function ShopRegisterPage() {
                     {state.services.map((k) => {
                       const opt = SERVICE_OPTIONS.find((o) => o.key === k);
                       return (
-                        <Badge key={k} variant="outline" className="bg-amber-50">
+                        <Badge key={k} variant="outline" className="bg-brand-soft">
                           {opt?.label ?? k}
                         </Badge>
                       );
@@ -684,7 +684,7 @@ export default function ShopRegisterPage() {
                 </ReviewBlock>
 
                 {error && (
-                  <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <div role="alert" className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
                     {error}
                   </div>
                 )}
@@ -710,7 +710,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={advance}
                   disabled={!canAdvance || submitting}
-                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                 >
                   Continue <ArrowRight className="size-4" />
                 </Button>
@@ -720,7 +720,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={() => void submit()}
                   disabled={submitting}
-                  className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-600/90"
+                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                 >
                   {submitting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {submitting ? 'Creating shop…' : 'Create my shop'}
@@ -732,11 +732,11 @@ export default function ShopRegisterPage() {
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/shop/login" className="font-medium text-amber-700 hover:underline">
+          <Link href="/shop/login" className="font-medium text-brand hover:underline">
             Sign in
           </Link>
           {' · '}
-          <Link href="/" className="font-medium text-amber-700 hover:underline">
+          <Link href="/" className="font-medium text-brand hover:underline">
             Customer app
           </Link>
         </p>
@@ -780,7 +780,7 @@ function Field({
         aria-invalid={Boolean(error)}
         className="h-11 sm:h-10"
       />
-      {error && <p className="text-[11px] text-rose-700">{error}</p>}
+      {error && <p className="text-[11px] text-danger">{error}</p>}
     </div>
   );
 }

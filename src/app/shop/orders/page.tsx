@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { StatusBadge } from '@/components/portal/status-badge';
+import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
   Card,
   CardContent,
@@ -15,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -155,27 +155,6 @@ function paymentStatus(o: OrderRow): PaymentFilter {
   if (o.status === 'cancelled') return 'rejected';
   if (o.status === 'refunded') return 'refunded';
   return 'paid';
-}
-
-function PaymentBadge({ status }: { status: PaymentFilter }) {
-  const cls =
-    status === 'paid' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
-    status === 'pending' ? 'border-zinc-200 bg-zinc-50 text-zinc-700' :
-    status === 'rejected' ? 'border-rose-200 bg-rose-50 text-rose-700' :
-    status === 'refunded' ? 'border-violet-200 bg-violet-50 text-violet-800' :
-    'border-border bg-card text-muted-foreground';
-  const label =
-    status === 'paid' ? 'Paid' :
-    status === 'pending' ? 'Pending' :
-    status === 'rejected' ? 'Rejected' :
-    status === 'refunded' ? 'Refunded' :
-    'Unknown';
-  return (
-    <Badge variant="outline" className={`text-[11px] ${cls}`}>
-      <span className="mr-1 inline-block size-1.5 rounded-full bg-current opacity-70" />
-      {label}
-    </Badge>
-  );
 }
 
 export default function ShopOrdersPage() {
@@ -594,7 +573,7 @@ export default function ShopOrdersPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <ClipboardList className="size-5 text-amber-600" />
+          <ClipboardList className="size-5 text-brand" />
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Orders</h1>
             <p className="text-xs text-muted-foreground">
@@ -671,8 +650,8 @@ export default function ShopOrdersPage() {
       </Card>
 
       {actionError && (
-        <Card className="border-rose-200 bg-rose-50">
-          <CardContent className="p-3 text-sm text-rose-700">⚠ {actionError}</CardContent>
+        <Card className="border-danger/30 bg-danger-soft">
+          <CardContent className="p-3 text-sm text-danger">⚠ {actionError}</CardContent>
         </Card>
       )}
 
@@ -690,7 +669,7 @@ export default function ShopOrdersPage() {
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : error ? (
-            <div className="p-6 text-sm text-rose-700">
+            <div className="p-6 text-sm text-danger">
               {error}
               <div className="mt-3">
                 <Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
@@ -760,7 +739,7 @@ export default function ShopOrdersPage() {
                       <TableCell className="pl-1">
                         <Link
                           href={`/shop/orders/${o.id}`}
-                          className="font-mono font-semibold text-amber-700 hover:underline"
+                          className="font-mono font-semibold text-brand hover:underline"
                         >
                           {o.tokenNumber ?? o.customerToken}
                         </Link>
@@ -768,7 +747,7 @@ export default function ShopOrdersPage() {
                       <TableCell className="text-xs text-muted-foreground">
                         {o.customerPhone ?? <span className="italic">—</span>}
                       </TableCell>
-                      <TableCell><PaymentBadge status={pstatus} /></TableCell>
+                      <TableCell><PaymentBadge status={pstatus === 'rejected' ? 'failed' : pstatus} /></TableCell>
                       <TableCell><StatusBadge status={o.status} /></TableCell>
                       <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</TableCell>
@@ -781,7 +760,7 @@ export default function ShopOrdersPage() {
                                 variant="outline"
                                 onClick={() => void quickVerify(o.id, 'verify')}
                                 disabled={idBusy}
-                                className="min-h-[44px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
                                 title="Verify payment"
                               >
                                 {busy === `${o.id}:verify` ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
@@ -793,7 +772,7 @@ export default function ShopOrdersPage() {
                                     size="sm"
                                     variant="outline"
                                     disabled={idBusy}
-                                    className="min-h-[44px] min-w-[44px] gap-1 border-rose-300 text-rose-700 hover:bg-rose-50"
+                                    className="min-h-[44px] min-w-[44px] gap-1 border-danger/30 text-danger hover:bg-danger-soft"
                                     title="Reject payment"
                                   >
                                     {busy === `${o.id}:reject` ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
@@ -809,7 +788,7 @@ export default function ShopOrdersPage() {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      className="bg-rose-600 text-white hover:bg-rose-600/90"
+                                      className="bg-danger text-danger-foreground hover:bg-danger/90"
                                       onClick={(e) => { e.preventDefault(); void quickVerify(o.id, 'reject'); }}
                                     >
                                       Yes, reject
@@ -825,7 +804,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickStart(o.id)}
                               disabled={idBusy}
-                              className="min-h-[44px] gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                              className="min-h-[44px] gap-1 border-brand/30 text-brand hover:bg-brand-soft"
                               title="Start printing"
                             >
                               {busy === `${o.id}:start` ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
@@ -838,7 +817,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickReady(o.id)}
                               disabled={idBusy}
-                              className="min-h-[44px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
                               title="Mark ready for pickup"
                             >
                               {busy === `${o.id}:ready` ? <Loader2 className="size-3.5 animate-spin" /> : <PackageCheck className="size-3.5" />}
@@ -897,7 +876,7 @@ export default function ShopOrdersPage() {
             <div className="min-w-0 flex-1 space-y-1">
               {batchState.running ? (
                 <>
-                  <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+                  <div className="flex items-center gap-2 text-sm font-medium text-brand">
                     <Loader2 className="size-4 animate-spin" />
                     <span>
                       Printing order {batchState.currentOrderIdx} of {batchState.totalOrders}
@@ -926,11 +905,11 @@ export default function ShopOrdersPage() {
                   <span className="font-medium text-foreground">
                     {batchState.canceled ? 'Batch canceled.' : 'Batch complete.'}
                   </span>
-                  <span className="text-emerald-700">
+                  <span className="text-success">
                     <Check className="mr-0.5 inline size-3" />
                     {batchState.results.filter((r) => r.status === 'success').length} succeeded
                   </span>
-                  <span className="text-rose-700">
+                  <span className="text-danger">
                     <XCircle className="mr-0.5 inline size-3" />
                     {batchState.results.filter((r) => r.status === 'failed').length} failed
                   </span>
@@ -946,15 +925,15 @@ export default function ShopOrdersPage() {
                       {batchState.results.map((r, idx) => (
                         <li key={idx} className="flex items-start gap-1">
                           {r.status === 'success' ? (
-                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-emerald-600" />
+                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-success" />
                           ) : r.status === 'skipped' ? (
                             <Ban className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
                           ) : (
-                            <XCircle className="mt-0.5 size-3 shrink-0 text-rose-600" />
+                            <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
                           )}
                           <span className="truncate" title={`${r.orderToken} — ${r.filename}${r.error ? ` — ${r.error}` : ''}`}>
                             <span className="font-mono">{r.orderToken}</span> · {r.filename}
-                            {r.error && <span className="text-rose-600"> — {r.error}</span>}
+                            {r.error && <span className="text-danger"> — {r.error}</span>}
                           </span>
                         </li>
                       ))}
@@ -962,13 +941,13 @@ export default function ShopOrdersPage() {
                   </details>
                 </div>
               ) : batchState.done && batchState.error ? (
-                <div className="flex items-center gap-2 text-sm text-rose-700">
+                <div className="flex items-center gap-2 text-sm text-danger">
                   <AlertCircle className="size-4 shrink-0" />
                   <span className="break-words">{batchState.error}</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Layers className="size-4 text-amber-600" />
+                  <Layers className="size-4 text-brand" />
                   <span>{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
                   <span className="text-xs text-muted-foreground">
                     ({pagedEligible.length} eligible on this page)
@@ -984,7 +963,7 @@ export default function ShopOrdersPage() {
                   variant="outline"
                   size="sm"
                   onClick={cancelBatch}
-                  className="min-h-[44px] gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                  className="min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft"
                 >
                   <X className="size-4" /> Cancel
                 </Button>
@@ -1034,7 +1013,7 @@ export default function ShopOrdersPage() {
                     size="sm"
                     onClick={() => void runBatchPrint()}
                     disabled={selectedIds.size === 0}
-                    className="min-h-[44px] gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                    className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                   >
                     <PrinterIcon className="size-4" />
                     Batch Print{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}

@@ -29,6 +29,7 @@ import {
   type ReadyResponse,
   type OrderStatus,
 } from '@/components/portal/admin-types';
+import { truncate } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,10 +54,6 @@ function formatDateTime(s: string | null | undefined): string {
   } catch {
     return s;
   }
-}
-
-function truncate(s: string, n = 8): string {
-  return s.length <= n ? s : `${s.slice(0, n)}…`;
 }
 
 interface HealthState {
@@ -164,17 +161,18 @@ export default function AdminMonitoringPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Monitoring</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-emerald-600" />
+            <Activity className="h-5 w-5 text-brand" />
             <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Monitoring</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Service health, print-agent connectivity, failed jobs requiring review, and the recent audit log.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -193,12 +191,12 @@ export default function AdminMonitoringPage() {
       )}
 
       {/* Overall readiness banner */}
-      <Card className={ready?.ready ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40' : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40'}>
+      <Card className={ready?.ready ? 'border-success/30 bg-success-soft' : 'border-brand/30 bg-brand-soft'}>
         <CardContent className="flex items-center gap-3 p-4">
           {ready?.ready ? (
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
           ) : (
-            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
+            <AlertCircle className="h-5 w-5 shrink-0 text-brand" />
           )}
           <div className="text-sm">
             <span className="font-semibold">
@@ -249,20 +247,20 @@ export default function AdminMonitoringPage() {
             <Skeleton className="h-20" />
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40">
-                <Wifi className="h-6 w-6 text-emerald-600" />
+              <div className="flex items-center gap-3 rounded-md border border-success/30 bg-success-soft p-4">
+                <Wifi className="h-6 w-6 text-success" />
                 <div>
                   <div className="text-xs text-muted-foreground">Online</div>
-                  <div className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                  <div className="text-2xl font-bold tabular-nums text-success">
                     {analytics.health.agentsOnline}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/40">
-                <WifiOff className="h-6 w-6 text-zinc-500" />
+              <div className="flex items-center gap-3 rounded-md border border-border bg-muted p-4">
+                <WifiOff className="h-6 w-6 text-muted-foreground" />
                 <div>
                   <div className="text-xs text-muted-foreground">Offline</div>
-                  <div className="text-2xl font-bold tabular-nums text-zinc-700 dark:text-zinc-300">
+                  <div className="text-2xl font-bold tabular-nums text-muted-foreground">
                     {analytics.health.agentsOffline}
                   </div>
                 </div>
@@ -285,7 +283,7 @@ export default function AdminMonitoringPage() {
               <CardDescription>Orders in <code className="font-mono">cancelled</code> state</CardDescription>
             </div>
             <Link href="/admin/orders?status=cancelled">
-              <Button variant="ghost" size="sm" className="text-emerald-700 dark:text-emerald-400">
+              <Button variant="ghost" size="sm" className="text-brand">
                 View all
               </Button>
             </Link>
@@ -298,7 +296,7 @@ export default function AdminMonitoringPage() {
             </div>
           ) : !cancelled || cancelled.orders.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              <ShieldCheck className="mx-auto mb-2 h-6 w-6 text-emerald-600" />
+              <ShieldCheck className="mx-auto mb-2 h-6 w-6 text-success" />
               No cancelled orders. All good.
             </p>
           ) : (
@@ -317,7 +315,7 @@ export default function AdminMonitoringPage() {
                 {cancelled.orders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell>
-                      <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                      <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
                         {truncate(o.id, 8)}
                       </Link>
                     </TableCell>
@@ -413,11 +411,11 @@ function HealthTile({
 }) {
   const config = {
     healthy: {
-      ring: 'border-emerald-200 dark:border-emerald-900',
-      bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-      icon: <CheckCircle2 className="h-5 w-5 text-emerald-600" />,
+      ring: 'border-success/30',
+      bg: 'bg-success-soft',
+      icon: <CheckCircle2 className="h-5 w-5 text-success" />,
       label: 'Healthy',
-      labelCls: 'text-emerald-700 dark:text-emerald-300',
+      labelCls: 'text-success',
     },
     unhealthy: {
       ring: 'border-red-200 dark:border-red-900',
@@ -427,18 +425,18 @@ function HealthTile({
       labelCls: 'text-red-700 dark:text-red-300',
     },
     not_configured: {
-      ring: 'border-zinc-200 dark:border-zinc-700',
-      bg: 'bg-zinc-50 dark:bg-zinc-800/40',
-      icon: <HelpCircle className="h-5 w-5 text-zinc-500" />,
+      ring: 'border-border',
+      bg: 'bg-muted',
+      icon: <HelpCircle className="h-5 w-5 text-muted-foreground" />,
       label: 'Not configured',
-      labelCls: 'text-zinc-600 dark:text-zinc-400',
+      labelCls: 'text-muted-foreground',
     },
     not_verified: {
-      ring: 'border-zinc-200 dark:border-zinc-700',
-      bg: 'bg-zinc-50 dark:bg-zinc-800/40',
-      icon: <HelpCircle className="h-5 w-5 text-zinc-500" />,
+      ring: 'border-border',
+      bg: 'bg-muted',
+      icon: <HelpCircle className="h-5 w-5 text-muted-foreground" />,
       label: 'Not verified',
-      labelCls: 'text-zinc-600 dark:text-zinc-400',
+      labelCls: 'text-muted-foreground',
     },
   }[health.status];
 

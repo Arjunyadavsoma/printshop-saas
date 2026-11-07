@@ -26,6 +26,8 @@ import {
   type AdminOrderListResponse,
   type OrderStatus,
 } from '@/components/portal/admin-types';
+import { StatusBadge, STATUS_BADGE_CLASS } from '@/components/portal/status-badge';
+import { truncate } from '@/lib/utils';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -59,27 +61,7 @@ function todayISO(): string {
   return `${y}-${m}-${day}`;
 }
 
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  awaiting_payment: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  paid: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  ready: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  collected: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
-  cancelled: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  refunded: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-};
-
-function truncate(s: string, n = 8): string {
-  return s.length <= n ? s : `${s.slice(0, n)}…`;
-}
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  return (
-    <Badge variant="outline" className={`${STATUS_COLORS[status]} border-transparent font-medium`}>
-      {status.replace('_', ' ')}
-    </Badge>
-  );
-}
+const STATUS_COLORS: Record<OrderStatus, string> = STATUS_BADGE_CLASS;
 
 interface KpiProps {
   label: string;
@@ -89,7 +71,7 @@ interface KpiProps {
   accent?: string;
 }
 
-function KpiCard({ label, value, hint, icon: Icon, accent = 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' }: KpiProps) {
+function KpiCard({ label, value, hint, icon: Icon, accent = 'bg-muted text-muted-foreground' }: KpiProps) {
   return (
     <Card className="overflow-hidden">
       <CardContent className="flex items-start gap-3 p-4 sm:p-5">
@@ -110,8 +92,8 @@ function KpiCard({ label, value, hint, icon: Icon, accent = 'bg-zinc-100 text-zi
 
 function HealthDot({ state }: { state: 'healthy' | 'unhealthy' | 'unknown' }) {
   const color =
-    state === 'healthy' ? 'bg-emerald-500' :
-    state === 'unhealthy' ? 'bg-red-500' : 'bg-zinc-400';
+    state === 'healthy' ? 'bg-success' :
+    state === 'unhealthy' ? 'bg-red-500' : 'bg-muted-foreground';
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />;
 }
 
@@ -158,6 +140,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Dashboard</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Platform overview</h2>
@@ -172,14 +155,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* No-commission notice — pinned to the top of the dashboard */}
-      <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40">
+      <Card className="border-success/30 bg-success-soft">
         <CardContent className="flex items-start gap-3 p-4">
-          <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+          <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
           <div className="text-sm">
-            <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+            <span className="font-semibold text-success">
               Platform revenue = ₹0
             </span>
-            <span className="ml-2 text-emerald-800 dark:text-emerald-300">
+            <span className="ml-2 text-success">
               This product charges <strong>no commission</strong> — customers pay the shopkeeper's
               UPI directly. Shops receive 100% of every paid order.
             </span>
@@ -218,49 +201,49 @@ export default function AdminDashboardPage() {
               value={String(p.totalShops)}
               hint={`${p.activeShops} active · ${p.inactiveShops} inactive`}
               icon={Store}
-              accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              accent="bg-success-soft text-success"
             />
             <KpiCard
               label="Orders today"
               value={String(p.totalOrders)}
               hint={`${p.paidOrders} paid · ${p.pendingPaymentVerification} awaiting payment`}
               icon={ShoppingBag}
-              accent="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+              accent="bg-info-soft text-info"
             />
             <KpiCard
               label="Gross paid value"
               value={inr(p.grossPaidValuePaise)}
               hint="Sum of paid order totals today"
               icon={IndianRupee}
-              accent="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+              accent="bg-muted text-muted-foreground"
             />
             <KpiCard
               label="Shop earnings"
               value={inr(p.shopEarningsPaise)}
               hint="= gross paid value (0% commission)"
               icon={Wallet}
-              accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              accent="bg-success-soft text-success"
             />
             <KpiCard
               label="Platform revenue"
               value="₹0.00"
               hint="No commission model"
               icon={TrendingUp}
-              accent="bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              accent="bg-muted text-muted-foreground"
             />
             <KpiCard
               label="Pending payment verification"
               value={String(p.pendingPaymentVerification)}
               hint="Orders in awaiting_payment"
               icon={Clock}
-              accent="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+              accent="bg-brand-soft text-brand"
             />
             <KpiCard
               label="Print-agents online"
               value={`${h?.agentsOnline ?? 0} / ${h ? h.agentsOnline + h.agentsOffline : 0}`}
               hint={`${h?.agentsOffline ?? 0} offline`}
               icon={Wifi}
-              accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              accent="bg-success-soft text-success"
             />
             <KpiCard
               label="Failed / disputed"
@@ -293,7 +276,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
           <p className="mt-3 text-xs text-muted-foreground">
-            Storage/cache/realtime show provider name only — see <Link href="/admin/monitoring" className="text-emerald-700 hover:underline dark:text-emerald-400">Monitoring</Link> for full probe results.
+            Storage/cache/realtime show provider name only — see <Link href="/admin/monitoring" className="text-brand hover:underline">Monitoring</Link> for full probe results.
           </p>
         </CardContent>
       </Card>
@@ -308,7 +291,7 @@ export default function AdminDashboardPage() {
                 <CardDescription>Latest 10 orders across all shops</CardDescription>
               </div>
               <Link href="/admin/orders">
-                <Button variant="ghost" size="sm" className="gap-1 text-emerald-700 dark:text-emerald-400">
+                <Button variant="ghost" size="sm" className="gap-1 text-brand">
                   View all <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               </Link>
@@ -357,7 +340,7 @@ export default function AdminDashboardPage() {
                 <CardDescription>Paid sales today</CardDescription>
               </div>
               <Link href="/admin/shops">
-                <Button variant="ghost" size="sm" className="gap-1 text-emerald-700 dark:text-emerald-400">
+                <Button variant="ghost" size="sm" className="gap-1 text-brand">
                   All shops <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               </Link>

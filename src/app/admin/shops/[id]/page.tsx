@@ -25,6 +25,8 @@ import {
   type AdminShopDetailResponse,
   type OrderStatus,
 } from '@/components/portal/admin-types';
+import { StatusBadge } from '@/components/portal/status-badge';
+import { truncate } from '@/lib/utils';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,28 +57,6 @@ function formatDateTime(s: string | null | undefined): string {
   } catch {
     return s;
   }
-}
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  awaiting_payment: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  paid: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  ready: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  collected: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
-  cancelled: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  refunded: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-};
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  return (
-    <Badge variant="outline" className={`${STATUS_COLORS[status]} border-transparent font-medium`}>
-      {status.replace('_', ' ')}
-    </Badge>
-  );
-}
-
-function truncate(s: string, n = 8): string {
-  return s.length <= n ? s : `${s.slice(0, n)}…`;
 }
 
 interface InfoRowProps {
@@ -134,6 +114,7 @@ export default function AdminShopDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Shop detail</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => router.push('/admin/shops')} className="gap-1">
@@ -141,7 +122,7 @@ export default function AdminShopDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-emerald-600" />
+              <Store className="h-5 w-5 text-brand" />
               {loading || !data ? (
                 <Skeleton className="h-6 w-40" />
               ) : (
@@ -151,7 +132,7 @@ export default function AdminShopDetailPage() {
             <p className="mt-1 text-sm text-muted-foreground">Shop detail</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -180,7 +161,7 @@ export default function AdminShopDetailPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
-                <ShoppingBag className="h-5 w-5 text-sky-600" />
+                <ShoppingBag className="h-5 w-5 text-info" />
                 <div>
                   <div className="text-xs text-muted-foreground">Total orders</div>
                   <div className="text-lg font-bold tabular-nums">{data.summary.totalOrders}</div>
@@ -189,7 +170,7 @@ export default function AdminShopDetailPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
-                <IndianRupee className="h-5 w-5 text-emerald-600" />
+                <IndianRupee className="h-5 w-5 text-success" />
                 <div>
                   <div className="text-xs text-muted-foreground">Paid orders</div>
                   <div className="text-lg font-bold tabular-nums">{data.summary.paidOrders}</div>
@@ -198,7 +179,7 @@ export default function AdminShopDetailPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
-                <Tag className="h-5 w-5 text-violet-600" />
+                <Tag className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <div className="text-xs text-muted-foreground">Revenue</div>
                   <div className="text-lg font-bold tabular-nums">{inr(data.summary.revenuePaise)}</div>
@@ -207,7 +188,7 @@ export default function AdminShopDetailPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
-                <Printer className="h-5 w-5 text-amber-600" />
+                <Printer className="h-5 w-5 text-brand" />
                 <div>
                   <div className="text-xs text-muted-foreground">Agents online</div>
                   <div className="text-lg font-bold tabular-nums">
@@ -242,9 +223,9 @@ export default function AdminShopDetailPage() {
                   <InfoRow icon={Tag} label="Timezone" value={<span className="font-mono">{data.shop.timezone || '—'}</span>} />
                   <InfoRow icon={Tag} label="Active" value={
                     data.shop.isActive ? (
-                      <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">Yes</Badge>
+                      <Badge variant="outline" className="border-success/30 bg-success-soft text-success">Yes</Badge>
                     ) : (
-                      <Badge variant="outline" className="border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">No</Badge>
+                      <Badge variant="outline" className="border-border bg-muted text-muted-foreground">No</Badge>
                     )
                   } />
                   <InfoRow icon={Tag} label="Created at" value={formatDateTime(data.shop.createdAt)} />
@@ -293,11 +274,11 @@ export default function AdminShopDetailPage() {
                           </div>
                           <div className="flex items-center gap-1.5 text-xs">
                             {a.isOnline ? (
-                              <Wifi className="h-3.5 w-3.5 text-emerald-600" />
+                              <Wifi className="h-3.5 w-3.5 text-success" />
                             ) : (
                               <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
                             )}
-                            <span className={a.isOnline ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}>
+                            <span className={a.isOnline ? 'text-success' : 'text-muted-foreground'}>
                               {a.isOnline ? 'online' : 'offline'}
                             </span>
                           </div>
@@ -341,7 +322,7 @@ export default function AdminShopDetailPage() {
                     {data.orders.map((o) => (
                       <TableRow key={o.id}>
                         <TableCell>
-                          <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                          <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
                             {truncate(o.id, 8)}
                           </Link>
                         </TableCell>

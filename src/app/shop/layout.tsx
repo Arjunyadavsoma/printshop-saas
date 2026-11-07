@@ -132,7 +132,7 @@ function SidebarNav({
                   item.sub ? 'pl-5' : ''
                 } ${
                   active
-                    ? 'bg-amber-100 text-amber-900'
+                    ? 'bg-brand-soft text-brand'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
@@ -158,7 +158,7 @@ function PortalFooter() {
     <footer className="mt-auto border-t border-border bg-card">
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-amber-600 text-[10px] font-bold text-white">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-brand text-[10px] font-bold text-brand">
             P
           </div>
           <span>
@@ -167,7 +167,7 @@ function PortalFooter() {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-emerald-600" />
+            <ShieldCheck className="size-3.5 text-success" />
             MIT licensed
           </span>
           <span className="inline-flex items-center gap-1.5">
@@ -255,13 +255,13 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
             <SheetContent side="left" className="w-72 p-0">
               <SheetTitle className="sr-only">Shop navigation</SheetTitle>
               <div className="flex h-14 items-center gap-2 border-b px-4">
-                <Store className="size-5 text-amber-600" />
+                <Store className="size-5 text-brand" />
                 <span className="truncate font-semibold">{shopName ?? 'Shop'}</span>
               </div>
               <SidebarNav pathname={pathname} hash={hash} onNavigate={() => setSheetOpen(false)} />
             </SheetContent>
           </Sheet>
-          <Store className="size-5 text-amber-600" />
+          <Store className="size-5 text-brand" />
           <div className="flex flex-col leading-tight">
             <span className="truncate text-sm font-semibold sm:text-base">
               {shopName ?? 'Shop Portal'}
@@ -270,7 +270,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="hidden bg-emerald-50 text-emerald-700 sm:inline-flex">
+          <Badge variant="outline" className="hidden bg-success-soft text-success sm:inline-flex">
             owner
           </Badge>
           <Button

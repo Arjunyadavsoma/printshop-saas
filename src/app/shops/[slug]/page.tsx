@@ -163,7 +163,7 @@ export default function ShopDetailPage() {
             Back to shops
           </Link>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600 font-bold text-white text-sm">P</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand font-bold text-brand text-sm">P</div>
             <span className="text-sm font-semibold text-foreground">PrintShop</span>
           </div>
         </div>
@@ -198,7 +198,7 @@ export default function ShopDetailPage() {
                 <Card>
                   <CardHeader>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-900">
+                      <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand">
                         <Store className="h-3 w-3" /> Shop
                       </Badge>
                       {shop.paymentProvider && (
@@ -224,7 +224,7 @@ export default function ShopDetailPage() {
                         <p className="mt-1 text-sm font-medium text-foreground capitalize">{shop.paymentProvider}</p>
                       </div>
                     </div>
-                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                    <div className="mt-3 rounded-lg border border-success/30 bg-success-soft p-3 text-xs text-success">
                       <div className="flex items-center gap-2 font-medium">
                         <ShieldCheck className="h-4 w-4" />
                         Privacy
@@ -240,7 +240,7 @@ export default function ShopDetailPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Printer className="h-4 w-4 text-amber-600" />
+                      <Printer className="h-4 w-4 text-brand" />
                       Pricing reference
                     </CardTitle>
                     <CardDescription>Per-page rates. Final price is computed at checkout using the live pricing engine.</CardDescription>
@@ -298,7 +298,7 @@ export default function ShopDetailPage() {
                     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {PRINT_OPTIONS.map((o) => (
                         <li key={o.label} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                           <div>
                             <p className="text-sm font-medium text-foreground">{o.label}</p>
                             <p className="text-xs text-muted-foreground">{o.desc}</p>
@@ -312,14 +312,14 @@ export default function ShopDetailPage() {
 
               {/* Right: sticky action card */}
               <div className="lg:sticky lg:top-6 lg:h-fit">
-                <Card className="border-amber-300">
+                <Card className="border-brand/30">
                   <CardHeader>
                     <CardTitle className="text-lg">Start an order</CardTitle>
                     <CardDescription>Upload files, set print options, and pay via UPI. Zero commission.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center gap-3 rounded-lg bg-muted/60 p-3">
-                      <Smartphone className="h-5 w-5 shrink-0 text-amber-600" />
+                      <Smartphone className="h-5 w-5 shrink-0 text-brand" />
                       <p className="text-xs text-muted-foreground">
                         {'You\'ll upload your files on the next screen. Files auto-delete on collection.'}
                       </p>

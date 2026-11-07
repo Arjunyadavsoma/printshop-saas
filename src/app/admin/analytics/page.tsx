@@ -181,10 +181,11 @@ export default function AdminAnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Analytics</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-emerald-600" />
+            <BarChart3 className="h-5 w-5 text-brand" />
             <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Analytics</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -202,7 +203,7 @@ export default function AdminAnalyticsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -210,13 +211,13 @@ export default function AdminAnalyticsPage() {
       </div>
 
       {/* Metric definitions — pinned for clarity */}
-      <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40">
+      <Card className="border-success/30 bg-success-soft">
         <CardContent className="p-4">
           <div className="flex items-start gap-2 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-            <div className="text-emerald-900 dark:text-emerald-200">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+            <div className="text-success">
               <strong>Metric definitions</strong> (this product has no commission model):
-              <ul className="mt-1.5 list-disc pl-5 space-y-0.5 text-emerald-800 dark:text-emerald-300">
+              <ul className="mt-1.5 list-disc pl-5 space-y-0.5 text-success">
                 <li><strong>Customer amount charged</strong> = grossPaidValuePaise (sum of paid order totals)</li>
                 <li><strong>Shop gross sales</strong> = same as customer amount charged (0% commission)</li>
                 <li><strong>Platform fees / revenue</strong> = ₹0 (no commission model — documented)</li>
@@ -252,11 +253,11 @@ export default function AdminAnalyticsPage() {
           ))
         ) : (
           <>
-            <KpiCard label="Total orders" value={String(totals.orders)} icon={ShoppingBag} accent="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" />
-            <KpiCard label="Paid orders" value={String(totals.paidOrders)} icon={ShoppingBag} accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" />
-            <KpiCard label="Gross paid value" value={inr(totals.grossPaidValuePaise)} icon={IndianRupee} accent="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" hint="Customer amount charged" />
-            <KpiCard label="Shop earnings" value={inr(totals.grossPaidValuePaise)} icon={Wallet} accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" hint="= gross paid value (0% commission)" />
-            <KpiCard label="Platform revenue" value="₹0.00" icon={TrendingUp} accent="bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" hint="No commission model" />
+            <KpiCard label="Total orders" value={String(totals.orders)} icon={ShoppingBag} accent="bg-info-soft text-info" />
+            <KpiCard label="Paid orders" value={String(totals.paidOrders)} icon={ShoppingBag} accent="bg-success-soft text-success" />
+            <KpiCard label="Gross paid value" value={inr(totals.grossPaidValuePaise)} icon={IndianRupee} accent="bg-muted text-muted-foreground" hint="Customer amount charged" />
+            <KpiCard label="Shop earnings" value={inr(totals.grossPaidValuePaise)} icon={Wallet} accent="bg-success-soft text-success" hint="= gross paid value (0% commission)" />
+            <KpiCard label="Platform revenue" value="₹0.00" icon={TrendingUp} accent="bg-muted text-muted-foreground" hint="No commission model" />
           </>
         )}
       </div>
@@ -274,7 +275,7 @@ export default function AdminAnalyticsPage() {
           ))
         ) : (
           <>
-            <KpiCard label="Pending payment" value={String(totals.pending)} icon={AlertTriangle} accent="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" hint="Awaiting payment" />
+            <KpiCard label="Pending payment" value={String(totals.pending)} icon={AlertTriangle} accent="bg-brand-soft text-brand" hint="Awaiting payment" />
             <KpiCard label="Failed / disputed" value={String(totals.failed)} icon={AlertTriangle} accent="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" hint="Cancelled" />
           </>
         )}

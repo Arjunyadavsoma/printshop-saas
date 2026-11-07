@@ -89,10 +89,10 @@ export default function ShopLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50 via-background to-background px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-brand-soft px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-amber-600 text-white shadow-sm">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
             <Store className="size-6" />
           </div>
           <h1 className="mt-3 text-2xl font-bold tracking-tight">Shopkeeper Portal</h1>
@@ -104,7 +104,7 @@ export default function ShopLoginPage() {
         <Card className="border-border shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <KeyRound className="size-4 text-amber-600" />
+              <KeyRound className="size-4 text-brand" />
               Sign in
             </CardTitle>
             <CardDescription>
@@ -142,7 +142,7 @@ export default function ShopLoginPage() {
               {error && (
                 <div
                   role="alert"
-                  className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                  className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger"
                 >
                   {error}
                 </div>
@@ -151,7 +151,7 @@ export default function ShopLoginPage() {
             <CardFooter className="flex flex-col gap-3">
               <Button
                 type="submit"
-                className="w-full gap-2 bg-amber-600 text-white hover:bg-amber-600/90"
+                className="w-full gap-2 bg-brand text-brand-foreground hover:bg-brand/90"
                 disabled={submitting}
               >
                 {submitting ? (
@@ -166,12 +166,12 @@ export default function ShopLoginPage() {
         </Card>
 
         {/* Create Shop Account — the primary CTA for new shopkeepers */}
-        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50/70 p-4 text-center">
-          <p className="text-sm font-medium text-amber-900">Don't have a shop account?</p>
+        <div className="mt-4 rounded-lg border border-brand/30 bg-brand-soft p-4 text-center">
+          <p className="text-sm font-medium text-brand">Don't have a shop account?</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Set up your print shop in minutes — 0% commission, customers pay you directly via UPI.
           </p>
-          <Button asChild className="mt-3 w-full gap-2 border border-amber-600 bg-white text-amber-700 hover:bg-amber-50" variant="outline">
+          <Button asChild className="mt-3 w-full gap-2 border border-brand bg-background text-brand hover:bg-brand-soft" variant="outline">
             <Link href="/shop/register">
               <UserPlus className="size-4" />
               Create Shop Account
@@ -181,10 +181,10 @@ export default function ShopLoginPage() {
 
         {/* Demo accounts — only visible in development (not production) */}
         {process.env.NODE_ENV !== 'production' && (
-        <Card className="mt-4 border-dashed border-amber-300 bg-amber-50/50">
+        <Card className="mt-4 border-dashed border-brand/30 bg-brand-soft">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
-              <ShieldCheck className="size-4 text-amber-700" />
+              <ShieldCheck className="size-4 text-brand" />
               Demo accounts (dev only)
             </CardTitle>
             <CardDescription className="text-xs">
@@ -197,13 +197,13 @@ export default function ShopLoginPage() {
                 key={acc.email}
                 type="button"
                 onClick={() => fillDemo(acc)}
-                className="flex w-full items-center justify-between rounded-md border border-amber-200 bg-white/70 px-3 py-2 text-left text-xs transition-colors hover:border-amber-400 hover:bg-amber-50"
+                className="flex w-full items-center justify-between rounded-md border border-brand/30 bg-background/70 px-3 py-2 text-left text-xs transition-colors hover:border-brand/40 hover:bg-brand-soft"
               >
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground">{acc.label}</span>
                   <span className="font-mono text-[10px] text-muted-foreground">{acc.email}</span>
                 </div>
-                <ArrowRight className="size-3 text-amber-700" />
+                <ArrowRight className="size-3 text-brand" />
               </button>
             ))}
           </CardContent>
@@ -215,7 +215,7 @@ export default function ShopLoginPage() {
 
         <div className="mt-4 text-center text-xs text-muted-foreground">
           Customer?{' '}
-          <Link href="/" className="font-medium text-amber-700 hover:underline">
+          <Link href="/" className="font-medium text-brand hover:underline">
             Open the customer app →
           </Link>
         </div>

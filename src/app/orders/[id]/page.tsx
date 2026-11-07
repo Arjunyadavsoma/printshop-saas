@@ -669,12 +669,12 @@ export default function OrderFlowPage() {
 
               {/* Payment notice — only shown in development (sandbox) */}
               {step !== 'track' && process.env.NODE_ENV !== 'production' && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                <div className="rounded-lg border border-brand/30 bg-brand-soft p-3 text-xs text-brand">
                   <div className="flex items-start gap-2">
                     <Info className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
                       <p className="font-medium">Dev mode — simulated payment available.</p>
-                      <p className="mt-0.5 text-amber-800">
+                      <p className="mt-0.5 text-brand">
                         {'The Pay step can use the dev simulator for testing. In production, real UPI payment is used.'}
                       </p>
                     </div>
@@ -780,7 +780,7 @@ function OrderStepper({ current }: { current: Step }) {
         const done = i < idx;
         return (
           <li key={s.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:h-9 sm:w-9 ${done ? 'bg-emerald-600 text-white' : active ? 'bg-amber-600 text-white' : 'bg-muted text-muted-foreground'}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:h-9 sm:w-9 ${done ? 'bg-success text-success-foreground' : active ? 'bg-brand text-brand-foreground' : 'bg-muted text-muted-foreground'}`}>
               {done ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
             </div>
             <span className={`text-[10px] sm:text-xs ${active ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
@@ -816,7 +816,7 @@ function UploadStep(props: {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <UploadCloud className="h-5 w-5 text-amber-600" /> Step 1 · Upload your files
+            <UploadCloud className="h-5 w-5 text-brand" /> Step 1 · Upload your files
           </CardTitle>
           <CardDescription>PDF, images, Word, Excel, PowerPoint, and more — up to 25MB each.</CardDescription>
         </CardHeader>
@@ -825,7 +825,7 @@ function UploadStep(props: {
             onDragOver={props.onDragOver}
             onDragLeave={props.onDragLeave}
             onDrop={props.onDrop}
-            className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors sm:p-6 ${props.dragOver ? 'border-amber-500 bg-amber-50' : 'border-border'}`}
+            className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors sm:p-6 ${props.dragOver ? 'border-brand bg-brand-soft' : 'border-border'}`}
           >
             <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-2 text-sm text-foreground">Drag files here, or</p>
@@ -916,7 +916,7 @@ function ConfigureStep(props: {
         <Card key={f.fileId}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-5 w-5 shrink-0 text-amber-600" />
+              <FileText className="h-5 w-5 shrink-0 text-brand" />
               <span className="truncate">{f.filename}</span>
               <Badge variant="secondary" className="ml-auto shrink-0 text-xs">
                 {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
@@ -1038,7 +1038,7 @@ function CheckoutStep(props: {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <CreditCard className="h-5 w-5 text-amber-600" /> Step 3 · Review &amp; checkout
+            <CreditCard className="h-5 w-5 text-brand" /> Step 3 · Review &amp; checkout
           </CardTitle>
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
         </CardHeader>
@@ -1084,7 +1084,7 @@ function CheckoutStep(props: {
           {props.shop && (
             <div className="mt-4 rounded-lg bg-muted/60 p-3 text-sm">
               <p className="flex flex-wrap items-center gap-2 text-foreground">
-                <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                <ShieldCheck className="h-4 w-4 shrink-0 text-success" />
                 <span className="break-words">Pay to <strong className="font-mono">{props.shop.upiId}</strong> · {props.shop.name}</span>
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -1138,16 +1138,16 @@ function PayStep(props: {
 
   return (
     <div className="space-y-4">
-      <Card className="border-amber-300">
+      <Card className="border-brand/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <QrCode className="h-5 w-5 text-amber-600" /> Step 4 · Pay {props.shopName ?? 'the shopkeeper'}
+            <QrCode className="h-5 w-5 text-brand" /> Step 4 · Pay {props.shopName ?? 'the shopkeeper'}
           </CardTitle>
           <CardDescription>Pay directly to the shopkeeper&apos;s UPI — 0% commission.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Amount — prominent */}
-          <div className="rounded-lg bg-amber-50 p-4 text-center ring-1 ring-amber-200">
+          <div className="rounded-lg bg-brand-soft p-4 text-center ring-1 ring-brand/30">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
             <p className="mt-1 text-3xl font-bold text-foreground sm:text-4xl lg:text-5xl">{amount}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
@@ -1156,8 +1156,8 @@ function PayStep(props: {
           {/* TWO payment options — clearly separated */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Option 1: Pay by UPI App (button) */}
-            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50/40 p-5 text-center">
-              <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-success/30 bg-success-soft p-5 text-center">
+              <div className="flex size-10 items-center justify-center rounded-full bg-success-soft text-success">
                 <Smartphone className="h-5 w-5" />
               </div>
               <p className="text-sm font-semibold text-foreground">Option 1: Pay by UPI App</p>
@@ -1166,20 +1166,20 @@ function PayStep(props: {
                 type="button"
                 onClick={launchUpi}
                 disabled={props.busy || !upiUri}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3.5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-emerald-700 disabled:opacity-50 min-h-[44px]"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-success px-4 py-3.5 text-sm font-semibold text-success shadow-md transition-colors hover:bg-success/90 disabled:opacity-50 min-h-[44px]"
                 aria-label={`Pay ${amount} with UPI`}
               >
                 <Smartphone className="h-4 w-4" />
                 Pay {amount} with UPI
               </button>
               {!upiUri && (
-                <p className="text-[10px] text-amber-700">UPI app payment not available — use the QR instead.</p>
+                <p className="text-[10px] text-brand">UPI app payment not available — use the QR instead.</p>
               )}
             </div>
 
             {/* Option 2: Scan QR Code */}
-            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-5 text-center">
-              <div className="flex size-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-brand/30 bg-brand-soft p-5 text-center">
+              <div className="flex size-10 items-center justify-center rounded-full bg-brand-soft text-brand">
                 <QrCode className="h-5 w-5" />
               </div>
               <p className="text-sm font-semibold text-foreground">Option 2: Scan QR Code</p>
@@ -1218,12 +1218,12 @@ function PayStep(props: {
           </div>
 
           {/* Payment notice */}
-          <div className="rounded-lg border border-amber-400 bg-amber-100 p-3 text-xs text-amber-900">
+          <div className="rounded-lg border border-brand/30 bg-brand-soft p-3 text-xs text-brand">
             <div className="flex items-start gap-2">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
                 <p className="font-semibold">After paying, tap &quot;I&apos;ve paid&quot; below.</p>
-                <p className="mt-0.5 text-amber-800">
+                <p className="mt-0.5 text-brand">
                   Your payment stays <strong>Pending</strong> until verified. The shopkeeper will confirm receipt (or the system auto-verifies if a payment provider is connected).
                 </p>
               </div>
@@ -1242,7 +1242,7 @@ function PayStep(props: {
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onPay} disabled={props.busy || !props.checkout || props.simulated}>
-            {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+            {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 text-success" />}
             {props.simulated ? 'Tracking…' : "I've paid — track my order"}
           </Button>
         </CardFooter>
@@ -1265,7 +1265,7 @@ function TrackStep(props: {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            {done ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : cancelled ? <XCircle className="h-5 w-5 text-destructive" /> : <Loader2 className="h-5 w-5 animate-spin text-amber-600" />}
+            {done ? <CheckCircle2 className="h-5 w-5 text-success" /> : cancelled ? <XCircle className="h-5 w-5 text-destructive" /> : <Loader2 className="h-5 w-5 animate-spin text-brand" />}
             Step 5 · Track your order
           </CardTitle>
           <CardDescription>Refreshed automatically every 30 seconds.</CardDescription>
@@ -1274,7 +1274,7 @@ function TrackStep(props: {
           {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
-            <p className="font-mono text-2xl font-bold break-words text-amber-600 sm:text-3xl sm:tracking-widest">
+            <p className="font-mono text-2xl font-bold break-words text-brand sm:text-3xl sm:tracking-widest">
               {props.order.tokenNumber ?? props.order.customerToken}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
@@ -1288,32 +1288,32 @@ function TrackStep(props: {
               when pending. A UPI app launch, browser return, or customer-
               submitted UTR NEVER sets paidAt — only an authorized shopkeeper
               or a verified provider webhook can do that. */}
-          <div className={`rounded-xl p-4 text-center ${props.order.paidAt ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-amber-50 ring-1 ring-amber-200'}`}>
+          <div className={`rounded-xl p-4 text-center ${props.order.paidAt ? 'bg-success-soft ring-1 ring-success/30' : 'bg-brand-soft ring-1 ring-brand/30'}`}>
             {props.order.paidAt ? (
-              <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" />
+              <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
             ) : (
-              <Clock className="mx-auto h-8 w-8 text-amber-600" />
+              <Clock className="mx-auto h-8 w-8 text-brand" />
             )}
-            <p className={`mt-1 text-sm font-semibold ${props.order.paidAt ? 'text-emerald-700' : 'text-amber-800'}`}>
+            <p className={`mt-1 text-sm font-semibold ${props.order.paidAt ? 'text-success' : 'text-brand'}`}>
               {props.order.paidAt ? 'Payment Confirmed' : 'Payment Pending'}
             </p>
             {props.order.paidAt ? (
               <>
-                <p className="mt-0.5 text-[11px] text-emerald-600">
+                <p className="mt-0.5 text-[11px] text-success">
                   Confirmed {new Date(props.order.paidAt).toLocaleString('en-IN')}
                   {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
                 </p>
                 {/* Auto/Manual verification badge */}
                 <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                   props.order.paymentTxnId?.startsWith('manual-')
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-emerald-100 text-emerald-700'
+                    ? 'bg-brand-soft text-brand'
+                    : 'bg-success-soft text-success'
                 }`}>
                   {props.order.paymentTxnId?.startsWith('manual-') ? ' Manual verification' : ' Auto-verified'}
                 </span>
               </>
             ) : (
-              <p className="mt-0.5 text-[11px] text-amber-700">
+              <p className="mt-0.5 text-[11px] text-brand">
                 The shopkeeper will verify your UPI payment after you pay.
               </p>
             )}
@@ -1323,9 +1323,9 @@ function TrackStep(props: {
           {/* This shows the ORDER lifecycle: paid → printing → ready → collected.
               The spinner here is correct — it indicates the order is being
               processed, NOT that payment is still being verified. */}
-          <div className={`rounded-xl p-4 text-center ${done ? 'bg-emerald-50 ring-1 ring-emerald-200' : cancelled ? 'bg-destructive/5 ring-1 ring-destructive/30' : 'bg-amber-50 ring-1 ring-amber-200'}`}>
-            {done ? <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" /> : cancelled ? <XCircle className="mx-auto h-8 w-8 text-destructive" /> : <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-600" />}
-            <p className={`mt-1 text-sm font-semibold ${done ? 'text-emerald-700' : cancelled ? 'text-destructive' : 'text-amber-800'}`}>
+          <div className={`rounded-xl p-4 text-center ${done ? 'bg-success-soft ring-1 ring-success/30' : cancelled ? 'bg-destructive/5 ring-1 ring-destructive/30' : 'bg-brand-soft ring-1 ring-brand/30'}`}>
+            {done ? <CheckCircle2 className="mx-auto h-8 w-8 text-success" /> : cancelled ? <XCircle className="mx-auto h-8 w-8 text-destructive" /> : <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand" />}
+            <p className={`mt-1 text-sm font-semibold ${done ? 'text-success' : cancelled ? 'text-destructive' : 'text-brand'}`}>
               {statusLabel(s)}
             </p>
             <p className="text-[10px] text-muted-foreground">status: {s}</p>
@@ -1426,18 +1426,18 @@ function FileCard(props: {
   const isReview = f.status === 'needs_review';
 
   return (
-    <Card className={isFailed ? 'border-destructive/50' : isReview ? 'border-amber-400' : 'border-border'}>
+    <Card className={isFailed ? 'border-destructive/50' : isReview ? 'border-brand/30' : 'border-border'}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2">
-            <FileText className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <FileText className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">{f.filename}</p>
               <p className="text-[11px] text-muted-foreground">
                 {f.pageCount > 0 ? `${f.pageCount} pages · ` : ''}{f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
               </p>
               {isReview && (
-                <p className="mt-1 text-[11px] text-amber-700">
+                <p className="mt-1 text-[11px] text-brand">
                   Needs shopkeeper review — settings may be locked until the shopkeeper sets a page count.
                 </p>
               )}
@@ -1451,7 +1451,7 @@ function FileCard(props: {
             <button
               type="button"
               onClick={() => props.onRemove(f.fileId)}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-rose-600"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
               aria-label="Remove file"
             >
               <Trash2 className="h-4 w-4" />

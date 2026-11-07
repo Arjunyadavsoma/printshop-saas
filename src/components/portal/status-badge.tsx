@@ -20,11 +20,11 @@ import type { OrderStatus } from '@platform/core/domain';
  */
 export const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
   awaiting_payment: 'bg-muted text-muted-foreground border-border',
-  paid: 'bg-info-soft text-info-foreground border-info/30',
+  paid: 'bg-info-soft text-info border-info/30',
   printing: 'bg-warning-soft text-warning-foreground border-warning/30',
-  ready: 'bg-success-soft text-success-foreground border-success/30',
-  collected: 'bg-success/10 text-success-foreground border-success/20',
-  cancelled: 'bg-danger-soft text-danger-foreground border-danger/30',
+  ready: 'bg-success-soft text-success border-success/30',
+  collected: 'bg-success/10 text-success border-success/20',
+  cancelled: 'bg-danger-soft text-danger border-danger/30',
   refunded: 'bg-muted text-muted-foreground border-border',
 };
 

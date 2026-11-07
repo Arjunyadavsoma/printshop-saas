@@ -25,6 +25,7 @@ import {
   type FileStatus,
   type PrintJobStatus,
 } from '@/components/portal/admin-types';
+import { StatusBadge } from '@/components/portal/status-badge';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -64,41 +65,23 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  awaiting_payment: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  paid: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  ready: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  collected: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
-  cancelled: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  refunded: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-};
-
 const FILE_STATUS_COLORS: Record<FileStatus, string> = {
-  pending: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200',
-  queued: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  pending: 'bg-muted text-muted-foreground',
+  queued: 'bg-brand-soft text-brand',
+  printing: 'bg-muted text-muted-foreground',
+  completed: 'bg-success-soft text-success',
   failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
   needs_review: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
 };
 
 const JOB_STATUS_COLORS: Record<PrintJobStatus, string> = {
-  queued: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-  assigned: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  printing: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  queued: 'bg-brand-soft text-brand',
+  assigned: 'bg-info-soft text-info',
+  printing: 'bg-muted text-muted-foreground',
+  completed: 'bg-success-soft text-success',
   failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
   needs_review: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
 };
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  return (
-    <Badge variant="outline" className={`${STATUS_COLORS[status]} border-transparent font-medium`}>
-      {status.replace('_', ' ')}
-    </Badge>
-  );
-}
 
 interface InfoRowProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -160,16 +143,16 @@ export default function AdminOrderDetailPage() {
   // Build a status-history timeline from the order/file/print-job timestamps.
   const timeline: { at: string | null; label: string; icon: React.ComponentType<{ className?: string }>; tone: string }[] = [];
   if (data) {
-    if (data.order.createdAt) timeline.push({ at: data.order.createdAt, label: 'Order created', icon: ShoppingBag, tone: 'text-zinc-600' });
-    if (data.order.paidAt) timeline.push({ at: data.order.paidAt, label: 'Payment confirmed', icon: CreditCard, tone: 'text-emerald-600' });
+    if (data.order.createdAt) timeline.push({ at: data.order.createdAt, label: 'Order created', icon: ShoppingBag, tone: 'text-muted-foreground' });
+    if (data.order.paidAt) timeline.push({ at: data.order.paidAt, label: 'Payment confirmed', icon: CreditCard, tone: 'text-success' });
     for (const f of data.files) {
-      if (f.printedAt) timeline.push({ at: f.printedAt, label: `File printed: ${f.originalFilename}`, icon: FileText, tone: 'text-violet-600' });
+      if (f.printedAt) timeline.push({ at: f.printedAt, label: `File printed: ${f.originalFilename}`, icon: FileText, tone: 'text-muted-foreground' });
     }
     for (const j of data.printJobs) {
-      if (j.startedAt) timeline.push({ at: j.startedAt, label: `Print job started (#${j.id.slice(0, 8)})`, icon: Printer, tone: 'text-violet-600' });
-      if (j.completedAt) timeline.push({ at: j.completedAt, label: `Print job completed (#${j.id.slice(0, 8)})`, icon: Printer, tone: 'text-emerald-600' });
+      if (j.startedAt) timeline.push({ at: j.startedAt, label: `Print job started (#${j.id.slice(0, 8)})`, icon: Printer, tone: 'text-muted-foreground' });
+      if (j.completedAt) timeline.push({ at: j.completedAt, label: `Print job completed (#${j.id.slice(0, 8)})`, icon: Printer, tone: 'text-success' });
     }
-    if (data.order.status === 'collected') timeline.push({ at: data.order.updatedAt, label: 'Order collected', icon: ShieldCheck, tone: 'text-emerald-600' });
+    if (data.order.status === 'collected') timeline.push({ at: data.order.updatedAt, label: 'Order collected', icon: ShieldCheck, tone: 'text-success' });
     if (data.order.status === 'cancelled') timeline.push({ at: data.order.updatedAt, label: 'Order cancelled', icon: AlertCircle, tone: 'text-red-600' });
     timeline.sort((a, b) => {
       const ta = a.at ? new Date(a.at).getTime() : 0;
@@ -180,6 +163,7 @@ export default function AdminOrderDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Order detail</h1>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => router.push('/admin/orders')} className="gap-1">
@@ -187,7 +171,7 @@ export default function AdminOrderDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5 text-emerald-600" />
+              <ShoppingBag className="h-5 w-5 text-brand" />
               {loading || !data ? (
                 <Skeleton className="h-6 w-48" />
               ) : (
@@ -199,7 +183,7 @@ export default function AdminOrderDetailPage() {
             <p className="mt-1 text-sm text-muted-foreground">Admin order detail</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
+        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -250,7 +234,7 @@ export default function AdminOrderDetailPage() {
               <CardContent>
                 <div className="mb-3">
                   <div className="text-xs font-medium text-muted-foreground">Shop</div>
-                  <Link href={`/admin/shops/${data.order.shopId}`} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-400">
+                  <Link href={`/admin/shops/${data.order.shopId}`} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
                     <Store className="h-3.5 w-3.5" />
                     {data.order.shopName} <span className="font-mono text-xs">/{data.order.shopSlug}</span>
                   </Link>
@@ -276,7 +260,7 @@ export default function AdminOrderDetailPage() {
                 <InfoRow icon={CreditCard} label="UTR (bank reference)" value={data.order.paymentUtr ?? '—'} mono />
                 <InfoRow icon={IndianRupee} label="Total amount" value={inr(data.order.totalAmountPaise)} />
                 <InfoRow icon={CreditCard} label="Paid at" value={formatDateTime(data.order.paidAt)} />
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                <div className="mt-3 flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2.5 text-xs text-brand">
                   <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>The txnId + UTR are shown for reconciliation. The shop's <strong>saltKey / merchantKey</strong> credentials are NOT exposed — only the shop owner controls them.</span>
                 </div>
@@ -352,14 +336,14 @@ export default function AdminOrderDetailPage() {
                           <TableCell className="text-right tabular-nums">{f.pageCount}</TableCell>
                           <TableCell className="text-right tabular-nums">{f.copies}</TableCell>
                           <TableCell className="text-xs">
-                            <Badge variant="outline" className={f.colorMode === 'color' ? 'border-violet-200 bg-violet-100 text-violet-800 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'}>
+                            <Badge variant="outline" className={f.colorMode === 'color' ? 'border-border bg-muted text-muted-foreground' : 'border-border bg-muted text-muted-foreground'}>
                               {f.colorMode === 'color' ? 'Colour' : 'B&W'}
                             </Badge>
                           </TableCell>
                           <TableCell className="font-mono text-xs uppercase">{f.paperSize}</TableCell>
                           <TableCell>
                             {f.duplex ? (
-                              <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">Yes</Badge>
+                              <Badge variant="outline" className="border-success/30 bg-success-soft text-success">Yes</Badge>
                             ) : (
                               <span className="text-xs text-muted-foreground">No</span>
                             )}
