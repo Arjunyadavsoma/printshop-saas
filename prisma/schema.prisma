@@ -270,3 +270,56 @@ model Customer {
   @@index([shopId, updatedAt])
   @@index([shopId, deletedAt])
 }
+
+// ─── Delivery infrastructure (Phase 5-7) ─────────────────────────────
+// Tracks each attempt to deliver a print job to a PrintEXE device.
+// Separate from PrintJob.status (printing state) — this tracks the
+// DOCUMENT DELIVERY state (was the file received by the device?).
+// See docs/DOCUMENT_DELIVERY_ARCHITECTURE.md
+
+model PrintDeliveryAttempt {
+  id              String    @id @default(uuid())
+  printJobId      String    // FK → PrintJob (logical — no Prisma relation to avoid migration)
+  agentId         String    // FK → PrintAgent (the targeted device)
+  shopId          String    // tenant FK
+  attemptId       Int       @default(1) // per-job sequence (1st attempt, 2nd, etc.)
+  deliveryMode    String    @default("cloud") // cloud|direct|webrtc
+  status          String    @default("created") // created|dispatched|received|failed|expired
+  checksum        String?   // SHA-256 hex of the delivered file
+  fileSize        Int?      // bytes
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  errorCode       String?
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shopId, status])
+  @@index([agentId])
+  @@index([printJobId])
+}
+
+// Scheduled cloud file cleanup tasks.
+// Created after a delivery receipt is confirmed — the file is deleted
+// from cloud storage after a grace period (default 15 min).
+// See docs/FILE_RETENTION_POLICY.md
+
+model FileCleanupTask {
+  id              String    @id @default(uuid())
+  printFileId     String    // FK → PrintFile (logical)
+  shopId          String    // tenant FK
+  storageKey      String    // the S3/R2/Supabase object key
+  cleanupType     String    @default("after_receipt") // after_receipt|after_collect|forced
+  scheduledAt     DateTime  // when to attempt deletion
+  completedAt     DateTime?
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5)
+  lastError       String?
+  status          String    @default("pending") // pending|completed|failed|skipped
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shopId, status])
+  @@index([scheduledAt])
+  @@index([printFileId])
+}
