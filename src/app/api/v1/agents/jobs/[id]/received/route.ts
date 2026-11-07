@@ -58,9 +58,9 @@ const ReceiptSchema = z.object({
  * Response 404: job not found or not in this shop
  * Response 409: job already in terminal state (collected/cancelled)
  */
-export const POST = withDeviceAuth<{ jobId: string }>(async (req, ctx, { agent, shopId }) => {
+export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, shopId }) => {
   try {
-    const { jobId } = await ctx.params;
+    const { id: jobId } = await ctx.params;
     const body = ReceiptSchema.parse(await req.json().catch(() => ({})));
 
     // Verify the job exists + belongs to this shop
