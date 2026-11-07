@@ -41,6 +41,12 @@ model Shop {
   pamphletEnabled       Boolean       @default(false)
   pamphletPricePaise    Int           @default(0)
   pamphletName          String?
+  // ── Sync infrastructure (Phase 5) ──
+  // revision: monotonically-increasing per-row version — used by the
+  // bidirectional sync protocol for change detection + conflict resolution.
+  // deletedAt: soft-delete marker — a sync pull surfaces these as `delete`.
+  revision              Int           @default(1)
+  deletedAt             DateTime?
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   auditLogs             AuditLog[]
@@ -83,6 +89,9 @@ model Order {
   customerPhone    String?
   notes            String?
   tokenNumber      String?
+  // ── Sync infrastructure (Phase 5) ──
+  revision         Int         @default(1)
+  deletedAt        DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   shop             Shop        @relation(fields: [shopId], references: [id])
@@ -110,6 +119,9 @@ model PrintFile {
   pricePaise       Int        @default(0)
   status           String     @default("pending")
   printedAt        DateTime?
+  // ── Sync infrastructure (Phase 5) ──
+  revision         Int        @default(1)
+  deletedAt        DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   order            Order      @relation(fields: [orderId], references: [id])
@@ -129,6 +141,9 @@ model PrintJob {
   queuedAt    DateTime  @default(now())
   startedAt   DateTime?
   completedAt DateTime?
+  // ── Sync infrastructure (Phase 5) ──
+  revision    Int       @default(1)
+  deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   file        PrintFile @relation(fields: [fileId], references: [id])
@@ -148,6 +163,9 @@ model PrintAgent {
   isOnline    Boolean   @default(false)
   version     String?
   os          String?
+  // ── Sync infrastructure (Phase 5) ──
+  revision    Int       @default(1)
+  deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   shop        Shop      @relation(fields: [shopId], references: [id])
@@ -232,4 +250,38 @@ model PaymentEvent {
   @@unique([provider, eventId])
   @@index([attemptId])
   @@index([merchantOrderId])
+}
+
+// ─── Sync infrastructure (Phase 5) ───────────────────────────────────
+// Bidirectional sync state for the PrintEXE Windows desktop client.
+// See docs/SYNC_PROTOCOL.md for the full design.
+
+model DeviceSyncState {
+  id            String    @id @default(uuid())
+  shopId        String    // tenant FK
+  deviceId      String    // the PrintAgent ID acting as a sync device
+  syncCursor    String    @default("1970-01-01T00:00:00Z") // ISO timestamp cursor
+  lastSyncAt    DateTime?
+  lastPushAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  @@unique([shopId, deviceId])
+  @@index([shopId])
+}
+
+model Customer {
+  id            String    @id @default(uuid())
+  shopId        String    // tenant FK
+  name          String
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?
+  // Sync fields
+  revision      Int       @default(1)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  @@index([shopId, updatedAt])
+  @@index([shopId, deletedAt])
 }
