@@ -1,0 +1,59 @@
+name: Cleanup Cron
+
+# Runs the PrintShop cloud cleanup endpoint every 5 minutes.
+# Deletes cloud-stored PDFs whose grace period (15 min after verified receipt)
+# has elapsed. Safe: only deletes objects with verified receipt + grace period.
+#
+# Setup:
+#   1. Go to GitHub repo → Settings → Secrets and variables → Actions
+#   2. Add repository secret: CRON_SECRET = <your-secret>
+#      Generate with: openssl rand -hex 32
+#   3. Also set the SAME secret in Vercel → Project Settings → Environment Variables
+#      as CRON_SECRET (so the endpoint can authenticate the request)
+#
+# The endpoint at /api/v1/cron/cleanup validates the Authorization header
+# against the CRON_SECRET env var. Without the secret, it returns 401.
+
+on:
+  schedule:
+    # Every 5 minutes (UTC)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # Allow manual trigger
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call cleanup endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ENDPOINT: https://printshop-saas-three.vercel.app/api/v1/cron/cleanup
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "⚠️  CRON_SECRET is not set in repository secrets."
+            echo "   Go to Settings → Secrets → Actions → add CRON_SECRET"
+            echo "   Also set it in Vercel env vars as CRON_SECRET"
+            exit 1
+          fi
+
+          echo "→ Calling cleanup endpoint..."
+          RESPONSE=$(curl -fsS \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$ENDPOINT" 2>&1) || {
+              echo "❌ Cleanup endpoint call failed:"
+              echo "$RESPONSE"
+              exit 1
+            }
+
+          echo "✅ Cleanup response:"
+          echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+
+          # Extract success field
+          SUCCESS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null || echo "False")
+          if [ "$SUCCESS" != "True" ]; then
+            echo "⚠️  Cleanup endpoint returned success=false"
+            exit 1
+          fi
+
+          echo "✅ Cleanup completed successfully."

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { DeviceManager } from '@/components/portal/device-manager';
 import {
   Table,
   TableBody,
@@ -77,6 +78,9 @@ export default function PrinterSetupPage() {
           Connect your Windows printer to PrintShop. Choose the engine that fits your shop, then follow the step-by-step guide.
         </p>
       </div>
+
+      {/* PrintEXE Device Manager */}
+      <DeviceManager />
 
       {/* Engine picker (shown when no engine is chosen, or always as a banner) */}
       {engine === null ? (

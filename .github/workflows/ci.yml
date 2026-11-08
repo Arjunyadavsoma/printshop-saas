@@ -1,0 +1,38 @@
+name: CI
+
+# Runs on every push and PR to main.
+# Checks: TypeScript, ESLint, Vitest, dynamic route conflicts, production build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Check dynamic route conflicts
+        run: bash scripts/check-route-conflicts.sh
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: bun run lint
+
+      - name: Unit tests
+        run: bunx vitest run
