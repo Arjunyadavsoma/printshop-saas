@@ -18,8 +18,8 @@ import { db } from '@/lib/db';
  * - Bounded batch (max 10 per invocation, configurable via ?limit=)
  * - Never deletes shared objects without ownership verification
  *
- * Configure in vercel.json:
- *   "crons": [{ "path": "/api/v1/cron/cleanup", "schedule": "*/5 * * * *" }]
+ * Configure in vercel.json crons array: path "/api/v1/cron/cleanup",
+ * schedule every 5 minutes.
  *
  * Vercel Cron automatically sends `Authorization: Bearer ${CRON_SECRET}`.
  */
