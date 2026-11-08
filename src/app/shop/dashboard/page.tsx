@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { StatusBadge } from '@/components/portal/status-badge';
+import { PrintEXEOverview } from '@/components/portal/prinexe-overview';
 import {
   Card,
   CardContent,
@@ -495,6 +496,9 @@ export default function ShopDashboardPage() {
           );
         })}
       </div>
+
+      {/* PrintEXE device overview */}
+      <PrintEXEOverview />
 
       {/* Setup checklist + today's revenue */}
       <div className="grid gap-4 md:grid-cols-3">
