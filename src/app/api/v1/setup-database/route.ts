@@ -165,5 +165,55 @@ ALTER TABLE "PaymentEvent" ADD CONSTRAINT IF NOT EXISTS "PaymentEvent_attemptId_
 ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "paymentMethods" TEXT NOT NULL DEFAULT 'both';
 ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletEnabled" BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletPricePaise" INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletName" TEXT
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "pamphletName" TEXT;
+-- Add tokenHash to PrintAgent (was missing in original setup SQL)
+ALTER TABLE "PrintAgent" ADD COLUMN IF NOT EXISTS "tokenHash" TEXT;
+
+-- ─── Phase 5-7: Delivery + Sync infrastructure (4 new tables) ───────
+CREATE TABLE IF NOT EXISTS "DeviceSyncState" (
+    "id" TEXT NOT NULL, "shopId" TEXT NOT NULL, "deviceId" TEXT NOT NULL,
+    "syncCursor" TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+    "lastSyncAt" TIMESTAMP(3), "lastPushAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "DeviceSyncState_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "DeviceSyncState_shopId_deviceId_key" ON "DeviceSyncState"("shopId", "deviceId");
+CREATE INDEX IF NOT EXISTS "DeviceSyncState_shopId_idx" ON "DeviceSyncState"("shopId");
+
+CREATE TABLE IF NOT EXISTS "Customer" (
+    "id" TEXT NOT NULL, "shopId" TEXT NOT NULL, "name" TEXT NOT NULL,
+    "phone" TEXT, "email" TEXT, "address" TEXT, "notes" TEXT,
+    "revision" INTEGER NOT NULL DEFAULT 1, "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "Customer_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "Customer_shopId_updatedAt_idx" ON "Customer"("shopId", "updatedAt");
+CREATE INDEX IF NOT EXISTS "Customer_shopId_deletedAt_idx" ON "Customer"("shopId", "deletedAt");
+
+CREATE TABLE IF NOT EXISTS "PrintDeliveryAttempt" (
+    "id" TEXT NOT NULL, "printJobId" TEXT NOT NULL, "agentId" TEXT NOT NULL,
+    "shopId" TEXT NOT NULL, "attemptId" INTEGER NOT NULL DEFAULT 1,
+    "deliveryMode" TEXT NOT NULL DEFAULT 'cloud', "status" TEXT NOT NULL DEFAULT 'created',
+    "checksum" TEXT, "fileSize" INTEGER,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "completedAt" TIMESTAMP(3),
+    "errorCode" TEXT, "errorMessage" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "PrintDeliveryAttempt_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "PrintDeliveryAttempt_shopId_status_idx" ON "PrintDeliveryAttempt"("shopId", "status");
+CREATE INDEX IF NOT EXISTS "PrintDeliveryAttempt_agentId_idx" ON "PrintDeliveryAttempt"("agentId");
+CREATE INDEX IF NOT EXISTS "PrintDeliveryAttempt_printJobId_idx" ON "PrintDeliveryAttempt"("printJobId");
+
+CREATE TABLE IF NOT EXISTS "FileCleanupTask" (
+    "id" TEXT NOT NULL, "printFileId" TEXT NOT NULL, "shopId" TEXT NOT NULL,
+    "storageKey" TEXT NOT NULL, "cleanupType" TEXT NOT NULL DEFAULT 'after_receipt',
+    "scheduledAt" TIMESTAMP(3) NOT NULL, "completedAt" TIMESTAMP(3),
+    "attempts" INTEGER NOT NULL DEFAULT 0, "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+    "lastError" TEXT, "status" TEXT NOT NULL DEFAULT 'pending',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "FileCleanupTask_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "FileCleanupTask_shopId_status_idx" ON "FileCleanupTask"("shopId", "status");
+CREATE INDEX IF NOT EXISTS "FileCleanupTask_scheduledAt_idx" ON "FileCleanupTask"("scheduledAt");
+CREATE INDEX IF NOT EXISTS "FileCleanupTask_printFileId_idx" ON "FileCleanupTask"("printFileId")
 `;
