@@ -21,11 +21,5 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/v1/cron/cleanup",
-      "schedule": "*/5 * * * *"
-    }
   ]
 }
