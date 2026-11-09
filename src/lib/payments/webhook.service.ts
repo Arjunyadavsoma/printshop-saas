@@ -16,6 +16,7 @@ export interface StoredPaymentSession {
   shopId: string;
   amountPaise: number;
   provider: PaymentProvider;
+  merchantOrderId?: string; // added for PaymentAttempt DB fallback
 }
 
 /** Called by the checkout route — remembers which order a merchantOrderId maps to. */
@@ -23,15 +24,44 @@ export async function rememberPaymentSession(merchantOrderId: string, session: S
   await getContainer().cache.set(`pay:moid:${merchantOrderId}`, JSON.stringify(session), SESSION_TTL);
 }
 
-/** Look up the payment session by the merchantOrderId extracted from the payload. */
+/** Look up the payment session by the merchantOrderId extracted from the payload.
+ *  Tries cache first (10-min TTL), then falls back to PaymentAttempt DB table
+ *  for durability (survives Vercel cold starts + delayed webhooks >10 min).
+ */
 export async function lookupPaymentSession(merchantOrderId: string): Promise<StoredPaymentSession | null> {
+  // 1. Try cache (fast — 10-min TTL)
   const raw = await getContainer().cache.get(`pay:moid:${merchantOrderId}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredPaymentSession;
-  } catch {
-    return null;
+  if (raw) {
+    try {
+      return JSON.parse(raw) as StoredPaymentSession;
+    } catch {
+      // corrupt cache entry — fall through to DB
+    }
   }
+
+  // 2. Cache miss — try PaymentAttempt DB table (durable)
+  try {
+    const { db } = await import('@/lib/db');
+    const attempt = await (db as any).paymentAttempt.findUnique({
+      where: { merchantOrderId },
+    });
+    if (attempt) {
+      const session: StoredPaymentSession = {
+        orderId: attempt.orderId,
+        shopId: attempt.shopId,
+        amountPaise: attempt.amountPaise,
+        provider: attempt.provider,
+        merchantOrderId: attempt.merchantOrderId,
+      };
+      // Re-populate cache for future lookups
+      await getContainer().cache.set(`pay:moid:${merchantOrderId}`, JSON.stringify(session), SESSION_TTL);
+      return session;
+    }
+  } catch {
+    // PaymentAttempt table may not exist — graceful degradation
+  }
+
+  return null;
 }
 
 /**
