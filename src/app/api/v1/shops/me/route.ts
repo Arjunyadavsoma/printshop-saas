@@ -45,6 +45,8 @@ const PatchShopSchema = z.object({
 
 export const GET = withAuth(async (_req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
+  const { getSubscriptionStatus } = await import('@/lib/api/entitlements');
+  const subscription = await getSubscriptionStatus(shop.id);
   return ok({
     id: shop.id,
     name: shop.name,
@@ -58,6 +60,15 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     isActive: shop.isActive,
     subscriptionTier: shop.subscriptionTier,
     subscriptionExpiresAt: shop.subscriptionExpiresAt,
+    subscription: {
+      tier: subscription.tier,
+      effectiveTier: subscription.effectiveTier,
+      state: subscription.state,
+      isActive: subscription.isActive,
+      inGracePeriod: subscription.inGracePeriod,
+      daysUntilExpiry: subscription.daysUntilExpiry,
+      features: subscription.features,
+    },
     // New profile fields.
     description: shop.description,
     businessHours: shop.businessHours,

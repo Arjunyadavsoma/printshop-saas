@@ -5,9 +5,12 @@ import { ok } from '@/lib/api/envelope';
 import { ORDER_STATUSES, type OrderStatus } from '@platform/core/domain';
 import { formatINRFromPaise } from '@platform/utils';
 
-/** GET /api/v1/shops/me/analytics — revenue, status mix, popular settings. */
+/** GET /api/v1/shops/me/analytics — revenue, status mix, popular settings.
+ * Requires 'analytics' entitlement (starter plan or higher). */
 export const GET = withAuth(async (_req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
+  const { requireEntitlement } = await import('@/lib/api/entitlements');
+  await requireEntitlement(shop.id, 'analytics');
 
   const all = await repos.orders.listByShop(shop.id, { limit: 200 });
   const paid = all.filter((o) => o.status !== 'cancelled' && o.status !== 'awaiting_payment');

@@ -21,10 +21,13 @@ import { getZonedDayBounds } from '@/lib/utils/timezone';
  * previous day. Now uses getZonedDayBounds() which computes the UTC instant
  * of the shop's timezone-local midnight via Intl.DateTimeFormat (correct for
  * Asia/Kolkata's UTC+5:30 + any DST-observing zone).
+ * Requires 'reports' entitlement (starter plan or higher).
  */
 export const GET = withAuth(async (req, _ctx, principal) => {
   try {
     const shop = await repos.shops.getByOwner(principal.userId);
+    const { requireEntitlement } = await import('@/lib/api/entitlements');
+    await requireEntitlement(shop.id, 'reports');
     const url = new URL(req.url);
     const dateParam = url.searchParams.get('date');
     const tz = shop.timezone || 'Asia/Kolkata';
