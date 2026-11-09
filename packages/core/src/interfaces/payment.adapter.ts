@@ -99,6 +99,10 @@ export interface PaymentAdapter {
      * transaction note (`tn`) so the customer + shopkeeper can reconcile. */
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
+    /** Pre-generated merchantOrderId. If provided, the adapter MUST use this
+     * instead of generating its own. This allows the checkout route to
+     * persist a PaymentAttempt BEFORE contacting the provider (FIND-PAY-001-ORDER fix). */
+    merchantOrderId?: string;
   }): Promise<PaymentIntent>;
 
   /**

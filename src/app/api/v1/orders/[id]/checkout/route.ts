@@ -12,9 +12,22 @@ import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 /** POST /api/v1/orders/:id/checkout — create a payment intent (provider = shop's).
  *
  * SEC-001 fix: behind withOrderAccess — caller must present the order's
- * `customerToken` before a payment intent is minted. Previously anyone
- * who learned the order UUID could create payment intents for another
- * customer's order, polluting their checkout state. */
+ * `customerToken` before a payment intent is minted.
+ *
+ * FIND-PAY-001-ORDER fix: PaymentAttempt is persisted BEFORE the provider
+ * is contacted. The merchantOrderId is generated internally, persisted to
+ * the database, and THEN passed to the adapter. If persistence fails, the
+ * provider is never contacted.
+ *
+ * Sequence:
+ * 1. Authenticate (withOrderAccess)
+ * 2. Validate order status + payment eligibility
+ * 3. Generate merchantOrderId internally
+ * 4. Persist PaymentAttempt (FAIL-CLOSED: abort if persistence fails)
+ * 5. Contact provider adapter (only after successful persistence)
+ * 6. Cache merchantOrderId → order mapping
+ * 7. Return checkout response
+ */
 export const POST = withRateLimit<{ id: string }>(
   'checkout',
   20,
@@ -37,7 +50,43 @@ export const POST = withRateLimit<{ id: string }>(
     }
 
     const container = getContainer();
-    // Route to the shop's configured provider via the registry.
+
+    // ── STEP 1: Generate merchantOrderId BEFORE contacting provider ──
+    // This is the FIND-PAY-001-ORDER fix: generate the internal reference
+    // first, persist it, then pass it to the adapter.
+    const merchantOrderId = crypto.randomUUID();
+
+    // ── STEP 2: Persist PaymentAttempt BEFORE provider contact ──
+    // FAIL-CLOSED: if persistence fails (non-duplicate), abort checkout.
+    // The provider is NEVER contacted without a durable record.
+    try {
+      await (db as any).paymentAttempt.create({
+        data: {
+          id: crypto.randomUUID(),
+          shopId: shop.id,
+          orderId: order.id,
+          provider: shop.paymentProvider,
+          merchantOrderId,
+          amountPaise: order.totalAmountPaise,
+          currency: 'INR',
+          status: 'created',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10-min payment window
+        },
+      });
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        // Duplicate merchantOrderId — extremely unlikely (UUID collision).
+        // Treat as a retry: the existing attempt is still valid.
+        // Fall through to provider contact with the same merchantOrderId.
+      } else {
+        // Persistence failed — ABORT checkout. Do not contact the provider
+        // without a durable PaymentAttempt record.
+        throw new Error('Payment attempt could not be persisted to the database. Checkout aborted for safety.');
+      }
+    }
+
+    // ── STEP 3: Contact provider adapter (ONLY after successful persistence) ──
+    // Pass the pre-generated merchantOrderId so the adapter uses ours.
     const adapter = container.paymentRegistry.get(shop.paymentProvider);
     const intent = await adapter.createPaymentIntent({
       orderId: order.id,
@@ -46,13 +95,11 @@ export const POST = withRateLimit<{ id: string }>(
       shopName: shop.name,
       customerToken: order.customerToken,
       shopCredentials: shop.paymentCredentials,
+      merchantOrderId, // ← pre-generated, already persisted
     });
 
-    // FALLBACK: if the provider adapter didn't return a upiUri (e.g. PhonePe
-    // API failed, Paytm API failed, or the adapter returned a degraded
-    // intent without a checkoutUrl), generate a UPI deep-link URI from the
-    // shop's UPI ID so the customer can ALWAYS pay via UPI app or QR scan.
-    // This ensures the payment step always has working UPI payment options.
+    // FALLBACK: if the provider adapter didn't return a upiUri, generate
+    // a UPI deep-link from the shop's UPI ID.
     if (!intent.upiUri && shop.upiId) {
       const upiParams = new URLSearchParams();
       upiParams.set('pa', shop.upiId);
@@ -66,47 +113,15 @@ export const POST = withRateLimit<{ id: string }>(
       intent.qrPayload = fallbackUpiUri;
     }
 
-    // Remember the merchantOrderId → order mapping so the (later) webhook can
-    // find the order + shop's credentials without trusting the payload.
+    // ── STEP 4: Cache merchantOrderId → order mapping ──
+    // The cache is a fast-path for webhook lookup. The DB PaymentAttempt
+    // is the durable fallback (survives cache expiry).
     await rememberPaymentSession(intent.merchantOrderId, {
       orderId: order.id,
       shopId: shop.id,
       amountPaise: order.totalAmountPaise,
       provider: shop.paymentProvider,
     });
-
-    // PAY-001 FIX: Persist a durable PaymentAttempt record so the mapping
-    // survives cache expiry (Vercel cold starts, >10 min payment flows).
-    // The webhook's lookupPaymentSession() now falls back to this table
-    // when the cache misses.
-    //
-    // FAIL-CLOSED: if persistence fails (and it's NOT a duplicate), abort
-    // checkout. Do NOT contact the provider without a durable record.
-    try {
-      await (db as any).paymentAttempt.create({
-        data: {
-          id: crypto.randomUUID(),
-          shopId: shop.id,
-          orderId: order.id,
-          provider: shop.paymentProvider,
-          merchantOrderId: intent.merchantOrderId,
-          amountPaise: order.totalAmountPaise,
-          currency: 'INR',
-          status: 'created',
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10-min payment window
-        },
-      });
-    } catch (e) {
-      if (isUniqueConstraintError(e)) {
-        // Duplicate merchantOrderId — a previous checkout attempt exists.
-        // This is safe: the existing attempt is still valid. Proceed with
-        // the existing intent (the adapter generated the same merchantOrderId).
-      } else {
-        // Persistence failed — ABORT checkout. Do not contact the provider
-        // without a durable PaymentAttempt record.
-        throw new Error('Payment attempt could not be persisted to the database. Checkout aborted for safety.');
-      }
-    }
 
     await repos.audit.log({
       shopId: shop.id,

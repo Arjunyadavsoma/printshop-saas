@@ -151,10 +151,11 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
     shopName?: string;
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
+    merchantOrderId?: string;
   }): Promise<PaymentIntent> {
     const c = creds(input.shopCredentials);
     const client = makeClient(c);
-    const merchantOrderId = crypto.randomUUID();
+    const merchantOrderId = input.merchantOrderId ?? crypto.randomUUID();
 
     try {
       const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';

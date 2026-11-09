@@ -148,9 +148,10 @@ export class PhonePePaymentAdapter implements PaymentAdapter {
     shopName?: string;
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
+    merchantOrderId?: string;
   }): Promise<PaymentIntent> {
     const c = creds(input.shopCredentials);
-    const merchantOrderId = crypto.randomUUID();
+    const merchantOrderId = input.merchantOrderId ?? crypto.randomUUID();
     const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';
 
     try {

@@ -28,7 +28,10 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     shopName?: string;
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
+    merchantOrderId?: string;
   }): Promise<PaymentIntent> {
+    // Use the pre-generated merchantOrderId if provided (FIND-PAY-001-ORDER fix)
+    const merchantOrderId = input.merchantOrderId ?? input.orderId;
     // UPI deep-link per NPCI BHIM spec:
     //   pa = Payee Address (the shop's VPA, e.g. quickprint@okaxis)
     //   pn = Payee Name (the shop's display name — shown in the UPI app)
@@ -52,7 +55,7 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     });
     const upiUri = `upi://pay?${params.toString()}`;
     return {
-      merchantOrderId: input.orderId,
+      merchantOrderId: merchantOrderId,
       orderId: input.orderId,
       amountPaise: input.amountPaise,
       currency: 'INR',
