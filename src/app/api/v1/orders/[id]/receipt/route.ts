@@ -5,6 +5,7 @@ import { NotFoundError } from '@platform/core/errors';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
 import { withOrderAccess } from '@/lib/api/with-order-access';
+import { withRateLimit } from '@/lib/api/with-auth';
 
 /** GET /api/v1/orders/:id/receipt — downloadable PDF receipt.
  *
@@ -13,8 +14,12 @@ import { withOrderAccess } from '@/lib/api/with-order-access';
  * param. Receipts are opened as a browser NAVIGATION (the customer
  * clicks a Download receipt link), so the browser cannot send a custom
  * header — the customer tracking page must construct the URL with
- * `?t=<token>`. withOrderAccess already reads the `?t=` fallback. */
-export const GET = withOrderAccess<{ id: string }>(async (_req, _ctx, order) => {
+ * `?t=<token>`. withOrderAccess already reads the `?t=` fallback.
+ *
+ * Rate-limited (30/min) — FIND-027 fix: prevents brute-force token guessing.
+ */
+export const GET = withRateLimit('receipt', 30, 60,
+  withOrderAccess<{ id: string }>(async (_req, _ctx, order) => {
   try {
     const shop = await repos.shops.findById(order.shopId);
     if (!shop) throw new NotFoundError('Shop not found');
@@ -78,4 +83,4 @@ export const GET = withOrderAccess<{ id: string }>(async (_req, _ctx, order) => 
     const { toAppError, fail } = await import('@/lib/api/envelope');
     return fail(toAppError(cause));
   }
-});
+}));
