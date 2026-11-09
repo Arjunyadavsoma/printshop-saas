@@ -92,11 +92,11 @@ beforeEach(async () => {
   // Create order A
   const orderA = await repos.orders.createWithUniqueToken(
     shopAId,
-    { customerToken: 'TOKA01', customerPhone: null, notes: null },
+    { customerPhone: null, notes: null },
     (count: number, attempt: number) => `A${100 + count + attempt}`,
   );
   orderAId = orderA.id;
-  customerAToken = 'TOKA01';
+  customerAToken = orderA.customerToken;
 
   // Create agent A
   agentAToken = crypto.randomUUID() + '-' + crypto.randomUUID();
@@ -125,11 +125,11 @@ beforeEach(async () => {
   // Create order B
   const orderB = await repos.orders.createWithUniqueToken(
     shopBId,
-    { customerToken: 'TOKB01', customerPhone: null, notes: null },
+    { customerPhone: null, notes: null },
     (count: number, attempt: number) => `B${100 + count + attempt}`,
   );
   orderBId = orderB.id;
-  customerBToken = 'TOKB01';
+  customerBToken = orderB.customerToken;
 
   // Create agent B
   agentBToken = crypto.randomUUID() + '-' + crypto.randomUUID();
@@ -172,27 +172,76 @@ describe('Cross-Tenant Isolation — Orders', () => {
 });
 
 describe('Cross-Tenant Isolation — Customer Order Access', () => {
-  // NOTE: These tests verify that Customer A cannot access Customer B's order
-  // using the X-Order-Token header. The withOrderAccess middleware should
-  // reject mismatched tokens with 403. If these tests fail (status 200),
-  // it indicates either a test setup issue or a real security vulnerability
-  // in the order-access token comparison. Investigate before production release.
-  it.skip('Customer A cannot access Customer B order status (NEEDS INVESTIGATION)', async () => {
+  it('Customer A can access own order status (legitimate access works)', async () => {
+    const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
+    const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderAId}/status`, {
+      headers: { 'x-order-token': customerAToken },
+    });
+    const res = await GET(req, { params: Promise.resolve({ id: orderAId }) });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.orderId).toBe(orderAId);
+  });
+
+  it('Customer B can access own order status (legitimate access works)', async () => {
+    const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
+    const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderBId}/status`, {
+      headers: { 'x-order-token': customerBToken },
+    });
+    const res = await GET(req, { params: Promise.resolve({ id: orderBId }) });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.orderId).toBe(orderBId);
+  });
+
+  it('Customer A cannot access Customer B order status', async () => {
     const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
     const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderBId}/status`, {
       headers: { 'x-order-token': customerAToken },
     });
     const res = await GET(req, { params: Promise.resolve({ id: orderBId }) });
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.success).toBe(false);
   });
 
-  it.skip('Customer B cannot access Customer A order status (NEEDS INVESTIGATION)', async () => {
+  it('Customer B cannot access Customer A order status', async () => {
     const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
     const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderAId}/status`, {
       headers: { 'x-order-token': customerBToken },
     });
     const res = await GET(req, { params: Promise.resolve({ id: orderAId }) });
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+  });
+
+  it('Missing order token is denied', async () => {
+    const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
+    const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderAId}/status`);
+    const res = await GET(req, { params: Promise.resolve({ id: orderAId }) });
+    expect(res.status).toBe(403);
+  });
+
+  it('Invalid order token is denied', async () => {
+    const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
+    const req = new NextRequest(`http://localhost:3000/api/v1/orders/${orderAId}/status`, {
+      headers: { 'x-order-token': 'INVALID-TOKEN' },
+    });
+    const res = await GET(req, { params: Promise.resolve({ id: orderAId }) });
+    expect(res.status).toBe(403);
+  });
+
+  it('Nonexistent order returns 404 (not 403 — hides existence)', async () => {
+    const { GET } = await import('@/app/api/v1/orders/[id]/status/route');
+    const fakeId = crypto.randomUUID();
+    const req = new NextRequest(`http://localhost:3000/api/v1/orders/${fakeId}/status`, {
+      headers: { 'x-order-token': customerAToken },
+    });
+    const res = await GET(req, { params: Promise.resolve({ id: fakeId }) });
+    expect(res.status).toBe(404);
   });
 });
 
