@@ -129,6 +129,36 @@ interface PaymentEventRow {
 class PGliteDbShim {
   constructor(private pg: PGlite) {}
 
+  /**
+   * True while inside a `$transaction` callback. Used to decide whether
+   * to wrap INSERTs in a SAVEPOINT — PGlite (like real PostgreSQL) aborts
+   * the whole transaction on a constraint violation, so the lifecycle
+   * service's catch-then-read dedup pattern only works if the failed
+   * INSERT is isolated to a savepoint that we can roll back to.
+   */
+  private inTransaction = false;
+  private savepointCounter = 0;
+
+  /** Wrap `fn` in a SAVEPOINT/ROLLBACK TO SAVEPOINT pair. No-op outside a transaction. */
+  private async withSavepoint<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.inTransaction) return fn();
+    const name = `sp_${++this.savepointCounter}`;
+    await this.pg.exec(`SAVEPOINT ${name}`);
+    try {
+      const result = await fn();
+      await this.pg.exec(`RELEASE SAVEPOINT ${name}`);
+      return result;
+    } catch (e) {
+      try {
+        await this.pg.exec(`ROLLBACK TO SAVEPOINT ${name}`);
+        await this.pg.exec(`RELEASE SAVEPOINT ${name}`);
+      } catch {
+        // ignore — the original error is what matters
+      }
+      throw e;
+    }
+  }
+
   paymentAttempt = {
     create: async ({ data }: { data: Partial<PaymentAttemptRow> & { id: string; shopId: string; orderId: string; provider: string; merchantOrderId: string; amountPaise: number; expiresAt: Date } }): Promise<PaymentAttemptRow> => {
       const cols = ['id', 'shopId', 'orderId', 'provider', 'merchantOrderId', 'amountPaise', 'currency', 'status', 'expiresAt', 'createdAt', 'updatedAt'];
@@ -139,9 +169,11 @@ class PGliteDbShim {
       ];
       const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
       try {
-        await this.pg.query(
-          `INSERT INTO "PaymentAttempt" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`,
-          vals,
+        await this.withSavepoint(() =>
+          this.pg.query(
+            `INSERT INTO "PaymentAttempt" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`,
+            vals,
+          ),
         );
       } catch (e) {
         // Re-throw with the PG code attached so isUniqueConstraintError works.
@@ -185,6 +217,37 @@ class PGliteDbShim {
       const r = await this.pg.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM "PaymentAttempt"`);
       return r.rows[0].count;
     },
+    updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Partial<PaymentAttemptRow> }): Promise<{ count: number }> => {
+      const setClauses: string[] = [];
+      const setVals: unknown[] = [];
+      let i = 1;
+      for (const [k, v] of Object.entries(data)) {
+        setClauses.push(`"${k}" = $${i++}`);
+        setVals.push(v);
+      }
+      setClauses.push(`"updatedAt" = NOW()`);
+      const whereClauses: string[] = [];
+      const whereVals: unknown[] = [];
+      for (const [k, v] of Object.entries(where)) {
+        if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+          const op = v as Record<string, unknown>;
+          if ('in' in op && Array.isArray(op.in)) {
+            const placeholders = op.in.map(() => `$${i++}`).join(', ');
+            whereClauses.push(`"${k}" IN (${placeholders})`);
+            whereVals.push(...(op.in as unknown[]));
+          } else {
+            // Unknown operator object — treat as no-match (defensive).
+            whereClauses.push('FALSE');
+          }
+        } else {
+          whereClauses.push(`"${k}" = $${i++}`);
+          whereVals.push(v);
+        }
+      }
+      const sql = `UPDATE "PaymentAttempt" SET ${setClauses.join(', ')} WHERE ${whereClauses.join(' AND ')} RETURNING id`;
+      const r = await this.pg.query<{ id: string }>(sql, [...setVals, ...whereVals]);
+      return { count: r.rows.length };
+    },
   };
 
   paymentEvent = {
@@ -198,9 +261,11 @@ class PGliteDbShim {
       ];
       const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
       try {
-        await this.pg.query(
-          `INSERT INTO "PaymentEvent" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`,
-          vals,
+        await this.withSavepoint(() =>
+          this.pg.query(
+            `INSERT INTO "PaymentEvent" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders})`,
+            vals,
+          ),
         );
       } catch (e) {
         const err = e as { code?: string; message?: string };
@@ -230,6 +295,22 @@ class PGliteDbShim {
       const r = await this.pg.query<PaymentEventRow>(`SELECT * FROM "PaymentEvent" WHERE id = $1`, [where.id]);
       return r.rows[0] ?? null;
     },
+    findFirst: async ({ where }: { where: Record<string, unknown> }): Promise<PaymentEventRow | null> => {
+      const clauses: string[] = [];
+      const vals: unknown[] = [];
+      let i = 1;
+      for (const [k, v] of Object.entries(where)) {
+        if (v === null) {
+          clauses.push(`"${k}" IS NULL`);
+        } else {
+          clauses.push(`"${k}" = $${i++}`);
+          vals.push(v);
+        }
+      }
+      const sql = `SELECT * FROM "PaymentEvent" ${clauses.length ? 'WHERE ' + clauses.join(' AND ') : ''} LIMIT 1`;
+      const r = await this.pg.query<PaymentEventRow>(sql, vals);
+      return r.rows[0] ?? null;
+    },
     findStale: async (status: string, olderThanMs: number): Promise<PaymentEventRow[]> => {
       // Compute the cutoff timestamp in JS — avoids PGlite interval-cast
       // quirks with parameterized queries.
@@ -251,6 +332,61 @@ class PGliteDbShim {
       const r = await this.pg.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM "PaymentEvent"`);
       return r.rows[0].count;
     },
+  };
+
+  // `order` is NOT a PGlite table in these tests — orders live in the
+  // InMemoryDatabaseAdapter (set up in the Part B beforeEach). The lifecycle
+  // service's `tx.order.findUnique` + `tx.order.updateMany` delegate to the
+  // InMemory adapter via the container so the transaction sees the same
+  // order state the rest of the test setup uses.
+  order = {
+    findUnique: async ({ where }: { where: Record<string, unknown> }): Promise<Record<string, unknown> | null> => {
+      const { getContainer } = await import('@/lib/container');
+      return await getContainer().db.findOne('order', where);
+    },
+    updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<{ count: number }> => {
+      const { getContainer } = await import('@/lib/container');
+      const updated = await getContainer().db.update('order', where, data);
+      return { count: updated.length };
+    },
+  };
+
+  /**
+   * Prisma-compatible `$transaction` — wraps the callback in BEGIN/COMMIT
+   * (ROLLBACK on throw). The shim itself is passed as the `tx` client, so
+   * `tx.paymentAttempt`, `tx.paymentEvent`, `tx.order` all resolve to the
+   * shim's own properties.
+   *
+   * Declared as an arrow-function class field so `this` is bound to the
+   * shim instance at construction time — when the `vi.mock` Proxy forwards
+   * `db.$transaction`, the call site's `this` is the Proxy (which has no
+   * `pg` / `inTransaction`), so a regular method would set the flag on the
+   * wrong object. The arrow capture keeps `this === shim`.
+   *
+   * Sets `inTransaction` so `paymentEvent.create` / `paymentAttempt.create`
+   * wrap their INSERTs in SAVEPOINTs — PGlite (like real PostgreSQL) aborts
+   * the whole transaction on a constraint violation, which would otherwise
+   * break the lifecycle service's catch-then-read dedup pattern (the
+   * `findFirst` after a 23505 would itself fail with "current transaction
+   * is aborted").
+   */
+  $transaction = async <T>(fn: (tx: this) => Promise<T>, _opts?: unknown): Promise<T> => {
+    await this.pg.exec('BEGIN');
+    this.inTransaction = true;
+    try {
+      const result = await fn(this);
+      await this.pg.exec('COMMIT');
+      return result;
+    } catch (e) {
+      try {
+        await this.pg.exec('ROLLBACK');
+      } catch {
+        // ROLLBACK itself failed — swallow so the original error surfaces.
+      }
+      throw e;
+    } finally {
+      this.inTransaction = false;
+    }
   };
 
   async rawQuery<T = unknown>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> {
@@ -621,7 +757,7 @@ describe('Part B — PAY-002 webhook persistence (PGlite-backed)', () => {
 
     expect(result.applied).toBe(false);
     expect(result.statusCode).toBe(500);
-    expect(result.summary).toContain('event persistence failed');
+    expect(result.summary).toContain('lifecycle transition failed');
 
     // Order MUST stay in awaiting_payment.
     const order = await repos.orders.findById(orderId);
@@ -705,30 +841,36 @@ describe('Part B — PAY-002 webhook persistence (PGlite-backed)', () => {
     });
     await rememberPaymentSession(moid, { orderId, shopId, amountPaise: 50500, provider: 'phonepe' });
 
-    // Pre-flip the order to 'paid' BEFORE the webhook runs. The webhook's
-    // transitionStatus('awaiting_payment' → 'paid') will be a no-op because
-    // the order is no longer in 'awaiting_payment'. This simulates a
-    // transition failure (the precondition WHERE clause doesn't match).
+    // Pre-flip BOTH the order AND the attempt to 'paid' BEFORE the webhook
+    // runs. The lifecycle service's conditional update
+    // (WHERE status IN ('created','pending')) will be a no-op because the
+    // attempt is no longer in 'created'/'pending'. This simulates a stale
+    // event arriving after the payment was already processed by a prior
+    // delivery — the transition "fails" (the precondition doesn't match).
     await repos.orders.transitionStatus(orderId, shopId, 'awaiting_payment', { status: 'paid', paidAt: new Date(), paymentTxnId: 'PREEXISTING-TXN' });
+    await shim.paymentAttempt.update({
+      where: { id: 'att-b5' },
+      data: { status: 'paid', providerTransactionId: 'PREEXISTING-TXN' },
+    });
 
     const { rawBody, xVerify } = await buildSignedPayload({ txnId: 'TXN-B5', amountPaise: 50500, merchantOrderId: moid });
 
     const result = await processWebhook({ provider: 'phonepe', rawBody, headers: { 'x-verify': xVerify }, path: '/x', ip: null });
 
-    // The webhook sees the order is already paid → idempotent skip.
+    // The lifecycle sees the attempt is already in a terminal status →
+    // idempotent skip (applied=false).
     expect(result.applied).toBe(false);
-    expect(result.summary).toMatch(/already paid|idempotent|already in status/);
+    expect(result.summary).toMatch(/already paid|idempotent|already in status|terminal status|stale event/);
 
     // The PaymentEvent row WAS persisted (it records the delivery), but its
-    // processingStatus is 'received' (NOT 'processed') because the transition
-    // was a no-op. This proves a transition failure does NOT mark the event
-    // processed — the event remains visible for reconciliation/retry.
+    // processingStatus is 'skipped' (NOT 'processed') because the attempt
+    // was already in a terminal state. This proves a stale event does NOT
+    // get marked 'processed' — it remains visible for reconciliation/retry
+    // via its 'skipped' status + errorMessage.
     const evt = await shim.paymentEvent.findByProviderEventId('phonepe', 'TXN-B5');
     expect(evt).not.toBeNull();
-    // The webhook's "order already paid" short-circuit returns BEFORE the
-    // event is marked processed (processedAt stays NULL). The event row
-    // exists as a delivery record but is NOT marked processed.
-    expect(evt!.processedAt).toBeNull();
+    expect(evt!.processingStatus).toBe('skipped');
+    expect(evt!.errorMessage).toContain('terminal status');
   });
 
   it('B6. failed processing can be retried (event stuck in "received")', async () => {
@@ -760,7 +902,7 @@ describe('Part B — PAY-002 webhook persistence (PGlite-backed)', () => {
 
     expect(result.applied).toBe(false);
     expect(result.statusCode).toBe(200);
-    expect(result.summary).toMatch(/idempotent|already exists/);
+    expect(result.summary).toMatch(/idempotent|already exists|duplicate event/);
 
     // The order is paid (the original processing eventually completed via
     // a prior run, OR the stuck event can be reconciled via a status poll).

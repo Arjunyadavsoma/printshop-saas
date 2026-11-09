@@ -15,18 +15,10 @@ import { NextRequest } from 'next/server';
  * - The provider is not contacted (for PAY-001)
  */
 
-vi.mock('@/lib/db', () => ({
-  db: {
-    paymentAttempt: {
-      findUnique: vi.fn(),
-      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
-    },
-    paymentEvent: {
-      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-    },
-  },
-}));
+vi.mock('@/lib/db', async () => {
+  const { getMockDb } = await import('@/lib/payments/test-prisma-mock');
+  return { db: getMockDb() };
+});
 
 import {
   InMemoryDatabaseAdapter,
@@ -47,6 +39,7 @@ import type { Container } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { createDefaultPricingConfig } from '@platform/core/domain';
 import { db } from '@/lib/db';
+import { resetMockDb, seedPaymentAttempt } from '@/lib/payments/test-prisma-mock';
 
 let container: Container;
 let shopId: string;
@@ -55,6 +48,7 @@ let orderId: string;
 let customerToken: string;
 
 beforeEach(async () => {
+  resetMockDb();
   const inMemDb = new InMemoryDatabaseAdapter();
   const cache = new InMemoryCacheAdapter();
   const auth = new JwtAuthAdapter(
@@ -179,28 +173,37 @@ describe('PAY-002: Webhook fail-closed when PaymentEvent persistence fails', () 
     // security tests).
   });
 
-  it('source verification: PaymentEvent persistence fails closed (not graceful degradation)', async () => {
+  it('source verification: PaymentEvent persistence fails closed (lifecycle service throws on non-unique errors)', async () => {
     const fs = await import('fs');
-    const source = fs.readFileSync('src/lib/payments/webhook.service.ts', 'utf-8');
 
-    // Verify the fail-closed return exists (500 response)
-    const failClosedText = 'event persistence failed — payment held for retry';
-    const failClosedIdx = source.indexOf(failClosedText);
-    expect(failClosedIdx).toBeGreaterThan(-1);
+    // Phase 5.3: the PaymentEvent creation + fail-closed logic moved from
+    // webhook.service.ts to lifecycle.service.ts (inside db.$transaction).
+    // Verify the lifecycle service throws on non-unique errors (does NOT
+    // swallow them and continue as if payment processing succeeded).
 
-    // Verify statusCode: 500 is near the fail-closed text (within 200 chars before)
-    const beforeSection = source.substring(Math.max(0, failClosedIdx - 200), failClosedIdx);
-    expect(beforeSection).toContain('statusCode: 500');
+    const lifecycleSource = fs.readFileSync('src/lib/payments/lifecycle.service.ts', 'utf-8');
 
-    // Verify the PaymentEvent CREATION catch block does NOT have "graceful degradation"
-    // Check the section between paymentEvent.create and the next code section
-    const eventCreateIdx = source.indexOf('paymentEvent.create');
-    const failClosedIdx2 = source.indexOf('FAIL-CLOSED', eventCreateIdx);
-    expect(failClosedIdx2).toBeGreaterThan(-1); // FAIL-CLOSED exists after paymentEvent.create
+    // The lifecycle service MUST throw non-unique errors (not swallow them).
+    // The catch block in applyPaymentTransition catches unique-constraint
+    // errors for dedup (returns idempotent), but re-throws all other errors.
+    const throwIdx = lifecycleSource.indexOf('throw e;');
+    expect(throwIdx).toBeGreaterThan(-1);
 
-    // Extract the section between paymentEvent.create and FAIL-CLOSED
-    const eventSection = source.substring(eventCreateIdx, failClosedIdx2);
-    expect(eventSection).not.toContain('graceful degradation'); // no graceful degradation in this section
+    // The lifecycle service MUST use db.$transaction for atomicity.
+    expect(lifecycleSource).toContain('$transaction');
+
+    // The lifecycle service MUST NOT have "graceful degradation" in the
+    // PaymentEvent creation catch block.
+    const eventCreateIdx = lifecycleSource.indexOf('paymentEvent.create');
+    expect(eventCreateIdx).toBeGreaterThan(-1);
+    // Check there's no "graceful degradation" after paymentEvent.create
+    const afterCreate = lifecycleSource.substring(eventCreateIdx);
+    expect(afterCreate).not.toContain('graceful degradation');
+
+    // The webhook service catches lifecycle errors and returns 500 (fail-closed).
+    const webhookSource = fs.readFileSync('src/lib/payments/webhook.service.ts', 'utf-8');
+    expect(webhookSource).toContain('lifecycle transition failed');
+    expect(webhookSource).toContain('statusCode: 500');
   });
 });
 

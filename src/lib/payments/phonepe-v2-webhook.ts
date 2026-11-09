@@ -5,7 +5,7 @@ import { canTransitionOrder } from '@platform/core/domain';
 import { ensurePrintHandler, enqueueFilePrint } from '@/lib/services/print.service';
 import { shopChannel } from '@platform/core/interfaces';
 import { lookupPaymentSession } from './webhook.service';
-import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
+import { applyPaymentTransition } from '@/lib/payments/lifecycle.service';
 
 /**
  * PhonePe v2 Business API webhook handler.
@@ -311,27 +311,26 @@ async function processPaymentCompleted(
     };
   }
 
-  // Atomic transition to 'paid' — race-safe via transitionStatus.
-  try {
-    const updated = await repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', {
-      status: 'paid',
-      paidAt: new Date(),
-      paymentTxnId: txnId,
-      paymentUtr: utr,
-      paymentProvider: 'phonepe',
-    });
+  // Atomic transition to 'paid' — delegated to the lifecycle service which
+  // wraps PaymentEvent INSERT + PaymentAttempt UPDATE + Order UPDATE in a
+  // single db.$transaction (race-safe + idempotent via UNIQUE constraints).
+  const transitionResult = await applyPaymentTransition({
+    merchantOrderId,
+    provider: 'phonepe',
+    providerTxnId: txnId,
+    providerUtr: utr,
+    amountPaise: order.totalAmountPaise,
+    currency: 'INR',
+    paid: true,
+    eventId: txnId ?? merchantOrderId,
+    source: 'webhook',
+    shopId: shop.id,
+    orderId: order.id,
+  });
 
-    if (!updated) {
-      // A concurrent request already flipped the order — idempotent skip.
-      logger.info('phonepe-v2-webhook: order already paid by concurrent request', { txnId });
-      return { statusCode: 200, summary: 'order already paid (concurrent)', applied: false, orderId: order.id };
-    }
-  } catch (err) {
-    if (isUniqueConstraintError(err)) {
-      logger.info('phonepe-v2-webhook: payment_txn_id already exists (idempotent)', { txnId });
-      return { statusCode: 200, summary: 'payment_txn_id already applied (idempotent)', applied: false, orderId: order.id };
-    }
-    throw err;
+  if (!transitionResult.applied) {
+    logger.info('phonepe-v2-webhook: idempotent or skipped', { txnId, reason: transitionResult.reason });
+    return { statusCode: 200, summary: transitionResult.reason, applied: false, orderId: order.id };
   }
 
   // Mark processed in the cache (24h idempotency window).

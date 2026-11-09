@@ -1,22 +1,16 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 
-// Mock @/lib/db so PaymentEvent creation (PAY-002 fix) works without Prisma.
-vi.mock('@/lib/db', () => ({
-  db: {
-    paymentAttempt: {
-      findUnique: vi.fn(),
-      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
-    },
-    paymentEvent: {
-      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-    },
-  },
-}));
+// Phase 5.3: use the shared Prisma-style mock that delegates order operations
+// to the InMemory adapter + provides $transaction for the lifecycle service.
+vi.mock('@/lib/db', async () => {
+  const { getMockDb } = await import('@/lib/payments/test-prisma-mock');
+  return { db: getMockDb() };
+});
 
 import { setContainerForTesting } from '@/lib/container';
 import type { Container } from '@/lib/container';
+import { resetMockDb } from '@/lib/payments/test-prisma-mock';
 import {
   InMemoryDatabaseAdapter,
   InMemoryCacheAdapter,
@@ -31,6 +25,7 @@ import {
 import { JwtAuthAdapter } from '@/lib/auth/jwt-auth.adapter';
 import { PaymentAdapterRegistry } from '@/lib/payments/registry';
 import { processWebhook, rememberPaymentSession } from '@/lib/payments/webhook.service';
+import { seedPaymentAttempt } from '@/lib/payments/test-prisma-mock';
 import { repos } from '@/lib/repositories';
 import { createDefaultPricingConfig, type Shop } from '@platform/core/domain';
 
@@ -60,6 +55,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
   let logCalls: { msg: string; ctx?: Record<string, unknown> }[];
 
   beforeEach(async () => {
+    resetMockDb();
     const db = new InMemoryDatabaseAdapter();
     const cache = new InMemoryCacheAdapter();
     logCalls = [];
@@ -154,6 +150,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
   it('the "received" audit event stores ONLY {path, contentLength, provider} — NO raw body', async () => {
     // Remember the payment session so the webhook can find the order
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 500, provider: 'phonepe' as const });
+    seedPaymentAttempt({ shopId, orderId, provider: 'phonepe', merchantOrderId: orderId, amountPaise: 500 });
     const { rawBody, xVerify } = buildSignedPayload('COMPLETED');
 
     await processWebhook({
@@ -183,6 +180,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
 
   it('the "paid" audit event stores {txnId, utr, amountPaise} — reconciliation record, NO raw body', async () => {
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 500, provider: 'phonepe' as const });
+    seedPaymentAttempt({ shopId, orderId, provider: 'phonepe', merchantOrderId: orderId, amountPaise: 500 });
     const { rawBody, xVerify, txnId, utr } = buildSignedPayload('COMPLETED');
 
     await processWebhook({
@@ -209,6 +207,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
 
   it('application logger is NEVER called with the raw body, utr, or CHECKSUMHASH', async () => {
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 500, provider: 'phonepe' as const });
+    seedPaymentAttempt({ shopId, orderId, provider: 'phonepe', merchantOrderId: orderId, amountPaise: 500 });
     const { rawBody, xVerify } = buildSignedPayload('COMPLETED');
 
     await processWebhook({
@@ -234,6 +233,7 @@ describe('Webhook audit logging — no raw body / checksum / credentials', () =>
 
   it('a failed-payment webhook stores the failure as an audit event with NO raw body', async () => {
     await rememberPaymentSession(orderId, { orderId, shopId, amountPaise: 500, provider: 'phonepe' as const });
+    seedPaymentAttempt({ shopId, orderId, provider: 'phonepe', merchantOrderId: orderId, amountPaise: 500 });
     const { rawBody, xVerify } = buildSignedPayload('FAILED');
 
     await processWebhook({

@@ -8,18 +8,10 @@ import { NextRequest } from 'next/server';
  * Uses a spy on the adapter's createPaymentIntent to verify call ordering.
  */
 
-vi.mock('@/lib/db', () => ({
-  db: {
-    paymentAttempt: {
-      findUnique: vi.fn(),
-      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
-    },
-    paymentEvent: {
-      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-    },
-  },
-}));
+vi.mock('@/lib/db', async () => {
+  const { getMockDb } = await import('@/lib/payments/test-prisma-mock');
+  return { db: getMockDb() };
+});
 
 import {
   InMemoryDatabaseAdapter,
@@ -40,12 +32,14 @@ import type { Container } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { createDefaultPricingConfig } from '@platform/core/domain';
 import { db } from '@/lib/db';
+import { resetMockDb } from '@/lib/payments/test-prisma-mock';
 
 let container: Container;
 let orderId: string;
 let customerToken: string;
 
 beforeEach(async () => {
+  resetMockDb();
   const inMemDb = new InMemoryDatabaseAdapter();
   const cache = new InMemoryCacheAdapter();
   const auth = new JwtAuthAdapter(

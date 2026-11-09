@@ -6,6 +6,7 @@ import { ValidationError, NotFoundError } from '@platform/core/errors';
 import { canTransitionOrder } from '@platform/core/domain';
 import { shopChannel } from '@platform/core/interfaces';
 import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
+import { applyPaymentTransition } from '@/lib/payments/lifecycle.service';
 
 /** A merchant-order-id → order mapping stored at checkout so the webhook
  *  can find the order without trusting the (unverified) payload. */
@@ -167,8 +168,35 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
   }
   const v = result.verification;
 
-  // Failed payment: leave the order in awaiting_payment (allows retry).
+  // Failed payment: leave the order in awaiting_payment (allows retry), but
+  // atomically transition the PaymentAttempt to 'failed' via the lifecycle
+  // service. This records the failed event durably + advances the attempt
+  // status — previously the attempt stayed in 'created' forever (PAY-005).
   if (!v.paid) {
+    const eventId = v.txnId ?? merchantOrderId;
+    try {
+      await applyPaymentTransition({
+        merchantOrderId,
+        provider: input.provider,
+        providerTxnId: v.txnId,
+        providerUtr: v.utr,
+        amountPaise: v.amountPaise ?? session.amountPaise,
+        currency: 'INR',
+        paid: false,
+        eventId,
+        source: 'webhook',
+        shopId: shop.id,
+        orderId: session.orderId,
+      });
+    } catch (e) {
+      // If the atomic transition fails (DB error), log but don't block the
+      // webhook response — the payment was failed anyway, so no financial
+      // harm. The event will be reconciled later.
+      logger.error('webhook: failed-payment lifecycle transition error', {
+        merchantOrderId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
     await repos.audit.log({
       shopId: shop.id,
       userId: null,
@@ -187,82 +215,27 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     };
   }
 
-  // 5. Idempotency: if we've already processed this txnId, skip.
+  // 5. Fast-path idempotency check via cache (before the DB transaction).
+  // The authoritative dedup is the PaymentEvent UNIQUE constraint inside
+  // applyPaymentTransition — this cache check just avoids the transaction
+  // for the common case of a provider retrying within 24h.
   const processedKey = `pay:done:${input.provider}:${v.txnId ?? merchantOrderId}`;
   if (v.txnId && (await container.cache.get(processedKey))) {
-    logger.info('webhook: idempotent skip (already processed)', { txnId: v.txnId });
+    logger.info('webhook: idempotent skip (cache hit)', { txnId: v.txnId });
     return {
       statusCode: 200,
       responseBody: result.responseBody,
-      summary: 'idempotent — already processed (no-op)',
+      summary: 'idempotent — already processed (cache hit)',
       applied: false,
       orderId: session.orderId,
     };
   }
 
-  // PAY-002 FIX: Persist a durable PaymentEvent for replay protection.
-  // The @@unique([provider, eventId]) constraint catches duplicates that
-  // bypass the cache (expired cache, cold start, concurrent delivery).
-  const eventId = v.txnId ?? merchantOrderId;
-  let eventRecord: { id: string } | null = null;
-  try {
-    const { db } = await import('@/lib/db');
-    eventRecord = await (db as any).paymentEvent.create({
-      data: {
-        id: crypto.randomUUID(),
-        attemptId: session.orderId, // logical link (no FK to avoid migration)
-        provider: input.provider,
-        eventId,
-        merchantOrderId,
-        providerTransactionId: v.txnId ?? null,
-        eventType: 'webhook',
-        signatureValid: true,
-        processingStatus: 'received',
-      },
-    });
-  } catch (e) {
-    // If unique constraint → duplicate event already processed
-    if (isUniqueConstraintError(e)) {
-      logger.info('webhook: PaymentEvent duplicate (unique constraint)', { eventId });
-      return {
-        statusCode: 200,
-        responseBody: result.responseBody,
-        summary: 'idempotent — PaymentEvent already exists',
-        applied: false,
-        orderId: session.orderId,
-      };
-    }
-    // FAIL-CLOSED: if PaymentEvent persistence fails (non-duplicate error),
-    // abort processing. Do NOT apply the financial state transition without
-    // a durable event record. The event can be retried by the provider.
-    logger.error('webhook: PaymentEvent persistence failed — aborting to prevent untracked financial mutation', {
-      eventId,
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return {
-      statusCode: 500,
-      summary: 'event persistence failed — payment held for retry',
-      applied: false,
-      orderId: session.orderId,
-    };
-  }
-
-  // 6. Validate amount + state transition.
-  const order = await repos.orders.findById(session.orderId);
-  if (!order) {
-    return { statusCode: 404, summary: 'order not found', applied: false };
-  }
-  if (order.shopId !== shop.id) {
-    logger.error('webhook: tenant mismatch', { orderShopId: order.shopId, webhookShopId: shop.id });
-    return { statusCode: 403, summary: 'tenant mismatch', applied: false };
-  }
-  // AMOUNT VALIDATION (Phase 4 fix — was skipped when amountPaise === null):
-  // A paid webhook MUST include the exact amount. Previously the check was
-  // `if (v.amountPaise !== null && ...)` which SKIPPED validation when the
-  // PSP omitted the amount — allowing a ₹0 payment to mark a ₹500 order paid.
-  // Now: if the amount is missing OR doesn't match, REJECT.
+  // 6. Pre-validate amount (fast reject before the transaction).
+  // The lifecycle service ALSO validates amount inside the transaction, but
+  // checking here first avoids the transaction for clearly-invalid payloads.
   if (v.amountPaise === null) {
-    logger.warn('webhook: amount missing — rejecting (cannot verify amount integrity)', { provider: input.provider });
+    logger.warn('webhook: amount missing — rejecting', { provider: input.provider });
     return {
       statusCode: 400,
       responseBody: result.responseBody,
@@ -271,112 +244,113 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
       orderId: session.orderId,
     };
   }
-  if (v.amountPaise !== order.totalAmountPaise) {
-    logger.warn('webhook: amount mismatch', { expected: order.totalAmountPaise, got: v.amountPaise });
+  // Amount mismatch — reject with 400 (tells the provider "bad request, don't
+  // retry"). The session.amountPaise is the order's totalAmountPaise (set at
+  // checkout). The lifecycle service also validates this inside the transaction
+  // as a defense-in-depth measure.
+  if (v.amountPaise !== session.amountPaise) {
+    logger.warn('webhook: amount mismatch', { expected: session.amountPaise, got: v.amountPaise });
     return {
       statusCode: 400,
       responseBody: result.responseBody,
-      summary: `amount mismatch (expected ${order.totalAmountPaise}, got ${v.amountPaise})`,
+      summary: `amount mismatch (expected ${session.amountPaise}, got ${v.amountPaise})`,
       applied: false,
       orderId: session.orderId,
     };
   }
-  if (!canTransitionOrder(order.status, 'paid')) {
-    // Already paid (or beyond) — idempotent.
+
+  // 7. ATOMIC lifecycle transition (Phase 5.3).
+  // Replaces the previous 3-step non-atomic flow:
+  //   OLD: paymentEvent.create → repos.orders.transitionStatus → paymentEvent.update
+  //   NEW: applyPaymentTransition (single db.$transaction)
+  //
+  // The transaction wraps:
+  //   1. PaymentEvent INSERT (dedup via UNIQUE([provider, eventId]))
+  //   2. PaymentAttempt SELECT + conditional UPDATE (created → paid)
+  //   3. Order conditional UPDATE (awaiting_payment → paid)
+  //   4. PaymentEvent UPDATE → processed
+  //
+  // If any step fails, the entire transaction rolls back — no partial
+  // financial transition is committed.
+  const eventId = v.txnId ?? merchantOrderId;
+  let transitionResult;
+  try {
+    transitionResult = await applyPaymentTransition({
+      merchantOrderId,
+      provider: input.provider,
+      providerTxnId: v.txnId,
+      providerUtr: v.utr,
+      amountPaise: v.amountPaise,
+      currency: 'INR',
+      paid: true,
+      eventId,
+      source: 'webhook',
+      shopId: shop.id,
+      orderId: session.orderId,
+    });
+  } catch (e) {
+    logger.error('webhook: lifecycle transition failed', {
+      merchantOrderId,
+      eventId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      statusCode: 500,
+      responseBody: result.responseBody,
+      summary: 'lifecycle transition failed — payment held for retry',
+      applied: false,
+      orderId: session.orderId,
+    };
+  }
+
+  // 8. Handle the transition result.
+  if (transitionResult.idempotent || !transitionResult.applied) {
+    // Duplicate event, stale event, or already-processed — idempotent skip.
+    if (v.txnId) await container.cache.set(processedKey, session.orderId, 86400);
+    logger.info('webhook: idempotent skip (lifecycle)', {
+      txnId: v.txnId,
+      reason: transitionResult.reason,
+      attemptStatus: transitionResult.attemptStatus,
+    });
     return {
       statusCode: 200,
       responseBody: result.responseBody,
-      summary: `order already in status '${order.status}' (idempotent)`,
+      summary: transitionResult.reason,
       applied: false,
       orderId: session.orderId,
     };
   }
 
-  // 7. Flip to paid — RACE-SAFE (Phase 4 fix): uses transitionStatus with
-  //    WHERE status='awaiting_payment' precondition. Previously used
-  //    repos.orders.update (non-conditional) → a concurrent manual verify
-  //    + webhook could both flip the order, double-writing audit logs +
-  //    overwriting each other's paymentTxnId.
-  try {
-    const updated = await repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', {
-      status: 'paid',
-      paidAt: new Date(),
-      paymentTxnId: v.txnId,
-      paymentUtr: v.utr,
-      paymentProvider: input.provider,
-    });
-    // transitionStatus returns null if a concurrent request already flipped
-    // the order (WHERE status='awaiting_payment' didn't match). This is the
-    // race-safe idempotent skip — no duplicate audit log, no double-enqueue.
-    if (!updated) {
-      logger.info('webhook: order already paid by concurrent request (idempotent)', { txnId: v.txnId });
-      return {
-        statusCode: 200,
-        responseBody: result.responseBody,
-        summary: 'order already paid (concurrent request won)',
-        applied: false,
-        orderId: session.orderId,
-      };
-    }
-  } catch (err) {
-    // A UNIQUE-constraint violation means this txn was already applied
-    // (e.g., concurrent webhook with the SAME txnId) — treat as idempotent.
-    if (isUniqueConstraintError(err)) {
-      logger.info('webhook: payment_txn_id already exists (idempotent)', { txnId: v.txnId });
-      return {
-        statusCode: 200,
-        responseBody: result.responseBody,
-        summary: 'payment_txn_id already applied (idempotent)',
-        applied: false,
-        orderId: session.orderId,
-      };
-    }
-    // Non-unique-constraint errors are real failures — re-throw.
-    throw err;
-  }
-
-  // 8. Mark processed + audit.
-  if (v.txnId) await container.cache.set(processedKey, order.id, 86400); // 24h
-
-  // PAY-002 FIX: Update PaymentEvent status to 'processed'
-  if (eventRecord) {
-    try {
-      const { db } = await import('@/lib/db');
-      await (db as any).paymentEvent.update({
-        where: { id: eventRecord.id },
-        data: { processingStatus: 'processed', processedAt: new Date() },
-      });
-    } catch { /* graceful degradation — PaymentEvent table may not exist */ }
-  }
+  // 9. Transition succeeded — cache the idempotency key + audit.
+  if (v.txnId) await container.cache.set(processedKey, session.orderId, 86400); // 24h
 
   await repos.audit.log({
     shopId: shop.id,
     userId: null,
     action: `webhook.${input.provider}.paid`,
     entityType: 'order',
-    entityId: order.id,
-    metadata: { txnId: v.txnId, utr: v.utr, amountPaise: order.totalAmountPaise },
+    entityId: session.orderId,
+    metadata: { txnId: v.txnId, utr: v.utr, amountPaise: v.amountPaise },
     ip: input.ip ?? null,
   });
-  logger.info('webhook: order marked paid', { orderId: order.id, provider: input.provider, txnId: v.txnId });
+  logger.info('webhook: order marked paid', { orderId: session.orderId, provider: input.provider, txnId: v.txnId });
 
   // Push a realtime event so the dashboard queue updates the moment a payment
   // lands (no polling needed for the happy path).
-  void container.realtime.publish(shopChannel(shop.id), 'order.paid', { orderId: order.id, amountPaise: order.totalAmountPaise }).catch(() => {});
+  void container.realtime.publish(shopChannel(shop.id), 'order.paid', { orderId: session.orderId, amountPaise: v.amountPaise }).catch(() => {});
 
-  // Auto-dispatch to print now that the order is paid (Phase 6's agent would
-  // pick this up via the realtime channel; here we enqueue directly).
+  // Auto-dispatch to print now that the order is paid.
   ensurePrintHandler();
-  void enqueuePaidOrderPrint(order.id, shop.id).catch((e) =>
-    logger.error('webhook: failed to enqueue print', { orderId: order.id, err: String(e) }),
+  void enqueuePaidOrderPrint(session.orderId, shop.id).catch((e) =>
+    logger.error('webhook: failed to enqueue print', { orderId: session.orderId, err: String(e) }),
   );
 
   return {
     statusCode: result.statusCode,
     responseBody: result.responseBody,
-    summary: `order ${order.customerToken} marked paid via ${input.provider} (txn ${v.txnId})`,
+    summary: `order marked paid via ${input.provider} (txn ${v.txnId})`,
     applied: true,
-    orderId: order.id,
+    orderId: session.orderId,
   };
 }
 

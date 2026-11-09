@@ -8,9 +8,9 @@ datasource db {
 }
 
 model Shop {
-  id                    String        @id @default(uuid())
+  id                    String           @id @default(uuid())
   name                  String
-  slug                  String        @unique
+  slug                  String           @unique
   ownerUserId           String
   upiId                 String
   paymentProvider       String
@@ -18,9 +18,9 @@ model Shop {
   pricingConfig         String
   address               String
   phone                 String
-  timezone              String        @default("Asia/Kolkata")
-  isActive              Boolean       @default(true)
-  subscriptionTier      String        @default("free")
+  timezone              String           @default("Asia/Kolkata")
+  isActive              Boolean          @default(true)
+  subscriptionTier      String           @default("free")
   subscriptionExpiresAt DateTime?
   description           String?
   businessHours         String?
@@ -29,23 +29,23 @@ model Shop {
   servicesJson          String?
   paymentPhone          String?
   paymentInstructions   String?
-  cashOnPickup          Boolean       @default(false)
+  cashOnPickup          Boolean          @default(false)
   // ── Payment method customization ──
   // 'upi' = UPI only, 'cash' = cash only, 'both' = UPI + cash,
   // 'split' = split payment (partial UPI + partial cash)
-  paymentMethods        String        @default("both")
+  paymentMethods        String           @default("both")
   // ── Pamphlet / cover sheet feature ──
   // Shopkeeper can offer a pamphlet (folder/cover) where printed pages are
   // kept. Customer can add it during checkout (extra charge). Useful when
   // customer prints from home + picks up later.
-  pamphletEnabled       Boolean       @default(false)
-  pamphletPricePaise    Int           @default(0)
+  pamphletEnabled       Boolean          @default(false)
+  pamphletPricePaise    Int              @default(0)
   pamphletName          String?
   // NOTE: revision + deletedAt removed from existing models to avoid
   // breaking production (DB migration not yet run). See docs/MIGRATION_PLAN.md.
   // These will be re-added when `bun run db:push` is executed.
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
   auditLogs             AuditLog[]
   orders                Order[]
   agents                PrintAgent[]
@@ -73,22 +73,22 @@ model User {
 }
 
 model Order {
-  id               String      @id @default(uuid())
+  id               String           @id @default(uuid())
   shopId           String
   customerToken    String
-  status           String      @default("awaiting_payment")
+  status           String           @default("awaiting_payment")
   totalAmountPaise Int
-  currency         String      @default("INR")
+  currency         String           @default("INR")
   paymentProvider  String?
-  paymentTxnId     String?     @unique
+  paymentTxnId     String?          @unique
   paymentUtr       String?
   paidAt           DateTime?
   customerPhone    String?
   notes            String?
   tokenNumber      String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  shop             Shop        @relation(fields: [shopId], references: [id])
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  shop             Shop             @relation(fields: [shopId], references: [id])
   files            PrintFile[]
   paymentAttempts  PaymentAttempt[]
 
@@ -195,22 +195,22 @@ model AuditLog {
 // the mapping into durable DB records.
 
 model PaymentAttempt {
-  id                   String    @id @default(uuid())
-  shopId               String
-  orderId              String
-  provider             String   // 'phonepe' | 'paytm' | 'googlepay' (UPI deep-link)
-  merchantOrderId      String   @unique // our per-attempt UUID; the PSP references this
+  id                    String         @id @default(uuid())
+  shopId                String
+  orderId               String
+  provider              String // 'phonepe' | 'paytm' | 'googlepay' (UPI deep-link)
+  merchantOrderId       String         @unique // our per-attempt UUID; the PSP references this
   providerTransactionId String? // PSP's transaction id (set on webhook/status)
-  amountPaise          Int
-  currency             String   @default("INR")
-  status              String   @default("created") // created|pending|paid|failed|expired
-  idempotencyKey       String?  // optional PSP idempotency token
-  expiresAt            DateTime
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  shop                 Shop     @relation(fields: [shopId], references: [id])
-  order                Order    @relation(fields: [orderId], references: [id])
-  events               PaymentEvent[]
+  amountPaise           Int
+  currency              String         @default("INR")
+  status                String         @default("created") // created|pending|paid|failed|expired
+  idempotencyKey        String? // optional PSP idempotency token
+  expiresAt             DateTime
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  shop                  Shop           @relation(fields: [shopId], references: [id])
+  order                 Order          @relation(fields: [orderId], references: [id])
+  events                PaymentEvent[]
 
   @@index([shopId, status])
   @@index([orderId])
@@ -218,19 +218,19 @@ model PaymentAttempt {
 }
 
 model PaymentEvent {
-  id                   String    @id @default(uuid())
-  attemptId            String
-  provider             String
-  eventId              String?   // PSP's event id (for dedup)
-  merchantOrderId      String?
+  id                    String         @id @default(uuid())
+  attemptId             String
+  provider              String
+  eventId               String? // PSP's event id (for dedup)
+  merchantOrderId       String?
   providerTransactionId String?
-  eventType            String    // webhook|status_check|reconciliation
-  signatureValid       Boolean   @default(false)
-  processingStatus     String    @default("received") // received|processed|skipped|failed
-  receivedAt           DateTime  @default(now())
-  processedAt          DateTime?
-  errorMessage         String?
-  attempt              PaymentAttempt @relation(fields: [attemptId], references: [id])
+  eventType             String // webhook|status_check|reconciliation
+  signatureValid        Boolean        @default(false)
+  processingStatus      String         @default("received") // received|processed|skipped|failed
+  receivedAt            DateTime       @default(now())
+  processedAt           DateTime?
+  errorMessage          String?
+  attempt               PaymentAttempt @relation(fields: [attemptId], references: [id])
 
   @@unique([provider, eventId])
   @@index([attemptId])
@@ -242,31 +242,33 @@ model PaymentEvent {
 // See docs/SYNC_PROTOCOL.md for the full design.
 
 model DeviceSyncState {
-  id            String    @id @default(uuid())
-  shopId        String    // tenant FK
-  deviceId      String    // the PrintAgent ID acting as a sync device
-  syncCursor    String    @default("1970-01-01T00:00:00Z") // ISO timestamp cursor
-  lastSyncAt    DateTime?
-  lastPushAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  shopId     String // tenant FK
+  deviceId   String // the PrintAgent ID acting as a sync device
+  syncCursor String    @default("1970-01-01T00:00:00Z") // ISO timestamp cursor
+  lastSyncAt DateTime?
+  lastPushAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
   @@unique([shopId, deviceId])
   @@index([shopId])
 }
 
 model Customer {
-  id            String    @id @default(uuid())
-  shopId        String    // tenant FK
-  name          String
-  phone         String?
-  email         String?
-  address       String?
-  notes         String?
+  id        String    @id @default(uuid())
+  shopId    String // tenant FK
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
   // Sync fields
-  revision      Int       @default(1)
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  revision  Int       @default(1)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
   @@index([shopId, updatedAt])
   @@index([shopId, deletedAt])
 }
@@ -278,21 +280,21 @@ model Customer {
 // See docs/DOCUMENT_DELIVERY_ARCHITECTURE.md
 
 model PrintDeliveryAttempt {
-  id              String    @id @default(uuid())
-  printJobId      String    // FK → PrintJob (logical — no Prisma relation to avoid migration)
-  agentId         String    // FK → PrintAgent (the targeted device)
-  shopId          String    // tenant FK
-  attemptId       Int       @default(1) // per-job sequence (1st attempt, 2nd, etc.)
-  deliveryMode    String    @default("cloud") // cloud|direct|webrtc
-  status          String    @default("created") // created|dispatched|received|failed|expired
-  checksum        String?   // SHA-256 hex of the delivered file
-  fileSize        Int?      // bytes
-  startedAt       DateTime  @default(now())
-  completedAt     DateTime?
-  errorCode       String?
-  errorMessage    String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id           String    @id @default(uuid())
+  printJobId   String // FK → PrintJob (logical — no Prisma relation to avoid migration)
+  agentId      String // FK → PrintAgent (the targeted device)
+  shopId       String // tenant FK
+  attemptId    Int       @default(1) // per-job sequence (1st attempt, 2nd, etc.)
+  deliveryMode String    @default("cloud") // cloud|direct|webrtc
+  status       String    @default("created") // created|dispatched|received|failed|expired
+  checksum     String? // SHA-256 hex of the delivered file
+  fileSize     Int? // bytes
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([shopId, status])
   @@index([agentId])
@@ -305,19 +307,19 @@ model PrintDeliveryAttempt {
 // See docs/FILE_RETENTION_POLICY.md
 
 model FileCleanupTask {
-  id              String    @id @default(uuid())
-  printFileId     String    // FK → PrintFile (logical)
-  shopId          String    // tenant FK
-  storageKey      String    // the S3/R2/Supabase object key
-  cleanupType     String    @default("after_receipt") // after_receipt|after_collect|forced
-  scheduledAt     DateTime  // when to attempt deletion
-  completedAt     DateTime?
-  attempts        Int       @default(0)
-  maxAttempts     Int       @default(5)
-  lastError       String?
-  status          String    @default("pending") // pending|completed|failed|skipped
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id          String    @id @default(uuid())
+  printFileId String // FK → PrintFile (logical)
+  shopId      String // tenant FK
+  storageKey  String // the S3/R2/Supabase object key
+  cleanupType String    @default("after_receipt") // after_receipt|after_collect|forced
+  scheduledAt DateTime // when to attempt deletion
+  completedAt DateTime?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  lastError   String?
+  status      String    @default("pending") // pending|completed|failed|skipped
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([shopId, status])
   @@index([scheduledAt])

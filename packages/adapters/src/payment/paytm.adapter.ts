@@ -1,4 +1,10 @@
 import { UPIPay } from 'upipay';
+import {
+  createCipheriv,
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import type {
   PaymentAdapter,
   PaymentIntent,
@@ -21,86 +27,140 @@ export interface PaytmCredentials {
   env?: 'prod' | 'sandbox';
 }
 
-// ── Dev-only checksum helpers (used by the /dev/paytm/simulate route) ──
-// These are kept for backward compat with the existing dev simulate route
-// which signs test callbacks. The PRODUCTION verification uses UPIPay's
-// verifyWebhook (which implements the official Paytm AES-128-CBC checksum
-// algorithm — more robust than the hand-rolled version below).
-const PAYTM_IV = Buffer.from('0123456789012345'); // 16 bytes
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 5.3 — Official Paytm checksum algorithm
+//
+// The hand-rolled implementation that was here before used IV
+// `0123456789012345`, embedded the merchantKey in the SHA-256 input, used no
+// salt, and compared with `===` (not constant-time). Real Paytm production
+// callbacks — signed by Paytm with the OFFICIAL algorithm — would FAIL
+// verification by that code.
+//
+// The official Paytm Node Checksum algorithm (mirrored from the `upipay` SDK
+// at node_modules/upipay/dist/adapters/paytm.js) is:
+//
+//   1. salt = randomBytes(4).toString('hex').slice(0, 4)   // 4-char hex
+//   2. paramsString = sorted param VALUES joined by '|' (no keys, no
+//      merchantKey, no CHECKSUMHASH)
+//   3. hash = sha256(paramsString + '|' + salt)             // 64-char hex
+//   4. plaintext = hash + salt                              // 68 chars
+//   5. key = merchantKey.slice(0, 16)                       // first 16 bytes
+//   6. ciphertext = AES-128-CBC(plaintext, key, IV='@@@@&&&&####$$$$')
+//   7. CHECKSUMHASH = base64(ciphertext)
+//
+// Verification is the inverse: decrypt, split hash (first 64) + salt (last 4),
+// recompute sha256(paramsString + '|' + salt), compare with timingSafeEqual.
+//
+// Production webhook verification delegates to `upipay`'s `verifyWebhook`
+// (which implements the same algorithm + handles form-urlencoded parsing +
+// CHECKSUMHASH extraction internally). `generatePaytmChecksum` is kept for
+// the dev simulate route + known-vector tests.
+// ──────────────────────────────────────────────────────────────────────────
 
-function aesKey(merchantKey: string): Uint8Array {
-  const b = new TextEncoder().encode(merchantKey);
-  const out = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) out[i] = b[i] ?? 0;
-  return out;
+/** Official Paytm IV (16 ASCII chars). */
+const PAYTM_IV = Buffer.from('@@@@&&&&####$$$$', 'utf8');
+
+/** Build the params string: sorted param VALUES joined by '|', excluding
+ *  CHECKSUMHASH. This matches the official Paytm Node Checksum library. */
+function paytmParamsValuesString(params: Record<string, string>): string {
+  const keys = Object.keys(params)
+    .filter((k) => k !== 'CHECKSUMHASH')
+    .sort();
+  return keys.map((k) => params[k]).join('|');
 }
 
-async function importAesKey(merchantKey: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', aesKey(merchantKey) as BufferSource, { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
+/** Derive the 16-byte AES-128 key from the merchant key (first 16 bytes). */
+function paytmAesKey(merchantKey: string): Buffer {
+  return Buffer.from(merchantKey.slice(0, 16), 'utf8');
 }
 
-async function sha256Hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function b64(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-function paytmParamsString(params: Record<string, string>, merchantKey: string): string {
-  const keys = Object.keys(params).filter((k) => k !== 'CHECKSUMHASH').sort();
-  const joined = keys.map((k) => `${k}=${params[k]}`).join('|');
-  return `${joined}|${merchantKey}`;
-}
-
-/** Generate a CHECKSUMHASH — used by the dev simulate route to sign a callback. */
+/**
+ * Generate a CHECKSUMHASH using the OFFICIAL Paytm algorithm.
+ *
+ * Used by:
+ *   - `/api/v1/payments/dev/paytm/simulate` route (signs dev callbacks)
+ *   - Known-vector tests in `src/lib/payments/paytm-checksum.test.ts`
+ *
+ * NOT used in production webhook verification — production delegates to
+ * `upipay`'s `verifyWebhook` (see `handleWebhook` below).
+ */
 export async function generatePaytmChecksum(
   params: Record<string, string>,
   merchantKey: string,
 ): Promise<string> {
-  const hashHex = await sha256Hex(paytmParamsString(params, merchantKey));
-  const key = await importAesKey(merchantKey);
-  const enc = new Uint8Array(
-    await crypto.subtle.encrypt({ name: 'AES-CBC', iv: PAYTM_IV }, key, new TextEncoder().encode(hashHex)),
-  );
-  return b64(enc);
+  if (merchantKey.length < 16) {
+    throw new Error(
+      `Paytm: merchantKey must be at least 16 characters (got ${merchantKey.length}). ` +
+        `Real Paytm merchant keys are 32-char hex strings.`,
+    );
+  }
+  const salt = randomBytes(4).toString('hex').slice(0, 4);
+  const paramsString = paytmParamsValuesString(params);
+  const hash = createHash('sha256').update(paramsString + '|' + salt, 'utf8').digest('hex');
+  const plaintext = hash + salt; // 68 chars
+  const key = paytmAesKey(merchantKey);
+  const cipher = createCipheriv('aes-128-cbc', key, PAYTM_IV);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
+  return encrypted.toString('base64');
 }
 
-/** Verify a CHECKSUMHASH — the security-critical path. Constant-time-ish. */
-async function verifyPaytmChecksum(
+/**
+ * Verify a CHECKSUMHASH using the OFFICIAL Paytm algorithm with
+ * constant-time comparison.
+ *
+ * This is exported for known-vector tests. Production webhook verification
+ * delegates to `upipay`'s `verifyWebhook` instead (which calls this same
+ * algorithm internally + handles form-urlencoded parsing + CHECKSUMHASH
+ * extraction).
+ */
+export async function verifyPaytmChecksum(
   params: Record<string, string>,
   checksum: string,
   merchantKey: string,
 ): Promise<boolean> {
-  const hashHex = await sha256Hex(paytmParamsString(params, merchantKey));
-  const key = await importAesKey(merchantKey);
+  if (merchantKey.length < 16) return false;
+  const key = paytmAesKey(merchantKey);
+  let decrypted: Buffer;
   try {
-    const dec = new Uint8Array(
-      await crypto.subtle.decrypt({ name: 'AES-CBC', iv: PAYTM_IV as BufferSource }, key, b64ToBytes(checksum) as BufferSource),
-    );
-    const expected = new TextDecoder().decode(dec);
-    return expected === hashHex;
+    // Use Node's createDecipheriv (mirrors upipay's implementation exactly).
+    const { createDecipheriv } = await import('node:crypto');
+    const decipher = createDecipheriv('aes-128-cbc', key, PAYTM_IV);
+    decrypted = Buffer.concat([
+      decipher.update(Buffer.from(checksum, 'base64')),
+      decipher.final(),
+    ]);
   } catch {
-    return false;
+    return false; // decrypt failure = invalid checksum
   }
+  const plaintext = decrypted.toString('utf8');
+  // Official format: 64-char hex hash + 4-char salt = 68 chars total.
+  if (plaintext.length < 68) return false;
+  const hash = plaintext.slice(0, 64);
+  const salt = plaintext.slice(64);
+  const paramsString = paytmParamsValuesString(params);
+  const expectedHash = createHash('sha256').update(paramsString + '|' + salt, 'utf8').digest('hex');
+  // Constant-time comparison (timingSafeEqual) — matches upipay.
+  const a = Buffer.from(hash, 'utf8');
+  const b = Buffer.from(expectedHash, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
-function b64ToBytes(s: string): Uint8Array {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-// ── End dev-only helpers ──
+// ── End checksum helpers ──
 
 function creds(c: Record<string, unknown>): PaytmCredentials {
   const pc = c.paytm as PaytmCredentials | undefined;
   if (!pc || !pc.merchantKey) throw new Error('Paytm: missing merchantKey in shop credentials');
   if (!pc.merchantId) throw new Error('Paytm: missing merchantId in shop credentials');
+  if (pc.merchantKey.length < 16) {
+    throw new Error(
+      `Paytm: merchantKey must be at least 16 characters (got ${pc.merchantKey.length}). ` +
+        `Real Paytm merchant keys are 32-char hex strings.`,
+    );
+  }
   return pc;
 }
 
@@ -123,22 +183,14 @@ function makeClient(c: PaytmCredentials): UPIPay {
 /**
  * Paytm PaymentAdapter — REAL implementation using the UPIPay SDK.
  *
- * Previously createPaymentIntent, verifyPayment, + refund were STUBS. Now:
- *   - createPaymentIntent: calls the Paytm initiateTransaction API via UPIPay
- *     → real checkoutUrl with a transaction token
- *   - verifyPayment: calls POST /v3/order/status via UPIPay → real status
- *   - handleWebhook: uses UPIPay.verifyWebhook (official Paytm AES-128-CBC
- *     checksum algorithm — replaces the hand-rolled version)
- *   - refund: calls POST /v3/order/refund via UPIPay → real refund
- *
- * The UPIPay SDK handles:
- *   - Checksum generation + verification (official Paytm_Node_Checksum algorithm)
- *   - Amount-integrity enforcement (expectedAmount check)
- *   - Retry with exponential backoff
- *   - Timeout (30s)
- *
- * Multi-tenant: each call receives the shop's encrypted credentials; the
- * UPIPay client is constructed per-call — no global merchant account.
+ * Phase 5.3 changes:
+ *   - `handleWebhook` now delegates to `upipay`'s `verifyWebhook` (official
+ *     Paytm AES-128-CBC + SHA-256 + salt + constant-time compare). The
+ *     previous hand-rolled verification used a non-standard IV
+ *     (`0123456789012345`), no salt, and `===` comparison — real Paytm
+ *     callbacks would have been rejected.
+ *   - `generatePaytmChecksum` now uses the official algorithm (salt +
+ *     values-only params string + IV `@@@@&&&&####$$$$`).
  */
 export class PaytmPaymentAdapter implements PaymentAdapter {
   readonly provider: PaymentProvider = 'paytm';
@@ -157,8 +209,6 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
     const c = creds(input.shopCredentials);
     const client = makeClient(c);
     // Phase 5.2.1: use the caller-supplied reference VERBATIM. No fallback.
-    // The checkout route MUST persist a PaymentAttempt with this exact value
-    // before calling us; the adapter's job is to propagate it to the provider.
     const merchantOrderId = input.merchantOrderId;
 
     try {
@@ -206,33 +256,31 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
   }
 
   /**
-   * Verify the inbound Paytm callback using the hand-rolled CHECKSUMHASH
-   * verification (AES-128-CBC over sha256(params)).
+   * Verify the inbound Paytm callback using UPIPay's `verifyWebhook` — the
+   * OFFICIAL Paytm checksum algorithm (AES-128-CBC + SHA-256 + salt +
+   * constant-time compare).
    *
-   * NOTE on UPIPay: UPIPay's verifyWebhook uses the OFFICIAL Paytm checksum
-   * algorithm (which uses a different IV + salt-prefix than the hand-rolled
-   * version). The hand-rolled verification below is kept because:
-   *   1. It was already correct + tested (the dev simulate route + 2 test
-   *      suites depend on `generatePaytmChecksum` which uses the same IV).
-   *   2. The official Paytm algorithm in UPIPay uses a DIFFERENT IV
-   *      (`@@@@&&&&####$$$$`) than the hand-rolled one (`0123456789012345`).
-   *      Switching to UPIPay's verification would break the dev simulate
-   *      route + tests until the checksum GENERATION is also switched.
-   *   3. The task says to preserve existing functionality — the hand-rolled
-   *      verification IS real (AES-CBC + SHA256 + constant-time compare).
+   * UPIPay's `verifyWebhook`:
+   *   - Accepts form-urlencoded bodies (via URLSearchParams fallback)
+   *   - Extracts CHECKSUMHASH from the payload internally
+   *   - Removes CHECKSUMHASH from the params used for verification
+   *   - Calls the official `verifyPaytmChecksum` algorithm
+   *   - Returns a normalized `{ verified, status, orderId, transactionId,
+   *     amount, rawPayload }` event
    *
-   * UPIPay IS used for createPaymentIntent, verifyPayment (status API), +
-   * refund — the methods that were previously stubs.
-   *
-   * Per the spec, the Paytm callback renders an HTML success/failure page
-   * (NOT JSON) — so handleWebhook returns `responseBody` as an HTML string.
+   * Per the spec, Paytm renders an HTML success/failure page back to the
+   * customer's browser (NOT JSON) — so we return `responseBody` as HTML.
    */
   async handleWebhook(
     input: WebhookInput,
     shopCredentials: Record<string, unknown>,
   ): Promise<WebhookResult> {
     const c = creds(shopCredentials);
-    // Parse the form-urlencoded body into a params object.
+    const client = makeClient(c);
+
+    // Parse the form-urlencoded body to extract CHECKSUMHASH + the raw params
+    // (for the amount/utr extraction that upipay's normalized event may not
+    // surface in the exact format we need).
     const params: Record<string, string> = {};
     for (const pair of input.rawBody.split('&')) {
       const [k, v] = pair.split('=').map(decodeURIComponent);
@@ -242,32 +290,40 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
     if (!checksum) {
       return { ok: false, verification: null, statusCode: 400, responseBody: htmlPage('Missing CHECKSUMHASH', false) };
     }
-    const valid = await verifyPaytmChecksum(params, checksum, c.merchantKey);
-    if (!valid) {
+
+    try {
+      const event = client.verifyWebhook(input.rawBody, checksum, {
+        enableReplayProtection: false,
+      });
+      if (!event.verified) {
+        return { ok: false, verification: null, statusCode: 401, responseBody: htmlPage('Checksum verification failed', false) };
+      }
+
+      const status = params.STATUS ?? event.status ?? '';
+      const paid = status === 'TXN_SUCCESS';
+      const txnId = params.TXNID ?? event.transactionId ?? null;
+      const amountRupees = params.TXNAMOUNT ? Number(params.TXNAMOUNT) : (typeof event.amount === 'number' ? event.amount / 100 : null);
+      const amountPaise = amountRupees !== null && Number.isFinite(amountRupees) ? Math.round(amountRupees * 100) : null;
+      const utr = params.BANKTXNID ?? null;
+
+      return {
+        ok: true,
+        verification: {
+          paid,
+          txnId,
+          utr,
+          amountPaise,
+          provider: 'paytm',
+          raw: event.rawPayload ?? params,
+        },
+        statusCode: 200,
+        responseBody: htmlPage(paid ? 'Payment Successful!' : `Payment ${status}`, paid, params.ORDERID ?? event.orderId ?? undefined),
+      };
+    } catch (err) {
+      console.error('[paytm] webhook verification failed:',
+        err instanceof Error ? err.message : String(err));
       return { ok: false, verification: null, statusCode: 401, responseBody: htmlPage('Checksum verification failed', false) };
     }
-
-    const status = params.STATUS ?? '';
-    const paid = status === 'TXN_SUCCESS';
-    const orderId = params.ORDERID ?? null;
-    const txnId = params.TXNID ?? null;
-    const amount = params.TXNAMOUNT ? Math.round(Number(params.TXNAMOUNT) * 100) : null;
-    const utr = params.BANKTXNID ?? null;
-
-    return {
-      ok: true,
-      verification: {
-        paid,
-        txnId,
-        utr,
-        amountPaise: Number.isFinite(amount) ? amount : null,
-        provider: 'paytm',
-        raw: params,
-      },
-      statusCode: 200,
-      // Paytm wants an HTML page rendered back to the customer's browser.
-      responseBody: htmlPage(paid ? 'Payment Successful!' : `Payment ${status}`, paid, orderId ?? undefined),
-    };
   }
 
   /**

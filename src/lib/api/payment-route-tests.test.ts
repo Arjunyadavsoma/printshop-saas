@@ -23,22 +23,12 @@ import { NextRequest } from 'next/server';
  */
 
 // ── vi.mock is hoisted to the top of the file by vitest ─────────────
-// Replaces the @/lib/db module so `await import('@/lib/db')` inside
-// webhook.service.ts → lookupPaymentSession returns a controllable mock.
-// The container's in-memory db (InMemoryDatabaseAdapter) is still used by
-// the repositories; this mock only affects the dynamic-import fallback path.
-vi.mock('@/lib/db', () => ({
-  db: {
-    paymentAttempt: {
-      findUnique: vi.fn(),
-      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
-    },
-    paymentEvent: {
-      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
-    },
-  },
-}));
+// Phase 5.3: use the shared Prisma-style mock that delegates order operations
+// to the InMemory adapter + provides $transaction for the lifecycle service.
+vi.mock('@/lib/db', async () => {
+  const { getMockDb } = await import('@/lib/payments/test-prisma-mock');
+  return { db: getMockDb() };
+});
 
 import {
   InMemoryDatabaseAdapter,
@@ -64,6 +54,7 @@ import {
   processWebhook,
 } from '@/lib/payments/webhook.service';
 import { db as mockedDb } from '@/lib/db';
+import { resetMockDb, seedPaymentAttempt } from '@/lib/payments/test-prisma-mock';
 
 // ── Test-fixture credentials for the PhonePe adapter (v1 Standard API) ──
 // The webhook verification path uses UPIPay's verifyWebhook, which checks
@@ -93,10 +84,8 @@ let otherOrderId: string;
 let otherOwnerToken: string;
 
 beforeEach(async () => {
-  // Clear the @/lib/db mock's call history so per-test assertions are clean.
-  vi.mocked(mockedDb.paymentAttempt.findUnique).mockClear();
-  // Default: the PaymentAttempt table "misses" — returns null (no row found).
-  vi.mocked(mockedDb.paymentAttempt.findUnique).mockResolvedValue(null as never);
+  // Phase 5.3: reset the shared Prisma mock's internal Maps + vi.fn call history.
+  resetMockDb();
 
   // ── Fresh in-memory container for every test ──
   const db = new InMemoryDatabaseAdapter();
