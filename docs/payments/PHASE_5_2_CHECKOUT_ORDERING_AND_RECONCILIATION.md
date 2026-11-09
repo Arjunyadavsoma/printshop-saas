@@ -3,15 +3,26 @@
 **Branch:** `phase-5-2-checkout-ordering`
 **Starting commit:** `6d13afa`
 **Date:** 2025-11-09
+**Updated:** 2025-11-09 (Phase 5.2.1 — contract hardened, PAY-002 gap resolved)
 
 ---
 
-## Verdict: VERIFIED
+## Verdict: VERIFIED (PAY-002 upgraded from PARTIALLY VERIFIED in Phase 5.2.1)
 
-| Finding | Fix | Behavioral test | Verdict |
-|---|---|---|---|
-| FIND-PAY-001-ORDER | ✅ Persistence before provider | ✅ 4 behavioral tests | **VERIFIED** |
-| PAY-002 (remaining gap) | ✅ Fail-closed (Phase 5.1.1) | ⏭️ Blocked on PhonePe creds | **PARTIALLY VERIFIED** |
+| Finding | Fix | Behavioral test | Phase 5.2.1 status | Verdict |
+|---|---|---|---|---|
+| FIND-PAY-001-ORDER | ✅ Persistence before provider | ✅ 4 behavioral tests | ✅ `merchantOrderId` made MANDATORY in interface (no more optional fallback) | **VERIFIED** (hardened) |
+| PAY-002 (remaining gap) | ✅ Fail-closed (Phase 5.1.1) | ⏭️ Was blocked on PhonePe creds | ✅ 14 PGlite-backed tests (no creds needed) | **VERIFIED** (upgraded) |
+
+> **Phase 5.2.1 update:**
+> 1. The `merchantOrderId?: string` optional parameter (Phase 5.2) is now
+>    `merchantOrderId: string` (MANDATORY). Adapters no longer have a
+>    `?? crypto.randomUUID()` / `?? orderId` fallback. TypeScript enforces
+>    this at compile time via `@ts-expect-error` directives.
+> 2. The PAY-002 "blocked on PhonePe creds" gap is RESOLVED.
+>    `src/lib/payments/payment-event-persistence.test.ts` (14 tests) uses
+>    PGlite (real PostgreSQL in WASM) + self-signed credentials.
+>    See `docs/payments/PHASE_5_2_1_ADAPTER_CONTRACT_AND_WEBHOOK_VERIFICATION.md`.
 
 ---
 
@@ -137,8 +148,11 @@ $ bash scripts/check-route-conflicts.sh → ✅ No conflicts
 
 ## Remaining limitations
 
-1. **PAY-002 HTTP test blocked** — needs PhonePe credentials for full webhook pipeline test
-2. **No PostgreSQL integration test** — PaymentAttempt/PaymentEvent unique constraint behavior not tested against real PG
-3. **No automated reconciliation cron** — reconciliation runbook is documented but not automated
-4. **PaymentAttempt.status not advanced** — created with `status='created'` but never updated after webhook
-5. **No live sandbox testing** — all verification is in-memory + source inspection
+> **Phase 5.2.1 update:** Limitations 1, 2 below are now RESOLVED.
+> See `docs/payments/PHASE_5_2_1_ADAPTER_CONTRACT_AND_WEBHOOK_VERIFICATION.md`.
+
+1. ~~**PAY-002 HTTP test blocked** — needs PhonePe credentials for full webhook pipeline test~~ — **RESOLVED in Phase 5.2.1**: PGlite-backed tests use self-signed credentials. 14 tests covering all 8 PAY-002 scenarios.
+2. ~~**No PostgreSQL integration test** — PaymentAttempt/PaymentEvent unique constraint behavior not tested against real PG~~ — **RESOLVED in Phase 5.2.1**: PGlite provides isolated PostgreSQL per test. 6 raw PG integrity tests + 8 PAY-002 scenarios.
+3. **No automated reconciliation cron** — reconciliation runbook is documented but not automated. (Still open — `findStale` query is tested but not scheduled.)
+4. **PaymentAttempt.status not advanced** — created with `status='created'` but never updated after webhook. (Still open — documented limitation.)
+5. **No live sandbox testing** — all verification is in-memory + PGlite + source inspection. (Still open — requires merchant credentials.)

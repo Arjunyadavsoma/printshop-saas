@@ -10,7 +10,16 @@ import { UpiDeepLinkPaymentAdapter } from './upi-deeplink.adapter';
  *   - Order-specific transaction note + reference (using the customerToken).
  *   - All parameters URL-encoded (no unescaped user-controlled values).
  *   - No application secrets in the URI.
+ *
+ * Phase 5.2.1 contract: `merchantOrderId` is MANDATORY on every call. The
+ * adapter MUST return it verbatim as `PaymentIntent.merchantOrderId`. These
+ * tests supply a distinct merchantOrderId on every call (NOT equal to the
+ * orderId) so any silent fallback to `orderId` would be caught.
  */
+
+/** A fixed merchantOrderId used across tests — distinct from any orderId. */
+const MOID = '11111111-2222-3333-4444-555555555555';
+
 describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
   const adapter = new UpiDeepLinkPaymentAdapter();
 
@@ -29,6 +38,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'QuickPrint Demo Shop',
       customerToken: 'B5EY7Y',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     expect(intent.upiUri).toBeTruthy();
     const params = parseUpiUri(intent.upiUri!);
@@ -57,6 +67,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
         shopName: 'Shop',
         customerToken: 'TOK1',
         shopCredentials: {},
+        merchantOrderId: MOID,
       });
       const params = parseUpiUri(intent.upiUri!);
       expect(params.get('am')).toBe(c.expected);
@@ -71,6 +82,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'My Custom Shop Name',
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     expect(params.get('pn')).toBe('My Custom Shop Name');
@@ -83,6 +95,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       amountPaise: 100,
       shopUpiId: 's@okaxis',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     expect(params.get('pn')).toBe('PrintShop');
@@ -96,6 +109,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'XYZ789',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     expect(params.get('tr')).toBe('XYZ789');
@@ -110,6 +124,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopUpiId: 's@okaxis',
       shopName: 'Shop',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     expect(params.get('tr')).toBe(orderId);
@@ -125,6 +140,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop & Sons (Pvt) Ltd',
       customerToken: 'TOK/with special',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     expect(intent.upiUri).toBeTruthy();
     // The URI must not contain raw spaces or unescaped & (the shop name has &)
@@ -144,6 +160,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     expect(params.get('cu')).toBe('INR');
@@ -157,6 +174,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'TOK',
       shopCredentials: { saltKey: 'SECRET_KEY_123', merchantId: 'MERCHANT_ID' },
+      merchantOrderId: MOID,
     });
     // The shopCredentials are NOT in the URI — they're for server-side
     // provider API calls (PhonePe/Paytm), NOT for the client-side UPI URI.
@@ -174,6 +192,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     expect(intent.qrPayload).toBe(intent.upiUri);
   });
@@ -187,6 +206,7 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const after = Date.now();
     const expiresAt = intent.expiresAt.getTime();
@@ -195,7 +215,9 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
     expect(expiresAt).toBeLessThanOrEqual(after + 600_000 + 1000);
   });
 
-  it('returns merchantOrderId = orderId (used as the payment reference)', async () => {
+  it('Phase 5.2.1: returns the supplied merchantOrderId VERBATIM (no fallback to orderId)', async () => {
+    // The supplied merchantOrderId is distinct from the orderId. The adapter
+    // MUST return it verbatim — NOT fall back to orderId, NOT generate a UUID.
     const intent = await adapter.createPaymentIntent({
       orderId: 'order-abc-123',
       amountPaise: 100,
@@ -203,9 +225,30 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'Shop',
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
-    expect(intent.merchantOrderId).toBe('order-abc-123');
+    expect(intent.merchantOrderId).toBe(MOID);
+    // Critical: the adapter must NOT silently substitute the orderId.
+    expect(intent.merchantOrderId).not.toBe('order-abc-123');
+    // And it must NOT generate a random UUID (which would have a different format).
+    expect(intent.merchantOrderId).toMatch(/^11111111-2222-3333-4444-555555555555$/);
+    // The orderId is preserved separately.
     expect(intent.orderId).toBe('order-abc-123');
+  });
+
+  it('Phase 5.2.1: each call with a different merchantOrderId returns that exact value', async () => {
+    // Verify the adapter doesn't cache or reuse a previous merchantOrderId.
+    const moidA = 'aaaaaaaa-0000-0000-0000-000000000000';
+    const moidB = 'bbbbbbbb-0000-0000-0000-000000000000';
+    const intentA = await adapter.createPaymentIntent({
+      orderId: 'o', amountPaise: 100, shopUpiId: 's@okaxis', shopCredentials: {}, merchantOrderId: moidA,
+    });
+    const intentB = await adapter.createPaymentIntent({
+      orderId: 'o', amountPaise: 100, shopUpiId: 's@okaxis', shopCredentials: {}, merchantOrderId: moidB,
+    });
+    expect(intentA.merchantOrderId).toBe(moidA);
+    expect(intentB.merchantOrderId).toBe(moidB);
+    expect(intentA.merchantOrderId).not.toBe(intentB.merchantOrderId);
   });
 
   it('handles a shop name with non-ASCII characters (Unicode)', async () => {
@@ -216,9 +259,55 @@ describe('UpiDeepLinkPaymentAdapter — UPI URI construction', () => {
       shopName: 'श्री गणेश प्रिंट स्टोर', // Hindi shop name
       customerToken: 'TOK',
       shopCredentials: {},
+      merchantOrderId: MOID,
     });
     const params = parseUpiUri(intent.upiUri!);
     // URLSearchParams.toString() encodes non-ASCII as UTF-8 percent-encoding
     expect(params.get('pn')).toBe('श्री गणेश प्रिंट स्टोर');
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 5.2.1: TypeScript compile-time contract verification
+//
+// The following type-level assertions verify that `merchantOrderId` is
+// MANDATORY at the TypeScript level — omitting it is a COMPILE ERROR, not a
+// runtime fallback. These are NOT runtime tests; they're type checks that
+// would fail to compile if the contract regressed to optional.
+//
+// We use `// @ts-expect-error` to assert that omitting merchantOrderId IS
+// an error. If someone makes the field optional again, the @ts-expect-error
+// would become unused → TS2578 "unused @ts-expect-error" → compile failure.
+// ──────────────────────────────────────────────────────────────────────────
+import type { PaymentAdapter } from '@platform/core/interfaces';
+
+describe('UpiDeepLinkPaymentAdapter — Phase 5.2.1 TypeScript contract', () => {
+  it('omitting merchantOrderId is a TypeScript compile error (not a runtime fallback)', () => {
+    // Type-level check: the following call MUST NOT type-check.
+    // We verify this by asserting that the error exists via @ts-expect-error
+    // in the helper below. This runtime test just confirms the adapter exists.
+    const adapter: PaymentAdapter = new UpiDeepLinkPaymentAdapter();
+    expect(adapter).toBeDefined();
+    expect(typeof adapter.createPaymentIntent).toBe('function');
+  });
+});
+
+// @ts-expect-error — omitting merchantOrderId MUST be a compile error.
+// If the contract regresses to optional, this line would compile cleanly
+// and the @ts-expect-error directive would become unused (TS2578), failing
+// the build. This is the type-level guard for the mandatory contract.
+const _typeCheckOmit = (a: PaymentAdapter) => a.createPaymentIntent({
+  orderId: 'o',
+  amountPaise: 100,
+  shopUpiId: 's',
+  shopCredentials: {},
+  // merchantOrderId intentionally omitted — must be a compile error
+});
+
+// Type-level check: the field is `string` (not `string | undefined`).
+type CreateIntentInput = Parameters<PaymentAdapter['createPaymentIntent']>[0];
+type MerchantOrderIdType = CreateIntentInput['merchantOrderId'];
+// `string` does NOT include `undefined` as a type-level optionality.
+// This expression is always true at runtime; the real guard is that
+// `Exclude<MerchantOrderIdType, undefined>` resolves to `string`.
+const _typeCheckRequired: MerchantOrderIdType extends string ? true : false = true;

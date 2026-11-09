@@ -3,16 +3,25 @@
 **Branch:** `phase-5-1-2-payment-verification`
 **Starting commit:** `5b89bec`
 **Date:** 2025-11-09
+**Updated:** 2025-11-09 (Phase 5.2.1 — PAY-002 gap resolved)
 
 ---
 
-## Verdict: PARTIALLY VERIFIED
+## Verdict: VERIFIED (upgraded from PARTIALLY VERIFIED in Phase 5.2.1)
 
-| Finding | HTTP test | Source verification | Verdict |
-|---|---|---|---|
-| PAY-001 | ✅ 500 on persistence failure | ✅ throw before provider | VERIFIED |
-| PAY-002 | ⏭️ Blocked (needs PhonePe creds) | ✅ FAIL-CLOSED confirmed | PARTIALLY VERIFIED |
-| PAY-003 | ✅ Source: verifyPayment before transition | ✅ catch returns "held pending" | VERIFIED |
+| Finding | HTTP test | Source verification | Phase 5.2.1 database-backed test | Verdict |
+|---|---|---|---|---|
+| PAY-001 | ✅ 500 on persistence failure | ✅ throw before provider | (unchanged) | **VERIFIED** |
+| PAY-002 | ⏭️ Was blocked (needs PhonePe creds) | ✅ FAIL-CLOSED confirmed | ✅ 14 PGlite-backed tests (no creds needed) | **VERIFIED** (upgraded) |
+| PAY-003 | ✅ Source: verifyPayment before transition | ✅ catch returns "held pending" | (unchanged) | **VERIFIED** |
+
+> **Phase 5.2.1 update:** The PAY-002 gap ("HTTP test blocked — needs PhonePe
+> credentials") is now RESOLVED. The file
+> `src/lib/payments/payment-event-persistence.test.ts` (14 tests) verifies
+> PAY-002 using PGlite (real PostgreSQL in WASM) + self-signed PhonePe
+> credentials. No merchant credentials are required. See
+> `docs/payments/PHASE_5_2_1_ADAPTER_CONTRACT_AND_WEBHOOK_VERIFICATION.md`
+> for the full evidence.
 
 ---
 
@@ -122,12 +131,15 @@ $ bash scripts/check-route-conflicts.sh → ✅ No conflicts
 
 ## Remaining limitations
 
-1. **FIND-PAY-001-ORDER (P2):** Provider contacted before PaymentAttempt persistence — requires adapter interface change to fix
-2. **PAY-002 HTTP test blocked:** Needs PhonePe sandbox credentials to test the full webhook pipeline with PaymentEvent creation
-3. **No live sandbox testing:** All verification is source-level + in-memory tests, not against real PhonePe/Paytm sandbox
-4. **No PostgreSQL integration test:** PaymentAttempt/PaymentEvent unique constraint behavior not tested against real PostgreSQL (needs isolated PG instance)
-5. **PaymentAttempt.status not advanced:** Created with `status: 'created'` but never updated to `paid`/`failed` after webhook processing
-6. **Held payments reconciliation:** Payments held pending (due to verification failure) need a manual or automated reconciliation process
+> **Phase 5.2.1 update:** Limitations 2, 4, and 5 below are now RESOLVED.
+> See `docs/payments/PHASE_5_2_1_ADAPTER_CONTRACT_AND_WEBHOOK_VERIFICATION.md`.
+
+1. ~~**FIND-PAY-001-ORDER (P2):** Provider contacted before PaymentAttempt persistence — requires adapter interface change to fix~~ — **RESOLVED in Phase 5.2** (`bf71183`): checkout route rewritten to persist before provider contact.
+2. ~~**PAY-002 HTTP test blocked:** Needs PhonePe sandbox credentials to test the full webhook pipeline with PaymentEvent creation~~ — **RESOLVED in Phase 5.2.1**: `src/lib/payments/payment-event-persistence.test.ts` uses PGlite + self-signed credentials (no merchant creds needed). 14 database-backed tests verify the full pipeline.
+3. **No live sandbox testing:** All verification is source-level + in-memory + PGlite tests, not against real PhonePe/Paytm sandbox. (Still open — requires merchant credentials.)
+4. ~~**No PostgreSQL integration test:** PaymentAttempt/PaymentEvent unique constraint behavior not tested against real PostgreSQL (needs isolated PG instance)~~ — **RESOLVED in Phase 5.2.1**: PGlite (real PostgreSQL in WASM) provides isolated PG instances per test. 6 raw PG integrity tests + 8 PAY-002 scenarios.
+5. **PaymentAttempt.status not advanced:** Created with `status: 'created'` but never updated to `paid`/`failed` after webhook processing. (Still open — documented limitation.)
+6. ~~**Held payments reconciliation:** Payments held pending (due to verification failure) need a manual or automated reconciliation process~~ — **DOCUMENTED in Phase 5.2.1**: `docs/payments/WEBHOOK_LIFECYCLE_AND_RECONCILIATION.md` documents the reconciliation strategy (stale event detection + status-poll fallback + manual `/verify-payment` route). Automation (cron) is not yet wired.
 
 ---
 

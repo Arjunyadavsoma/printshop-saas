@@ -22,8 +22,9 @@ export class PhonePePaymentAdapter implements PaymentAdapter {
     private readonly config: { saltKey: string; saltIndex: string; env: 'prod' | 'sandbox' },
   ) {}
 
-  async createPaymentIntent(): Promise<PaymentIntent> {
-    throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
+  async createPaymentIntent(_input: { merchantOrderId: string }): Promise<PaymentIntent> {
+    // Phase 5.2.1 contract: merchantOrderId is mandatory. Skeleton throws.
+    throw new Error('PhonePePaymentAdapter (legacy skeleton): not implemented — use the real PhonePePaymentAdapter from phonepe.adapter.ts');
   }
   async verifyPayment(): Promise<PaymentVerification> {
     throw new Error('PhonePePaymentAdapter: not implemented until Phase 3');
@@ -46,11 +47,14 @@ export class PhonePePaymentAdapter implements PaymentAdapter {
 export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
   readonly provider: PaymentProvider = 'googlepay';
 
-  /** Build a `upi://pay?` URI from the shopkeeper's VPA + amount. */
+  /** Build a `upi://pay?` URI from the shopkeeper's VPA + amount.
+   * Legacy skeleton — the REAL adapter lives in `upi-deeplink.adapter.ts`. */
   async createPaymentIntent(input: {
     orderId: string;
     amountPaise: number;
     shopUpiId: string;
+    /** MANDATORY (Phase 5.2.1). */
+    merchantOrderId: string;
   }): Promise<PaymentIntent> {
     const params = new URLSearchParams({
       pa: input.shopUpiId,
@@ -62,7 +66,7 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     });
     const upiUri = `upi://pay?${params.toString()}`;
     return {
-      merchantOrderId: input.orderId,
+      merchantOrderId: input.merchantOrderId,
       orderId: input.orderId,
       amountPaise: input.amountPaise,
       currency: 'INR',

@@ -151,11 +151,15 @@ export class PaytmPaymentAdapter implements PaymentAdapter {
     shopName?: string;
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
-    merchantOrderId?: string;
+    /** MANDATORY (Phase 5.2.1). Used verbatim as the Paytm ORDERID. */
+    merchantOrderId: string;
   }): Promise<PaymentIntent> {
     const c = creds(input.shopCredentials);
     const client = makeClient(c);
-    const merchantOrderId = input.merchantOrderId ?? crypto.randomUUID();
+    // Phase 5.2.1: use the caller-supplied reference VERBATIM. No fallback.
+    // The checkout route MUST persist a PaymentAttempt with this exact value
+    // before calling us; the adapter's job is to propagate it to the provider.
+    const merchantOrderId = input.merchantOrderId;
 
     try {
       const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';

@@ -28,10 +28,13 @@ export class UpiDeepLinkPaymentAdapter implements PaymentAdapter {
     shopName?: string;
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
-    merchantOrderId?: string;
+    /** MANDATORY (Phase 5.2.1). Returned verbatim as PaymentIntent.merchantOrderId. */
+    merchantOrderId: string;
   }): Promise<PaymentIntent> {
-    // Use the pre-generated merchantOrderId if provided (FIND-PAY-001-ORDER fix)
-    const merchantOrderId = input.merchantOrderId ?? input.orderId;
+    // Phase 5.2.1: use the caller-supplied reference VERBATIM. No fallback to
+    // orderId. The checkout route MUST persist a PaymentAttempt with this
+    // exact value before calling us.
+    const merchantOrderId = input.merchantOrderId;
     // UPI deep-link per NPCI BHIM spec:
     //   pa = Payee Address (the shop's VPA, e.g. quickprint@okaxis)
     //   pn = Payee Name (the shop's display name — shown in the UPI app)

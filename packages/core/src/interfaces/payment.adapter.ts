@@ -85,8 +85,27 @@ export interface PaymentAdapter {
   readonly provider: PaymentProvider;
 
   /**
-   * Create a payment intent for an order. Generates a unique
-   * `merchantOrderId` per attempt so retries don't collide.
+   * Create a payment intent for an order.
+   *
+   * **Phase 5.2.1 contract**: `merchantOrderId` is **MANDATORY**.
+   *
+   * The caller (checkout route) MUST generate the internal merchant reference
+   * (a UUID) BEFORE invoking this method, persist a PaymentAttempt row using
+   * that exact reference, and THEN pass it here. The adapter MUST use the
+   * supplied reference verbatim in every provider request
+   * (`merchantTransactionId` for PhonePe, `orderId` for Paytm, `tr` for UPI
+   * when applicable) and MUST return it unchanged in the PaymentIntent.
+   *
+   * Adapters MUST NOT generate a replacement reference. Adapters MUST NOT
+   * fall back to `orderId`, `crypto.randomUUID()`, or any other value when
+   * the supplied reference is absent — the absence is a TypeScript compile
+   * error, not a runtime fallback.
+   *
+   * Rationale: this closes FIND-PAY-001-ORDER. The persisted PaymentAttempt
+   * is the durable link between the provider's transaction and the internal
+   * order; if the adapter generated its own reference, the checkout route
+   * would have to contact the provider BEFORE persisting, leaving a window
+   * where a provider confirmation could arrive with no matching DB row.
    */
   createPaymentIntent(input: {
     orderId: string;
@@ -99,10 +118,10 @@ export interface PaymentAdapter {
      * transaction note (`tn`) so the customer + shopkeeper can reconcile. */
     customerToken?: string;
     shopCredentials: Record<string, unknown>;
-    /** Pre-generated merchantOrderId. If provided, the adapter MUST use this
-     * instead of generating its own. This allows the checkout route to
-     * persist a PaymentAttempt BEFORE contacting the provider (FIND-PAY-001-ORDER fix). */
-    merchantOrderId?: string;
+    /** **MANDATORY** (Phase 5.2.1). The internal merchant reference, already
+     * persisted as PaymentAttempt.merchantOrderId before this call. The
+     * adapter uses this verbatim in every provider request. */
+    merchantOrderId: string;
   }): Promise<PaymentIntent>;
 
   /**
