@@ -232,8 +232,19 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
         orderId: session.orderId,
       };
     }
-    // If table doesn't exist → graceful degradation (cache still works)
-    // Continue processing without PaymentEvent persistence
+    // FAIL-CLOSED: if PaymentEvent persistence fails (non-duplicate error),
+    // abort processing. Do NOT apply the financial state transition without
+    // a durable event record. The event can be retried by the provider.
+    logger.error('webhook: PaymentEvent persistence failed — aborting to prevent untracked financial mutation', {
+      eventId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      statusCode: 500,
+      summary: 'event persistence failed — payment held for retry',
+      applied: false,
+      orderId: session.orderId,
+    };
   }
 
   // 6. Validate amount + state transition.

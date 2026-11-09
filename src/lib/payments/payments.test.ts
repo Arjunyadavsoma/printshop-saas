@@ -1,4 +1,20 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+// Mock @/lib/db so PaymentAttempt/PaymentEvent creation (PAY-001/PAY-002 fixes)
+// works without a real Prisma client. The in-memory container handles repos.
+vi.mock('@/lib/db', () => ({
+  db: {
+    paymentAttempt: {
+      findUnique: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
+    },
+    paymentEvent: {
+      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
+      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
+    },
+  },
+}));
+
 import { setContainerForTesting } from '@/lib/container';
 import type { Container } from '@/lib/container';
 import {

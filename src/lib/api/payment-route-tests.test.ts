@@ -31,6 +31,11 @@ vi.mock('@/lib/db', () => ({
   db: {
     paymentAttempt: {
       findUnique: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'test-attempt-id' }),
+    },
+    paymentEvent: {
+      create: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
+      update: vi.fn().mockResolvedValue({ id: 'test-event-id' }),
     },
   },
 }));

@@ -295,14 +295,20 @@ async function processPaymentCompleted(
       txnId: verification.txnId,
     });
   } catch (verifyErr) {
-    // If verification is unavailable (no credentials, adapter doesn't support
-    // it, network error), log a WARNING but proceed — the webhook signature
-    // was already verified via SHA auth, and the amount was validated.
-    // This maintains backward compatibility while creating an audit trail.
-    logger.warn('phonepe-v2-webhook: server verification unavailable, proceeding with webhook signature verification only', {
+    // FAIL-CLOSED: verification unavailable (no credentials, network error,
+    // timeout, exception) → do NOT transition. The payment stays in
+    // 'awaiting_payment' for reconciliation/retry. Never permit a successful
+    // payment transition without verified provider success.
+    logger.error('phonepe-v2-webhook: verification failed — payment held pending for reconciliation', {
       merchantOrderId,
       error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
     });
+    return {
+      statusCode: 200,
+      summary: 'verification unavailable — payment held pending for reconciliation',
+      applied: false,
+      orderId: order.id,
+    };
   }
 
   // Atomic transition to 'paid' — race-safe via transitionStatus.

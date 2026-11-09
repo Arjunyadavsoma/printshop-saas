@@ -79,6 +79,9 @@ export const POST = withRateLimit<{ id: string }>(
     // survives cache expiry (Vercel cold starts, >10 min payment flows).
     // The webhook's lookupPaymentSession() now falls back to this table
     // when the cache misses.
+    //
+    // FAIL-CLOSED: if persistence fails (and it's NOT a duplicate), abort
+    // checkout. Do NOT contact the provider without a durable record.
     try {
       await (db as any).paymentAttempt.create({
         data: {
@@ -94,11 +97,14 @@ export const POST = withRateLimit<{ id: string }>(
         },
       });
     } catch (e) {
-      // If PaymentAttempt table doesn't exist or duplicate merchantOrderId,
-      // graceful degradation — the cache still works for 10 minutes.
-      if (!isUniqueConstraintError(e)) {
-        // Log non-unique-constraint errors (unique = duplicate checkout, safe)
-        try { getContainer().logger.warn('checkout: PaymentAttempt create failed', { error: String(e) }); } catch { /* noop */ }
+      if (isUniqueConstraintError(e)) {
+        // Duplicate merchantOrderId — a previous checkout attempt exists.
+        // This is safe: the existing attempt is still valid. Proceed with
+        // the existing intent (the adapter generated the same merchantOrderId).
+      } else {
+        // Persistence failed — ABORT checkout. Do not contact the provider
+        // without a durable PaymentAttempt record.
+        throw new Error('Payment attempt could not be persisted to the database. Checkout aborted for safety.');
       }
     }
 
