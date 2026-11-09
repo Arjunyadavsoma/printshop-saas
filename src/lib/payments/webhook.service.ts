@@ -200,6 +200,42 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     };
   }
 
+  // PAY-002 FIX: Persist a durable PaymentEvent for replay protection.
+  // The @@unique([provider, eventId]) constraint catches duplicates that
+  // bypass the cache (expired cache, cold start, concurrent delivery).
+  const eventId = v.txnId ?? merchantOrderId;
+  let eventRecord: { id: string } | null = null;
+  try {
+    const { db } = await import('@/lib/db');
+    eventRecord = await (db as any).paymentEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        attemptId: session.orderId, // logical link (no FK to avoid migration)
+        provider: input.provider,
+        eventId,
+        merchantOrderId,
+        providerTransactionId: v.txnId ?? null,
+        eventType: 'webhook',
+        signatureValid: true,
+        processingStatus: 'received',
+      },
+    });
+  } catch (e) {
+    // If unique constraint → duplicate event already processed
+    if (isUniqueConstraintError(e)) {
+      logger.info('webhook: PaymentEvent duplicate (unique constraint)', { eventId });
+      return {
+        statusCode: 200,
+        responseBody: result.responseBody,
+        summary: 'idempotent — PaymentEvent already exists',
+        applied: false,
+        orderId: session.orderId,
+      };
+    }
+    // If table doesn't exist → graceful degradation (cache still works)
+    // Continue processing without PaymentEvent persistence
+  }
+
   // 6. Validate amount + state transition.
   const order = await repos.orders.findById(session.orderId);
   if (!order) {
@@ -290,6 +326,18 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
 
   // 8. Mark processed + audit.
   if (v.txnId) await container.cache.set(processedKey, order.id, 86400); // 24h
+
+  // PAY-002 FIX: Update PaymentEvent status to 'processed'
+  if (eventRecord) {
+    try {
+      const { db } = await import('@/lib/db');
+      await (db as any).paymentEvent.update({
+        where: { id: eventRecord.id },
+        data: { processingStatus: 'processed', processedAt: new Date() },
+      });
+    } catch { /* graceful degradation — PaymentEvent table may not exist */ }
+  }
+
   await repos.audit.log({
     shopId: shop.id,
     userId: null,

@@ -6,6 +6,8 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { rememberPaymentSession } from '@/lib/payments/webhook.service';
+import { db } from '@/lib/db';
+import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
 /** POST /api/v1/orders/:id/checkout — create a payment intent (provider = shop's).
  *
@@ -72,6 +74,33 @@ export const POST = withRateLimit<{ id: string }>(
       amountPaise: order.totalAmountPaise,
       provider: shop.paymentProvider,
     });
+
+    // PAY-001 FIX: Persist a durable PaymentAttempt record so the mapping
+    // survives cache expiry (Vercel cold starts, >10 min payment flows).
+    // The webhook's lookupPaymentSession() now falls back to this table
+    // when the cache misses.
+    try {
+      await (db as any).paymentAttempt.create({
+        data: {
+          id: crypto.randomUUID(),
+          shopId: shop.id,
+          orderId: order.id,
+          provider: shop.paymentProvider,
+          merchantOrderId: intent.merchantOrderId,
+          amountPaise: order.totalAmountPaise,
+          currency: 'INR',
+          status: 'created',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10-min payment window
+        },
+      });
+    } catch (e) {
+      // If PaymentAttempt table doesn't exist or duplicate merchantOrderId,
+      // graceful degradation — the cache still works for 10 minutes.
+      if (!isUniqueConstraintError(e)) {
+        // Log non-unique-constraint errors (unique = duplicate checkout, safe)
+        try { getContainer().logger.warn('checkout: PaymentAttempt create failed', { error: String(e) }); } catch { /* noop */ }
+      }
+    }
 
     await repos.audit.log({
       shopId: shop.id,

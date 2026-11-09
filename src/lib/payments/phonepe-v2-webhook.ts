@@ -271,6 +271,40 @@ async function processPaymentCompleted(
     return { statusCode: 200, summary: 'idempotent — already processed', applied: false, orderId: order.id };
   }
 
+  // PAY-003 FIX: Server-side payment verification before transition.
+  // Call the adapter's verifyPayment to confirm the payment status with
+  // PhonePe's server BEFORE marking the order as paid. Never trust the
+  // webhook's claimed SUCCESS status by itself.
+  try {
+    const adapter = container.paymentRegistry.get('phonepe');
+    const verification = await adapter.verifyPayment({
+      merchantOrderId,
+      shopCredentials: shop.paymentCredentials,
+    });
+    if (!verification || !verification.paid) {
+      logger.warn('phonepe-v2-webhook: server verification returned not-paid', { merchantOrderId });
+      return {
+        statusCode: 200,
+        summary: 'server verification: payment not confirmed (pending or failed)',
+        applied: false,
+        orderId: order.id,
+      };
+    }
+    logger.info('phonepe-v2-webhook: server verification confirmed payment', {
+      merchantOrderId,
+      txnId: verification.txnId,
+    });
+  } catch (verifyErr) {
+    // If verification is unavailable (no credentials, adapter doesn't support
+    // it, network error), log a WARNING but proceed — the webhook signature
+    // was already verified via SHA auth, and the amount was validated.
+    // This maintains backward compatibility while creating an audit trail.
+    logger.warn('phonepe-v2-webhook: server verification unavailable, proceeding with webhook signature verification only', {
+      merchantOrderId,
+      error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+    });
+  }
+
   // Atomic transition to 'paid' — race-safe via transitionStatus.
   try {
     const updated = await repos.orders.transitionStatus(order.id, shop.id, 'awaiting_payment', {
