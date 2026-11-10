@@ -12,7 +12,13 @@ import { formatINRFromPaise } from '@platform/utils';
  * header or the ?t= query param). Previously the order UUID in the URL
  * was the only credential, so anyone who learned it could read another
  * customer's order status. The handler receives the already-verified
- * order row as the third argument — no need to re-fetch. */
+ * order row as the third argument — no need to re-fetch.
+ *
+ * Phase 6 P0-01 fix: `customerToken` is NO LONGER returned in the response
+ * body. The caller already possesses it (they used it to authenticate),
+ * so returning it is redundant and risks leaking the bearer secret in
+ * logged responses. The frontend reads the token from sessionStorage or
+ * the URL — it does not need it echoed back. */
 export const GET = withRateLimit<{ id: string }>(
   'status',
   120,
@@ -24,13 +30,10 @@ export const GET = withRateLimit<{ id: string }>(
       // token the shopkeeper sees in their dashboard. Including it here lets the
       // customer tracking page show the SAME token as the shopkeeper, so both
       // parties can reference the order by the same number.
-      // `customerToken` (e.g. "B5EY7Y") is still returned for backward compat
-      // (the customer may have written it down before the tokenNumber existed).
       // `paidAt` + `paymentTxnId` let the customer UI show a separate payment
       // status indicator (green checkmark when confirmed, pending when null).
       return ok({
         orderId: order.id,
-        customerToken: order.customerToken,
         tokenNumber: order.tokenNumber,
         status: order.status,
         totalAmountPaise: order.totalAmountPaise,

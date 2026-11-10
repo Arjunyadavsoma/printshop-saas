@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -16,8 +17,9 @@ import { useApiClient } from '@/components/portal/use-api-client';
 import { PdfPreview } from '@/components/portal/pdf-preview';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
-import type {
-  ShopPricingConfig, ColorMode, PaperSize, OrderStatus, FileStatus,
+import {
+  ALLOWED_UPLOAD_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES,
+  type ShopPricingConfig, type ColorMode, type PaperSize, type OrderStatus, type FileStatus,
 } from '@platform/core/domain';
 import {
   UploadCloud, FileText, Trash2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
@@ -57,7 +59,12 @@ interface StatusFile {
 
 interface OrderStatusResponse {
   orderId: string;
-  customerToken: string;
+  // NOTE: `customerToken` is intentionally absent here. Phase 6 P0-01 removed
+  // it from the `/api/v1/orders/:id/status` response body because the caller
+  // already possesses it (they used it to authenticate via X-Order-Token).
+  // Echoing the bearer secret back in the response body risks leaking it via
+  // logged responses. The frontend reads the token from sessionStorage or the
+  // URL `?t=` query param — never from the status response.
   tokenNumber: string | null;
   status: OrderStatus;
   totalAmountPaise: number;
@@ -139,6 +146,8 @@ interface LocalFile {
   rawFile?: File | null;
   /** Pages selected for printing (1-indexed). Null = all pages. */
   selectedPages?: number[] | null;
+  /** Active XHR for an in-flight upload. Held so the Cancel button can abort(). */
+  xhr?: XMLHttpRequest | null;
 }
 
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
@@ -162,6 +171,73 @@ function statusLabel(s: OrderStatus | null): string {
     case 'refunded': return 'Refunded';
     default: return 'Loading…';
   }
+}
+
+// ──────────────────────────── Client-side upload validation (P0-02) ────────────────────────────
+// Mirror of the server's ALLOWED_UPLOAD_MIME_TYPES as a set of file extensions.
+// Browsers sometimes report an empty `file.type` for some formats (e.g. .docx),
+// so we validate against BOTH the MIME type AND the extension as a fallback.
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  'pdf',                                          // application/pdf
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',     // images
+  'tiff', 'tif',
+  'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',    // MS Office
+  'odt', 'ods', 'odp',                            // OpenDocument
+  'rtf', 'txt', 'csv',                            // Rich/text
+  'msg', 'tex',                                   // Other
+]);
+
+function fileExt(filename: string): string {
+  const i = filename.lastIndexOf('.');
+  return i >= 0 ? filename.slice(i + 1).toLowerCase() : '';
+}
+
+/**
+ * Validate a single file client-side before requesting an upload URL.
+ * Returns `{ valid: true }` or `{ valid: false, error }` with an actionable
+ * human-readable error message suitable for a toast.
+ *
+ * Checks (in order): empty file → size cap → type allowlist → duplicate.
+ * Duplicate detection (P1-08): compares `name + size + lastModified` against
+ * the existing localFiles. Server-hydrated files (no `rawFile`) match on
+ * name+size only.
+ */
+function validateFile(file: File, existingFiles: LocalFile[]): { valid: boolean; error?: string } {
+  // Empty file
+  if (file.size === 0) {
+    return { valid: false, error: `"${file.name}" is empty (0 bytes) and can't be printed.` };
+  }
+  // Size cap (mirrors server MAX_UPLOAD_SIZE_BYTES)
+  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+    const maxMb = (MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)).toFixed(0);
+    const fileMb = (file.size / (1024 * 1024)).toFixed(1);
+    return { valid: false, error: `"${file.name}" is ${fileMb}MB — the limit is ${maxMb}MB.` };
+  }
+  // Type allowlist — MIME (preferred) OR extension (fallback when MIME empty)
+  const mime = file.type;
+  const ext = fileExt(file.name);
+  const mimeOk = !!mime && (ALLOWED_UPLOAD_MIME_TYPES as readonly string[]).includes(mime);
+  const extOk = ALLOWED_FILE_EXTENSIONS.has(ext);
+  if (!mimeOk && !extOk) {
+    return {
+      valid: false,
+      error: `"${file.name}" isn't a supported file type. Use PDF, image, or Office documents.`,
+    };
+  }
+  // Duplicate detection (P1-08) — name + size + lastModified
+  const isDup = existingFiles.some((f) => {
+    if (f.filename !== file.name) return false;
+    if (f.size !== file.size) return false;
+    // For freshly-picked files (have rawFile), also compare lastModified so the
+    // same name+size at a different mtime is treated as a new file. For server-
+    // hydrated files (no rawFile), name+size is the best we can do.
+    if (f.rawFile && f.rawFile.lastModified !== file.lastModified) return false;
+    return true;
+  });
+  if (isDup) {
+    return { valid: false, error: `"${file.name}" is already in your upload list.` };
+  }
+  return { valid: true };
 }
 
 // ──────────────────────────── Page ────────────────────────────
@@ -224,6 +300,12 @@ export default function OrderFlowPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Mirror of `files` that's safe to read inside async callbacks (avoids
+  // stale-closure bugs in `handleFiles` and `uploadFile` without forcing
+  // those callbacks to depend on `files` and be recreated each render).
+  const filesRef = useRef<LocalFile[]>(files);
+  filesRef.current = files;
 
   const [checkout, setCheckout] = useState<CheckoutResponse | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -350,11 +432,115 @@ export default function OrderFlowPage() {
   }, [files, clientEstimate]);
 
   // ─── File upload ───
+  // uploadFile runs the full upload-url → PUT → confirm → auto-PATCH flow for
+  // a single File. It's extracted from handleFiles so the Retry button (P1-05)
+  // can re-run it for a failed file without duplicating logic. The placeholder
+  // row must already exist in `files` state — matched by `placeholderId`.
+  const uploadFile = useCallback(async (file: File, placeholderId: string) => {
+    try {
+      // 1) Mint a presigned upload URL.
+      const uu = await api.request<{ data?: UploadUrlResponse; error?: { message?: string } }>(
+        'POST',
+        `/api/v1/orders/${orderId}/files/upload-url`,
+        { body: { filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
+      );
+      const u = uu.data?.data;
+      if (!u?.uploadUrl) {
+        throw new Error(uu.data?.error?.message ?? 'Could not mint upload URL');
+      }
+
+      // 2) PUT the bytes to the presigned URL (relative path) with progress.
+      // The XHR reference is stashed on the LocalFile so the Cancel button
+      // (P0-03) can call xhr.abort() to stop an in-flight upload.
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        // Store the XHR on the placeholder row (matched by placeholderId).
+        setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, xhr } : f));
+        xhr.open('PUT', u.uploadUrl, true);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, uploadProgress: pct } : f));
+          }
+        };
+        xhr.onload = () => { xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: HTTP ${xhr.status}`)); };
+        xhr.onerror = () => reject(new Error('Network error during upload.'));
+        xhr.onabort = () => reject(new Error('Upload cancelled'));
+        xhr.send(file);
+      });
+
+      // 3) Confirm via POST /files → server parses page count.
+      const cf = await api.request<{ data?: ConfirmFileResponse; error?: { message?: string } }>(
+        'POST',
+        `/api/v1/orders/${orderId}/files`,
+        { body: { fileId: u.fileId, storageKey: u.storageKey, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
+      );
+      const c = cf.data?.data;
+      if (!c?.fileId) {
+        throw new Error(cf.data?.error?.message ?? 'File confirmation failed');
+      }
+
+      // 4) Replace placeholder with the real file.
+      const needsReview = c.needsReview;
+      const finalStatus: LocalFile['status'] = needsReview ? 'needs_review' : 'uploaded';
+      setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? {
+        ...f,
+        fileId: c.fileId,
+        pageCount: c.pageCount ?? 0,
+        status: finalStatus,
+        uploadProgress: 100,
+        dirty: false,
+        xhr: null,
+      } : f));
+
+      // 5) Auto-PATCH the default settings so the server prices the file.
+      if (!needsReview) {
+        const def = { copies: 1, colorMode: 'bw' as ColorMode, paperSize: 'a4' as PaperSize, duplex: false };
+        const pr = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
+          'PATCH',
+          `/api/v1/orders/${orderId}/files/${c.fileId}`,
+          { body: def, headers: orderAuthHeaders },
+        );
+        const d = pr.data?.data;
+        if (d) {
+          setFiles((prev) => prev.map((f) => f.fileId === c.fileId ? {
+            ...f,
+            copies: d.file.copies,
+            colorMode: d.file.colorMode,
+            paperSize: d.file.paperSize,
+            duplex: d.file.duplex,
+            pricePaise: d.file.pricePaise,
+            dirty: false,
+          } : f));
+          setOrderTotalPaise(d.orderTotalPaise);
+          setServerCalculated(true);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.';
+      setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, status: 'failed', uploadError: msg, xhr: null } : f));
+      // Don't blast a toast for a user-initiated cancel — the cancel UI
+      // already confirms the action. Other errors DO surface as a toast.
+      if (msg !== 'Upload cancelled') {
+        setUploadError(msg);
+        toast.error(`"${file.name}" — ${msg}`);
+      }
+    }
+  }, [api, orderId, orderAuthHeaders]);
+
   const handleFiles = useCallback(async (selected: FileList | File[]) => {
     if (!orderId) return;
     setUploadError(null);
     const arr = Array.from(selected);
     for (const file of arr) {
+      // Client-side validation (P0-02) — reject before hitting the network.
+      const v = validateFile(file, filesRef.current);
+      if (!v.valid) {
+        toast.error(v.error ?? 'File rejected');
+        continue;
+      }
+
       // Optimistically insert a placeholder.
       const placeholderId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const placeholder: LocalFile = {
@@ -375,91 +561,49 @@ export default function OrderFlowPage() {
         patching: false,
         rawFile: file,
         selectedPages: null,
+        xhr: null,
       };
       setFiles((prev) => [...prev, placeholder]);
+      filesRef.current = [...filesRef.current, placeholder];
 
-      try {
-        // 1) Mint a presigned upload URL.
-        const uu = await api.request<{ data?: UploadUrlResponse; error?: { message?: string } }>(
-          'POST',
-          `/api/v1/orders/${orderId}/files/upload-url`,
-          { body: { filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
-        );
-        const u = uu.data?.data;
-        if (!u?.uploadUrl) {
-          throw new Error(uu.data?.error?.message ?? 'Could not mint upload URL');
-        }
-
-        // 2) PUT the bytes to the presigned URL (relative path) with progress.
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', u.uploadUrl, true);
-          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const pct = Math.round((e.loaded / e.total) * 100);
-              setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, uploadProgress: pct } : f));
-            }
-          };
-          xhr.onload = () => { xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: HTTP ${xhr.status}`)); };
-          xhr.onerror = () => reject(new Error('Network error during upload.'));
-          xhr.onabort = () => reject(new Error('Upload aborted.'));
-          xhr.send(file);
-        });
-
-        // 3) Confirm via POST /files → server parses page count.
-        const cf = await api.request<{ data?: ConfirmFileResponse; error?: { message?: string } }>(
-          'POST',
-          `/api/v1/orders/${orderId}/files`,
-          { body: { fileId: u.fileId, storageKey: u.storageKey, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size }, headers: orderAuthHeaders },
-        );
-        const c = cf.data?.data;
-        if (!c?.fileId) {
-          throw new Error(cf.data?.error?.message ?? 'File confirmation failed');
-        }
-
-        // 4) Replace placeholder with the real file.
-        const needsReview = c.needsReview;
-        const finalStatus: LocalFile['status'] = needsReview ? 'needs_review' : 'uploaded';
-        setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? {
-          ...f,
-          fileId: c.fileId,
-          pageCount: c.pageCount ?? 0,
-          status: finalStatus,
-          uploadProgress: 100,
-          dirty: false,
-        } : f));
-
-        // 5) Auto-PATCH the default settings so the server prices the file.
-        if (!needsReview) {
-          const def = { copies: 1, colorMode: 'bw' as ColorMode, paperSize: 'a4' as PaperSize, duplex: false };
-          const pr = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
-            'PATCH',
-            `/api/v1/orders/${orderId}/files/${c.fileId}`,
-            { body: def, headers: orderAuthHeaders },
-          );
-          const d = pr.data?.data;
-          if (d) {
-            setFiles((prev) => prev.map((f) => f.fileId === c.fileId ? {
-              ...f,
-              copies: d.file.copies,
-              colorMode: d.file.colorMode,
-              paperSize: d.file.paperSize,
-              duplex: d.file.duplex,
-              pricePaise: d.file.pricePaise,
-              dirty: false,
-            } : f));
-            setOrderTotalPaise(d.orderTotalPaise);
-            setServerCalculated(true);
-          }
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed.';
-        setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, status: 'failed', uploadError: msg } : f));
-        setUploadError(msg);
-      }
+      await uploadFile(file, placeholderId);
     }
-  }, [api, orderId, orderAuthHeaders]);
+  }, [orderId, uploadFile]);
+
+  // ─── Upload cancellation (P0-03) ───
+  // Abort an in-flight upload. The XHR's onabort handler rejects with
+  // "Upload cancelled", which uploadFile's catch block converts into a
+  // 'failed' status. We DON'T pre-emptively set the status here — the catch
+  // block is the single source of truth for upload-failed state.
+  const cancelUpload = useCallback((fileId: string) => {
+    setFiles((prev) => prev.map((f) => {
+      if (f.fileId !== fileId) return f;
+      try { f.xhr?.abort(); } catch { /* ignore */ }
+      return f; // status/uploadError are set by uploadFile's catch block
+    }));
+  }, []);
+
+  // ─── Per-file retry (P1-05) ───
+  // Reset the failed file to 'uploading' and re-run uploadFile. The raw File
+  // object is only available before a page refresh (it's stashed on LocalFile
+  // when the user picks the file); if it's gone (e.g. page was reloaded),
+  // we can't retry — surface a clear message instead.
+  const retryUpload = useCallback((fileId: string) => {
+    const f = filesRef.current.find((x) => x.fileId === fileId);
+    if (!f) return;
+    if (!f.rawFile) {
+      toast.error('This file can\'t be retried — please re-add it from your device.');
+      return;
+    }
+    setFiles((prev) => prev.map((x) => x.fileId === fileId ? {
+      ...x,
+      status: 'uploading',
+      uploadProgress: 0,
+      uploadError: null,
+      xhr: null,
+    } : x));
+    void uploadFile(f.rawFile, fileId);
+  }, [uploadFile]);
 
   const removeFile = useCallback((fileId: string) => {
     setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
@@ -636,7 +780,8 @@ export default function OrderFlowPage() {
             {order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
             )}
-            {/* customerToken is a BEARER SECRET — never display it. Only show tokenNumber (the shop-facing sequential token). */}
+            {/* customerToken is a BEARER SECRET — never display it. Only show
+                tokenNumber (the shop-facing sequential token). */}
           </div>
         </div>
       </header>
@@ -697,6 +842,8 @@ export default function OrderFlowPage() {
                   onPick={(e) => { const fs = e.target.files; if (fs) void handleFiles(fs); e.target.value = ''; }}
                   onRemove={removeFile}
                   onUpdate={updateFile}
+                  onCancelUpload={cancelUpload}
+                  onRetryUpload={retryUpload}
                   onConfigure={() => setStep('configure')}
                   onCheckout={() => setStep('checkout')}
                   uploadError={uploadError}
@@ -746,6 +893,12 @@ export default function OrderFlowPage() {
               {step === 'track' && order && (
                 <TrackStep
                   order={order}
+                  // Pass the per-order access token (from sessionStorage/URL) so
+                  // the TrackStep can display a fallback identifier for legacy
+                  // orders that lack a `tokenNumber`. The token is NOT read from
+                  // the status response body (P0-01 fix) — it comes from the
+                  // client's own session. The user already has this token.
+                  orderToken={orderToken}
                   onRefresh={refreshStatus}
                   onDownloadReceipt={downloadReceipt}
                   trackError={trackError}
@@ -805,6 +958,8 @@ function UploadStep(props: {
   onPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (fileId: string) => void;
   onUpdate: (fileId: string, patch: Partial<LocalFile>) => void;
+  onCancelUpload: (fileId: string) => void;
+  onRetryUpload: (fileId: string) => void;
   onConfigure: () => void;
   onCheckout: () => void;
   uploadError: string | null;
@@ -869,7 +1024,15 @@ function UploadStep(props: {
       ) : (
         <div className="space-y-3">
           {props.files.map((f) => (
-            <FileCard key={f.fileId} file={f} shop={null} onUpdate={props.onUpdate} onRemove={props.onRemove} />
+            <FileCard
+              key={f.fileId}
+              file={f}
+              shop={null}
+              onUpdate={props.onUpdate}
+              onRemove={props.onRemove}
+              onCancelUpload={props.onCancelUpload}
+              onRetryUpload={props.onRetryUpload}
+            />
           ))}
         </div>
       )}
@@ -1253,6 +1416,9 @@ function PayStep(props: {
 
 function TrackStep(props: {
   order: OrderStatusResponse;
+  /** Per-order access token from sessionStorage/URL — used as a fallback
+   * identifier ONLY when the order has no `tokenNumber` (legacy orders). */
+  orderToken: string | null;
   onRefresh: () => void;
   onDownloadReceipt: () => void;
   trackError: string | null;
@@ -1271,11 +1437,16 @@ function TrackStep(props: {
           <CardDescription>Refreshed automatically every 30 seconds.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
+          {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees). */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
             <p className="font-mono text-2xl font-bold break-words text-brand sm:text-3xl sm:tracking-widest">
-              {props.order.tokenNumber ?? props.order.customerToken}
+              {/* tokenNumber is the shop-facing sequential token (e.g. "A001").
+                  For legacy orders without one, fall back to the order access
+                  token (from sessionStorage/URL) — never to a server-echoed
+                  customerToken (P0-01: that's a bearer secret and is no longer
+                  returned by the status endpoint). */}
+              {props.order.tokenNumber ?? (props.orderToken ?? '—')}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
           </div>
@@ -1419,6 +1590,8 @@ function FileCard(props: {
   shop: ShopInfo | null;
   onUpdate: (fileId: string, patch: Partial<LocalFile>) => void;
   onRemove: (fileId: string) => void;
+  onCancelUpload: (fileId: string) => void;
+  onRetryUpload: (fileId: string) => void;
 }) {
   const { file: f } = props;
   const isUploading = f.status === 'uploading';
@@ -1448,10 +1621,32 @@ function FileCard(props: {
           </div>
           <div className="flex items-center gap-1">
             {f.patching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            {/* Cancel (P0-03): abort an in-flight upload. Only shown while uploading. */}
+            {isUploading && (
+              <button
+                type="button"
+                onClick={() => props.onCancelUpload(f.fileId)}
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Cancel upload"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            )}
+            {/* Retry (P1-05): re-run the upload for a failed file. */}
+            {isFailed && (
+              <button
+                type="button"
+                onClick={() => props.onRetryUpload(f.fileId)}
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Retry upload"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => props.onRemove(f.fileId)}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="Remove file"
             >
               <Trash2 className="h-4 w-4" />
@@ -1459,11 +1654,14 @@ function FileCard(props: {
           </div>
         </div>
 
-        {/* Upload progress */}
+        {/* Upload progress + cancel hint */}
         {isUploading && (
           <div className="mt-3">
             <Progress value={f.uploadProgress} className="h-2" />
-            <p className="mt-1 text-right text-[11px] text-muted-foreground">{f.uploadProgress}%</p>
+            <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>{f.uploadProgress < 100 ? 'Uploading…' : 'Finalising…'}</span>
+              <span>{f.uploadProgress}%</span>
+            </div>
           </div>
         )}
 
@@ -1491,8 +1689,8 @@ function FileCard(props: {
                 disabled={isReview}
                 className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&W</ToggleGroupItem>
-                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Color</ToggleGroupItem>
+                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&amp;W</ToggleGroupItem>
+                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Colour</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
@@ -1549,12 +1747,30 @@ function FileCard(props: {
 }
 
 // Live client-side price (or last-known server price) for a single file card.
+//
+// P1-11 FIX: uses the SELECTED page count (selectedPages.length) when the
+// user has picked a subset of pages, falling back to pageCount (the whole
+// document). This keeps the client-side display in sync with what the user
+// sees in the page-selection UI.
+//
+// KNOWN LIMITATION: the server-side PATCH /api/v1/orders/:id/files/:fileId
+// endpoint prices on `file.pageCount` (the whole document) and does NOT yet
+// parse `pageRange`/`selectedPages` for pricing. So the client estimate
+// shown here may differ from the server-confirmed total at checkout when the
+// user selects a page subset. The server remains authoritative — this is a
+// display-only estimate. Server-side selected-pages pricing is tracked as
+// a follow-up (see packages/core/src/pricing/pricing-engine.ts which takes
+// `pages` as a flat count, not a range).
 function displayPriceForFile(f: LocalFile, shop: ShopInfo | null): number {
   if (!shop) return f.pricePaise;
   if (!f.dirty) return f.pricePaise;
   try {
+    // Use selectedPages count if a subset is selected, else the full pageCount.
+    const effectivePages = f.selectedPages && f.selectedPages.length > 0
+      ? f.selectedPages.length
+      : f.pageCount || 1;
     const input: PricingInput = {
-      pages: f.pageCount || 1,
+      pages: effectivePages,
       copies: f.copies,
       colorMode: f.colorMode,
       paperSize: f.paperSize,

@@ -198,7 +198,7 @@ export function PdfPreview({
           ) : fileUrl ? (
             <img src={fileUrl} alt="Preview" className="max-h-64 rounded-lg border shadow-sm" />
           ) : null}
-          <div className="absolute left-2 top-2 flex size-6 items-center justify-center rounded-full bg-green-600 text-white shadow">
+          <div className="absolute left-2 top-2 flex size-6 items-center justify-center rounded-full bg-success text-success-foreground shadow">
             <Check className="size-4" />
           </div>
         </div>
@@ -245,7 +245,7 @@ export function PdfPreview({
   if (error) {
     return (
       <div className="flex flex-col items-center gap-3 p-6">
-        <AlertCircle className="size-8 text-amber-500" />
+        <AlertCircle className="size-8 text-warning" />
         <p className="text-sm text-muted-foreground">Preview failed: {error}</p>
         {pageCount && (
           <Badge variant="secondary" className="text-xs">
@@ -297,18 +297,29 @@ export function PdfPreview({
           return (
             <div
               key={pageNum}
-              className={`group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all ${
+              role="checkbox"
+              tabIndex={0}
+              aria-checked={isSelected}
+              aria-label={`Page ${pageNum}${isSelected ? ' (selected for printing)' : ' (excluded from printing)'}`}
+              className={`group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
                 isSelected
-                  ? 'border-green-500 shadow-md'
-                  : 'border-border opacity-50 hover:opacity-100'
+                  ? 'border-success shadow-md'
+                  : 'border-border opacity-50 hover:opacity-100 focus-visible:opacity-100'
               }`}
               onClick={() => togglePage(pageNum)}
+              onKeyDown={(e) => {
+                // Toggle on Enter or Space (keyboard equivalent of click).
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  togglePage(pageNum);
+                }
+              }}
             >
               {/* Thumbnail */}
               <div className="aspect-[3/4] w-full bg-muted">
                 <img
                   src={thumb}
-                  alt={`Page ${pageNum}`}
+                  alt={`Page ${pageNum} thumbnail`}
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -317,9 +328,10 @@ export function PdfPreview({
               <div
                 className={`absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-full border-2 shadow-sm transition-all ${
                   isSelected
-                    ? 'border-green-500 bg-green-600 text-white'
-                    : 'border-white bg-white/80 text-transparent group-hover:border-green-400'
+                    ? 'border-success bg-success text-success-foreground'
+                    : 'border-white bg-white/80 text-transparent group-hover:border-success/60'
                 }`}
+                aria-hidden="true"
               >
                 <Check className="size-3" />
               </div>
@@ -380,13 +392,13 @@ export function PdfPreview({
           <span>
             Printing {selectedPages.size} of {totalPages} pages
             {selectedPages.size < totalPages && (
-              <span className="ml-1 text-amber-700">
+              <span className="ml-1 text-warning">
                 ({totalPages - selectedPages.size} page{totalPages - selectedPages.size > 1 ? 's' : ''} excluded)
               </span>
             )}
           </span>
         ) : (
-          <span className="text-red-500">No pages selected — select at least one page to print</span>
+          <span className="text-destructive">No pages selected — select at least one page to print</span>
         )}
       </div>
     </div>
