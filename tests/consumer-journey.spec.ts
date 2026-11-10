@@ -489,7 +489,9 @@ test.describe('Consumer journey — PDF preview controls', () => {
     ).toBeEnabled({ timeout: 30_000 });
 
     // h) Enter a page range on the FileCard (UploadStep's Page range input).
-    const pageRangeInput = page.getByLabel(/Page range/i);
+    //    The Label and Input in FileCard aren't linked via htmlFor/id, so
+    //    we locate the input by its unique placeholder text.
+    const pageRangeInput = page.getByPlaceholder(/e\.g\./i).first();
     await expect(pageRangeInput).toBeVisible();
     await pageRangeInput.fill('1-2');
 

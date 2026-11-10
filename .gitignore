@@ -75,3 +75,7 @@ server.log
 # PID files (runtime artifacts — should never be committed)
 *.pid
 .neon
+
+# Playwright test artifacts (keep .last-run.json, ignore screenshots/videos)
+test-results/*/
+playwright-report/
