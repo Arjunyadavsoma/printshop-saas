@@ -8,8 +8,10 @@ import { db } from '@/lib/db';
  * Deletes the corresponding cloud storage objects (PDFs that have been
  * durably received by PrintEXE + 15-minute grace period elapsed).
  *
- * Authentication: CRON_SECRET env var (checked via Authorization header
- * or ?secret= query). Vercel Cron automatically sends the Authorization header.
+ * Authentication: CRON_SECRET env var (Authorization: Bearer <secret> header
+ * ONLY). Vercel Cron automatically sends the Authorization header.
+ * Phase 6.7: ?secret= query-string fallback was REMOVED — the secret MUST NOT
+ * travel in the URL (logged by every proxy).
  *
  * This endpoint is SAFE:
  * - Only deletes objects with a verified receipt + grace period elapsed
@@ -28,14 +30,14 @@ const MAX_BATCH = 10;
 
 export async function GET(req: Request) {
   // Authenticate — Vercel Cron sends Authorization: Bearer <CRON_SECRET>
+  // Phase 6.7: ?secret= query fallback removed — secret MUST NOT travel in URL.
   const authHeader = req.headers.get('authorization') ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
   const expectedSecret = process.env.CRON_SECRET ?? process.env.SETUP_KEY ?? '';
 
-  if (!expectedSecret || (token !== expectedSecret && querySecret !== expectedSecret)) {
+  if (!expectedSecret || token !== expectedSecret) {
     return Response.json(
-      { success: false, error: { code: 'UNAUTHORIZED', message: 'Missing or invalid cron secret' } },
+      { success: false, error: { code: 'UNAUTHORIZED', message: 'Missing or invalid Authorization header' } },
       { status: 401 },
     );
   }

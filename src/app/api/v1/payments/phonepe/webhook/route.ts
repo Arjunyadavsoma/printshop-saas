@@ -25,15 +25,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── DIAGNOSTIC LOG (always visible — helps debug webhook delivery) ──
   // Log at the route level so EVERY request appears in Vercel logs, even if
   // the SHA auth env vars aren't configured yet.
+  //
+  // SECURITY (Phase 6.7): NEVER log auth-header fragments or raw body bytes —
+  // the previous `authHeaderPreview` (first 8 chars of Authorization) and
+  // `bodyStartsWith` (first 20 bytes of raw body) leaked credential fragments
+  // into Vercel/CDN logs. Both fields were removed; only structural booleans +
+  // lengths remain. `bodyStartsWith`/`authHeaderPreview` are gated behind
+  // NODE_ENV !== 'production' for local dev debugging.
   const webhookUser = process.env.PHONEPE_WEBHOOK_USERNAME;
   const webhookPass = process.env.PHONEPE_WEBHOOK_PASSWORD;
+  const isNonProd = process.env.NODE_ENV !== 'production';
   console.log('[phonepe-webhook] request received:', {
     hasAuthHeader: !!authHeader,
     authHeaderLength: authHeader?.length ?? 0,
-    authHeaderPreview: authHeader ? authHeader.slice(0, 8) + '...' : 'none',
+    // Phase 6.7: never leak auth-header fragments in production logs.
+    ...(isNonProd ? { authHeaderPreview: authHeader ? authHeader.slice(0, 8) + '...' : 'none' } : {}),
     hasXVerify: !!xVerify,
     bodyLength: rawBody.length,
-    bodyStartsWith: rawBody.slice(0, 20),
+    // Phase 6.7: never leak raw body bytes in production logs.
+    ...(isNonProd ? { bodyStartsWith: rawBody.slice(0, 20) } : {}),
     isJsonBody: rawBody.trim().startsWith('{'),
     hasEventInBody: rawBody.includes('"event"'),
     envVarsConfigured: !!(webhookUser && webhookPass),

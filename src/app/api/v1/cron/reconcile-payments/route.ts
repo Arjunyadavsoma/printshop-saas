@@ -13,10 +13,12 @@ import {
  * was actually paid (and the amount matches), the lifecycle service atomically
  * transitions the attempt → 'paid' + the order → 'paid'.
  *
- * Authentication: CRON_SECRET env var (checked via Authorization header
- * or ?secret= query). Vercel Cron automatically sends the Authorization header.
+ * Authentication: CRON_SECRET env var (Authorization: Bearer <secret> header
+ * ONLY). Vercel Cron automatically sends the Authorization header.
  * Fails CLOSED — returns 401 if `CRON_SECRET` is unset OR if the token doesn't
- * match (same pattern as the cleanup route).
+ * match (same pattern as the cleanup route). Query-string `?secret=` fallback
+ * was REMOVED in Phase 6.7 — the secret MUST NOT travel in the URL (it would
+ * be logged by every proxy, Vercel, and the application itself).
  *
  * This endpoint is SAFE:
  *   - Idempotent: `applyPaymentTransition` deduplicates via the PaymentEvent
@@ -67,17 +69,18 @@ interface ReconciliationStats {
 
 export async function GET(req: Request) {
   // ── Authenticate — Vercel Cron sends Authorization: Bearer <CRON_SECRET> ──
+  // Phase 6.7: ?secret= query-string fallback was REMOVED. The secret MUST NOT
+  // travel in the URL — every proxy, Vercel, and the app itself logs URLs.
   const authHeader = req.headers.get('authorization') ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
   const expectedSecret = process.env.CRON_SECRET ?? process.env.SETUP_KEY ?? '';
 
   // Fail CLOSED: if CRON_SECRET is unset OR the token doesn't match → 401.
-  if (!expectedSecret || (token !== expectedSecret && querySecret !== expectedSecret)) {
+  if (!expectedSecret || token !== expectedSecret) {
     return Response.json(
       {
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Missing or invalid cron secret' },
+        error: { code: 'UNAUTHORIZED', message: 'Missing or invalid Authorization header' },
       },
       { status: 401 },
     );
