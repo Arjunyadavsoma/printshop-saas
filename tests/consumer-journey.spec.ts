@@ -125,16 +125,18 @@ test.describe('Consumer journey — shop selection', () => {
     // Should land on /shops/[slug] — wait for the URL pattern.
     await page.waitForURL(/\/shops\/[^/]+$/);
 
-    // The shop detail page renders the shop name as a card title (h2-ish).
-    // We assert the "Start an order" action card is present (the primary CTA).
+    // The shop detail page renders "Start an order" inside a shadcn
+    // <CardTitle> (which renders as a <div>, NOT a <h*>) — see
+    // src/app/shops/[slug]/page.tsx:317. We assert the text is present
+    // (the primary CTA copy) instead of looking for a heading role.
     await expect(
-      page.getByRole('heading', { name: /Start an order/i }),
+      page.getByText(/Start an order/i).first(),
     ).toBeVisible();
 
-    // Pricing reference card must be present (the page that exposes the
-    // server-side pricing config used later for the price-display check).
+    // Pricing reference card — also a <CardTitle> (a <div>), so getByText
+    // rather than getByRole('heading'). See src/app/shops/[slug]/page.tsx:244.
     await expect(
-      page.getByRole('heading', { name: /Pricing reference/i }),
+      page.getByText(/Pricing reference/i).first(),
     ).toBeVisible();
   });
 });
@@ -158,9 +160,12 @@ test.describe('Consumer journey — order creation', () => {
     // Redirect to /orders/[id]?shop=...&t=...
     await page.waitForURL(/\/orders\/[^/]+/, { timeout: 15_000 });
 
-    // The order page renders the stepper + upload card.
+    // The order page renders the stepper + upload card. The "Step 1 ·
+    // Upload your files" label is inside a shadcn <CardTitle> (a <div>,
+    // NOT a <h*>) — see src/app/orders/[id]/page.tsx:903-905. Use
+    // getByText rather than getByRole('heading').
     await expect(
-      page.getByRole('heading', { name: /Step 1 · Upload your files/i }),
+      page.getByText(/Step 1 · Upload your files/i),
     ).toBeVisible();
   });
 });
