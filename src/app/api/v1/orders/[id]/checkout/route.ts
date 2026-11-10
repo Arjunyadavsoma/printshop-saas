@@ -19,6 +19,13 @@ import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
  * the database, and THEN passed to the adapter. If persistence fails, the
  * provider is never contacted.
  *
+ * P1-15 fix (amount integrity): the checkout amount is sourced EXCLUSIVELY
+ * from `order.totalAmountPaise` — the server-calculated, persisted total
+ * written by the PATCH `/files/[fileId]` route after re-pricing. NO
+ * client-supplied amount is accepted (the request body is not even read).
+ * A client cannot tamper with the payment amount — at worst it can request
+ * a checkout for an order whose total it cannot influence.
+ *
  * Sequence:
  * 1. Authenticate (withOrderAccess)
  * 2. Validate order status + payment eligibility
@@ -59,6 +66,12 @@ export const POST = withRateLimit<{ id: string }>(
     // ── STEP 2: Persist PaymentAttempt BEFORE provider contact ──
     // FAIL-CLOSED: if persistence fails (non-duplicate), abort checkout.
     // The provider is NEVER contacted without a durable record.
+    //
+    // P1-15: the amount is sourced from `order.totalAmountPaise` (the
+    // server-side persisted total). No client-supplied amount is read here —
+    // the request body is never JSON-parsed. Customers cannot tamper with
+    // the checkout amount; they can only request a checkout for an order
+    // whose total they cannot influence.
     try {
       await (db as any).paymentAttempt.create({
         data: {
@@ -67,7 +80,7 @@ export const POST = withRateLimit<{ id: string }>(
           orderId: order.id,
           provider: shop.paymentProvider,
           merchantOrderId,
-          amountPaise: order.totalAmountPaise,
+          amountPaise: order.totalAmountPaise, // ← server-calculated, persisted
           currency: 'INR',
           status: 'created',
           expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10-min payment window

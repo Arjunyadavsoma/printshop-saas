@@ -1,5 +1,36 @@
 # Consumer UX Research — Document-Upload & Print-Order Workflows
 
+> ## Phase 6.1 Update (2024-12) — Page-selection pricing implemented
+>
+> The page-selection pricing research documented in §4 + §9 of this
+> brief has been **implemented and verified** on branch
+> `phase-6-1-consumer-integrity`.
+>
+> **What changed:**
+> - New module `src/lib/pricing/page-selection.ts` exports
+>   `parsePageRange(range, maxPages)` + `resolveBillablePages(pageRange, filePageCount)`.
+> - The PATCH `/api/v1/orders/:id/files/:fileId` endpoint uses
+>   `billablePages` (the resolved selected-page count) — NOT
+>   `file.pageCount` — as the `PricingInput.pages` value.
+> - The checkout route sources the amount **exclusively** from
+>   `order.totalAmountPaise` (server-persisted, never client-supplied).
+> - 31 new tests (21 unit + 10 integration) including a price-tampering
+>   rejection test that proves a client cannot override the server total
+>   by sending a forged `amountPaise` in the checkout body.
+>
+> **What this means for the research record:** the §9 finding
+> ("`pageRange` is parsed by the server but not validated" — the
+> P1-15 revenue bug) is now closed. The two-mechanism sync concern
+> (per-page checkboxes vs free-text range) is also resolved: the
+> `updateFile` handler in `orders/[id]/page.tsx` compresses the
+> selectedPages array into a canonical range string before PATCHing,
+> and the server parses that string back into the same array via
+> `parsePageRange` — round-trip is deterministic.
+>
+> Full verification: `docs/ux/PHASE_6_1_VERIFICATION.md` §2.
+>
+> ---
+
 > A research brief of practical, proven UI patterns for a consumer-facing
 > document-upload → preview → configure → checkout → track journey, written
 > for the PrintShop SaaS customer portal. Every recommendation cites an

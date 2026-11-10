@@ -1,5 +1,21 @@
 # Consumer UX Audit — PrintShop SaaS
 
+> ## Phase 6.1 Update (2024-12) — RESOLVED findings
+>
+> The following findings are now **RESOLVED** on branch
+> `phase-6-1-consumer-integrity`:
+>
+> | ID | Sev | Area | Resolution |
+> |---|---|---|---|
+> | **P1-15** | P1 | Pricing | **RESOLVED** — `pageRange` now drives the price via `resolveBillablePages()` (`src/lib/pricing/page-selection.ts`). The PATCH `/files/[fileId]` route validates the range against `file.pageCount` and uses `billablePages` (not `file.pageCount`) as the `PricingInput.pages` value. The checkout route sources the amount **exclusively** from `order.totalAmountPaise` (server-persisted, never client-supplied). 31 new tests (21 unit + 10 integration) including a price-tampering rejection test. |
+> | **P0-03** | P0 | Upload | **RESOLVED** — upload cancellation implemented via `uploadXhrsRef` (Map of in-flight XHRs). `cancelUpload()` aborts the XHR + marks the file `failed` with `'Upload cancelled'`. Cancel button on every uploading card. |
+> | **P1-05** | P1 | Upload | **RESOLVED** — per-file retry implemented. `retryUpload()` re-invokes `uploadOne()` with the failed entry's preserved `rawFile`, minting a FRESH presigned URL (never reuses an expired one). Retry button on every failed card with a preserved `rawFile`. |
+> | **P1-10** | P1 | Preview | **RESOLVED** — zoom in/out (0.25 → 2.0, step 0.25), fit-to-width (reset to 1.0), clear-selection (Eraser icon), selected-page count badge + summary with `aria-live="polite"`, loading + error states with `role="status"` / `role="alert"`. |
+>
+> Full verification: `docs/ux/PHASE_6_1_VERIFICATION.md`.
+>
+> ---
+
 > A walk-through of every consumer-facing route, component, API endpoint,
 > and data model in the repository, classified by severity.
 >
@@ -186,21 +202,24 @@ client-side (import from `@platform/core/domain/file`) before the
 presign call. Surface a friendly "Files must be PDF, image, or Office
 document, max 25MB" message.
 
-**P0-03. No upload cancellation.** The XHR is created inside a Promise
+**P0-03. No upload cancellation.** ~~The XHR is created inside a Promise
 (lines 394–408) but the `xhr` reference is never stored on the
-`LocalFile`. There is no Cancel button. A customer who picks the wrong
-5MB file on a slow connection must wait for the upload to finish (or
-fail) before they can remove it. **Fix:** store `xhr` on the
-`LocalFile`, add a Cancel button on the uploading card, call
-`xhr.abort()`.
+`LocalFile`. There is no Cancel button.~~ **[RESOLVED in Phase 6.1]**
+Upload cancellation is now implemented: a `uploadXhrsRef` (Map of
+placeholderId → XMLHttpRequest) tracks every in-flight upload, and a
+Cancel button (`aria-label="Cancel upload"`, 44×44px tap target) on
+each uploading card calls `cancelUpload()` which aborts the XHR +
+marks the file `failed` with `'Upload cancelled'`. See
+`docs/ux/PHASE_6_1_VERIFICATION.md` §3.
 
-**P1-05. No per-file retry.** On failure, the card transitions to
+**P1-05. No per-file retry.** ~~On failure, the card transitions to
 `status: 'failed'` with the error message (line 458) but no Retry
-button. The customer must remove the failed card and re-pick the file.
-The `rawFile` is retained on the placeholder (line 376), so retry is
-mechanically possible — just no UI. **Fix:** add a Retry button on
-failed cards that re-invokes `handleFiles([rawFile])` after removing
-the failed placeholder.
+button.~~ **[RESOLVED in Phase 6.1]**
+Per-file retry is now implemented: failed cards with a preserved
+`rawFile` show a Retry button (`aria-label="Retry upload"`, 44×44px
+tap target). `retryUpload()` re-invokes `uploadOne()` with the failed
+entry's preserved `rawFile`, minting a FRESH presigned URL (never
+reuses an expired one). See `docs/ux/PHASE_6_1_VERIFICATION.md` §3.
 
 **P1-06. `removeFile` does not delete server-side.** `removeFile`
 (line 464–467) only filters the local array. The file row and the
@@ -315,10 +334,14 @@ presigned GET URL from the server (a `GET
 /api/v1/orders/{id}/files/{fileId}/preview-url` endpoint would be
 needed) and pass it as `fileUrl`.
 
-**P1-10. No zoom.** Thumbnails are rendered at scale 0.5 (line 113).
-A customer cannot zoom in to verify small text on a page. The page
-selection checkbox overlays the top-left of each thumbnail; at 0.5
-scale, page content is barely legible on a 360px viewport.
+**P1-10. No zoom.** ~~Thumbnails are rendered at scale 0.5 (line 113).
+A customer cannot zoom in to verify small text on a page.~~ **[RESOLVED in Phase 6.1]**
+Zoom in/out (0.25 → 2.0, step 0.25), fit-to-width (reset to 1.0), and
+clear-selection (Eraser icon) are now implemented in the PdfPreview
+toolbar. Zoom is applied as a CSS `transform: scale()` on the
+thumbnail wrapper (so PDF.js doesn't have to re-render the canvas).
+The current zoom percentage is displayed next to the buttons with
+`aria-live="polite"`. See `docs/ux/PHASE_6_1_VERIFICATION.md` §4.
 
 **P2-05. Pagination dots are below the 44px tap target.** Line 354:
 `h-8 min-w-8` (32px). WCAG 2.2 SC 2.5.8 (Level AA) requires 44px.
@@ -421,20 +444,19 @@ is unknown.
 - Min order value rounds up by default (`DEFAULT_PRICING_BEHAVIOUR`,
   breakdown.ts line 5) — kinder than rejecting.
 
-**P1-15. `pageRange` is parsed by the server but not validated.**
-The `PatchFileSchema` (file/[fileId]/route.ts line 13) accepts any
+**P1-15. `pageRange` is parsed by the server but not validated.** ~~The
+`PatchFileSchema` (file/[fileId]/route.ts line 13) accepts any
 string ≤100 chars. The pricing engine uses `file.pageCount` (line 52),
-not the parsed page range. **Wait — re-check:** the pricing input
-(lines 51–58) uses `file.pageCount ?? 1` for `pages`. The `pageRange`
-is stored but never affects the price. So a customer who types
-"1-3" in the page-range input for a 200-page PDF is still charged for
-200 pages. **This is a critical revenue/UX bug:** the customer expects
-to pay for 3 pages, the shopkeeper prints 3 pages, but the customer is
-charged for 200. See `packages/core/src/pricing/pricing-engine.test.ts`
-— the tests cover `pages × copies`, duplex, bulk, min-order, but no
-test exercises a `pageRange` input. **Fix:** parse the page range
-server-side, compute `effectivePages = parsePageRange(pageRange,
-pageCount)`, and use `effectivePages` in `PricingInput.pages`.
+not the parsed page range.~~ **[RESOLVED in Phase 6.1]**
+The PATCH endpoint now uses `resolveBillablePages()` from
+`src/lib/pricing/page-selection.ts` to parse + validate the `pageRange`
+against `file.pageCount`. The resulting `billablePages` (NOT
+`file.pageCount`) is the `PricingInput.pages` value. The checkout route
+sources the amount exclusively from `order.totalAmountPaise`
+(server-persisted, never client-supplied — the request body is not
+even JSON-parsed). 31 new tests (21 unit + 10 integration) including
+a price-tampering rejection test. See
+`docs/ux/PHASE_6_1_VERIFICATION.md` §2.
 
 **P2-08. `pageRange` parsing happens only client-side.** The
 `updateFile` handler in the order page (lines 488–503) compresses the
@@ -649,7 +671,7 @@ Verified.
 |---|---|---|---|
 | P0-01 | P0 | Auth | `customerToken` returned in `/status` response body |
 | P0-02 | P0 | Upload | No client-side MIME/size validation before presign |
-| P0-03 | P0 | Upload | No upload cancellation (XHR not abortable) |
+| P0-03 | P0 | Upload | No upload cancellation (XHR not abortable) — **RESOLVED in Phase 6.1** |
 | P0-04 | P0 | Preview | PDF page thumbnails not keyboard-accessible (`<div onClick>`) |
 | P0-05 | P0 | Preview | Design tokens bypassed (raw `green-500`, `amber-500`, gradient) |
 | P0-06 | P0 | Pages | Checkbox selection and free-text page range do not sync |
@@ -658,17 +680,17 @@ Verified.
 | P1-02 | P1 | Shop | Order-creation redirect leaves `?t=` in shop-page history |
 | P1-03 | P1 | Shop | No loading state during order-page hydration |
 | P1-04 | P1 | Auth | `sessionStorage` token not cleared on terminal status |
-| P1-05 | P1 | Upload | No per-file retry button |
+| P1-05 | P1 | Upload | No per-file retry button — **RESOLVED in Phase 6.1** |
 | P1-06 | P1 | Upload | `removeFile` does not delete server-side |
 | P1-07 | P1 | Upload | No max file count per order |
 | P1-08 | P1 | Upload | No duplicate-file detection |
 | P1-09 | P1 | Preview | Preview lost on page refresh (`rawFile` not persisted) |
-| P1-10 | P1 | Preview | No zoom control |
+| P1-10 | P1 | Preview | No zoom control — **RESOLVED in Phase 6.1** |
 | P1-11 | P1 | Pages | `displayPriceForFile` ignores `selectedPages` |
 | P1-12 | P1 | Settings | Paper-size control inconsistent (`<select>` vs `ToggleGroup`) |
 | P1-13 | P1 | Settings | "Color" vs "Colour" label inconsistency |
 | P1-14 | P1 | Settings | Copies input allows non-integer values |
-| P1-15 | P1 | Pricing | `pageRange` never affects the price (revenue bug) |
+| P1-15 | P1 | Pricing | `pageRange` never affects the price (revenue bug) — **RESOLVED in Phase 6.1** |
 | P1-16 | P1 | Cart | "Skip to checkout" surfaces generic error on unpriced files |
 | P1-17 | P1 | Checkout | `expiresAt` not surfaced in UI |
 | P1-18 | P1 | Checkout | QR fallback adds a second round-trip |

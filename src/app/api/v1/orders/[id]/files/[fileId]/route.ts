@@ -6,6 +6,7 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
+import { resolveBillablePages } from '@/lib/pricing/page-selection';
 
 const PatchFileSchema = z.object({
   copies: z.number().int().min(1).max(500).optional(),
@@ -43,13 +44,35 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
     const body = PatchFileSchema.parse(await req.json());
     const updated = { ...file, ...body };
 
+    // P1-15 fix: server-authoritative page selection.
+    // Before this fix the PATCH endpoint used `file.pageCount` (the FULL
+    // document length) for pricing even when the customer supplied a
+    // `pageRange` selecting only a subset of pages. A 3-of-200 selection
+    // was billed for 200 — direct revenue leakage.
+    //
+    // Now we parse + validate `pageRange` against `file.pageCount` and use
+    // the resulting selected-pages count as the pricing input. When
+    // `pageRange` is null/empty (legacy orders, "print all" UX), we
+    // fall back to `file.pageCount` — preserving backward compatibility.
+    //
+    // The `pageRange` value used for pricing is the EFFECTIVE one — body
+    // takes precedence (the customer may have just changed it), otherwise
+    // the file's previously-persisted `pageRange`. This matches the
+    // behaviour of `updated.copies` / `updated.colorMode` etc. below.
+    const effectivePageRange = body.pageRange !== undefined ? body.pageRange : updated.pageRange;
+    const resolved = resolveBillablePages(effectivePageRange, file.pageCount);
+    if ('error' in resolved) {
+      throw new ValidationError(resolved.error);
+    }
+    const billablePages = resolved.billablePages;
+
     // Recompute this file's price using the shop's pricing config + the real
     // pricing engine from @platform/core.
     const shop = await repos.shops.findById(order.shopId);
     if (!shop) throw new NotFoundError('Shop not found');
 
     const pricingInput: PricingInput = {
-      pages: file.pageCount ?? 1,
+      pages: billablePages, // ← was `file.pageCount ?? 1` (P1-15 revenue bug)
       copies: updated.copies,
       colorMode: updated.colorMode,
       paperSize: updated.paperSize,

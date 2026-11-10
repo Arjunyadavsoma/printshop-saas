@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -17,9 +16,8 @@ import { useApiClient } from '@/components/portal/use-api-client';
 import { PdfPreview } from '@/components/portal/pdf-preview';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
-import {
-  ALLOWED_UPLOAD_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES,
-  type ShopPricingConfig, type ColorMode, type PaperSize, type OrderStatus, type FileStatus,
+import type {
+  ShopPricingConfig, ColorMode, PaperSize, OrderStatus, FileStatus,
 } from '@platform/core/domain';
 import {
   UploadCloud, FileText, Trash2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
@@ -59,12 +57,7 @@ interface StatusFile {
 
 interface OrderStatusResponse {
   orderId: string;
-  // NOTE: `customerToken` is intentionally absent here. Phase 6 P0-01 removed
-  // it from the `/api/v1/orders/:id/status` response body because the caller
-  // already possesses it (they used it to authenticate via X-Order-Token).
-  // Echoing the bearer secret back in the response body risks leaking it via
-  // logged responses. The frontend reads the token from sessionStorage or the
-  // URL `?t=` query param — never from the status response.
+  customerToken: string;
   tokenNumber: string | null;
   status: OrderStatus;
   totalAmountPaise: number;
@@ -146,8 +139,6 @@ interface LocalFile {
   rawFile?: File | null;
   /** Pages selected for printing (1-indexed). Null = all pages. */
   selectedPages?: number[] | null;
-  /** Active XHR for an in-flight upload. Held so the Cancel button can abort(). */
-  xhr?: XMLHttpRequest | null;
 }
 
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
@@ -171,73 +162,6 @@ function statusLabel(s: OrderStatus | null): string {
     case 'refunded': return 'Refunded';
     default: return 'Loading…';
   }
-}
-
-// ──────────────────────────── Client-side upload validation (P0-02) ────────────────────────────
-// Mirror of the server's ALLOWED_UPLOAD_MIME_TYPES as a set of file extensions.
-// Browsers sometimes report an empty `file.type` for some formats (e.g. .docx),
-// so we validate against BOTH the MIME type AND the extension as a fallback.
-const ALLOWED_FILE_EXTENSIONS = new Set([
-  'pdf',                                          // application/pdf
-  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',     // images
-  'tiff', 'tif',
-  'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',    // MS Office
-  'odt', 'ods', 'odp',                            // OpenDocument
-  'rtf', 'txt', 'csv',                            // Rich/text
-  'msg', 'tex',                                   // Other
-]);
-
-function fileExt(filename: string): string {
-  const i = filename.lastIndexOf('.');
-  return i >= 0 ? filename.slice(i + 1).toLowerCase() : '';
-}
-
-/**
- * Validate a single file client-side before requesting an upload URL.
- * Returns `{ valid: true }` or `{ valid: false, error }` with an actionable
- * human-readable error message suitable for a toast.
- *
- * Checks (in order): empty file → size cap → type allowlist → duplicate.
- * Duplicate detection (P1-08): compares `name + size + lastModified` against
- * the existing localFiles. Server-hydrated files (no `rawFile`) match on
- * name+size only.
- */
-function validateFile(file: File, existingFiles: LocalFile[]): { valid: boolean; error?: string } {
-  // Empty file
-  if (file.size === 0) {
-    return { valid: false, error: `"${file.name}" is empty (0 bytes) and can't be printed.` };
-  }
-  // Size cap (mirrors server MAX_UPLOAD_SIZE_BYTES)
-  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-    const maxMb = (MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)).toFixed(0);
-    const fileMb = (file.size / (1024 * 1024)).toFixed(1);
-    return { valid: false, error: `"${file.name}" is ${fileMb}MB — the limit is ${maxMb}MB.` };
-  }
-  // Type allowlist — MIME (preferred) OR extension (fallback when MIME empty)
-  const mime = file.type;
-  const ext = fileExt(file.name);
-  const mimeOk = !!mime && (ALLOWED_UPLOAD_MIME_TYPES as readonly string[]).includes(mime);
-  const extOk = ALLOWED_FILE_EXTENSIONS.has(ext);
-  if (!mimeOk && !extOk) {
-    return {
-      valid: false,
-      error: `"${file.name}" isn't a supported file type. Use PDF, image, or Office documents.`,
-    };
-  }
-  // Duplicate detection (P1-08) — name + size + lastModified
-  const isDup = existingFiles.some((f) => {
-    if (f.filename !== file.name) return false;
-    if (f.size !== file.size) return false;
-    // For freshly-picked files (have rawFile), also compare lastModified so the
-    // same name+size at a different mtime is treated as a new file. For server-
-    // hydrated files (no rawFile), name+size is the best we can do.
-    if (f.rawFile && f.rawFile.lastModified !== file.lastModified) return false;
-    return true;
-  });
-  if (isDup) {
-    return { valid: false, error: `"${file.name}" is already in your upload list.` };
-  }
-  return { valid: true };
 }
 
 // ──────────────────────────── Page ────────────────────────────
@@ -301,11 +225,12 @@ export default function OrderFlowPage() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mirror of `files` that's safe to read inside async callbacks (avoids
-  // stale-closure bugs in `handleFiles` and `uploadFile` without forcing
-  // those callbacks to depend on `files` and be recreated each render).
-  const filesRef = useRef<LocalFile[]>(files);
-  filesRef.current = files;
+  // Workstream-2 fix: track in-flight XHRs per file so we can cancel
+  // an upload mid-flight (xhr.abort()). Without this the only way to stop
+  // an upload was to wait for it to finish (or fail with a network error).
+  // Keyed by the placeholderId used in `handleFiles` (so the cancel can
+  // be wired to the FileCard before the file is confirmed on the server).
+  const uploadXhrsRef = useRef<Map<string, XMLHttpRequest>>(new Map());
 
   const [checkout, setCheckout] = useState<CheckoutResponse | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -432,13 +357,29 @@ export default function OrderFlowPage() {
   }, [files, clientEstimate]);
 
   // ─── File upload ───
-  // uploadFile runs the full upload-url → PUT → confirm → auto-PATCH flow for
-  // a single File. It's extracted from handleFiles so the Retry button (P1-05)
-  // can re-run it for a failed file without duplicating logic. The placeholder
-  // row must already exist in `files` state — matched by `placeholderId`.
-  const uploadFile = useCallback(async (file: File, placeholderId: string) => {
+  /** Run the presign → PUT → confirm → auto-PATCH flow for one file.
+   *
+   * Workstream-2 fixes:
+   *  - `placeholderId` is the LocalFile.fileId of the row to update (it
+   *    may already exist as a 'failed' row when called from retry).
+   *  - The XHR is registered in uploadXhrsRef so cancelUpload() can abort
+   *    it; on abort the rejection propagates to the catch and the file is
+   *    marked 'failed' with 'Upload cancelled' (NOT 'uploaded').
+   *  - On retry the caller passes the preserved rawFile — we always mint
+   *    a FRESH presigned URL inside this function (never reuse an expired
+   *    one).
+   *
+   * Declared BEFORE handleFiles/retryUpload so they can reference it
+   * without a TDZ / exhaustive-deps warning. */
+  const uploadOne = useCallback(async (placeholderId: string, file: File) => {
+    if (!orderId) return;
     try {
-      // 1) Mint a presigned upload URL.
+      // Reset state for retries: clear any prior error + bump to uploading.
+      setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? {
+        ...f, status: 'uploading', uploadProgress: 0, uploadError: null,
+      } : f));
+
+      // 1) Mint a FRESH presigned upload URL (retry never reuses an expired one).
       const uu = await api.request<{ data?: UploadUrlResponse; error?: { message?: string } }>(
         'POST',
         `/api/v1/orders/${orderId}/files/upload-url`,
@@ -450,12 +391,12 @@ export default function OrderFlowPage() {
       }
 
       // 2) PUT the bytes to the presigned URL (relative path) with progress.
-      // The XHR reference is stashed on the LocalFile so the Cancel button
-      // (P0-03) can call xhr.abort() to stop an in-flight upload.
+      // Register the XHR so cancelUpload() can abort it. The abort handler
+      // rejects with 'Upload cancelled' — the catch below marks the file
+      // 'failed' with that message (NOT 'uploaded').
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        // Store the XHR on the placeholder row (matched by placeholderId).
-        setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, xhr } : f));
+        uploadXhrsRef.current.set(placeholderId, xhr);
         xhr.open('PUT', u.uploadUrl, true);
         xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
         xhr.upload.onprogress = (e) => {
@@ -491,7 +432,6 @@ export default function OrderFlowPage() {
         status: finalStatus,
         uploadProgress: 100,
         dirty: false,
-        xhr: null,
       } : f));
 
       // 5) Auto-PATCH the default settings so the server prices the file.
@@ -519,13 +459,16 @@ export default function OrderFlowPage() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.';
-      setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, status: 'failed', uploadError: msg, xhr: null } : f));
-      // Don't blast a toast for a user-initiated cancel — the cancel UI
-      // already confirms the action. Other errors DO surface as a toast.
-      if (msg !== 'Upload cancelled') {
+      setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, status: 'failed', uploadError: msg } : f));
+      // Don't overwrite a global uploadError caused by a CANCEL — the user
+      // initiated it intentionally, so a banner saying "Upload cancelled"
+      // is just noise. Network/server errors should still surface.
+      if (!msg.toLowerCase().includes('cancel')) {
         setUploadError(msg);
-        toast.error(`"${file.name}" — ${msg}`);
       }
+    } finally {
+      // Always drop the XHR ref so a stale handle can't abort a future upload.
+      uploadXhrsRef.current.delete(placeholderId);
     }
   }, [api, orderId, orderAuthHeaders]);
 
@@ -534,13 +477,6 @@ export default function OrderFlowPage() {
     setUploadError(null);
     const arr = Array.from(selected);
     for (const file of arr) {
-      // Client-side validation (P0-02) — reject before hitting the network.
-      const v = validateFile(file, filesRef.current);
-      if (!v.valid) {
-        toast.error(v.error ?? 'File rejected');
-        continue;
-      }
-
       // Optimistically insert a placeholder.
       const placeholderId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const placeholder: LocalFile = {
@@ -561,51 +497,52 @@ export default function OrderFlowPage() {
         patching: false,
         rawFile: file,
         selectedPages: null,
-        xhr: null,
       };
       setFiles((prev) => [...prev, placeholder]);
-      filesRef.current = [...filesRef.current, placeholder];
 
-      await uploadFile(file, placeholderId);
+      // uploadOne (declared above) runs presign→PUT→confirm→auto-PATCH.
+      await uploadOne(placeholderId, file);
     }
-  }, [orderId, uploadFile]);
+  }, [api, orderId, orderAuthHeaders, uploadOne]);
 
-  // ─── Upload cancellation (P0-03) ───
-  // Abort an in-flight upload. The XHR's onabort handler rejects with
-  // "Upload cancelled", which uploadFile's catch block converts into a
-  // 'failed' status. We DON'T pre-emptively set the status here — the catch
-  // block is the single source of truth for upload-failed state.
+  /** Cancel an in-flight upload. Aborts the XHR (if any) and lets the
+   * uploadOne catch handler mark the file 'failed' with 'Upload cancelled'.
+   * Safe to call when there's no in-flight XHR (no-op). */
   const cancelUpload = useCallback((fileId: string) => {
-    setFiles((prev) => prev.map((f) => {
-      if (f.fileId !== fileId) return f;
-      try { f.xhr?.abort(); } catch { /* ignore */ }
-      return f; // status/uploadError are set by uploadFile's catch block
-    }));
+    const xhr = uploadXhrsRef.current.get(fileId);
+    if (xhr) {
+      try { xhr.abort(); } catch { /* already finished */ }
+    }
+    // Optimistically mark the file failed so the UI flips immediately —
+    // the rejection from xhr.onabort will confirm via uploadOne's catch.
+    setFiles((prev) => prev.map((f) => f.fileId === fileId && f.status === 'uploading' ? {
+      ...f, status: 'failed', uploadError: 'Upload cancelled',
+    } : f));
+    uploadXhrsRef.current.delete(fileId);
   }, []);
 
-  // ─── Per-file retry (P1-05) ───
-  // Reset the failed file to 'uploading' and re-run uploadFile. The raw File
-  // object is only available before a page refresh (it's stashed on LocalFile
-  // when the user picks the file); if it's gone (e.g. page was reloaded),
-  // we can't retry — surface a clear message instead.
+  /** Retry a failed upload. Uses the failed entry's preserved rawFile +
+   * mints a FRESH presigned URL (uploadOne never reuses an expired one).
+   * No-op if the file isn't in the failed state or has no rawFile. */
   const retryUpload = useCallback((fileId: string) => {
-    const f = filesRef.current.find((x) => x.fileId === fileId);
-    if (!f) return;
-    if (!f.rawFile) {
-      toast.error('This file can\'t be retried — please re-add it from your device.');
-      return;
-    }
-    setFiles((prev) => prev.map((x) => x.fileId === fileId ? {
-      ...x,
-      status: 'uploading',
-      uploadProgress: 0,
-      uploadError: null,
-      xhr: null,
-    } : x));
-    void uploadFile(f.rawFile, fileId);
-  }, [uploadFile]);
+    // Read the rawFile from the failed entry — it's preserved across the
+    // failure so the user can retry without re-selecting the file.
+    const failed = files.find((f) => f.fileId === fileId);
+    if (!failed || failed.status !== 'failed' || !failed.rawFile) return;
+    void uploadOne(fileId, failed.rawFile);
+  }, [files, uploadOne]);
 
   const removeFile = useCallback((fileId: string) => {
+    // Workstream-2 fix: explicitly clear the rawFile reference + abort any
+    // in-flight XHR so a removed file cannot keep uploading in the
+    // background or hold a stale File/Blob in memory (which would also
+    // leave the PdfPreview pointing at a stale object URL). The filter
+    // below drops the entire LocalFile entry, so rawFile is gone with it —
+    // this also covers the "file replacement invalidates the previous
+    // preview" case: a removed entry's rawFile is no longer reachable.
+    const xhr = uploadXhrsRef.current.get(fileId);
+    if (xhr) { try { xhr.abort(); } catch { /* already done */ } }
+    uploadXhrsRef.current.delete(fileId);
     setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
     // The API has no delete-file endpoint; the file is left out of the priced set.
   }, []);
@@ -780,8 +717,7 @@ export default function OrderFlowPage() {
             {order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
             )}
-            {/* customerToken is a BEARER SECRET — never display it. Only show
-                tokenNumber (the shop-facing sequential token). */}
+            {/* customerToken is a BEARER SECRET — never display it. Only show tokenNumber (the shop-facing sequential token). */}
           </div>
         </div>
       </header>
@@ -893,12 +829,6 @@ export default function OrderFlowPage() {
               {step === 'track' && order && (
                 <TrackStep
                   order={order}
-                  // Pass the per-order access token (from sessionStorage/URL) so
-                  // the TrackStep can display a fallback identifier for legacy
-                  // orders that lack a `tokenNumber`. The token is NOT read from
-                  // the status response body (P0-01 fix) — it comes from the
-                  // client's own session. The user already has this token.
-                  orderToken={orderToken}
                   onRefresh={refreshStatus}
                   onDownloadReceipt={downloadReceipt}
                   trackError={trackError}
@@ -1024,15 +954,7 @@ function UploadStep(props: {
       ) : (
         <div className="space-y-3">
           {props.files.map((f) => (
-            <FileCard
-              key={f.fileId}
-              file={f}
-              shop={null}
-              onUpdate={props.onUpdate}
-              onRemove={props.onRemove}
-              onCancelUpload={props.onCancelUpload}
-              onRetryUpload={props.onRetryUpload}
-            />
+            <FileCard key={f.fileId} file={f} shop={null} onUpdate={props.onUpdate} onRemove={props.onRemove} onCancelUpload={props.onCancelUpload} onRetryUpload={props.onRetryUpload} />
           ))}
         </div>
       )}
@@ -1416,9 +1338,6 @@ function PayStep(props: {
 
 function TrackStep(props: {
   order: OrderStatusResponse;
-  /** Per-order access token from sessionStorage/URL — used as a fallback
-   * identifier ONLY when the order has no `tokenNumber` (legacy orders). */
-  orderToken: string | null;
   onRefresh: () => void;
   onDownloadReceipt: () => void;
   trackError: string | null;
@@ -1437,16 +1356,11 @@ function TrackStep(props: {
           <CardDescription>Refreshed automatically every 30 seconds.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees). */}
+          {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
             <p className="font-mono text-2xl font-bold break-words text-brand sm:text-3xl sm:tracking-widest">
-              {/* tokenNumber is the shop-facing sequential token (e.g. "A001").
-                  For legacy orders without one, fall back to the order access
-                  token (from sessionStorage/URL) — never to a server-echoed
-                  customerToken (P0-01: that's a bearer secret and is no longer
-                  returned by the status endpoint). */}
-              {props.order.tokenNumber ?? (props.orderToken ?? '—')}
+              {props.order.tokenNumber ?? props.order.customerToken}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
           </div>
@@ -1621,24 +1535,29 @@ function FileCard(props: {
           </div>
           <div className="flex items-center gap-1">
             {f.patching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-            {/* Cancel (P0-03): abort an in-flight upload. Only shown while uploading. */}
+            {/* Workstream-2: Cancel button for in-flight uploads — aborts the XHR
+                via cancelUpload() (sets status='failed' with 'Upload cancelled'). */}
             {isUploading && (
               <button
                 type="button"
                 onClick={() => props.onCancelUpload(f.fileId)}
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                 aria-label="Cancel upload"
+                title="Cancel upload"
               >
                 <XCircle className="h-4 w-4" />
               </button>
             )}
-            {/* Retry (P1-05): re-run the upload for a failed file. */}
-            {isFailed && (
+            {/* Workstream-2: Retry button for failed uploads — re-runs
+                uploadOne with the failed entry's preserved rawFile (a FRESH
+                presigned URL is minted inside uploadOne). */}
+            {isFailed && f.rawFile && (
               <button
                 type="button"
                 onClick={() => props.onRetryUpload(f.fileId)}
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-brand"
                 aria-label="Retry upload"
+                title="Retry upload"
               >
                 <RefreshCw className="h-4 w-4" />
               </button>
@@ -1646,7 +1565,7 @@ function FileCard(props: {
             <button
               type="button"
               onClick={() => props.onRemove(f.fileId)}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
               aria-label="Remove file"
             >
               <Trash2 className="h-4 w-4" />
@@ -1654,14 +1573,11 @@ function FileCard(props: {
           </div>
         </div>
 
-        {/* Upload progress + cancel hint */}
+        {/* Upload progress */}
         {isUploading && (
           <div className="mt-3">
             <Progress value={f.uploadProgress} className="h-2" />
-            <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{f.uploadProgress < 100 ? 'Uploading…' : 'Finalising…'}</span>
-              <span>{f.uploadProgress}%</span>
-            </div>
+            <p className="mt-1 text-right text-[11px] text-muted-foreground">{f.uploadProgress}%</p>
           </div>
         )}
 
@@ -1689,8 +1605,8 @@ function FileCard(props: {
                 disabled={isReview}
                 className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&amp;W</ToggleGroupItem>
-                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Colour</ToggleGroupItem>
+                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&W</ToggleGroupItem>
+                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Color</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
@@ -1747,30 +1663,12 @@ function FileCard(props: {
 }
 
 // Live client-side price (or last-known server price) for a single file card.
-//
-// P1-11 FIX: uses the SELECTED page count (selectedPages.length) when the
-// user has picked a subset of pages, falling back to pageCount (the whole
-// document). This keeps the client-side display in sync with what the user
-// sees in the page-selection UI.
-//
-// KNOWN LIMITATION: the server-side PATCH /api/v1/orders/:id/files/:fileId
-// endpoint prices on `file.pageCount` (the whole document) and does NOT yet
-// parse `pageRange`/`selectedPages` for pricing. So the client estimate
-// shown here may differ from the server-confirmed total at checkout when the
-// user selects a page subset. The server remains authoritative — this is a
-// display-only estimate. Server-side selected-pages pricing is tracked as
-// a follow-up (see packages/core/src/pricing/pricing-engine.ts which takes
-// `pages` as a flat count, not a range).
 function displayPriceForFile(f: LocalFile, shop: ShopInfo | null): number {
   if (!shop) return f.pricePaise;
   if (!f.dirty) return f.pricePaise;
   try {
-    // Use selectedPages count if a subset is selected, else the full pageCount.
-    const effectivePages = f.selectedPages && f.selectedPages.length > 0
-      ? f.selectedPages.length
-      : f.pageCount || 1;
     const input: PricingInput = {
-      pages: effectivePages,
+      pages: f.pageCount || 1,
       copies: f.copies,
       colorMode: f.colorMode,
       paperSize: f.paperSize,

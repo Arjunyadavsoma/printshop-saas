@@ -1,5 +1,25 @@
 # PrintShop SaaS — Consumer Design System
 
+> ## Phase 6.1 Update (2024-12) — Preview toolbar patterns
+>
+> The PDF preview component (`src/components/portal/pdf-preview.tsx`)
+> gained a full toolbar in Phase 6.1. New patterns documented below in
+> §14 (Loading states) and a new §14.1 (Preview toolbar controls).
+>
+> Summary of additions:
+> - **Zoom controls** — ZoomIn / ZoomOut buttons (0.25 → 2.0, step 0.25)
+>   with `aria-live` percentage readout.
+> - **Fit-to-width** — Maximize2 icon button, resets zoom to 1.0.
+> - **Clear selection** — Eraser icon button, distinct from legacy
+>   "Deselect All" wording.
+> - **Selected-page count** — badge + summary line, both `aria-live="polite"`.
+> - **Loading + error states** — `role="status"` + `role="alert"`
+>   patterns for the PDF.js render lifecycle.
+>
+> Full implementation details: `docs/ux/PHASE_6_1_VERIFICATION.md` §4.
+>
+> ---
+
 > The visual and interaction system for **consumer-facing** surfaces
 > only (home, shop discovery, shop detail, order flow, order tracking).
 > Shopkeeper and admin portals have their own conventions documented
@@ -373,6 +393,8 @@ feedback is inline (alert boxes, status badges, button states).
 | Large spinner | `<Loader2 className="size-8 animate-spin text-brand" />` | PDF preview rendering (`pdf-preview.tsx:238`), track-step order status (line 1327) |
 | Progress bar | shadcn `Progress` (`<Progress value={N} className="h-2" />`) | Upload progress per file (`orders/[id]/page.tsx:1465`) |
 | Stepper | Custom `OrderStepper` (5 numbered circles + labels) | Order flow header (`orders/[id]/page.tsx:774–792`) |
+| **Preview loading** *(Phase 6.1)* | `<Loader2 className="size-8 animate-spin text-primary" />` + `role="status" aria-live="polite"` + `sr-only` "Loading PDF preview, please wait." | PDF.js render lifecycle (`pdf-preview.tsx:276–283`) |
+| **Preview error** *(Phase 6.1)* | `<AlertCircle className="size-8 text-amber-500" />` + `role="alert"` + "Preview failed: {error}" | PDF.js worker failure / corrupt PDF (`pdf-preview.tsx:287–299`) |
 
 **Rules.**
 - Initial page load: skeleton blocks shaped like the real content
@@ -384,6 +406,52 @@ feedback is inline (alert boxes, status badges, button states).
   (`animate-pulse bg-muted`).
 - No full-screen spinners. The page shell + header + footer always
   render; only the main content area shows the skeleton.
+- **Preview loading + error states must use `role="status"` /
+  `role="alert"` respectively** so screen readers announce the
+  state change. The loading state needs an `sr-only` companion line
+  (the visible "Rendering PDF pages…" alone is not enough — the
+  spinner has no accessible name).
+
+---
+
+## 14.1 Preview toolbar controls (Phase 6.1)
+
+The PDF preview toolbar (`pdf-preview.tsx:304–373`) renders above the
+page-thumbnail grid. It is the primary interaction surface for
+page-selection + zoom.
+
+| Control | Icon | Component | Behaviour | A11y |
+|---|---|---|---|---|
+| Zoom out | `ZoomOut` | `Button variant="ghost" size="sm"` | Decrements `scale` by 0.25 (clamped to MIN_SCALE=0.25) | `aria-label="Zoom out"`, `disabled` at MIN_SCALE |
+| Zoom percentage | — | `<span aria-live="polite">` | `{(scale * 100).toFixed(0)}%` | `aria-live="polite"` announces every change |
+| Zoom in | `ZoomIn` | `Button variant="ghost" size="sm"` | Increments `scale` by 0.25 (clamped to MAX_SCALE=2.0) | `aria-label="Zoom in"`, `disabled` at MAX_SCALE |
+| Fit to width | `Maximize2` | `Button variant="ghost" size="sm"` | Resets `scale` to 1.0 (the default PDF.js viewport scale) | `aria-label="Fit to width"` + `title="Fit to width (reset zoom)"` |
+| Select All | — | `Button variant="ghost" size="sm"` | Sets `selectedPages` to all 1..N | — |
+| Clear (selection) | `Eraser` | `Button variant="ghost" size="sm"` | Empties `selectedPages` set | `aria-label="Clear selected pages"`, `disabled` when `selectedCount === 0` |
+| Selected-page badge | — | `Badge variant="secondary"` | `{selectedCount} / {totalPages} pages selected` | part of `aria-live` region via summary line below grid |
+
+**Rules.**
+- **Zoom is applied as a CSS `transform: scale()` on the thumbnail
+  wrapper** — NOT by re-rendering the PDF.js canvas. Re-rendering
+  would be expensive (each page is rendered once at `DEFAULT_SCALE=0.5`
+  and the bitmap is reused). The `transformOrigin: 'top left'` keeps
+  the zoom anchored to the page corner.
+- **Zoom resets on every new file load** (`setScale(1.0)` in the
+  `loadPdf` effect, line 79) so a per-file zoom doesn't bleed into
+  the next file's preview.
+- **The selected-page summary line below the grid has
+  `aria-live="polite"`** (`pdf-preview.tsx:484`) — the "Printing X of
+  Y pages" + "(N page(s) excluded)" copy is announced to screen
+  readers whenever the selection changes.
+- **The Clear button is `disabled` when `selectedCount === 0`** —
+  otherwise clicking it on an empty selection would be a no-op that
+  confuses the customer ("I clicked Clear, nothing happened").
+- **Zoom button tap target is `h-7` (28px)** — under the 44px WCAG
+  minimum. This is a documented trade-off: the toolbar is
+  desktop-first, and the page-selection checkboxes themselves (the
+  primary mobile interaction) are large thumbnails with
+  `aspect-[3/4]` grid cells. If the toolbar becomes a primary mobile
+  interaction in a future phase, bump to `h-11`.
 
 ---
 
