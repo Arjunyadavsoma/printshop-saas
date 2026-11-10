@@ -109,7 +109,11 @@ export function PdfPreview({
         // round-trip, so getDocument() hangs forever). Serving the worker
         // as a static asset fixes both dev and prod.
         if (!workerRef.current) {
-          pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+          // Create the Worker explicitly from the static URL. Setting
+          // workerSrc alone didn't trigger a fetch in pdfjs-dist v6 —
+          // workerPort is the reliable path.
+          workerRef.current = new Worker('/pdf.worker.min.mjs', { type: 'module' });
+          pdfjs.GlobalWorkerOptions.workerPort = workerRef.current;
         }
 
         const loadingTask = pdfjs.getDocument({ data: pdfData });
