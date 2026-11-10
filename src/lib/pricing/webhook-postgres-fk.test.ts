@@ -72,12 +72,12 @@ async function seedFixture(
   );
 }
 
-/** Wipe the payment-related tables (FK-aware order). */
+/** Wipe the payment-related tables (FK-aware order). Phase 6.9: switched
+ *  to TRUNCATE CASCADE so leftover PrintFile/PrintJob rows from other test
+ *  files (e.g. app-checkout-concurrency.test.ts) don't block the DELETE
+ *  with an FK violation. */
 async function cleanAll(pool: Pool): Promise<void> {
-  await pool.query('DELETE FROM "PaymentEvent"');
-  await pool.query('DELETE FROM "PaymentAttempt"');
-  await pool.query('DELETE FROM "Order"');
-  await pool.query('DELETE FROM "Shop"');
+  await pool.query('TRUNCATE TABLE "PaymentEvent", "PaymentAttempt", "Order", "Shop" CASCADE');
 }
 
 describe('Phase 6.7 — Real PostgreSQL webhook FK verification', () => {

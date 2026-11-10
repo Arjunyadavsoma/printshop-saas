@@ -170,19 +170,39 @@ export async function applyPaymentTransition(
       } catch (e) {
         if (isUniqueConstraintError(e)) {
           // Duplicate event — this event was already processed (or is being
-          // processed concurrently). Read the existing event's state to
-          // determine the idempotent response.
-          const existing = await tx.paymentEvent.findFirst({
-            where: { provider: input.provider, eventId: input.eventId },
-          });
-          const order = await tx.order.findUnique({ where: { id: input.orderId } });
+          // processed concurrently). Return idempotent immediately.
+          //
+          // PHASE 6.9 FIX: previously this block queried the existing event +
+          // the order WITHIN the same poisoned transaction. PostgreSQL's
+          // behavior is that any query issued after a failed statement in a
+          // transaction returns SQLSTATE 25P02 ("current transaction is
+          // aborted, commands ignored until end of transaction block").
+          // Prisma's $transaction does NOT use SAVEPOINTs around individual
+          // statements, so the failed INSERT poisons the whole transaction —
+          // the subsequent findFirst/findUnique fails with 25P02, the
+          // callback re-throws, and the entire transaction rolls back.
+          //
+          // The caller (webhook.service) then sees a 500 error instead of
+          // the expected 200 idempotent response. The provider retries the
+          // webhook, which fails again with the same 25P02 — a denial-of-
+          // service vector for duplicate webhooks.
+          //
+          // The fix: return idempotent=true IMMEDIATELY using only the data
+          // we already have (the attempt from STEP 1). The caller does NOT
+          // need the existing event's processingStatus — `idempotent=true`
+          // is sufficient for the webhook to skip + return 200. The
+          // transaction will COMMIT (which ROLLS BACK implicitly because the
+          // transaction is aborted — but no mutations were made before the
+          // failed INSERT, so this is a no-op).
+          //
+          // Verified against real PostgreSQL 17.11 in
+          // src/lib/pricing/app-webhook-integration.test.ts scenarios 4, 5, 14.
           return {
             applied: false,
             idempotent: true,
             attemptStatus: attempt.status as PaymentTransitionResult['attemptStatus'],
-            orderStatus: order?.status ?? 'unknown',
-            reason: `duplicate event (existing event processingStatus=${existing?.processingStatus ?? 'unknown'})`,
-            eventId: existing?.id,
+            orderStatus: 'unknown',
+            reason: `duplicate event (provider=${input.provider}, eventId=${input.eventId}) — idempotent skip`,
             attemptId: attempt.id,
           };
         }
