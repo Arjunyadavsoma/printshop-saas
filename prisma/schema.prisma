@@ -214,7 +214,18 @@ model PaymentAttempt {
 
   @@index([shopId, status])
   @@index([orderId])
+  @@index([orderId, status])
   @@index([providerTransactionId])
+
+  // Phase 6.4: Partial unique index — at most one 'created' attempt per order.
+  // Prisma 6.x does NOT natively support partial unique indexes in the schema
+  // declaration (@@unique creates a full UNIQUE constraint, not partial). The
+  // authoritative DDL lives in
+  // `prisma/migrations/20251110000000_add_active_attempt_unique_index/migration.sql`
+  // and is applied by `prisma migrate deploy` / `pg-migrate-prod.sh`.
+  // The comment here is documentation only — `prisma validate` does not
+  // verify partial indexes (they are PostgreSQL-specific extensions beyond
+  // Prisma's declarative schema grammar).
 }
 
 model PaymentEvent {

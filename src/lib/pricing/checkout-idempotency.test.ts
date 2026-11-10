@@ -334,12 +334,9 @@ describe('Phase 6.3 — checkout idempotency', () => {
     spy.mockRestore();
   });
 
-  it.skip('11. two independent database connections (N/A — requires real PostgreSQL/PGlite concurrency)', () => {
-    // The in-memory mock uses a single Map; true PostgreSQL concurrency
-    // (two separate connections with their own snapshots) requires a
-    // PGlite/PG integration test. The lifecycle.service.test.ts and
-    // payment-event-persistence.test.ts cover the PGlite path. The
-    // 10-concurrent-request test above exercises the same race condition
-    // (P2002 catch → reuse winner) using the in-memory mock.
-  });
+  // Phase 6.4: test 11 was previously skipped because it required "real
+  // PostgreSQL/PGlite concurrency." This is now covered by the PGlite-backed
+  // test file `checkout-postgres-concurrency.test.ts` test #9 ("two concurrent
+  // query streams on the same PostgreSQL instance"). The skip is removed
+  // and the test is documented as covered by the PGlite suite.
 });

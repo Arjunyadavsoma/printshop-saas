@@ -80,3 +80,29 @@ END $$;
 CREATE UNIQUE INDEX "Order_shop_tokenNumber_unique"
   ON "Order" ("shopId", "tokenNumber")
   WHERE "tokenNumber" IS NOT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Phase 6.4: PaymentAttempt active-order uniqueness — checkout idempotency
+-- guard at the PostgreSQL level.
+--
+-- INVARIANT: at most one 'created' (active) PaymentAttempt per order at any
+-- time. This is the database-level enforcement of the checkout idempotency
+-- invariant — application-level checks (the findFirst-then-INSERT pattern in
+-- `src/app/api/v1/orders/[id]/checkout/route.ts`) cannot prevent a true race
+-- under high concurrency (TOCTOU: both requests observe no active attempt,
+-- both proceed to INSERT).
+--
+-- This index is ALSO created by the Prisma migration
+-- `prisma/migrations/20251110000000_add_active_attempt_unique_index/migration.sql`.
+-- It is mirrored here so that `pg-migrate-prod.sh` (which appends this file
+-- to the Prisma-generated DDL on every production deploy) idempotently
+-- ensures the constraint exists even on databases initialized before the
+-- Phase 6.4 migration was added.
+--
+-- The `IF NOT EXISTS` clause makes this re-runnable on every deploy without
+-- raising an error if the index already exists (which is the common case
+-- after the first deploy post-Phase-6.4).
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE UNIQUE INDEX IF NOT EXISTS "PaymentAttempt_active_order_unique"
+  ON "PaymentAttempt" ("orderId")
+  WHERE "status" = 'created';

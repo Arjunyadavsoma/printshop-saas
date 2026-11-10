@@ -57,15 +57,32 @@ test.beforeAll(async () => {
 
 // Pick the first shop from the homepage shop list. Returns the slug
 // (which the test then navigates to) so the test is robust to seed churn.
+//
+// Phase 6.4 fix: the previous selector `getByRole('button').filter({
+// hasText: /Print|Copy|Shop/i }).first()` was matching the HERO "Find a shop"
+// CTA (which contains the substring "Shop") BEFORE the actual shop cards.
+// The hero button does not navigate — it scrolls to the discovery section —
+// so the subsequent `waitForURL(/\/shops\/[slug]/)` would time out.
+//
+// Fix: scope the selector to the shop discovery section (the <section> with
+// aria-labelledby="discover-heading"). Within that section, the only buttons
+// are the ShopCard elements (each rendered as <Card role="button">). This
+// is robust to:
+//   - hero CTA text changes ("Find a shop" vs "Browse shops" vs anything else)
+//   - footer/nav button text changes
+//   - new buttons added elsewhere on the homepage
 async function firstShopSlug(page: Page): Promise<string> {
-  // Each shop card is a `role="button"` element. Click the first one —
-  // clicking it navigates to /shops/[slug] — but we want the slug first
-  // so we can use it in subsequent API calls. Read it from the href
-  // via the "Visit shop" link instead.
-  const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
-  await expect(firstCard).toBeVisible();
+  const discoverRegion = page.getByRole('region', { name: /Discover print shops/i });
+  // Fallback if the section isn't exposed as a region (some browsers don't
+  // promote <section aria-labelledby> to role=region without an explicit
+  // role attribute). Use the heading's ancestor <section> directly.
+  const discoverSection = page.locator('section#shop-discovery');
+  const container = (await discoverRegion.count()) > 0 ? discoverRegion : discoverSection;
+  const firstCard = container.getByRole('button').filter({ hasText: /Visit shop/i }).first();
+  await expect(firstCard).toBeVisible({ timeout: 10_000 });
   await firstCard.click();
-  await page.waitForURL(/\/shops\/[^/]+$/);
+  await page.waitForURL(/\/shops\/[^/]+$/, { timeout: 15_000 });
+  await page.waitForLoadState('domcontentloaded');
   const url = new URL(page.url());
   return url.pathname.split('/').pop() as string;
 }
@@ -89,8 +106,14 @@ test.describe('Consumer journey — homepage', () => {
       page.getByRole('heading', { name: /Discover print shops/i }),
     ).toBeVisible();
 
-    // At least one shop card (role=button with the "Visit {name} — {addr}" aria-label).
-    const shopCards = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i });
+    // At least one shop card. Phase 6.4 fix: scope to the discovery region
+    // and filter by the "Visit shop" footer text (every ShopCard renders it).
+    // The previous /Print|Copy|Shop/i filter matched the hero "Find a shop"
+    // CTA (which contains "Shop") and over-counted.
+    const discoverRegion = page.getByRole('region', { name: /Discover print shops/i });
+    const discoverSection = page.locator('section#shop-discovery');
+    const container = (await discoverRegion.count()) > 0 ? discoverRegion : discoverSection;
+    const shopCards = container.getByRole('button').filter({ hasText: /Visit shop/i });
     const count = await shopCards.count();
     expect(count, 'expected at least one shop card on the homepage').toBeGreaterThan(0);
   });
@@ -119,12 +142,19 @@ test.describe('Consumer journey — shop selection', () => {
   }) => {
     await page.goto(TARGET, { waitUntil: 'networkidle' });
 
-    const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
-    await expect(firstCard).toBeVisible();
+    // Phase 6.4: use the same scoped selector as firstShopSlug so we don't
+    // accidentally click the hero "Find a shop" CTA (which contains "Shop"
+    // and would otherwise match /Print|Copy|Shop/i).
+    const discoverRegion = page.getByRole('region', { name: /Discover print shops/i });
+    const discoverSection = page.locator('section#shop-discovery');
+    const container = (await discoverRegion.count()) > 0 ? discoverRegion : discoverSection;
+    const firstCard = container.getByRole('button').filter({ hasText: /Visit shop/i }).first();
+    await expect(firstCard).toBeVisible({ timeout: 10_000 });
     await firstCard.click();
 
     // Should land on /shops/[slug] — wait for the URL pattern.
-    await page.waitForURL(/\/shops\/[^/]+$/);
+    await page.waitForURL(/\/shops\/[^/]+$/, { timeout: 15_000 });
+    await page.waitForLoadState('domcontentloaded');
 
     // The shop detail page renders "Start an order" inside a shadcn
     // <CardTitle> (which renders as a <div>, NOT a <h*>) — see
@@ -154,12 +184,16 @@ test.describe('Consumer journey — order creation', () => {
     await firstShopSlug(page);
 
     // Click the primary CTA — "Start order" button.
-    const startButton = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
-    await expect(startButton).toBeVisible();
+    // Phase 6.4 fix: use getByRole with name=/Start order/i instead of the
+    // broad /Print|Copy|Shop/i filter (which matched the hero CTA on the
+    // previous page and would match the shop header on this page).
+    const startButton = page.getByRole('button', { name: /Start order/i }).first();
+    await expect(startButton).toBeVisible({ timeout: 10_000 });
     await startButton.click();
 
     // Redirect to /orders/[id]?shop=...&t=...
     await page.waitForURL(/\/orders\/[^/]+/, { timeout: 15_000 });
+    await page.waitForLoadState('domcontentloaded');
 
     // The order page renders the stepper + upload card. The "Step 1 ·
     // Upload your files" label is inside a shadcn <CardTitle> (a <div>,

@@ -104,11 +104,19 @@ test.describe('Accessibility — WCAG 2.2 AA', () => {
     await page.waitForLoadState('load');
     await page.waitForTimeout(2000);
 
-    // Pick the first shop card (role=button with visible shop name text).
-    const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
-    await expect(firstCard).toBeVisible();
+    // Pick the first shop card. Phase 6.4 fix: scope to the shop discovery
+    // region (the <section aria-labelledby="discover-heading">). The previous
+    // `getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first()`
+    // matched the hero "Find a shop" CTA (which contains "Shop") BEFORE the
+    // actual shop cards, so the click did nothing and waitForURL timed out.
+    const discoverRegion = page.getByRole('region', { name: /Discover print shops/i });
+    const discoverSection = page.locator('section#shop-discovery');
+    const container = (await discoverRegion.count()) > 0 ? discoverRegion : discoverSection;
+    const firstCard = container.getByRole('button').filter({ hasText: /Visit shop/i }).first();
+    await expect(firstCard).toBeVisible({ timeout: 10_000 });
     await firstCard.click();
-    await page.waitForURL(/\/shops\/[^/]+$/);
+    await page.waitForURL(/\/shops\/[^/]+$/, { timeout: 15_000 });
+    await page.waitForLoadState('domcontentloaded');
 
     // Click the primary CTA — "Start order" button.
     const startButton = page.getByRole('button', { name: /Start order/i }).first();
