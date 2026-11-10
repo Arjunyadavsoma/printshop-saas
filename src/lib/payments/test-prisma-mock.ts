@@ -63,6 +63,7 @@ interface MockDb {
     create: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
@@ -121,13 +122,29 @@ function buildMock(): MockDb {
     }),
     paymentAttempt: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        // Phase 6.3 — enforce the UNIQUE constraint on `merchantOrderId`
+        // (mirrors the real PostgreSQL `@unique` on PaymentAttempt.merchantOrderId).
+        // The checkout route's idempotency path relies on this P2002 to detect
+        // concurrent INSERTs that slipped past the findFirst check.
+        const merchantOrderId = data.merchantOrderId as string | undefined;
+        if (merchantOrderId) {
+          for (const row of state.attempts.values()) {
+            if (row.merchantOrderId === merchantOrderId) {
+              const err = new Error(
+                `Unique constraint failed: PaymentAttempt(merchantOrderId)=(${merchantOrderId})`,
+              );
+              (err as { code?: string }).code = 'P2002';
+              throw err;
+            }
+          }
+        }
         const id = (data.id as string) ?? crypto.randomUUID();
         const row = { ...data, id } as MockRow;
         state.attempts.set(id, row);
         return row;
       }),
       findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
-        // Try by id first, then by merchantOrderId
+        // Try by id first, then by other unique fields (merchantOrderId).
         if (where.id) return state.attempts.get(where.id as string) ?? null;
         for (const row of state.attempts.values()) {
           if (matches(row, where)) return row;
@@ -137,7 +154,6 @@ function buildMock(): MockDb {
       findMany: vi.fn(async ({ where, orderBy, take }: { where?: Record<string, unknown>; orderBy?: Record<string, 'asc' | 'desc'>; take?: number }) => {
         let rows = [...state.attempts.values()];
         if (where) rows = rows.filter((r) => matches(r, where));
-        // Sort by the orderBy field (single-field, mirroring Prisma's API).
         if (orderBy) {
           const [field, dir] = Object.entries(orderBy)[0] ?? [null, 'asc'];
           if (field) {
@@ -155,6 +171,29 @@ function buildMock(): MockDb {
         }
         if (typeof take === 'number' && take > 0) rows = rows.slice(0, take);
         return rows;
+      }),
+      findFirst: vi.fn(async ({ where, orderBy }: { where?: Record<string, unknown>; orderBy?: Record<string, 'asc' | 'desc'> }) => {
+        // Phase 6.3 — first-row selector mirroring Prisma's findFirst API.
+        // The checkout route uses this to look up an existing active attempt
+        // before creating a new one (idempotency check).
+        let rows = [...state.attempts.values()];
+        if (where) rows = rows.filter((r) => matches(r, where));
+        if (orderBy) {
+          const [field, dir] = Object.entries(orderBy)[0] ?? [null, 'asc'];
+          if (field) {
+            rows.sort((a, b) => {
+              const av = a[field] as unknown;
+              const bv = b[field] as unknown;
+              if (av instanceof Date && bv instanceof Date) {
+                return dir === 'asc' ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
+              }
+              return dir === 'asc'
+                ? String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0
+                : String(bv) < String(av) ? -1 : String(bv) > String(av) ? 1 : 0;
+            });
+          }
+        }
+        return rows[0] ?? null;
       }),
       updateMany: vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
         let count = 0;
@@ -269,6 +308,7 @@ export function resetMockDb(): void {
     mockInstance.paymentAttempt.create.mockClear();
     mockInstance.paymentAttempt.findUnique.mockClear();
     mockInstance.paymentAttempt.findMany.mockClear();
+    mockInstance.paymentAttempt.findFirst.mockClear();
     mockInstance.paymentAttempt.updateMany.mockClear();
     mockInstance.paymentAttempt.update.mockClear();
     mockInstance.paymentEvent.create.mockClear();
