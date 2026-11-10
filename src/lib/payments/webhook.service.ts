@@ -305,6 +305,24 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
 
   // 8. Handle the transition result.
   if (transitionResult.idempotent || !transitionResult.applied) {
+    // Phase 6.11 Workstream B: if the PaymentAttempt was not found, return 404
+    // (not 200) so the provider retries the webhook. The previous behavior
+    // returned 200, telling the provider "OK, don't retry" — which could
+    // lose a legitimate payment event if the attempt was temporarily unavailable
+    // (e.g., race between cache population and DB persistence).
+    if (transitionResult.reason.includes('PaymentAttempt not found')) {
+      logger.warn('webhook: PaymentAttempt not found — returning 404 for provider retry', {
+        merchantOrderId,
+        txnId: v.txnId,
+      });
+      return {
+        statusCode: 404,
+        responseBody: result.responseBody,
+        summary: 'PaymentAttempt not found — provider should retry',
+        applied: false,
+        orderId: session.orderId,
+      };
+    }
     // Duplicate event, stale event, or already-processed — idempotent skip.
     if (v.txnId) await container.cache.set(processedKey, session.orderId, 86400);
     logger.info('webhook: idempotent skip (lifecycle)', {
