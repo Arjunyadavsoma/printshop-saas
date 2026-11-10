@@ -442,22 +442,18 @@ describe('Phase 6.2 financial-integrity: duplicate checkout prevention', () => {
       copies: 1, colorMode: 'bw', paperSize: 'a4', duplex: false, pageRange: '1-5',
     });
 
-    // Two concurrent checkout POSTs on the same order. The lifecycle
-    // service's idempotency (PaymentEvent UNIQUE([provider, eventId]))
-    // protects against duplicate webhook delivery, but the CHECKOUT route
-    // itself has no per-order idempotency key — each call generates a
-    // fresh merchantOrderId. The safety property we CAN guarantee is:
-    //   - at most ONE PaymentAttempt with status='created' for the order
-    //     at any given time, because once a webhook lands the attempt
-    //     transitions out of 'created'.
+    // Two concurrent checkout POSTs on the same order.
     //
-    // In the absence of a per-order idempotency key, two concurrent
-    // checkouts MAY create two PaymentAttempt rows (each with its own
-    // merchantOrderId). This test documents the GUARANTEE we can make:
-    // every created attempt has amountPaise === order.totalAmountPaise
-    // (no financial inconsistency). A per-order idempotency key on the
-    // checkout route is documented as a future hardening item in the
-    // verification report.
+    // Phase 6.3 idempotency fix: the checkout route now derives the
+    // merchantOrderId from the order id (`checkout-\${order.id}`) instead
+    // of a random UUID, and reuses an existing active attempt. Combined
+    // with the UNIQUE constraint on PaymentAttempt.merchantOrderId, this
+    // guarantees:
+    //   - At most ONE PaymentAttempt with status='created' per order.
+    //   - Both concurrent responses return the SAME merchantOrderId.
+    //   - The provider adapter is contacted at most ONCE.
+    // See src/app/api/v1/orders/[id]/checkout/route.ts + the 11 idempotency
+    // tests in src/lib/pricing/checkout-idempotency.test.ts.
     const [res1, res2] = await Promise.all([checkout(), checkout()]);
     const json1 = await res1.json();
     const json2 = await res2.json();
@@ -481,12 +477,11 @@ describe('Phase 6.2 financial-integrity: duplicate checkout prevention', () => {
       expect(a.shopId).toBe(shopId);
     }
 
-    // Document the current behaviour honestly: the route does NOT dedupe
-    // concurrent checkouts per-order. Both succeed with their own
-    // merchantOrderId. A per-order idempotency key is the future
-    // hardening — see PHASE_6_2_VERIFICATION.md §Known limitations.
-    expect(attempts.length).toBe(2);
-    expect(json1.data.merchantOrderId).not.toBe(json2.data.merchantOrderId);
+    // Phase 6.3 idempotency assertion: the route dedupes concurrent
+    // checkouts per-order. Both responses return the same merchantOrderId
+    // and only one PaymentAttempt row is created.
+    expect(attempts.length).toBe(1);
+    expect(json1.data.merchantOrderId).toBe(json2.data.merchantOrderId);
   });
 });
 
