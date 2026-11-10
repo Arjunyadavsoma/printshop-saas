@@ -276,33 +276,14 @@ export class PhonePePaymentAdapter implements PaymentAdapter {
         return { ok: false, verification: null, statusCode: 401 };
       }
     }
-    // v2 or no saltKey: decode the base64 payload directly (the webhook
-    // arrived over HTTPS from PhonePe — the transport is authenticated).
-    // The status API verification (verifyPayment) is the authoritative check.
-    try {
-      const decoded = JSON.parse(atob(input.rawBody));
-      const data = (decoded as { data?: Record<string, unknown> })?.data ?? decoded;
-      const code = (decoded as { code?: string })?.code;
-      const state = (data as { state?: string })?.state;
-      const txnId = (data as { transactionId?: string })?.transactionId ?? null;
-      const amount = (data as { amount?: number })?.amount ?? null;
-      const merchantOrderId = (data as { merchantTransactionId?: string })?.merchantTransactionId;
-      return {
-        ok: true,
-        verification: {
-          paid: code === 'PAYMENT_SUCCESS' || state === 'COMPLETED',
-          txnId,
-          utr: extractUtr(decoded),
-          amountPaise: typeof amount === 'number' ? amount : null,
-          provider: 'phonepe',
-          raw: decoded,
-        },
-        statusCode: 200,
-        responseBody: 'OK',
-      };
-    } catch {
-      return { ok: false, verification: null, statusCode: 400 };
-    }
+    // AUDIT-011 fix (Phase 6.6 P1): the previous code decoded the base64
+    // payload WITHOUT signature verification for v2-credentialed shops (no
+    // saltKey). This allowed an attacker to forge a webhook by knowing only
+    // the order ID and amount. Now we REJECT all webhooks that don't pass
+    // signature verification — v2 webhooks must go through the
+    // phonepe-v2-webhook.ts SHA auth path, not this adapter's handleWebhook.
+    console.error('[phonepe] webhook rejected — no valid signature (v2 shops must use the SHA auth webhook path)');
+    return { ok: false, verification: null, statusCode: 401 };
   }
 
   async verifyPayment(input: {

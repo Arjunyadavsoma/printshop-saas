@@ -126,13 +126,38 @@ export async function applyPaymentTransition(
 
   return await (db as any).$transaction(
     async (tx: any) => {
-      // ── STEP 1: Insert PaymentEvent (dedup via UNIQUE constraint) ──
+      // ── STEP 1: Find the PaymentAttempt FIRST (AUDIT-007 fix) ──
+      // Phase 6.6 P0 fix: the PaymentEvent.attemptId field has a FK constraint
+      // to PaymentAttempt.id. The previous code set attemptId = input.orderId
+      // (an Order UUID), which violates the FK in production. We must find the
+      // attempt first so we can use its real ID.
+      const attempt = await tx.paymentAttempt.findUnique({
+        where: { merchantOrderId: input.merchantOrderId },
+      });
+      if (!attempt) {
+        // No PaymentAttempt found — cannot insert a PaymentEvent (FK requires
+        // a valid attemptId). Return early; the audit log in webhook.service.ts
+        // already recorded the event arrival.
+        logger.warn('lifecycle: PaymentAttempt not found', {
+          merchantOrderId: input.merchantOrderId,
+          orderId: input.orderId,
+        });
+        return {
+          applied: false,
+          idempotent: false,
+          attemptStatus: 'created' as PaymentTransitionResult['attemptStatus'],
+          orderStatus: 'unknown',
+          reason: 'PaymentAttempt not found',
+        };
+      }
+
+      // ── STEP 2: Insert PaymentEvent with correct attemptId (dedup via UNIQUE) ──
       let eventRecord: { id: string } | null = null;
       try {
         eventRecord = await tx.paymentEvent.create({
           data: {
             id: crypto.randomUUID(),
-            attemptId: input.orderId, // logical link (no FK to avoid migration)
+            attemptId: attempt.id, // AUDIT-007 fix: use the real attempt ID, not orderId
             provider: input.provider,
             eventId: input.eventId,
             merchantOrderId: input.merchantOrderId,
@@ -150,18 +175,15 @@ export async function applyPaymentTransition(
           const existing = await tx.paymentEvent.findFirst({
             where: { provider: input.provider, eventId: input.eventId },
           });
-          const attempt = await tx.paymentAttempt.findUnique({
-            where: { merchantOrderId: input.merchantOrderId },
-          });
           const order = await tx.order.findUnique({ where: { id: input.orderId } });
           return {
             applied: false,
             idempotent: true,
-            attemptStatus: (attempt?.status ?? 'created') as PaymentTransitionResult['attemptStatus'],
+            attemptStatus: attempt.status as PaymentTransitionResult['attemptStatus'],
             orderStatus: order?.status ?? 'unknown',
             reason: `duplicate event (existing event processingStatus=${existing?.processingStatus ?? 'unknown'})`,
             eventId: existing?.id,
-            attemptId: attempt?.id,
+            attemptId: attempt.id,
           };
         }
         // Non-unique error → real failure. The transaction will roll back.
@@ -177,28 +199,6 @@ export async function applyPaymentTransition(
       // catch either returns early for unique errors or re-throws).
       if (!eventRecord) {
         throw new Error('PaymentEvent creation returned null without throwing');
-      }
-
-      // ── STEP 2: Find + lock the PaymentAttempt ──
-      const attempt = await tx.paymentAttempt.findUnique({
-        where: { merchantOrderId: input.merchantOrderId },
-      });
-      if (!attempt) {
-        // No PaymentAttempt found — the event is persisted (STEP 1 already
-        // committed inside the transaction), but we can't transition a
-        // non-existent attempt. Mark the event as 'skipped' and return.
-        await tx.paymentEvent.update({
-          where: { id: eventRecord.id },
-          data: { processingStatus: 'skipped', errorMessage: 'PaymentAttempt not found', processedAt: new Date() },
-        });
-        return {
-          applied: false,
-          idempotent: false,
-          attemptStatus: 'created',
-          orderStatus: 'unknown',
-          reason: 'PaymentAttempt not found',
-          eventId: eventRecord.id,
-        };
       }
 
       // Tenant validation — the attempt's shopId must match the input.

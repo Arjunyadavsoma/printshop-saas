@@ -12,6 +12,10 @@
     "CACHE_PROVIDER": "memory",
     "NEXT_PUBLIC_API_BASE": "/api/v1"
   },
+  "crons": [
+    { "path": "/api/v1/cron/reconcile-payments", "schedule": "*/10 * * * *" },
+    { "path": "/api/v1/cron/cleanup", "schedule": "*/5 * * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

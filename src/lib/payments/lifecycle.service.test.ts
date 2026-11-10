@@ -620,7 +620,7 @@ describe('applyPaymentTransition — atomic transition contract', () => {
     expect(order?.status).toBe('awaiting_payment');
   });
 
-  it('10. PaymentAttempt not found is recorded as skipped (no financial transition)', async () => {
+  it('10. PaymentAttempt not found → returns early, no PaymentEvent inserted (AUDIT-007 fix)', async () => {
     // No seedPaymentAttempt — the lookup misses.
     const result = await applyPaymentTransition(
       defaultInput({
@@ -633,12 +633,13 @@ describe('applyPaymentTransition — atomic transition contract', () => {
     expect(result.attemptStatus).toBe('created');
     expect(result.reason).toMatch(/PaymentAttempt not found/);
 
-    // The PaymentEvent IS persisted (records the orphan event), with status 'skipped'.
+    // AUDIT-007 fix: when the attempt is not found, NO PaymentEvent is inserted
+    // (the FK constraint requires a valid attemptId). The function returns
+    // early without persisting an event.
     const event = [...getMockDb().__internal.events.values()].find(
       (e) => e.eventId === 'TXN-LCM-10',
     );
-    expect(event?.processingStatus).toBe('skipped');
-    expect(event?.errorMessage).toContain('PaymentAttempt not found');
+    expect(event).toBeUndefined();
 
     // The order is untouched.
     const order = await repos.orders.findById(orderId);
