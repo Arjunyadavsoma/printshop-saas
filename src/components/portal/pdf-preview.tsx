@@ -66,6 +66,18 @@ export function PdfPreview({
   const canvasRefs = useRef<HTMLCanvasElement[]>([]);
   const workerRef = useRef<Worker | null>(null);
 
+  // Phase 6.3: callbacks are stored in refs so the loadPdf effect doesn't
+  // re-run when the parent passes a new onSelectionChange identity (which
+  // happens on every parent re-render). Without this, loadPdf starts, calls
+  // onSelectionChange (which triggers a parent re-render), the effect cleanup
+  // cancels loadPdf, and the new effect starts again — an infinite loop that
+  // prevents the toolbar (and the "X / Y pages selected" badge) from ever
+  // rendering.
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const onReadyRef = useRef(onReady);
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
+
   // Load the PDF and render thumbnails
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +140,7 @@ export function PdfPreview({
         const allPages = new Set<number>();
         for (let i = 1; i <= numPages; i++) allPages.add(i);
         setSelectedPages(allPages);
-        onSelectionChange?.(Array.from(allPages).sort((a, b) => a - b));
+        onSelectionChangeRef.current?.(Array.from(allPages).sort((a, b) => a - b));
 
         // Render each page to a canvas → data URL thumbnail
         const thumbs: string[] = [];
@@ -150,7 +162,7 @@ export function PdfPreview({
 
           if (i === numPages) {
             setLoading(false);
-            onReady?.();
+            onReadyRef.current?.();
           }
         }
       } catch (e: any) {
@@ -174,7 +186,7 @@ export function PdfPreview({
     return () => {
       cancelled = true;
     };
-  }, [file, fileUrl, mimeType, onSelectionChange, onReady]);
+  }, [file, fileUrl, mimeType]);
 
   // Toggle page selection
   const togglePage = useCallback((pageNum: number) => {
@@ -185,23 +197,23 @@ export function PdfPreview({
       } else {
         next.add(pageNum);
       }
-      onSelectionChange?.(Array.from(next).sort((a, b) => a - b));
+      onSelectionChangeRef.current?.(Array.from(next).sort((a, b) => a - b));
       return next;
     });
-  }, [onSelectionChange]);
+  }, []);
 
   // Select / deselect all
   const selectAll = useCallback(() => {
     const all = new Set<number>();
     for (let i = 1; i <= renderedPageCount; i++) all.add(i);
     setSelectedPages(all);
-    onSelectionChange?.(Array.from(all).sort((a, b) => a - b));
-  }, [renderedPageCount, onSelectionChange]);
+    onSelectionChangeRef.current?.(Array.from(all).sort((a, b) => a - b));
+  }, [renderedPageCount]);
 
   const deselectAll = useCallback(() => {
     setSelectedPages(new Set());
-    onSelectionChange?.([]);
-  }, [onSelectionChange]);
+    onSelectionChangeRef.current?.([]);
+  }, []);
 
   // Workstream-3: zoom controls (0.25 → 2.0). The +/- buttons step by 0.25;
   // "fit-to-width" resets to 1.0 (the default scale). Clamped to the min/max.
