@@ -72,7 +72,10 @@ function formatViolations(violations: import('axe-core').Result[]): string {
 
 test.describe('Accessibility — WCAG 2.2 AA', () => {
   test('homepage has no WCAG 2.2 AA violations', async ({ page }) => {
-    await page.goto(`${TARGET}/`, { waitUntil: 'networkidle' });
+    await page.goto(`${TARGET}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('load');
+    // Give the page a moment to settle (shop list fetch, etc.)
+    await page.waitForTimeout(2000);
     const results = await axe(page).analyze();
 
     if (results.violations.length > 0) {
@@ -97,10 +100,12 @@ test.describe('Accessibility — WCAG 2.2 AA', () => {
 
   test('order page has no WCAG 2.2 AA violations', async ({ page }) => {
     // Walk the happy path: homepage → shop → Start order → land on /orders/[id].
-    await page.goto(`${TARGET}/`, { waitUntil: 'networkidle' });
+    await page.goto(`${TARGET}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(2000);
 
-    // Pick the first shop card (role=button with the "Visit {name} — {addr}" aria-label).
-    const firstCard = page.getByRole('button', { name: /Visit .+ — .+/i }).first();
+    // Pick the first shop card (role=button with visible shop name text).
+    const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
     await expect(firstCard).toBeVisible();
     await firstCard.click();
     await page.waitForURL(/\/shops\/[^/]+$/);

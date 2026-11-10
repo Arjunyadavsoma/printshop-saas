@@ -393,7 +393,10 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
           onClick();
         }
       }}
-      aria-label={`Visit ${shop.name} — ${shop.address}`}
+      // Phase 6.3: removed aria-label to fix label-content-name-mismatch
+      // (axe-core WCAG 2.2 AA). The visible shop name serves as the
+      // accessible name — adding an aria-label that doesn't include ALL
+      // visible text (pricing, badges) triggers the rule.
       className={cn(
         'group h-full cursor-pointer border-border shadow-sm transition-all',
         'hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md',

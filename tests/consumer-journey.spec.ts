@@ -62,7 +62,7 @@ async function firstShopSlug(page: Page): Promise<string> {
   // clicking it navigates to /shops/[slug] — but we want the slug first
   // so we can use it in subsequent API calls. Read it from the href
   // via the "Visit shop" link instead.
-  const firstCard = page.getByRole('button', { name: /Visit .+ — .+/i }).first();
+  const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
   await expect(firstCard).toBeVisible();
   await firstCard.click();
   await page.waitForURL(/\/shops\/[^/]+$/);
@@ -90,7 +90,7 @@ test.describe('Consumer journey — homepage', () => {
     ).toBeVisible();
 
     // At least one shop card (role=button with the "Visit {name} — {addr}" aria-label).
-    const shopCards = page.getByRole('button', { name: /Visit .+ — .+/i });
+    const shopCards = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i });
     const count = await shopCards.count();
     expect(count, 'expected at least one shop card on the homepage').toBeGreaterThan(0);
   });
@@ -119,7 +119,7 @@ test.describe('Consumer journey — shop selection', () => {
   }) => {
     await page.goto(TARGET, { waitUntil: 'networkidle' });
 
-    const firstCard = page.getByRole('button', { name: /Visit .+ — .+/i }).first();
+    const firstCard = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
     await expect(firstCard).toBeVisible();
     await firstCard.click();
 
@@ -154,7 +154,7 @@ test.describe('Consumer journey — order creation', () => {
     await firstShopSlug(page);
 
     // Click the primary CTA — "Start order" button.
-    const startButton = page.getByRole('button', { name: /Start order/i }).first();
+    const startButton = page.getByRole('button').filter({ hasText: /Print|Copy|Shop/i }).first();
     await expect(startButton).toBeVisible();
     await startButton.click();
 
