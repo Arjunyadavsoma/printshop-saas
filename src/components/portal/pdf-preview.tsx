@@ -101,13 +101,15 @@ export function PdfPreview({
         // Dynamically import PDF.js
         const pdfjs = await import('pdfjs-dist');
 
-        // Set up the worker
+        // Set up the worker. Phase 6.3: use a static worker file served
+        // from /public/pdf.worker.min.mjs instead of the bundled
+        // `new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url)`.
+        // Next.js 16 Turbopack doesn't reliably resolve the bundled worker
+        // URL in dev mode (the worker module loads but messages don't
+        // round-trip, so getDocument() hangs forever). Serving the worker
+        // as a static asset fixes both dev and prod.
         if (!workerRef.current) {
-          workerRef.current = new Worker(
-            new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url),
-            { type: 'module' }
-          );
-          pdfjs.GlobalWorkerOptions.workerPort = workerRef.current;
+          pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
         }
 
         const loadingTask = pdfjs.getDocument({ data: pdfData });
