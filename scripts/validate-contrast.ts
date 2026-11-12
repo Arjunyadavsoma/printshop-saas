@@ -56,15 +56,15 @@ function contrastRatio(l1: number, l2: number): number {
 
 // Token pairs to validate (foreground on background)
 const PAIRS = [
-  // Light theme
-  { name: 'brand text on brand-soft (light)', fg: [0.45, 0.19, 41.116], bg: [0.95, 0.05, 75], min: 4.5 },
-  { name: 'success text on success-soft (light)', fg: [0.42, 0.14, 152], bg: [0.95, 0.04, 152], min: 4.5 },
-  { name: 'warning text on warning-soft (light)', fg: [0.50, 0.14, 70], bg: [0.95, 0.05, 70], min: 4.5 },
-  { name: 'info text on info-soft (light)', fg: [0.45, 0.13, 230], bg: [0.95, 0.04, 230], min: 4.5 },
-  { name: 'danger text on danger-soft (light)', fg: [0.50, 0.19, 25], bg: [0.95, 0.05, 25], min: 4.5 },
+  // Light theme — Square UI palette (blue-indigo brand)
+  { name: 'brand text on brand-soft (light)', fg: [0.50, 0.19, 264], bg: [0.95, 0.04, 264], min: 4.5 },
+  { name: 'success text on success-soft (light)', fg: [0.52, 0.14, 152], bg: [0.95, 0.04, 152], min: 4.5 },
+  { name: 'warning text on warning-soft (light)', fg: [0.45, 0.13, 65], bg: [0.95, 0.05, 65], min: 4.5 },
+  { name: 'info text on info-soft (light)', fg: [0.50, 0.13, 230], bg: [0.95, 0.04, 230], min: 4.5 },
+  { name: 'danger text on danger-soft (light)', fg: [0.52, 0.19, 25], bg: [0.95, 0.05, 25], min: 4.5 },
   { name: 'muted-foreground on muted (light)', fg: [0.48, 0, 0], bg: [0.97, 0, 0], min: 4.5 },
   { name: 'foreground on background (light)', fg: [0.145, 0, 0], bg: [1, 0, 0], min: 4.5 },
-  { name: 'warning-foreground on warning (light)', fg: [0.18, 0.04, 70], bg: [0.72, 0.18, 70], min: 4.5 },
+  { name: 'warning-foreground on warning (light)', fg: [0.18, 0.04, 65], bg: [0.72, 0.15, 65], min: 4.5 },
 ];
 
 let failed = 0;

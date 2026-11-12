@@ -113,7 +113,7 @@ function SidebarNav({
         <div key={gi} className="flex flex-col gap-1">
           {group.label && (
             <p
-              className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               aria-hidden
             >
               {group.label}
@@ -155,10 +155,10 @@ function SidebarNav({
  */
 function PortalFooter() {
   return (
-    <footer className="mt-auto border-t border-border bg-card">
+    <footer className="mt-auto border-t border-border bg-surface">
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-brand text-[10px] font-bold text-brand">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-brand text-xs font-bold text-brand">
             P
           </div>
           <span>
@@ -216,14 +216,14 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
 
   // Login page renders bare — no sidebar, no auth check.
   if (isLoginPage) {
-    return <div className="min-h-screen bg-background">{children}</div>;
+    return <div className="min-h-screen bg-page">{children}</div>;
   }
 
   // While we wait for the auth state to settle, show a minimal spinner — this
   // avoids a one-frame flash of the dashboard before the redirect fires.
   if (!api.ready || !api.token || api.role !== 'owner') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-page">
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
           <div className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
           <span className="text-sm">Loading shop portal…</span>
@@ -241,9 +241,9 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-page">
       {/* Top bar — sticky, shows shop name + logout + mobile hamburger */}
-      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 sm:px-6">
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 sm:px-6">
         <div className="flex items-center gap-2">
           {/* Mobile hamburger */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -266,7 +266,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
             <span className="truncate text-sm font-semibold sm:text-base">
               {shopName ?? 'Shop Portal'}
             </span>
-            <span className="text-[10px] text-muted-foreground">Shopkeeper Portal</span>
+            <span className="text-xs text-muted-foreground">Shopkeeper Portal</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -288,10 +288,10 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
 
       {/* Body: fixed sidebar on desktop, content area on the right */}
       <div className="flex flex-1">
-        <aside className="hidden w-60 shrink-0 border-r border-border bg-card md:block">
+        <aside className="hidden w-60 shrink-0 border-r border-border bg-surface md:block">
           <SidebarNav pathname={pathname} hash={hash} />
         </aside>
-        <main className="flex-1 overflow-x-hidden bg-background">
+        <main className="flex-1 overflow-x-hidden bg-page">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
         </main>
       </div>
