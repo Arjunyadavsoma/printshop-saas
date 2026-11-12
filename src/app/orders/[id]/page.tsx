@@ -1044,14 +1044,18 @@ function ConfigureStep(props: {
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-5 w-5 shrink-0 text-brand" />
               <span className="truncate">{f.filename}</span>
-              <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
-                {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
-              </Badge>
+              {f.status === 'needs_review' ? (
+                <Badge variant="outline" className="ml-auto shrink-0 border-brand/30 bg-brand-soft text-brand">Awaiting review</Badge>
+              ) : (
+                <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
+                  {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* PDF Preview with page selection — clean container */}
-            {f.rawFile && (
+            {/* PDF Preview with page selection — only for parseable files */}
+            {f.rawFile && f.status !== 'needs_review' && (
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <PdfPreview
                   file={f.rawFile}
@@ -1061,6 +1065,17 @@ function ConfigureStep(props: {
                     props.onUpdate(f.fileId, { selectedPages, dirty: true });
                   }}
                 />
+              </div>
+            )}
+            {f.status === 'needs_review' && (
+              <div className="flex items-start gap-3 rounded-lg border border-brand-border bg-brand-soft p-3 text-sm text-brand">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">Awaiting shopkeeper review</p>
+                  <p className="mt-0.5 text-xs text-brand">
+                    This file&apos;s page count couldn&apos;t be detected automatically (e.g. legacy .doc or unsupported format). The shopkeeper will confirm the page count and price it. You&apos;ll be able to pay once review is complete.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1075,6 +1090,7 @@ function ConfigureStep(props: {
                   max={500}
                   value={f.copies}
                   onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Math.min(500, Number(e.target.value) || 1)), dirty: true })}
+                  disabled={f.status === 'needs_review'}
                   className="h-10 tabular-nums"
                 />
               </div>
@@ -1085,6 +1101,7 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.colorMode}
                   onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode, dirty: true })}
+                  disabled={f.status === 'needs_review'}
                   className="mt-0"
                 >
                   <ToggleGroupItem value="bw" className="h-10 text-xs">B&W</ToggleGroupItem>
@@ -1097,6 +1114,7 @@ function ConfigureStep(props: {
                 <select
                   value={f.paperSize}
                   onChange={(e) => props.onUpdate(f.fileId, { paperSize: e.target.value as PaperSize, dirty: true })}
+                  disabled={f.status === 'needs_review'}
                   className="h-10 w-full rounded-md border border-input bg-surface px-3 text-sm"
                 >
                   <option value="a4">A4</option>
@@ -1112,6 +1130,7 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.duplex ? 'duplex' : 'simplex'}
                   onValueChange={(v) => props.onUpdate(f.fileId, { duplex: v === 'duplex', dirty: true })}
+                  disabled={f.status === 'needs_review'}
                   className="mt-0"
                 >
                   <ToggleGroupItem value="simplex" className="h-10 text-xs">Single</ToggleGroupItem>
@@ -1123,12 +1142,20 @@ function ConfigureStep(props: {
             {/* Per-file price display */}
             <div className="flex flex-col gap-1 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
               <span className="text-xs tabular-nums text-muted-foreground">
-                {f.selectedPages && f.selectedPages.length < f.pageCount
-                  ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
-                  : `${f.pageCount || '?'} pages × ${f.copies} copies`}
+                {f.status === 'needs_review' ? (
+                  <span className="text-brand">Pending shopkeeper review — page count &amp; price to be confirmed</span>
+                ) : f.selectedPages && f.selectedPages.length < f.pageCount ? (
+                  `${f.selectedPages.length} of ${f.pageCount} pages selected`
+                ) : (
+                  `${f.pageCount || '?'} pages × ${f.copies} copies`
+                )}
               </span>
               <span className="text-lg font-semibold tabular-nums text-foreground sm:text-right">
-                {formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
+                {f.status === 'needs_review' ? (
+                  <span className="text-base font-medium text-muted-foreground">Pending</span>
+                ) : (
+                  formatINRFromPaise(f.dirty ? 0 : f.pricePaise)
+                )}
               </span>
             </div>
           </CardContent>
@@ -1167,7 +1194,9 @@ function CheckoutStep(props: {
   onCheckout: () => void;
   onBack: () => void;
 }) {
-  const priced = props.files.filter((f) => f.status === 'uploaded' || f.status === 'needs_review');
+  const priced = props.files.filter((f) => f.status === 'uploaded');
+  const reviewFiles = props.files.filter((f) => f.status === 'needs_review');
+  const blocked = reviewFiles.length > 0;
   return (
     <div className="space-y-4">
       <Card className="bg-surface">
@@ -1178,6 +1207,19 @@ function CheckoutStep(props: {
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Awaiting-review banner — blocks checkout until the shopkeeper sets page counts */}
+          {blocked && (
+            <div className="flex items-start gap-3 rounded-lg border border-brand-border bg-brand-soft p-3 text-sm text-brand">
+              <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-medium">{reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} awaiting shopkeeper review</p>
+                <p className="text-xs text-brand">
+                  {reviewFiles.map((f) => f.filename).join(', ')} — the page count for {reviewFiles.length === 1 ? 'this file' : 'these files'} couldn&apos;t be detected automatically. The shopkeeper will confirm the page count and price, then you can pay. No charge until review is complete.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Line items table */}
           <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
             <table className="w-full min-w-[480px] text-sm">
@@ -1189,6 +1231,11 @@ function CheckoutStep(props: {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
+                {priced.length === 0 && reviewFiles.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">No files yet — upload a file to begin.</td>
+                  </tr>
+                )}
                 {priced.map((f) => (
                   <tr key={f.fileId}>
                     <td className="px-3 py-2 text-foreground">
@@ -1206,10 +1253,28 @@ function CheckoutStep(props: {
                     <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{formatINRFromPaise(f.pricePaise)}</td>
                   </tr>
                 ))}
+                {reviewFiles.map((f) => (
+                  <tr key={f.fileId} className="bg-brand-soft/40">
+                    <td className="px-3 py-2 text-foreground">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-brand" />
+                        <span className="truncate">{f.filename}</span>
+                      </div>
+                      <span className="ml-6 text-xs text-brand">Pending review</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
+                      {f.copies}× · {f.colorMode === 'bw' ? 'B&W' : 'Colour'} · {f.paperSize.toUpperCase()}
+                      {f.duplex ? ' · duplex' : ''}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums text-muted-foreground">—</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="bg-muted/40">
-                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>Server-confirmed total</td>
+                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>
+                    {blocked ? 'Total (priced files — review pending)' : 'Server-confirmed total'}
+                  </td>
                   <td className="px-3 py-2 text-right text-lg font-semibold tabular-nums text-foreground">{formatINRFromPaise(props.orderTotalPaise)}</td>
                 </tr>
               </tfoot>
@@ -1239,9 +1304,9 @@ function CheckoutStep(props: {
           <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0 || blocked}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            Create payment
+            {blocked ? 'Awaiting review' : 'Create payment'}
           </Button>
         </CardFooter>
       </Card>
@@ -1577,9 +1642,12 @@ function FileCard(props: {
                 {f.pageCount > 0 ? `${f.pageCount} pages · ` : ''}{f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
               </p>
               {isReview && (
-                <p className="mt-1 text-xs text-brand">
-                  Needs shopkeeper review — settings may be locked until the shopkeeper sets a page count.
-                </p>
+                <div className="mt-2 flex items-start gap-2 rounded-md border border-brand-border bg-brand-soft p-2 text-xs text-brand">
+                  <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    <span className="font-medium">Awaiting shopkeeper review.</span> The page count will be confirmed by the shop and the file priced. You&apos;ll be able to pay once review is complete.
+                  </span>
+                </div>
               )}
               {isFailed && f.uploadError && (
                 <p className="mt-1 text-xs text-danger">{f.uploadError}</p>

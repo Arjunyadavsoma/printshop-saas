@@ -142,7 +142,18 @@ function formatBytes(bytes: number): string {
 function formatMime(mime: string): string {
   if (mime === 'application/pdf') return 'PDF';
   if (mime.startsWith('image/')) return mime.replace('image/', '').toUpperCase();
-  return mime;
+  const OFFICE: Record<string, string> = {
+    'application/msword': 'DOC',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+    'application/vnd.ms-powerpoint': 'PPT',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
+    'application/vnd.ms-excel': 'XLS',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLSX',
+    'application/rtf': 'RTF',
+    'text/plain': 'TXT',
+    'text/csv': 'CSV',
+  };
+  return OFFICE[mime] ?? mime;
 }
 function isToday(iso: string): boolean {
   try {
@@ -178,6 +189,104 @@ function paymentStatusForOrder(status: OrderStatus, paidAt: string | null): stri
   if (status === 'refunded') return 'refunded';
   if (paidAt) return 'paid';
   return 'pending';
+}
+
+/**
+ * Inline "set page count" control for files in `needs_review` status.
+ *
+ * Legacy/encrypted formats (e.g. .doc, corrupted PDF) can't be auto-parsed,
+ * so they land in needs_review with pageCount=null and pricePaise=0. The
+ * shopkeeper counts the pages (by opening/downloading the file) and enters
+ * the count here. The server endpoint prices the file with the shop's
+ * current pricing config + the file's existing print settings, transitions
+ * it to `pending`, and recalculates the order total.
+ */
+function ReviewFileAction({
+  file,
+  orderId,
+  api,
+  onDone,
+}: {
+  file: PrintFile;
+  orderId: string;
+  api: ReturnType<typeof useApiClient>;
+  onDone: () => void;
+}) {
+  const [pageCount, setPageCount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    const n = parseInt(pageCount, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 10000) {
+      setErr('Enter a whole number of pages (1–10,000).');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.request<{
+        data?: { file: { id: string; pageCount: number; pricePaise: number; status: string }; orderTotalPaise: number };
+        error?: { message?: string };
+      }>(
+        'POST',
+        `/api/v1/shops/me/orders/${orderId}/files/${file.id}/page-count`,
+        { body: { pageCount: n } },
+      );
+      if (r.status >= 400) {
+        const msg = r.data?.error?.message ?? `Failed (HTTP ${r.status}).`;
+        setErr(msg);
+        toast.error('Could not set page count', { description: msg });
+        return;
+      }
+      const price = r.data?.data?.file?.pricePaise;
+      toast.success('Page count set', {
+        description: `${n} page${n === 1 ? '' : 's'} · ${price != null ? formatINRFromPaise(price) : 'priced'}. File is now ready for checkout.`,
+      });
+      setPageCount('');
+      onDone();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      setErr(msg);
+      toast.error('Network error', { description: msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-2">
+      <div className="flex-1">
+        <Label htmlFor={`pc-${file.id}`} className="sr-only">
+          Page count for {file.originalFilename}
+        </Label>
+        <Input
+          id={`pc-${file.id}`}
+          type="number"
+          min={1}
+          max={10000}
+          inputMode="numeric"
+          placeholder="Page count"
+          value={pageCount}
+          onChange={(e) => { setPageCount(e.target.value); setErr(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void submit(); } }}
+          disabled={busy}
+          className="h-10 tabular-nums"
+        />
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => void submit()}
+        disabled={busy || !pageCount}
+        className="min-h-[44px] gap-1.5"
+      >
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+        Set &amp; price
+      </Button>
+      {err && <p className="text-xs text-danger sm:basis-full">{err}</p>}
+    </div>
+  );
 }
 
 export default function ShopOrderDetailPage() {
@@ -693,6 +802,46 @@ export default function ShopOrderDetailPage() {
         </CardContent>
       </Card>
 
+      {/* ── Files awaiting shopkeeper review (needs_review) ── */}
+      {order.files.some((f) => f.status === 'needs_review') && (
+        <Card className="border-brand-border bg-brand-soft/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="size-4 text-brand" /> Files awaiting your review
+            </CardTitle>
+            <CardDescription className="text-xs">
+              These files couldn&apos;t be auto-parsed (legacy .doc, encrypted, or unsupported format). Count the pages by opening or downloading the file, then enter the count to price it and unlock checkout for the customer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {order.files
+              .filter((f) => f.status === 'needs_review')
+              .map((f) => (
+                <div key={f.id} className="rounded-lg border border-brand-border bg-surface p-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{f.originalFilename}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'} · {f.colorMode === 'color' ? 'Colour' : 'B&W'} · {f.paperSize.toUpperCase()}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 border-brand/30 bg-brand-soft text-brand">Needs review</Badge>
+                  </div>
+                  <Separator className="my-3" />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Tip: download the file to count pages, or open it in its native app.
+                    </p>
+                    <div className="w-full sm:w-[420px] sm:shrink-0">
+                      <ReviewFileAction file={f} orderId={orderId} api={api} onDone={() => void load(true)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Print instructions + files table ── */}
       <Card>
         <CardHeader>
@@ -737,7 +886,13 @@ export default function ShopOrderDetailPage() {
                             <span className="text-xs text-muted-foreground">{formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">{f.pageCount ?? 'Unknown'}</TableCell>
+                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">
+                          {f.status === 'needs_review' ? (
+                            <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand">Review</Badge>
+                          ) : (
+                            f.pageCount ?? 'Unknown'
+                          )}
+                        </TableCell>
                         <TableCell className="hidden md:table-cell font-mono text-sm tabular-nums">{f.copies}</TableCell>
                         <TableCell className="hidden md:table-cell">
                           <Badge
@@ -755,7 +910,13 @@ export default function ShopOrderDetailPage() {
                             ? <Badge variant="outline" className="border-success/30 bg-success-soft text-success">duplex</Badge>
                             : <span className="text-muted-foreground">simplex</span>}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(f.pricePaise)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm tabular-nums">
+                          {f.status === 'needs_review' ? (
+                            <span className="text-muted-foreground">Pending</span>
+                          ) : (
+                            formatINRFromPaise(f.pricePaise)
+                          )}
+                        </TableCell>
                         <TableCell className="pr-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
@@ -792,7 +953,9 @@ export default function ShopOrderDetailPage() {
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <span className="font-medium">{f.originalFilename}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">
-                          {f.pageCount ?? 'Unknown'} pages · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
+                          {f.status === 'needs_review'
+                            ? <span className="text-brand">Awaiting page count</span>
+                            : `${f.pageCount ?? 'Unknown'} pages`} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
                         </span>
                       </div>
                       <Separator className="my-2" />
