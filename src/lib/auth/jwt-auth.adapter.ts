@@ -168,9 +168,17 @@ export class JwtAuthAdapter implements AuthAdapter {
   async rotateRefreshToken(token: string): Promise<{ access: string; refresh: string } | null> {
     const claims = await this.verify(token, this.config.refreshSecret);
     if (!claims || claims.type !== 'refresh' || typeof claims.jti !== 'string') return null;
+    // F-01 fix: Atomic replay guard using a rotation marker.
+    // Set a short-lived "rotating" marker BEFORE deleting the old jti.
+    // If two concurrent requests try to rotate the same token, only one
+    // succeeds in setting the marker (the other sees it already exists).
+    const rotationMarker = `refresh:rotating:${claims.jti}`;
+    const markerExists = await this.cache.get(rotationMarker);
+    if (markerExists) return null; // another request is already rotating
+    await this.cache.set(rotationMarker, '1', 10); // 10s rotation window
     // Replay guard: the jti must still be live.
     const live = await this.cache.get(`refresh:${claims.jti}`);
-    if (!live) return null;
+    if (!live) { await this.cache.del(rotationMarker); return null; }
     // Rotate: delete the old jti, issue a fresh pair.
     await this.cache.del(`refresh:${claims.jti}`);
     const role = claims.role as UserRole;

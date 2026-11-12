@@ -7,6 +7,7 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { ValidationError } from '@platform/core/errors';
 import { parsePageCount } from '@/lib/services/parse-page-count';
+import { validateFileSignature, MAX_PAGE_COUNT, PARSE_TIMEOUT_MS } from '@/lib/upload/file-signature';
 
 const ConfirmFileSchema = z.object({
   fileId: z.string().uuid(),
@@ -59,12 +60,26 @@ export const POST = withRateLimit<{ id: string }>(
       throw new ValidationError(`Size mismatch: declared ${body.size}, stored ${head.size}`);
     }
 
-    // Parse page count — pdf-lib for PDFs, 1 for images, null for Office.
+    // F-08: Validate actual file signature (magic bytes) — never trust client-declared MIME.
     const hasGetBytes = typeof (storage as unknown as { getBytes?: unknown }).getBytes === 'function';
     const bytes = hasGetBytes
       ? await (storage as unknown as { getBytes: (k: string) => Promise<{ bytes: Uint8Array } | null> }).getBytes(body.storageKey).then((r) => r?.bytes ?? null)
       : null;
-    const pageCount = await parsePageCount(body.mimeType, bytes);
+    if (bytes) {
+      const sigResult = validateFileSignature(bytes, body.mimeType);
+      if (!sigResult.valid) {
+        throw new ValidationError(`File validation failed: ${sigResult.error}`);
+      }
+    }
+    // Parse page count with timeout protection.
+    const pageCount = await Promise.race([
+      parsePageCount(body.mimeType, bytes),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), PARSE_TIMEOUT_MS)),
+    ]);
+    // Enforce page-count limit (prevents resource exhaustion from malicious PDFs).
+    if (pageCount !== null && pageCount > MAX_PAGE_COUNT) {
+      throw new ValidationError(`PDF has ${pageCount} pages — maximum is ${MAX_PAGE_COUNT}.`);
+    }
     const needsReview = pageCount === null;
 
     const file = await repos.files.create({

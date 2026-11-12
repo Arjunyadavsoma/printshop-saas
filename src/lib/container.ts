@@ -140,12 +140,12 @@ function validateCacheProvider(): string {
     // Previously this threw FATAL on non-Vercel production. Now it warns +
     // continues — the app stays functional (rate limiting is per-process,
     // but DB UNIQUE constraints still guard payment idempotency).
-    console.warn('[container] CACHE_PROVIDER=memory in production — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency. Set CACHE_PROVIDER=redis + Upstash credentials for proper rate limiting.');
+    throw new Error('FATAL: CACHE_PROVIDER=memory in production — rate limiting + refresh-token rotation are per-invocation. Set CACHE_PROVIDER=redis + UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN.');
   }
   // Also gracefully handle missing Upstash credentials when CACHE_PROVIDER=redis.
   if (provider === 'redis') {
     if (!env('UPSTASH_REDIS_REST_URL') || !env('UPSTASH_REDIS_REST_TOKEN')) {
-      console.error('[container] CACHE_PROVIDER=redis but UPSTASH_REDIS_REST_URL/TOKEN not set — falling back to memory cache.');
+      throw new Error('FATAL: CACHE_PROVIDER=redis but UPSTASH_REDIS_REST_URL/TOKEN not set. Configure Upstash Redis credentials or set CACHE_PROVIDER=memory (dev only).');
       return 'memory';
     }
   }

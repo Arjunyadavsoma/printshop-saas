@@ -26,7 +26,13 @@ import { printFile, writeToTemp } from './printer.js';
 const cmd = process.argv[2] ?? 'help';
 
 async function setup(): Promise<void> {
-  console.log('=== print-agent setup ===');
+  // F-10: Hard production guard — demo agent must NEVER run in production.
+if (process.env.NODE_ENV === 'production' && process.env.PRINT_AGENT_DEMO === '1') {
+  console.error('FATAL: PRINT_AGENT_DEMO=1 is not allowed in production. Refusing to start.');
+  process.exit(1);
+}
+
+console.log('=== print-agent setup ===');
   const apiUrl = process.env.PRINT_AGENT_API_URL ?? (await prompt('API URL (the gateway)', 'http://127.0.0.1:81'));
   const shopSlug = process.env.PRINT_AGENT_SHOP_SLUG ?? (await prompt('Shop slug', 'quickprint'));
   const name = process.env.PRINT_AGENT_NAME ?? (await prompt('Agent name', defaultName()));
