@@ -33,14 +33,16 @@ import {
  *     webhook bodies. Audit metadata records only {provider, outcome, reason,
  *     attemptId}.
  *
- * Configure in vercel.json crons array: path
- * "/api/v1/cron/reconcile-payments", schedule every 10 minutes.
+ * Scheduling:
+ *   - Vercel Hobby cron: daily at 02:00 UTC (safety net)
+ *   - GitHub Actions: every 10 minutes (primary scheduler)
+ * Both invoke the same idempotent endpoint — duplicate execution is safe.
  *
  * Vercel Cron automatically sends `Authorization: Bearer ${CRON_SECRET}`.
  */
 
-const MAX_BATCH = 10;
-const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_BATCH = 50; // Vercel Hobby: daily cron processes ALL stale attempts in one run
+const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes — same threshold (attempts stale after payment window expires)
 const VERIFY_TIMEOUT_MS = 15_000; // 15-second per-attempt timeout
 
 /** Outcome categories recorded in audit_logs + returned in the response. */
