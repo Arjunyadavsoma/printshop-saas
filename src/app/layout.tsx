@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/portal/auth-context";
 import { PWARegister } from "@/components/pwa/pwa-register";
+import { ThemeProvider } from "next-themes";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -89,8 +90,8 @@ export const metadata: Metadata = {
  */
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#d97706" }, // amber-600
-    { media: "(prefers-color-scheme: dark)", color: "#d97706" },
+    { media: "(prefers-color-scheme: light)", color: "#3157d5" }, // Square UI brand (oklch 0.50 0.19 264)
+    { media: "(prefers-color-scheme: dark)", color: "#1a1a1a" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -117,7 +118,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <AuthProvider>
-          {children}
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>{children}</ThemeProvider>
         </AuthProvider>
         <Toaster />
         {/* Registers the service worker (production only) + captures the

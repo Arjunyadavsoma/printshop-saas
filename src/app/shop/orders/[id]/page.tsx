@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { StatusBadge } from '@/components/portal/status-badge';
 import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
   Card,
@@ -18,8 +17,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { PageHeader } from '@/components/shared/page-header';
+import { OrderStatusBadge } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageSkeleton } from '@/components/shared/loading-skeleton';
 import {
   Table,
   TableBody,
@@ -415,13 +417,7 @@ export default function ShopOrderDetailPage() {
 
   // ── Render: loading ──
   if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-9 w-48 sm:w-64" />
-        <Skeleton className="h-32" />
-        <Skeleton className="h-64" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (notFound) {
@@ -466,35 +462,38 @@ export default function ShopOrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back + refresh */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button asChild variant="ghost" size="sm" className="min-h-[44px] gap-1.5">
-          <Link href="/shop/orders"><ArrowLeft className="size-4" /> Orders</Link>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load(true)}
-          disabled={refreshing}
-          className="min-h-[44px] gap-1.5"
-        >
-          {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title={`Order ${displayToken}`}
+        description="Payment verification, print instructions, and status actions."
+        breadcrumbs={
+          <Link href="/shop/orders" className="hover:underline">← Back to orders</Link>
+        }
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="min-h-[44px] gap-1.5"
+          >
+            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            Refresh
+          </Button>
+        }
+      />
 
       {/* ── Token + status banner ── */}
       <Card className="border-border">
         <CardContent className="flex flex-col items-center justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
           <div className="flex flex-col items-center gap-1 text-center sm:items-start sm:text-left">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Token number</span>
-            <span className="break-words font-mono text-3xl font-bold tracking-tight text-brand sm:text-4xl lg:text-5xl">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">Token number</span>
+            <span className="break-words font-mono text-3xl font-bold tabular-nums tracking-tight text-brand sm:text-4xl lg:text-5xl">
               {displayToken}
             </span>
-            <span className="break-all font-mono text-[10px] text-muted-foreground">id: {order.id}</span>
+            <span className="break-all font-mono text-xs text-muted-foreground">id: {order.id}</span>
           </div>
           <div className="flex flex-col items-center gap-2 sm:items-end">
-            <StatusBadge status={order.status} />
+            <OrderStatusBadge status={order.status} />
             <PaymentBadge status={paymentStatusForOrder(order.status, order.paidAt)} paidAt={order.paidAt} />
           </div>
         </CardContent>
@@ -508,7 +507,7 @@ export default function ShopOrderDetailPage() {
               <ShieldCheck className="size-5" /> Payment verification
             </CardTitle>
             <CardDescription className="text-brand">
-              Check your UPI app for the customer's payment of <strong className="font-mono">{formatINRFromPaise(order.totalAmountPaise)}</strong>
+              Check your UPI app for the customer's payment of <strong className="font-mono tabular-nums">{formatINRFromPaise(order.totalAmountPaise)}</strong>
               {order.customerPhone && <> from <span className="font-mono">{order.customerPhone}</span></>}.
               Verify once the money has landed in your account.
             </CardDescription>
@@ -524,7 +523,7 @@ export default function ShopOrderDetailPage() {
                 disabled={verifyAction !== null}
                 className="h-11 sm:h-9"
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Optional but recommended — recorded against the order for reconciliation.
               </p>
             </div>
@@ -706,24 +705,23 @@ export default function ShopOrderDetailPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {order.files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-              <div className="flex size-10 items-center justify-center rounded-full bg-muted">
-                <FileText className="size-4 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium">No files attached</p>
-              <p className="text-xs text-muted-foreground">The customer hasn't uploaded any documents yet.</p>
-            </div>
+            <EmptyState
+              className="px-4 py-10"
+              icon={<FileText className="size-4" />}
+              title="No files attached"
+              description="The customer hasn't uploaded any documents yet."
+            />
           ) : (
             <>
               <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-4">Filename</TableHead>
-                    <TableHead>Pages</TableHead>
-                    <TableHead>Copies</TableHead>
-                    <TableHead>Colour</TableHead>
-                    <TableHead>Paper</TableHead>
-                    <TableHead>Duplex</TableHead>
+                    <TableHead className="hidden lg:table-cell">Pages</TableHead>
+                    <TableHead className="hidden md:table-cell">Copies</TableHead>
+                    <TableHead className="hidden md:table-cell">Colour</TableHead>
+                    <TableHead className="hidden lg:table-cell">Paper</TableHead>
+                    <TableHead className="hidden lg:table-cell">Duplex</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="pr-4 text-right">Download</TableHead>
                   </TableRow>
@@ -736,12 +734,12 @@ export default function ShopOrderDetailPage() {
                         <TableCell className="pl-4">
                           <div className="flex flex-col">
                             <span className="font-medium">{f.originalFilename}</span>
-                            <span className="text-[10px] text-muted-foreground">{formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}</span>
+                            <span className="text-xs text-muted-foreground">{formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{f.pageCount ?? 'Unknown'}</TableCell>
-                        <TableCell className="font-mono text-sm">{f.copies}</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">{f.pageCount ?? 'Unknown'}</TableCell>
+                        <TableCell className="hidden md:table-cell font-mono text-sm tabular-nums">{f.copies}</TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <Badge
                             variant="outline"
                             className={f.colorMode === 'color'
@@ -751,13 +749,13 @@ export default function ShopOrderDetailPage() {
                             {f.colorMode === 'color' ? 'Colour' : 'B&W'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm uppercase">{f.paperSize}</TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="hidden lg:table-cell text-sm uppercase">{f.paperSize}</TableCell>
+                        <TableCell className="hidden lg:table-cell text-sm">
                           {f.duplex
                             ? <Badge variant="outline" className="border-success/30 bg-success-soft text-success">duplex</Badge>
                             : <span className="text-muted-foreground">simplex</span>}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(f.pricePaise)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(f.pricePaise)}</TableCell>
                         <TableCell className="pr-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
@@ -787,13 +785,13 @@ export default function ShopOrderDetailPage() {
               {/* Detailed print instructions panel */}
               <div className="space-y-2">
                 <Separator />
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Print instructions</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Print instructions</p>
                 <div className="space-y-2">
                   {order.files.map((f) => (
                     <div key={f.id} className="rounded-md border border-border bg-card p-3 text-sm">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <span className="font-medium">{f.originalFilename}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           {f.pageCount ?? 'Unknown'} pages · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
                         </span>
                       </div>
@@ -811,7 +809,7 @@ export default function ShopOrderDetailPage() {
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
                   <span className="text-success">Total order value</span>
-                  <span className="font-mono font-semibold text-success">{formatINRFromPaise(order.totalAmountPaise)}</span>
+                  <span className="font-mono font-semibold tabular-nums text-success">{formatINRFromPaise(order.totalAmountPaise)}</span>
                 </div>
               </div>
             </>
@@ -879,10 +877,10 @@ export default function ShopOrderDetailPage() {
                     <div className="flex flex-col gap-0.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium">{meta.label}</span>
-                        <span className="text-[11px] text-muted-foreground">{new Date(e.createdAt).toLocaleString()}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(e.createdAt).toLocaleString()}</span>
                       </div>
                       {Object.keys(e.metadata ?? {}).length > 0 && (
-                        <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
                           {JSON.stringify(e.metadata)}
                         </code>
                       )}
@@ -908,7 +906,7 @@ export default function ShopOrderDetailPage() {
           <Instruction label="Transaction ID" value={order.paymentTxnId ?? '—'} mono />
           <Instruction label="UTR" value={order.paymentUtr ?? '—'} mono />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer phone</span>
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">Customer phone</span>
             {order.customerPhone ? (
               <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-sm font-mono text-brand hover:underline">
                 <Phone className="size-3" /> {order.customerPhone}
@@ -935,11 +933,11 @@ export default function ShopOrderDetailPage() {
 function Metric({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-md border border-border bg-card p-2.5">
-      <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <span className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground">
         {icon}
         {label}
       </span>
-      <span className="truncate text-sm font-medium">{value}</span>
+      <span className="truncate text-sm font-medium tabular-nums">{value}</span>
     </div>
   );
 }
@@ -947,8 +945,8 @@ function Metric({ label, value, icon }: { label: string; value: string; icon: Re
 function Instruction({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={`break-words text-sm ${mono ? 'font-mono' : ''}`}>{value}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className={`break-words text-sm ${mono ? 'font-mono tabular-nums' : ''}`}>{value}</span>
     </div>
   );
 }
@@ -1063,7 +1061,7 @@ function PrintLatchButton({
   // If agent is not connected, show a link to the setup page.
   if (agentConnected === false) {
     return (
-      <a href="/shop/printer" className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:underline">
+      <a href="/shop/printer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
         <PrinterIcon className="size-3" />
         Set up printer
       </a>
@@ -1105,11 +1103,11 @@ function PrintLatchButton({
                 {jobState.status === 'submitting' && <><Loader2 className="size-4 animate-spin text-brand" /> Sending to printer…</>}
                 {jobState.status === 'polling' && <><Loader2 className="size-4 animate-spin text-brand" /> Waiting for print queue…</>}
                 {jobState.status === 'completed' && <><CheckCircle2 className="size-4 text-success" /> <span className="text-success font-medium">Printed successfully</span></>}
-                {jobState.status === 'failed' && <><AlertCircle className="size-4 text-destructive" /> <span className="text-destructive">{jobState.error}</span></>}
+                {jobState.status === 'failed' && <><AlertCircle className="size-4 text-danger" /> <span className="text-danger">{jobState.error}</span></>}
                 {jobState.status === 'unknown' && <><AlertCircle className="size-4 text-brand" /> <span className="text-brand">{jobState.error ?? 'Unknown status — check printer queue'}</span></>}
               </div>
               {jobState.agentJobId && (
-                <p className="text-[10px] text-muted-foreground">Job ID: <code className="font-mono">{jobState.agentJobId.slice(0, 12)}</code></p>
+                <p className="text-xs text-muted-foreground">Job ID: <code className="font-mono">{jobState.agentJobId.slice(0, 12)}</code></p>
               )}
             </div>
           ) : (
@@ -1117,19 +1115,19 @@ function PrintLatchButton({
             <div className="space-y-3 py-2">
               {/* Preflight warnings */}
               {file.sizeBytes > 10 * 1024 * 1024 && (
-                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
+                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-xs text-brand">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Large file ({(file.sizeBytes / 1024 / 1024).toFixed(1)} MB) — printing may take longer.</span>
                 </div>
               )}
               {!file.pageCount && (
-                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-[11px] text-brand">
+                <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2 text-xs text-brand">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Page count unknown — PrintLatch will print all pages. Verify before confirming.</span>
                 </div>
               )}
               {file.mimeType !== 'application/pdf' && (
-                <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft p-2 text-[11px] text-danger">
+                <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                   <span>Not a PDF ({file.mimeType}) — PrintLatch only accepts PDF files. Convert it first.</span>
                 </div>
@@ -1137,9 +1135,9 @@ function PrintLatchButton({
 
               {/* Document info */}
               <div className="rounded-lg border border-border bg-muted/40 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Document</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Document</p>
                 <p className="mt-0.5 text-sm font-medium text-foreground break-words">{file.originalFilename}</p>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   <span>{file.pageCount ? `${file.pageCount} pages` : 'Pages: unknown'}</span>
                   <span>{(file.sizeBytes / 1024).toFixed(0)} KB</span>
                   <span>{file.copies} cop{file.copies > 1 ? 'ies' : 'y'}</span>
@@ -1149,24 +1147,24 @@ function PrintLatchButton({
               {/* Print settings */}
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-md border border-border p-2">
-                  <p className="text-[10px] text-muted-foreground">Color</p>
+                  <p className="text-xs text-muted-foreground">Color</p>
                   <p className="font-medium">{file.colorMode === 'bw' ? 'Black & White' : 'Color'}</p>
                 </div>
                 <div className="rounded-md border border-border p-2">
-                  <p className="text-[10px] text-muted-foreground">Paper</p>
+                  <p className="text-xs text-muted-foreground">Paper</p>
                   <p className="font-medium uppercase">{file.paperSize}</p>
                 </div>
                 <div className="rounded-md border border-border p-2">
-                  <p className="text-[10px] text-muted-foreground">Sides</p>
+                  <p className="text-xs text-muted-foreground">Sides</p>
                   <p className="font-medium">{file.duplex ? 'Double-sided' : 'Single-sided'}</p>
                 </div>
                 <div className="rounded-md border border-border p-2">
-                  <p className="text-[10px] text-muted-foreground">Price</p>
-                  <p className="font-medium">{formatINRFromPaise(file.pricePaise)}</p>
+                  <p className="text-xs text-muted-foreground">Price</p>
+                  <p className="font-medium tabular-nums">{formatINRFromPaise(file.pricePaise)}</p>
                 </div>
               </div>
               {file.pageRange && (
-                <p className="text-[11px] text-muted-foreground">Page range: <code className="font-mono">{file.pageRange}</code></p>
+                <p className="text-xs text-muted-foreground">Page range: <code className="font-mono">{file.pageRange}</code></p>
               )}
 
               {/* Printer selection */}
@@ -1189,12 +1187,12 @@ function PrintLatchButton({
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 text-[11px] text-brand">No printers detected — will use the default printer.</p>
+                  <p className="mt-1 text-xs text-brand">No printers detected — will use the default printer.</p>
                 )}
               </div>
 
               {/* Settings note */}
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Note: color, paper size, and duplex are handled by your Windows printer driver — PrintLatch sends the PDF as-is. The copies count is passed to PrintLatch.
               </p>
             </div>
@@ -1226,17 +1224,17 @@ function PrintLatchButton({
       </AlertDialog>
 
       {/* Compact status (shown after dialog closes) */}
-      {jobState.status === 'completed' && <span className="text-[10px] text-success">✓ Printed</span>}
+      {jobState.status === 'completed' && <span className="text-xs text-success">✓ Printed</span>}
       {jobState.status === 'failed' && (
         <div className="flex flex-col items-end">
-          <span className="text-[10px] text-destructive">✗ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-brand hover:underline min-h-[44px] inline-flex items-center">Retry</button>
+          <span className="text-xs text-danger">✗ {jobState.error}</span>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-xs text-brand hover:underline min-h-[44px] inline-flex items-center">Retry</button>
         </div>
       )}
       {jobState.status === 'unknown' && (
         <div className="flex flex-col items-end">
-          <span className="text-[10px] text-brand">⚠ {jobState.error}</span>
-          <button onClick={() => setJobState({ status: 'idle' })} className="text-[10px] text-brand hover:underline min-h-[44px] inline-flex items-center">Retry after checking queue</button>
+          <span className="text-xs text-brand">⚠ {jobState.error}</span>
+          <button onClick={() => setJobState({ status: 'idle' })} className="text-xs text-brand hover:underline min-h-[44px] inline-flex items-center">Retry after checking queue</button>
         </div>
       )}
     </div>

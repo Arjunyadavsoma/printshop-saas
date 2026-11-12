@@ -19,10 +19,9 @@ const DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://z@127.0.0.1:5433/p
 const TIMEOUT = 30_000;
 
 async function cleanAndSeed(pool: Pool): Promise<void> {
-  await pool.query('DELETE FROM "PaymentEvent"');
-  await pool.query('DELETE FROM "PaymentAttempt"');
-  await pool.query('DELETE FROM "Order"');
-  await pool.query('DELETE FROM "Shop"');
+  // Phase 6.9: switched to TRUNCATE CASCADE so leftover PrintFile/PrintJob
+  // rows from other test files don't block the DELETE with an FK violation.
+  await pool.query('TRUNCATE TABLE "PaymentEvent", "PaymentAttempt", "Order", "Shop" CASCADE');
   await pool.query(`INSERT INTO "Shop" (id, name, slug, "ownerUserId", "upiId", "paymentProvider", "paymentCredentials", "pricingConfig", address, phone, "timezone", "isActive", "subscriptionTier", "createdAt", "updatedAt") VALUES ('shop-1', 'Test Shop', 'test-shop-1', 'user-1', 'test@upi', 'googlepay', '{}', '{}', 'addr', '555', 'Asia/Kolkata', true, 'free', NOW(), NOW())`);
   await pool.query(`INSERT INTO "Order" (id, "shopId", "customerToken", status, "totalAmountPaise", currency, "createdAt", "updatedAt") VALUES ('order-1', 'shop-1', 'TOK1', 'awaiting_payment', 50000, 'INR', NOW(), NOW())`);
 }

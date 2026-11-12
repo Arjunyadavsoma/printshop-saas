@@ -20,13 +20,15 @@ import { db } from '@/lib/db';
  * - Bounded batch (max 10 per invocation, configurable via ?limit=)
  * - Never deletes shared objects without ownership verification
  *
- * Configure in vercel.json crons array: path "/api/v1/cron/cleanup",
- * schedule every 5 minutes.
+ * Scheduling:
+ *   - Vercel Hobby cron: daily at 03:00 UTC (safety net)
+ *   - GitHub Actions: every 5 minutes (primary scheduler)
+ * Both invoke the same idempotent endpoint — duplicate execution is safe.
  *
  * Vercel Cron automatically sends `Authorization: Bearer ${CRON_SECRET}`.
  */
 
-const MAX_BATCH = 10;
+const MAX_BATCH = 50; // Vercel Hobby: daily cron processes ALL due tasks in one run
 
 export async function GET(req: Request) {
   // Authenticate — Vercel Cron sends Authorization: Bearer <CRON_SECRET>

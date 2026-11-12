@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ShieldCheck, Loader2, AlertCircle, ArrowRight, Lock } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertCircle, ArrowRight, Lock, Eye, EyeOff } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { unwrap, type LoginResponse } from '@/components/portal/admin-types';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 
 /**
  * /admin/login — platform admin login.
@@ -27,6 +28,7 @@ export default function AdminLoginPage() {
   const api = useApiClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
@@ -80,10 +82,13 @@ export default function AdminLoginPage() {
   // No access key → show a "not found" page (not the login form).
   if (keyValid === false) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-primary px-4">
+      <div className="relative flex min-h-screen items-center justify-center bg-page px-4">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+          <ThemeToggle />
+        </div>
         <div className="text-center">
-          <Lock className="mx-auto size-12 text-muted-foreground" />
-          <h1 className="mt-4 text-xl font-bold text-muted-foreground">404</h1>
+          <Lock className="mx-auto size-12 text-muted-foreground" aria-hidden="true" />
+          <h1 className="mt-4 text-xl font-semibold text-foreground">404</h1>
           <p className="mt-1 text-sm text-muted-foreground">This page does not exist.</p>
         </div>
       </div>
@@ -93,61 +98,106 @@ export default function AdminLoginPage() {
   // Checking the key...
   if (keyValid === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-primary">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="relative flex min-h-screen items-center justify-center bg-page">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+          <ThemeToggle />
+        </div>
+        <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
       </div>
     );
   }
 
   // Key valid → show the login form.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-primary px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
+      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-lg shadow-brand/20">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-primary-foreground">PrintShop Admin</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Platform administration portal</p>
-        </div>
-
-        <Card className="border-primary-foreground/10 bg-primary/90 text-primary-foreground shadow-xl">
-          <CardHeader>
-            <CardTitle className="text-primary-foreground">Sign in</CardTitle>
-            <CardDescription className="text-muted-foreground">Use your platform admin credentials.</CardDescription>
+        <Card className="border-border bg-surface shadow-sm">
+          <CardHeader className="space-y-3">
+            <div
+              className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
+              aria-hidden="true"
+            >
+              <ShieldCheck className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-lg font-semibold text-foreground">Admin sign-in</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Restricted access. Use your platform admin credentials.
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="email" className="text-primary-foreground">Email</Label>
-                <Input id="email" type="email" autoComplete="email" required
-                  value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="border-primary-foreground/10 bg-primary text-primary-foreground placeholder:text-muted-foreground"
-                  placeholder="admin@example.com" disabled={submitting} />
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  disabled={submitting}
+                  className="h-11 text-base"
+                />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password" className="text-primary-foreground">Password</Label>
-                <Input id="password" type="password" autoComplete="current-password" required
-                  value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="border-primary-foreground/10 bg-primary text-primary-foreground placeholder:text-muted-foreground"
-                  placeholder="••••••••" disabled={submitting} />
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    disabled={submitting}
+                    className="h-11 pr-10 text-base"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-controls="password"
+                    className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="size-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               </div>
               {error && (
-                <Alert variant="destructive" className="border-red-800 bg-red-950/50 text-red-200">
-                  <AlertCircle className="h-4 w-4" />
+                <Alert variant="destructive" className="border-danger-border bg-danger-soft text-danger">
+                  <AlertCircle className="size-4" aria-hidden="true" />
                   <AlertTitle>Sign-in failed</AlertTitle>
-                  <AlertDescription className="text-red-200">{error}</AlertDescription>
+                  <AlertDescription className="text-danger">{error}</AlertDescription>
                 </Alert>
               )}
-              <Button type="submit" disabled={submitting} className="gap-2 bg-brand text-brand-foreground hover:bg-brand/90 min-h-[44px]">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="min-h-[44px] w-full gap-2 bg-brand text-brand-foreground hover:bg-brand-hover"
+              >
+                {submitting ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ShieldCheck className="size-4" aria-hidden="true" />
+                )}
                 {submitting ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
           </CardContent>
           <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground">
-            <Link href="/" className="inline-flex items-center gap-1 hover:text-primary-foreground">
-              Back to landing page <ArrowRight className="h-3 w-3" />
+            <Link href="/" className="inline-flex items-center gap-1 hover:text-foreground">
+              Back to landing page <ArrowRight className="size-3" aria-hidden="true" />
             </Link>
           </CardFooter>
         </Card>

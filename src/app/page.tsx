@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { formatINRFromPaise } from '@platform/utils';
 import { cn } from '@/lib/utils';
 import {
-  Search, MapPin, Printer, UploadCloud, ShieldCheck, Smartphone,
+  Search, MapPin, Printer, ShieldCheck,
   QrCode, Store, ArrowRight, Github, Loader2, AlertCircle,
-  Wallet, FileCheck, Clock,
+  Wallet,
 } from 'lucide-react';
 
 interface PricingSummary {
@@ -43,77 +44,58 @@ interface ShopsListResponse {
 
 const TIER_STYLES: Record<ShopListItem['subscriptionTier'], string> = {
   free: 'bg-muted text-muted-foreground border-border',
-  starter: 'bg-brand-soft text-brand border-brand/30',
-  pro: 'bg-success-soft text-success border-success/30',
-  enterprise: 'bg-info-soft text-info border-info/30',
+  starter: 'bg-brand-soft text-brand border-brand-border',
+  pro: 'bg-success-soft text-success border-success-border',
+  enterprise: 'bg-info-soft text-info border-info-border',
 };
 
+// Feature highlights — explains the value of the platform to both customers
+// and prospective shopkeepers. Icons rendered on a `bg-brand-soft` chip.
+const FEATURES = [
+  {
+    icon: ShieldCheck,
+    title: '0% commission',
+    description: 'Customers pay the shopkeeper directly via UPI. PrintShop takes nothing — no hidden fees, no middlemen.',
+  },
+  {
+    icon: Wallet,
+    title: 'UPI direct to shopkeeper',
+    description: 'Money lands instantly in the shopkeeper\u2019s UPI account. No settlement delays, no payout cycles.',
+  },
+  {
+    icon: QrCode,
+    title: 'QR ordering',
+    description: 'Every shop gets a unique QR code. Customers scan, upload PDFs, and order from any phone browser.',
+  },
+  {
+    icon: Printer,
+    title: 'Print management',
+    description: 'Shopkeepers manage their queue, orders, and printer agent from a single dashboard.',
+  },
+];
+
+// How-it-works stepper — shopkeeper onboarding journey. Numbered circles use
+// `bg-brand text-brand-foreground` per the Square UI brief.
 const HOW_IT_WORKS = [
   {
     step: 1,
-    icon: QrCode,
-    title: 'Scan the shop QR',
-    body: 'Every PrintShop shop has a QR code on the counter. Scan it with any phone camera — no app to install.',
+    title: 'Register your shop',
+    body: 'Create a shop account in minutes. Add your shop name, UPI ID, and the print services you offer.',
   },
   {
     step: 2,
-    icon: UploadCloud,
-    title: 'Upload your PDFs',
-    body: 'Pick documents from your phone or cloud. Choose black-and-white or colour, copies, duplex, page range.',
+    title: 'Get your unique QR',
+    body: 'PrintShop generates a QR code for your shop. Print it and place it on your counter.',
   },
   {
     step: 3,
-    icon: Wallet,
-    title: 'Pay via UPI',
-    body: 'Pay the shopkeeper directly to their UPI ID. PrintShop takes 0% commission — your money goes straight to the shop.',
+    title: 'Customers order & pay via UPI',
+    body: 'Customers scan the QR, upload PDFs, choose print options, and pay you directly via UPI — no app required.',
   },
   {
     step: 4,
-    icon: FileCheck,
-    title: 'Collect your prints',
-    body: 'Track progress live. When your order is ready, collect it from the counter. Files auto-delete on collection.',
-  },
-];
-
-const TRUST_INDICATORS = [
-  {
-    icon: ShieldCheck,
-    label: '0% commission',
-    detail: 'Money goes straight to the shopkeeper',
-  },
-  {
-    icon: Smartphone,
-    label: 'No app install',
-    detail: 'Works in any phone browser',
-  },
-  {
-    icon: FileCheck,
-    label: 'Files auto-delete',
-    detail: 'Removed when you collect your prints',
-  },
-  {
-    icon: Clock,
-    label: 'Live order tracking',
-    body: 'Watch from upload to collection',
-    detail: 'Know exactly when your prints are ready',
-  },
-];
-
-const FEATURES = [
-  {
-    icon: UploadCloud,
-    title: 'Upload from your phone',
-    body: 'No app to install. Scan the shop QR, pick PDFs from your device, and pick print settings in seconds.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Pay the shopkeeper directly',
-    body: 'Money goes straight to the shopkeeper’s UPI. Zero commission, zero middlemen, zero hidden fees.',
-  },
-  {
-    icon: Smartphone,
-    title: 'Track from upload to collection',
-    body: 'Watch your order move from paid to printing to ready. Collect with a tap; your files auto-delete on collection.',
+    title: 'Print & collect',
+    body: 'Accept the order, print, and hand it over. Files auto-delete on collection — privacy by design.',
   },
 ];
 
@@ -158,82 +140,103 @@ export default function HomePage() {
   }, [shops, query]);
 
   const onShopClick = (slug: string) => router.push(`/shops/${slug}`);
-  const scrollToDiscovery = () => document.getElementById('shop-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-page">
+      {/* Theme toggle (top-right, floats above hero) */}
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
+
       {/* Hero */}
       <header className="border-b border-border bg-brand-soft">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16 lg:py-20">
-          <Badge variant="outline" className="border-brand/30 bg-background/70 text-brand">
+          <Badge variant="outline" className="border-brand-border bg-surface text-brand">
             <QrCode className="size-3" aria-hidden="true" />
             QR-powered print shops for India
           </Badge>
 
           <div className="max-w-3xl space-y-5">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
-              Find a print shop, upload, and pay the shopkeeper directly.
+            <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+              Print shops, powered by QR and UPI.
             </h1>
-            <p className="text-base text-muted-foreground sm:text-lg leading-relaxed">
-              PrintShop is a customer portal for Indian print and Xerox shops. Scan a shop QR, upload your PDFs, set print options, and pay via UPI — with zero commission and files that auto-delete the moment you collect.
+            <p className="text-lg leading-relaxed text-muted-foreground">
+              PrintShop connects customers with local print shops. Scan a shop QR, upload PDFs, and pay the shopkeeper directly via UPI — zero commission, zero middlemen. Run a shop? Get started in minutes.
             </p>
             <div className="flex w-full flex-wrap items-center gap-3 pt-1 sm:w-auto">
-              <Button size="lg" className="min-h-[44px] bg-brand text-brand-foreground hover:bg-brand/90" onClick={scrollToDiscovery}>
-                <Search className="size-4" aria-hidden="true" />
-                Find a shop
-              </Button>
-              <Button asChild variant="outline" size="lg" className="min-h-[44px]">
-                <Link href="/shop/login">
-                  <Store className="size-4" aria-hidden="true" />
-                  I run a print shop
+              <Button asChild size="lg" className="min-h-[44px] gap-2 bg-brand text-brand-foreground hover:bg-brand-hover">
+                <Link href="/shop/register">
+                  Get started
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
               </Button>
+              <Button asChild variant="outline" size="lg" className="min-h-[44px] gap-2">
+                <a href="#shops">
+                  <Search className="size-4" aria-hidden="true" />
+                  Browse shops
+                </a>
+              </Button>
             </div>
-          </div>
-
-          {/* Trust indicators */}
-          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-            {TRUST_INDICATORS.map((t) => (
-              <div
-                key={t.label}
-                className="flex flex-col gap-1.5 rounded-lg border border-border bg-background/60 p-3 sm:p-4"
-              >
-                <t.icon className="size-5 text-brand" aria-hidden="true" />
-                <p className="text-sm font-semibold text-foreground">{t.label}</p>
-                <p className="text-xs text-muted-foreground leading-snug">{t.detail}</p>
-              </div>
-            ))}
           </div>
         </div>
       </header>
 
-      {/* How it works */}
-      <section aria-labelledby="how-it-works-heading" className="border-b border-border bg-card">
+      {/* Feature highlights */}
+      <section aria-labelledby="features-heading" className="border-b border-border bg-surface">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-2">
-            <h2 id="how-it-works-heading" className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            <h2 id="features-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+              Why PrintShop
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              A modern print shop platform built for India — UPI-native, commission-free, and customer-friendly.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURES.map((f) => (
+              <Card key={f.title} className="h-full border-border bg-surface">
+                <CardContent className="flex flex-col gap-3 p-5">
+                  <div
+                    className="flex size-10 items-center justify-center rounded-lg bg-brand-soft text-brand"
+                    aria-hidden="true"
+                  >
+                    <f.icon className="size-5" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground">{f.title}</h3>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{f.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section aria-labelledby="how-it-works-heading" className="border-b border-border bg-page">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <div className="flex flex-col gap-2">
+            <h2 id="how-it-works-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
               How it works
             </h2>
             <p className="text-sm text-muted-foreground">
-              From scan to collection in under two minutes. No app, no sign-up, no commission.
+              From sign-up to your first order in under five minutes. No app, no commission.
             </p>
           </div>
 
           <ol className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {HOW_IT_WORKS.map((step) => (
               <li key={step.step}>
-                <Card className="h-full border-border shadow-sm">
+                <Card className="h-full border-border bg-surface">
                   <CardContent className="flex flex-col gap-3 p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-foreground">
-                        <step.icon className="size-4" aria-hidden="true" />
-                      </div>
-                      <span className="font-mono text-xs text-muted-foreground" aria-label={`Step ${step.step}`}>
-                        {String(step.step).padStart(2, '0')}
-                      </span>
+                    <div
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold tabular-nums text-brand-foreground"
+                      aria-label={`Step ${step.step}`}
+                    >
+                      {step.step}
                     </div>
-                    <h3 className="text-sm font-semibold text-foreground">{step.title}</h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{step.body}</p>
+                    <h3 className="text-base font-semibold text-foreground">{step.title}</h3>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
                   </CardContent>
                 </Card>
               </li>
@@ -244,9 +247,9 @@ export default function HomePage() {
 
       {/* Shop discovery */}
       <main className="flex-1">
-        <section id="shop-discovery" aria-labelledby="discover-heading" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <section id="shops" aria-labelledby="discover-heading" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-2">
-            <h2 id="discover-heading" className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            <h2 id="discover-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
               Discover print shops
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -263,7 +266,7 @@ export default function HomePage() {
                 placeholder="Search by shop name or address…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-11 pl-10 sm:h-auto"
+                className="h-11 pl-10 text-base"
                 aria-label="Search print shops by name or address"
               />
             </div>
@@ -283,7 +286,7 @@ export default function HomePage() {
             {loading ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Card key={i} className="border-border">
+                  <Card key={i} className="border-border bg-surface">
                     <CardContent className="flex flex-col gap-3 p-5">
                       <Skeleton className="h-5 w-2/3" />
                       <Skeleton className="h-3 w-full" />
@@ -297,13 +300,13 @@ export default function HomePage() {
                 ))}
               </div>
             ) : error ? (
-              <Card className="border-danger/40 bg-danger-soft/40">
+              <Card className="border-danger-border bg-danger-soft">
                 <CardContent className="flex flex-col items-start gap-3 p-6">
                   <div className="flex items-center gap-2 text-danger">
                     <AlertCircle className="size-5" aria-hidden="true" />
                     <span className="font-medium">We couldn&apos;t load shops right now</span>
                   </div>
-                  <p className="text-sm text-muted-foreground break-words">
+                  <p className="text-sm break-words text-muted-foreground">
                     This is usually temporary. Please try again in a moment.
                   </p>
                   <Button onClick={loadShops} size="sm" variant="outline" className="h-11">
@@ -313,7 +316,7 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             ) : filtered.length === 0 ? (
-              <Card className="border-dashed border-border">
+              <Card className="border-dashed border-border bg-surface">
                 <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
                   <Store className="size-8 text-muted-foreground" aria-hidden="true" />
                   <div>
@@ -342,10 +345,13 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-border bg-card">
+      <footer className="mt-auto border-t border-border bg-surface">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-8">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-brand font-bold text-brand" aria-hidden="true">
+            <div
+              className="flex size-9 items-center justify-center rounded-lg bg-brand text-base font-bold text-brand-foreground"
+              aria-hidden="true"
+            >
               P
             </div>
             <div>
@@ -398,8 +404,8 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
       // accessible name — adding an aria-label that doesn't include ALL
       // visible text (pricing, badges) triggers the rule.
       className={cn(
-        'group h-full cursor-pointer border-border shadow-sm transition-all',
-        'hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md',
+        'group h-full cursor-pointer border-border bg-surface shadow-sm transition-all',
+        'hover:-translate-y-0.5 hover:border-brand-border hover:shadow-md',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
       )}
     >
@@ -423,19 +429,19 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
       <CardContent className="pt-4">
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
-            <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
+            <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
               {formatINRFromPaise(shop.pricingSummary.bwA4PerPage)}
             </p>
           </div>
           <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Colour / page</p>
-            <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Colour / page</p>
+            <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
               {formatINRFromPaise(shop.pricingSummary.colorA4PerPage)}
             </p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] break-words text-muted-foreground">
+        <p className="mt-2 break-words text-xs tabular-nums text-muted-foreground">
           Min. order {formatINRFromPaise(shop.pricingSummary.minOrderValue)} · UPI {shop.upiId}
         </p>
       </CardContent>

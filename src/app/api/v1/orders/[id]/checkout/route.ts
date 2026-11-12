@@ -65,9 +65,23 @@ export const POST = withRateLimit<{ id: string }>(
 
     const files = await repos.files.findByOrder(order.id);
     if (files.length === 0) throw new ValidationError('Cannot checkout an order with no files');
-    const unpaid = files.filter((f) => f.pricePaise === 0);
-    if (unpaid.length > 0) {
-      throw new ValidationError(`${unpaid.length} file(s) have no price — set print settings first`);
+    // Validate that ALL files have been priced. Files with pricePaise === 0
+    // are either: (a) not yet configured (customer hasn't set print settings),
+    // (b) awaiting shopkeeper review (needs_review status), or (c) genuinely
+    // free (which should be explicitly configured, not a default).
+    const needsReview = files.filter((f) => f.status === 'needs_review');
+    if (needsReview.length > 0) {
+      throw new ValidationError(
+        `${needsReview.length} file(s) require shopkeeper review before checkout — ` +
+        `the shopkeeper must set the page count. File(s): ${needsReview.map(f => f.originalFilename).join(', ')}`,
+      );
+    }
+    const unpriced = files.filter((f) => f.pricePaise === 0);
+    if (unpriced.length > 0) {
+      throw new ValidationError(
+        `${unpriced.length} file(s) have no price — set print settings (copies, color, paper) first. ` +
+        `File(s): ${unpriced.map(f => f.originalFilename).join(', ')}`,
+      );
     }
 
     const container = getContainer();

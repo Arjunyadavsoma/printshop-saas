@@ -218,7 +218,7 @@ export function BackendExplorer() {
         <StepCard n={4} icon={CreditCard} title="Checkout (UPI)" busy={busy === 'checkout'} disabled={!fileId}>
           <Button onClick={stepCheckout} disabled={!fileId || busy === 'checkout'} className="w-full">POST /orders/:id/checkout</Button>
           {checkout?.upiUri && (
-            <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-[10px]">{checkout.upiUri}</code>
+            <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs">{checkout.upiUri}</code>
           )}
         </StepCard>
 
@@ -287,7 +287,7 @@ function StepCard(props: { n: number; icon: typeof Server; title: string; busy: 
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2"><props.icon className="h-4 w-4 text-amber-600" />{props.title}</span>
-          <Badge variant="outline" className="font-mono text-[10px]">step {props.n}</Badge>
+          <Badge variant="outline" className="font-mono text-xs">step {props.n}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2.5">

@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { PageHeader } from '@/components/shared/page-header';
+import { CardSkeleton } from '@/components/shared/loading-skeleton';
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
 import {
@@ -154,16 +156,16 @@ export default function ShopDetailPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-page">
       {/* Header bar */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4 sm:h-16 sm:px-6">
           <Link href="/" className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
             Back to shops
           </Link>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand font-bold text-brand text-sm">P</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold text-brand-foreground">P</div>
             <span className="text-sm font-semibold text-foreground">PrintShop</span>
           </div>
         </div>
@@ -174,9 +176,9 @@ export default function ShopDetailPage() {
           {loading ? (
             <ShopSkeleton />
           ) : error ? (
-            <Card className="border-destructive/40 bg-destructive/5">
+            <Card className="border-danger-border bg-danger-soft">
               <CardContent className="flex flex-col items-start gap-3 p-6">
-                <div className="flex items-center gap-2 text-destructive">
+                <div className="flex items-center gap-2 text-danger">
                   <AlertCircle className="h-5 w-5" />
                   <span className="font-medium">Could not load shop</span>
                 </div>
@@ -192,22 +194,32 @@ export default function ShopDetailPage() {
               </CardContent>
             </Card>
           ) : shop ? (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
+            <div className="space-y-6">
+              <PageHeader
+                title={shop.name}
+                description={`Local print shop · ${shop.timezone}`}
+                breadcrumbs={
+                  <Link href="/" className="hover:text-foreground">Shops</Link>
+                }
+                actions={
+                  shop.paymentProvider ? (
+                    <Badge variant="secondary" className="capitalize">
+                      <CreditCard className="h-3 w-3" /> {shop.paymentProvider}
+                    </Badge>
+                  ) : undefined
+                }
+              />
+
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
               {/* Left: shop info + pricing */}
               <div className="flex flex-col gap-6">
-                <Card>
+                <Card className="bg-surface">
                   <CardHeader>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand">
+                      <Badge variant="outline" className="border-brand-border bg-brand-soft text-brand">
                         <Store className="h-3 w-3" /> Shop
                       </Badge>
-                      {shop.paymentProvider && (
-                        <Badge variant="secondary" className="capitalize">
-                          <CreditCard className="h-3 w-3" /> {shop.paymentProvider}
-                        </Badge>
-                      )}
                     </div>
-                    <CardTitle className="text-xl sm:text-2xl lg:text-3xl">{shop.name}</CardTitle>
                     <CardDescription className="flex items-start gap-1.5 pt-1">
                       <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>{shop.timezone}</span>
@@ -216,15 +228,15 @@ export default function ShopDetailPage() {
                   <CardContent>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="rounded-lg bg-muted/60 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">UPI ID</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">UPI ID</p>
                         <p className="mt-1 break-words font-mono text-sm font-medium text-foreground">{shop.upiId}</p>
                       </div>
                       <div className="rounded-lg bg-muted/60 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Payment provider</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment provider</p>
                         <p className="mt-1 text-sm font-medium text-foreground capitalize">{shop.paymentProvider}</p>
                       </div>
                     </div>
-                    <div className="mt-3 rounded-lg border border-success/30 bg-success-soft p-3 text-xs text-success">
+                    <div className="mt-3 rounded-lg border border-success-border bg-success-soft p-3 text-xs text-success">
                       <div className="flex items-center gap-2 font-medium">
                         <ShieldCheck className="h-4 w-4" />
                         Privacy
@@ -237,7 +249,7 @@ export default function ShopDetailPage() {
                 </Card>
 
                 {/* Pricing reference table */}
-                <Card>
+                <Card className="bg-surface">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Printer className="h-4 w-4 text-brand" />
@@ -257,9 +269,9 @@ export default function ShopDetailPage() {
                         </thead>
                         <tbody className="divide-y divide-border">
                           {pricingRows(shop.pricingConfig).map((row) => (
-                            <tr key={row.key} className="odd:bg-background">
+                            <tr key={row.key} className="odd:bg-surface">
                               <td className="px-3 py-2 text-foreground">{row.label}</td>
-                              <td className="px-3 py-2 text-right font-medium text-foreground">{formatINRFromPaise(row.paise)}</td>
+                              <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{formatINRFromPaise(row.paise)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -270,26 +282,26 @@ export default function ShopDetailPage() {
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Duplex discount</p>
-                        <p className="mt-0.5 font-medium text-foreground">{shop.pricingConfig.duplex_discount}% off</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Duplex discount</p>
+                        <p className="mt-0.5 font-medium tabular-nums text-foreground">{shop.pricingConfig.duplex_discount}% off</p>
                       </div>
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Bulk threshold</p>
-                        <p className="mt-0.5 font-medium text-foreground">{'≥ '}{shop.pricingConfig.bulk_threshold} pages</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Bulk threshold</p>
+                        <p className="mt-0.5 font-medium tabular-nums text-foreground">{'≥ '}{shop.pricingConfig.bulk_threshold} pages</p>
                       </div>
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Bulk discount</p>
-                        <p className="mt-0.5 font-medium text-foreground">{shop.pricingConfig.bulk_discount_pct}% off</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Bulk discount</p>
+                        <p className="mt-0.5 font-medium tabular-nums text-foreground">{shop.pricingConfig.bulk_discount_pct}% off</p>
                       </div>
                     </div>
                     <p className="mt-3 text-xs text-muted-foreground">
-                      {'Minimum order value: '}{formatINRFromPaise(shop.pricingConfig.min_order_value)}{'. Small orders are rounded up to the minimum.'}
+                      {'Minimum order value: '}<span className="tabular-nums">{formatINRFromPaise(shop.pricingConfig.min_order_value)}</span>{'. Small orders are rounded up to the minimum.'}
                     </p>
                   </CardContent>
                 </Card>
 
                 {/* Print options supported */}
-                <Card>
+                <Card className="bg-surface">
                   <CardHeader>
                     <CardTitle className="text-lg">Print options supported</CardTitle>
                     <CardDescription>Set these for each file during the order flow.</CardDescription>
@@ -312,7 +324,7 @@ export default function ShopDetailPage() {
 
               {/* Right: sticky action card */}
               <div className="lg:sticky lg:top-6 lg:h-fit">
-                <Card className="border-brand/30">
+                <Card className="border-brand-border bg-surface">
                   <CardHeader>
                     <CardTitle className="text-lg">Start an order</CardTitle>
                     <CardDescription>Upload files, set print options, and pay via UPI. Zero commission.</CardDescription>
@@ -325,7 +337,7 @@ export default function ShopDetailPage() {
                       </p>
                     </div>
                     {createError && (
-                      <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                      <div className="flex items-start gap-2 rounded-lg border border-danger-border bg-danger-soft p-3 text-sm text-danger">
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>{createError}</span>
                       </div>
@@ -342,12 +354,13 @@ export default function ShopDetailPage() {
                   </CardFooter>
                 </Card>
               </div>
+              </div>
             </div>
           ) : null}
         </div>
       </main>
 
-      <footer className="mt-auto border-t border-border bg-card">
+      <footer className="mt-auto border-t border-border bg-surface">
         <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <p>{'© PrintShop SaaS · 0% commission · pay the shopkeeper directly'}</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1">
@@ -362,37 +375,19 @@ export default function ShopDetailPage() {
 
 function ShopSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
-      <div className="flex flex-col gap-6">
-        <Card>
-          <CardContent className="flex flex-col gap-3 p-6">
-            <Skeleton className="h-6 w-1/3" />
-            <Skeleton className="h-4 w-1/4" />
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <Skeleton className="h-5 w-1/4" />
-            <div className="mt-4 space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-1/3" />
+        <Skeleton className="h-4 w-1/4" />
       </div>
-      <Card className="h-fit">
-        <CardContent className="p-6">
-          <Skeleton className="h-5 w-1/2" />
-          <Skeleton className="mt-2 h-4 w-3/4" />
-          <Skeleton className="mt-4 h-32 w-full" />
-          <Skeleton className="mt-4 h-10 w-full" />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="flex flex-col gap-6">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+        <CardSkeleton className="h-fit" />
+      </div>
     </div>
   );
 }

@@ -3,9 +3,11 @@
   "framework": "nextjs",
   "buildCommand": "bash scripts/vercel-build.sh",
   "installCommand": "bun install --frozen-lockfile",
-  "regions": ["bom1"],
+  "regions": [
+    "bom1"
+  ],
   "env": {
-    "APP_BASE_URL": "https://printshop-saas-three.vercel.app",
+    "APP_BASE_URL": "${APP_BASE_URL}",
     "DATABASE_PROVIDER": "prisma",
     "REALTIME_PROVIDER": "memory",
     "STORAGE_PROVIDER": "supabase",
@@ -13,16 +15,31 @@
     "NEXT_PUBLIC_API_BASE": "/api/v1"
   },
   "crons": [
-    { "path": "/api/v1/cron/reconcile-payments", "schedule": "*/10 * * * *" },
-    { "path": "/api/v1/cron/cleanup", "schedule": "*/5 * * * *" }
+    {
+      "path": "/api/v1/cron/reconcile-payments",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/v1/cron/cleanup",
+      "schedule": "0 3 * * *"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
       ]
     }
   ]

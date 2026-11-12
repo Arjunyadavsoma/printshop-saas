@@ -86,3 +86,13 @@ based on [Keep a Changelog](https://keepachangelog.com/).
 - `packages/utils`, `packages/adapters` (in-memory concretes + free-tier
   skeletons), `docker-compose.yml`, `.env.example`, Prisma schema.
 - `ARCHITECTURE.md` (adapter-pattern deep-dive + swap walk-through).
+
+## Phase 8: Design System Foundation
+
+- Enhanced semantic tokens: added brand-hover, brand-border, success-border, warning-border, info-border, danger-border, focus
+- Fixed warning/info/danger foreground contrast (info darkened from 0.62→0.45, danger from 0.58→0.50)
+- Removed 16 dead phase components (phase1, phase3, phase4, phase5, phase7)
+- Removed legacy tailwind.config.ts (Tailwind v4 uses CSS-based config)
+- Created shared components: StatusIndicator, PageHeader, EmptyState, LoadingSkeleton
+- Created contrast validation script (scripts/validate-contrast.ts)
+- All 8 contrast pairs pass WCAG 2.2 AA (≥4.5:1)

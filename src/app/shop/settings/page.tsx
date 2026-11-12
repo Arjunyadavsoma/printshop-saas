@@ -15,10 +15,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -27,7 +25,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Settings as SettingsIcon,
   RefreshCw,
   Loader2,
   Save,
@@ -53,6 +50,8 @@ import {
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
 import { PaymentProviderSettings } from '@/components/portal/payment-provider-settings';
+import { PageHeader } from '@/components/shared/page-header';
+import { CardSkeleton } from '@/components/shared/loading-skeleton';
 
 interface ShopInfo {
   id: string;
@@ -515,27 +514,39 @@ export default function ShopSettingsPage() {
   // ── Render ──
   if (loading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-6">
+        <PageHeader
+          title="Settings"
+          description="Edit your shop profile, payment, and QR codes."
+        />
+        <div className="space-y-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
       </div>
     );
   }
 
   if (error && !shop) {
     return (
-      <Card className="border-danger/30 bg-danger-soft">
-        <CardHeader>
-          <CardTitle className="text-base text-danger">Couldn't load shop settings</CardTitle>
-          <CardDescription className="text-danger">{error}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
-            <RefreshCw className="size-4" /> Retry
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <PageHeader
+          title="Settings"
+          description="Edit your shop profile, payment, and QR codes."
+        />
+        <Card className="border-danger/30 bg-danger-soft">
+          <CardHeader>
+            <CardTitle className="text-base text-danger">Couldn't load shop settings</CardTitle>
+            <CardDescription className="text-danger">{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
+              <RefreshCw className="size-4" /> Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -544,20 +555,15 @@ export default function ShopSettingsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <SettingsIcon className="size-5 text-brand" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Settings</h1>
-            <p className="text-xs text-muted-foreground">
-              Edit your shop profile, payment, and QR codes.
-            </p>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} className="min-h-[44px] gap-1.5">
-          <RefreshCw className="size-4" /> Reload
-        </Button>
-      </div>
+      <PageHeader
+        title="Settings"
+        description="Edit your shop profile, business hours, pricing, payment, and QR codes."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void load()} className="min-h-[44px] gap-1.5">
+            <RefreshCw className="size-4" /> Reload
+          </Button>
+        }
+      />
 
       {error && (
         <Card className="border-brand/30 bg-brand-soft">
@@ -568,30 +574,30 @@ export default function ShopSettingsPage() {
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList className="flex w-full gap-1 overflow-x-auto sm:flex-wrap">
           <TabsTrigger value="profile" className="gap-1.5">
-            <Store className="size-3.5" /> Profile
+            <Store className="size-3.5" aria-hidden="true" /> Profile
           </TabsTrigger>
           <TabsTrigger value="hours" className="gap-1.5">
-            <Clock className="size-3.5" /> Business Hours
+            <Clock className="size-3.5" aria-hidden="true" /> Business Hours
           </TabsTrigger>
           <TabsTrigger value="payment" className="gap-1.5">
-            <CreditCard className="size-3.5" /> Payment
+            <CreditCard className="size-3.5" aria-hidden="true" /> Payment
           </TabsTrigger>
           <TabsTrigger value="upi-qr" className="gap-1.5">
-            <ImageIcon className="size-3.5" /> UPI QR
+            <ImageIcon className="size-3.5" aria-hidden="true" /> UPI QR
           </TabsTrigger>
           <TabsTrigger value="shop-qr" className="gap-1.5">
-            <QrCode className="size-3.5" /> Shop QR
+            <QrCode className="size-3.5" aria-hidden="true" /> Shop QR
           </TabsTrigger>
         </TabsList>
 
         {/* ── Profile tab ── */}
         <TabsContent value="profile">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Store className="size-4 text-brand" /> Shop profile
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <Store className="size-4 text-brand" aria-hidden="true" /> Shop profile
               </CardTitle>
-              <CardDescription className="text-xs">
+              <CardDescription className="text-sm text-muted-foreground">
                 Changes here update what customers see when they scan your shop QR code.
               </CardDescription>
             </CardHeader>
@@ -625,7 +631,7 @@ export default function ShopSettingsPage() {
                   disabled={savingProfile}
                   className="h-11 sm:h-9"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Paste a public image URL. We don't host image uploads for the logo yet.
                 </p>
               </div>
@@ -685,12 +691,12 @@ export default function ShopSettingsPage() {
           </Card>
 
           {/* Pricing — editable per-shop prices (shopkeeper-controlled) */}
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="size-4 text-brand" /> Pricing & Print Services
+          <Card className="mt-4 bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <CreditCard className="size-4 text-brand" aria-hidden="true" /> Pricing & Print Services
               </CardTitle>
-              <CardDescription className="text-xs">
+              <CardDescription className="text-sm text-muted-foreground">
                 Set your per-page prices. Customers see these exact prices when ordering. Prices are in paise (1 rupee = 100 paise) — enter the price in rupees and the system converts automatically.
               </CardDescription>
             </CardHeader>
@@ -702,10 +708,10 @@ export default function ShopSettingsPage() {
                       const valuePaise = pricingDraft[key] as number;
                       const valueRupees = (valuePaise / 100).toFixed(2);
                       return (
-                        <div key={String(key)} className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
-                          <span className="text-muted-foreground">{label}</span>
+                        <div key={String(key)} className="flex flex-col gap-1 rounded-md border border-border bg-surface px-3 py-2">
+                          <span className="text-sm font-medium text-muted-foreground">{label}</span>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-muted-foreground">₹</span>
+                            <span className="text-xs font-medium text-muted-foreground tabular-nums">₹</span>
                             <Input
                               type="number"
                               step="0.50"
@@ -716,10 +722,10 @@ export default function ShopSettingsPage() {
                                 const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
                                 setPricingDraft((prev) => prev ? { ...prev, [key]: paise } : prev);
                               }}
-                              className="h-11 text-xs sm:h-9"
+                              className="h-11 text-base tabular-nums sm:h-9"
                               disabled={savingPricing}
                             />
-                            <span className="text-[10px] text-muted-foreground">/ page</span>
+                            <span className="text-xs text-muted-foreground">/ page</span>
                           </div>
                         </div>
                       );
@@ -728,8 +734,8 @@ export default function ShopSettingsPage() {
 
                   {/* Duplex discount + bulk discount + min order */}
                   <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
-                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
-                      <span className="text-muted-foreground">Duplex discount (%)</span>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-surface px-3 py-2">
+                      <span className="text-sm font-medium text-muted-foreground">Duplex discount (%)</span>
                       <Input
                         type="number"
                         step="1"
@@ -740,12 +746,12 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, duplex_discount: Math.max(0, Math.min(100, v)) } : prev);
                         }}
-                        className="h-11 text-xs sm:h-9"
+                        className="h-11 text-base tabular-nums sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
-                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
-                      <span className="text-muted-foreground">Bulk threshold (pages)</span>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-surface px-3 py-2">
+                      <span className="text-sm font-medium text-muted-foreground">Bulk threshold (pages)</span>
                       <Input
                         type="number"
                         step="1"
@@ -755,12 +761,12 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, bulk_threshold: Math.max(0, v) } : prev);
                         }}
-                        className="h-11 text-xs sm:h-9"
+                        className="h-11 text-base tabular-nums sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
-                    <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2">
-                      <span className="text-muted-foreground">Bulk discount (%)</span>
+                    <div className="flex flex-col gap-1 rounded-md border border-border bg-surface px-3 py-2">
+                      <span className="text-sm font-medium text-muted-foreground">Bulk discount (%)</span>
                       <Input
                         type="number"
                         step="1"
@@ -771,7 +777,7 @@ export default function ShopSettingsPage() {
                           const v = parseInt(e.target.value) || 0;
                           setPricingDraft((prev) => prev ? { ...prev, bulk_discount_pct: Math.max(0, Math.min(100, v)) } : prev);
                         }}
-                        className="h-11 text-xs sm:h-9"
+                        className="h-11 text-base tabular-nums sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
@@ -780,7 +786,7 @@ export default function ShopSettingsPage() {
                   <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
                     <span className="text-success">Minimum order value</span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-success">₹</span>
+                      <span className="text-xs font-medium text-success tabular-nums">₹</span>
                       <Input
                         type="number"
                         step="1"
@@ -791,7 +797,7 @@ export default function ShopSettingsPage() {
                           const paise = isNaN(rupees) || rupees < 0 ? 0 : Math.round(rupees * 100);
                           setPricingDraft((prev) => prev ? { ...prev, min_order_value: paise } : prev);
                         }}
-                        className="h-11 w-20 text-xs sm:h-9"
+                        className="h-11 w-20 text-base tabular-nums sm:h-9"
                         disabled={savingPricing}
                       />
                     </div>
@@ -807,7 +813,7 @@ export default function ShopSettingsPage() {
                       <span className="text-xs font-medium text-success">✓ Prices saved — customers see the new prices immediately.</span>
                     )}
                     {pricingError && (
-                      <span className="text-xs font-medium text-destructive">✗ {pricingError}</span>
+                      <span className="text-xs font-medium text-danger">✗ {pricingError}</span>
                     )}
                   </div>
                 </>
@@ -822,12 +828,12 @@ export default function ShopSettingsPage() {
 
         {/* ── Business hours tab ── */}
         <TabsContent value="hours">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Clock className="size-4 text-brand" /> Business hours
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <Clock className="size-4 text-brand" aria-hidden="true" /> Business hours
               </CardTitle>
-              <CardDescription className="text-xs">
+              <CardDescription className="text-sm text-muted-foreground">
                 Set your weekly schedule. Toggle a day off if you're closed.
               </CardDescription>
             </CardHeader>
@@ -838,7 +844,7 @@ export default function ShopSettingsPage() {
                   <div
                     key={d.key}
                     className={`flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between ${
-                      sched.closed ? 'border-border bg-muted/40' : 'border-border bg-card'
+                      sched.closed ? 'border-border bg-muted/40' : 'border-border bg-surface'
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -850,7 +856,7 @@ export default function ShopSettingsPage() {
                         aria-label={`Open on ${d.label}`}
                       />
                       <span className="text-sm font-medium">{d.label}</span>
-                      {sched.closed && <Badge variant="outline" className="text-[10px]">Closed</Badge>}
+                      {sched.closed && <Badge variant="outline" className="text-xs">Closed</Badge>}
                     </div>
                     <div className={`flex items-center gap-2 ${sched.closed ? 'opacity-40' : ''}`}>
                       <Input
@@ -858,7 +864,7 @@ export default function ShopSettingsPage() {
                         value={sched.open}
                         onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], open: e.target.value } }))}
                         disabled={sched.closed}
-                        className="h-11 w-full sm:flex-initial sm:w-28"
+                        className="h-11 w-full tabular-nums sm:flex-initial sm:w-28"
                         aria-label={`${d.label} opening time`}
                       />
                       <span className="text-xs text-muted-foreground">to</span>
@@ -867,7 +873,7 @@ export default function ShopSettingsPage() {
                         value={sched.close}
                         onChange={(e) => setHours((h) => ({ ...h, [d.key]: { ...h[d.key], close: e.target.value } }))}
                         disabled={sched.closed}
-                        className="h-11 w-full sm:flex-initial sm:w-28"
+                        className="h-11 w-full tabular-nums sm:flex-initial sm:w-28"
                         aria-label={`${d.label} closing time`}
                       />
                     </div>
@@ -893,19 +899,19 @@ export default function ShopSettingsPage() {
         <TabsContent value="payment">
           {/* Payment Provider Management (PhonePe / Paytm) — must be at the TOP of the tab. */}
           <PaymentProviderSettings />
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CreditCard className="size-4 text-brand" /> Payment settings
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <CreditCard className="size-4 text-brand" aria-hidden="true" /> Payment settings
               </CardTitle>
-              <CardDescription className="text-xs">
+              <CardDescription className="text-sm text-muted-foreground">
                 Where customers pay you. The UPI ID is what they send money to.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="upiId">
-                  <span className="flex items-center gap-1"><CreditCard className="size-3.5" /> UPI ID</span>
+                  <span className="flex items-center gap-1"><CreditCard className="size-3.5" aria-hidden="true" /> UPI ID</span>
                 </Label>
                 <Input
                   id="upiId"
@@ -914,15 +920,15 @@ export default function ShopSettingsPage() {
                   placeholder="myshop@okaxis"
                   disabled={savingPayment}
                   pattern="^[\w.\-]+@[\w.\-]+$"
-                  className="h-11 sm:h-9"
+                  className="h-11 text-base sm:h-9"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Customers pay directly to this UPI ID. 0% commission — money lands in your account instantly.
                 </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="paymentPhone">
-                  <span className="flex items-center gap-1"><Phone className="size-3.5" /> Payment phone (for UPI verification)</span>
+                  <span className="flex items-center gap-1"><Phone className="size-3.5" aria-hidden="true" /> Payment phone (for UPI verification)</span>
                 </Label>
                 <Input
                   id="paymentPhone"
@@ -930,9 +936,9 @@ export default function ShopSettingsPage() {
                   onChange={(e) => setPaymentPhone(e.target.value)}
                   placeholder="+91…"
                   disabled={savingPayment}
-                  className="h-11 sm:h-9"
+                  className="h-11 text-base sm:h-9"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Separate from the business phone — used only for verifying customer UPI payments.
                 </p>
               </div>
@@ -946,14 +952,14 @@ export default function ShopSettingsPage() {
                   disabled={savingPayment}
                   placeholder="e.g. Send screenshot of payment to WhatsApp +91…"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Shown to the customer after they tap "I've paid" in the order flow.
                 </p>
               </div>
-              <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-card p-3">
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-surface p-3">
                 <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="cashOnPickup" className="text-sm">Cash on pickup</Label>
-                  <span className="text-[10px] text-muted-foreground">
+                  <Label htmlFor="cashOnPickup" className="text-sm font-medium">Cash on pickup</Label>
+                  <span className="text-xs text-muted-foreground">
                     Allow customers to pay in cash when they collect the order (you still need UPI configured for online payment).
                   </span>
                 </div>
@@ -981,18 +987,18 @@ export default function ShopSettingsPage() {
 
         {/* ── UPI QR (uploaded image) tab ── */}
         <TabsContent value="upi-qr">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ImageIcon className="size-4 text-brand" /> UPI Payment QR
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <ImageIcon className="size-4 text-brand" aria-hidden="true" /> UPI Payment QR
               </CardTitle>
-              <CardDescription className="flex items-center gap-1.5 text-xs">
-                <Info className="size-3" /> This is the PAYMENT QR — the one customers scan to send you money. Different from the shop-ordering QR (next tab).
+              <CardDescription className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Info className="size-3" aria-hidden="true" /> This is the PAYMENT QR — the one customers scan to send you money. Different from the shop-ordering QR (next tab).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-6">
-                <div className="flex size-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white p-2 sm:size-44">
+                <div className="flex size-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-surface p-2 sm:size-44">
                   {upiQrPreview ? (
                     <img src={upiQrPreview} alt="UPI payment QR" className="size-full object-contain" />
                   ) : upiQrHasImage ? (
@@ -1054,29 +1060,29 @@ export default function ShopSettingsPage() {
 
         {/* ── Shop QR (ordering) tab ── */}
         <TabsContent value="shop-qr">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <QrCode className="size-4 text-brand" /> Shop Ordering QR
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <QrCode className="size-4 text-brand" aria-hidden="true" /> Shop Ordering QR
               </CardTitle>
-              <CardDescription className="flex items-center gap-1.5 text-xs">
-                <Info className="size-3" /> Customers scan this to open your shop page, upload files, and pay. Generated automatically from your public URL.
+              <CardDescription className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Info className="size-3" aria-hidden="true" /> Customers scan this to open your shop page, upload files, and pay. Generated automatically from your public URL.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
-              <div className="flex size-32 shrink-0 items-center justify-center rounded-md border border-border bg-white p-2 sm:size-44">
+              <div className="flex size-32 shrink-0 items-center justify-center rounded-md border border-border bg-surface p-2 sm:size-44">
                 {qr?.pngDataUrl ? (
                   <img src={qr.pngDataUrl} alt={`QR for ${shop.name}`} className="size-full object-contain" width={176} height={176} />
                 ) : (
                   <div className="flex flex-col items-center gap-1 text-center text-xs text-muted-foreground">
-                    <QrCode className="size-6" />
+                    <QrCode className="size-6" aria-hidden="true" />
                     QR unavailable
                   </div>
                 )}
               </div>
               <div className="flex-1 space-y-3">
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer URL</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer URL</p>
                   <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">
                     {qr?.customerUrl ?? `/${shop.slug}`}
                   </code>

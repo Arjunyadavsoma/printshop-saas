@@ -1,8 +1,14 @@
-name: Cleanup Cron
+name: Scheduled Background Jobs
 
-# Runs the PrintShop cloud cleanup endpoint every 5 minutes.
-# Deletes cloud-stored PDFs whose grace period (15 min after verified receipt)
-# has elapsed. Safe: only deletes objects with verified receipt + grace period.
+# Runs PrintShop background jobs on a schedule compatible with Vercel Hobby.
+# Vercel Hobby limits crons to once-daily. This workflow provides frequent
+# execution as an EXTERNAL SCHEDULER — Vercel's daily cron is a safety net.
+#
+# Jobs:
+#   - /api/v1/cron/cleanup — every 5 minutes (file cleanup)
+#   - /api/v1/cron/reconcile-payments — every 10 minutes (payment reconciliation)
+#
+# Both endpoints are idempotent, bounded, and fail-closed authenticated.
 #
 # Setup:
 #   1. Go to GitHub repo → Settings → Secrets and variables → Actions
@@ -16,8 +22,10 @@ name: Cleanup Cron
 
 on:
   schedule:
-    # Every 5 minutes (UTC)
+    # Every 5 minutes (UTC) — cleanup
     - cron: '*/5 * * * *'
+    # Every 10 minutes (UTC) — reconciliation
+    - cron: '*/10 * * * *'
   workflow_dispatch: {} # Allow manual trigger
 
 jobs:
@@ -57,3 +65,26 @@ jobs:
           fi
 
           echo "✅ Cleanup completed successfully."
+
+  reconcile:
+    # Runs on the */10 schedule only (not every */5 trigger)
+    if: github.event.schedule == '*/10 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reconciliation endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ENDPOINT: https://printshop-saas-three.vercel.app/api/v1/cron/reconcile-payments
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "⚠️  CRON_SECRET is not set in repository secrets."
+            exit 1
+          fi
+          echo "→ Calling reconciliation endpoint..."
+          RESPONSE=$(curl -fsS             -H "Authorization: Bearer $CRON_SECRET"             -H "Content-Type: application/json"             "$ENDPOINT" 2>&1) || {
+              echo "❌ Reconciliation endpoint call failed:"
+              echo "$RESPONSE"
+              exit 1
+            }
+          echo "✅ Reconciliation response:"
+          echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"

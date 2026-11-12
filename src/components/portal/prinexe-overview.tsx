@@ -115,12 +115,12 @@ export function PrintEXEOverview() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-medium text-foreground">{agent.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {agent.lastSeenAt ? timeAgo(agent.lastSeenAt) : 'Never connected'}
                     </p>
                   </div>
                   {agent.printerName && (
-                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                    <Badge variant="outline" className="shrink-0 text-xs">
                       <Printer className="mr-1 size-2.5" aria-hidden="true" />
                       {agent.printerName.length > 12 ? agent.printerName.slice(0, 12) + '…' : agent.printerName}
                     </Badge>
@@ -128,7 +128,7 @@ export function PrintEXEOverview() {
                 </div>
               ))}
               {agents.length > 4 && (
-                <p className="text-center text-[10px] text-muted-foreground">
+                <p className="text-center text-xs text-muted-foreground">
                   +{agents.length - 4} more device{agents.length - 4 !== 1 ? 's' : ''}
                 </p>
               )}

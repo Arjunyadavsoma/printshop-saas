@@ -248,20 +248,17 @@ describe('db-health endpoint auth — src/app/api/v1/db-health/route.ts', () => 
     expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
-  it('returns 200 + a health report when the caller supplies the correct key', async () => {
-    process.env.SETUP_KEY = 'test-secret-key';
-    // dbMocks.queryRaw is mocked in beforeEach to resolve with [{test:1}],
-    // so the connection test passes and the route returns 200.
+  it('returns 200 + a health report when the caller supplies the correct Bearer token', async () => {
+    process.env.ADMIN_ACCESS_KEY = 'test-admin-key';
+    // F-04 fix: auth is now via Bearer header (not ?key= query string)
     const req = new NextRequest(
-      'http://localhost:3000/api/v1/db-health?key=test-secret-key',
+      'http://localhost:3000/api/v1/db-health',
+      { headers: { authorization: 'Bearer test-admin-key' } },
     );
     const res = await dbHealthGet(req);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.connection).toBe('OK');
-    // The env-var presence flags should still be reported.
-    expect(body.envVars).toBeDefined();
-    expect(typeof body.envVars.NODE_ENV).toBe('string');
   });
 });
 

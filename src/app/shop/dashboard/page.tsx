@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { StatusBadge } from '@/components/portal/status-badge';
 import { PrintEXEOverview } from '@/components/portal/prinexe-overview';
 import {
   Card,
@@ -14,8 +13,11 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
+import { PageHeader } from '@/components/shared/page-header';
+import { OrderStatusBadge, StatusIndicator } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageSkeleton } from '@/components/shared/loading-skeleton';
 import {
   Table,
   TableBody,
@@ -48,7 +50,6 @@ import {
   Inbox,
   Wifi,
   WifiOff,
-  LayoutDashboard,
   ShieldCheck,
   PackageCheck,
   XCircle,
@@ -342,15 +343,7 @@ export default function ShopDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-9 w-48 sm:w-64" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-        </div>
-        <Skeleton className="h-64" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (error) {
@@ -379,35 +372,31 @@ export default function ShopDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="size-5 text-brand" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-              {shop?.name ?? 'Dashboard'}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {shop ? `slug: ${shop.slug} · today's overview` : 'Overview of today\'s activity'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button asChild size="sm" variant="outline" className="gap-1.5">
-            <Link href="/shop/settings"><QrCode className="size-4" /> My QR</Link>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            className="gap-1.5"
-          >
-            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={shop?.name ?? 'Dashboard'}
+        description={
+          shop
+            ? `slug: ${shop.slug} · today's overview`
+            : "Overview of today's activity"
+        }
+        actions={
+          <>
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <Link href="/shop/settings"><QrCode className="size-4" /> My QR</Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load(true)}
+              disabled={refreshing}
+              className="gap-1.5"
+            >
+              {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {/* Install-prompt banner (Chrome/Edge/Android: native install button;
           iOS Safari: "Add to Home Screen" instructions). Dismissible. */}
@@ -436,7 +425,7 @@ export default function ShopDashboardPage() {
                       ? 'Choose your print engine to start printing'
                       : 'Finish setting up your printer'}
                   </h2>
-                  <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand text-[10px]">
+                  <Badge variant="outline" className="border-brand/30 bg-brand-soft text-brand text-xs">
                     Setup needed
                   </Badge>
                 </div>
@@ -449,9 +438,9 @@ export default function ShopDashboardPage() {
                     <div className="flex items-center gap-2">
                       <Terminal className="size-4 text-brand" />
                       <span className="text-sm font-medium text-foreground">PrintLatch</span>
-                      <Badge variant="outline" className="ml-auto border-success/30 bg-success-soft text-success text-[9px]">Recommended</Badge>
+                      <Badge variant="outline" className="ml-auto border-success/30 bg-success-soft text-success text-xs">Recommended</Badge>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       One-click installer. Auto-starts on Windows boot. No coding required.
                     </p>
                   </div>
@@ -460,9 +449,9 @@ export default function ShopDashboardPage() {
                     <div className="flex items-center gap-2">
                       <Cpu className="size-4 text-muted-foreground" />
                       <span className="text-sm font-medium text-foreground">Native Windows Printer</span>
-                      <Badge variant="outline" className="ml-auto border-border bg-muted text-muted-foreground text-[9px]">Advanced</Badge>
+                      <Badge variant="outline" className="ml-auto border-border bg-muted text-muted-foreground text-xs">Advanced</Badge>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Node.js service. Direct GDI printing. Terminal must stay open.
                     </p>
                   </div>
@@ -484,13 +473,13 @@ export default function ShopDashboardPage() {
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <Card key={s.label} className="border-border">
-              <CardContent className="flex flex-col gap-2 p-4">
+            <Card key={s.label} className="bg-card">
+              <CardContent className="flex flex-col gap-2 p-5">
                 <div className={`flex size-8 items-center justify-center rounded-md ${s.bg}`}>
                   <Icon className={`size-4 ${s.tone}`} />
                 </div>
-                <span className="text-xs text-muted-foreground">{s.label}</span>
-                <span className="text-lg font-semibold tracking-tight sm:text-xl">{s.value}</span>
+                <span className="text-sm text-muted-foreground">{s.label}</span>
+                <span className="text-2xl font-semibold tabular-nums text-foreground">{s.value}</span>
               </CardContent>
             </Card>
           );
@@ -528,7 +517,7 @@ export default function ShopDashboardPage() {
                       </span>
                       <span className={c.done ? 'text-foreground' : 'text-muted-foreground'}>{c.label}</span>
                     </span>
-                    <span className="text-[10px] text-muted-foreground">{c.done ? 'Done' : 'Open →'}</span>
+                    <span className="text-xs text-muted-foreground">{c.done ? 'Done' : 'Open →'}</span>
                   </Link>
                 </li>
               ))}
@@ -542,14 +531,14 @@ export default function ShopDashboardPage() {
               <IndianRupee className="size-4" /> Today's sales
             </CardTitle>
             <CardDescription className="text-success text-xs">
-              From {todays.total} orders · paid orders only.
+              From <span className="tabular-nums">{todays.total}</span> orders · paid orders only.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tracking-tight text-success">
+            <p className="text-2xl font-semibold tabular-nums text-success">
               {formatINRFromPaise(todays.revenue)}
             </p>
-            <p className="mt-1 text-xs text-success">
+            <p className="mt-1 text-xs text-success tabular-nums">
               Completed: {todays.completed} · Ready: {todays.ready} · Printing: {todays.printing}
             </p>
           </CardContent>
@@ -609,19 +598,19 @@ export default function ShopDashboardPage() {
               >
                 <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-3">
                   <div className="flex flex-col">
-                    <span className="font-mono font-bold text-brand">{o.tokenNumber ?? o.customerToken}</span>
-                    <span className="text-[10px] text-muted-foreground">{timeAgo(o.createdAt)}</span>
+                    <span className="font-mono font-bold tabular-nums text-brand">{o.tokenNumber ?? o.customerToken}</span>
+                    <span className="text-xs text-muted-foreground">{timeAgo(o.createdAt)}</span>
                   </div>
                   <Separator />
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium">{formatINRFromPaise(o.totalAmountPaise)}</span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-sm font-medium tabular-nums">{formatINRFromPaise(o.totalAmountPaise)}</span>
+                    <span className="text-xs text-muted-foreground">
                       {o.customerPhone ?? 'no phone on file'}
                     </span>
                   </div>
                 </div>
                 <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
-                  <Button asChild size="sm" variant="ghost" className="min-h-[44px] min-w-[44px] flex-1 sm:flex-initial text-[11px]">
+                  <Button asChild size="sm" variant="ghost" className="min-h-[44px] min-w-[44px] flex-1 sm:flex-initial text-xs">
                     <Link href={`/shop/orders/${o.id}`}>Open →</Link>
                   </Button>
                   <Button
@@ -693,14 +682,14 @@ export default function ShopDashboardPage() {
                   href={`/shop/orders/${o.id}`}
                   className="flex flex-col gap-1 rounded-md border border-success/30 bg-success-soft p-3 transition-colors hover:bg-success-soft"
                 >
-                  <span className="font-mono text-xl font-bold tracking-tight text-success">
+                  <span className="font-mono text-xl font-bold tabular-nums tracking-tight text-success">
                     {o.tokenNumber ?? o.customerToken}
                   </span>
-                  <span className="text-[11px] text-success">
+                  <span className="text-xs text-success tabular-nums">
                     {formatINRFromPaise(o.totalAmountPaise)} · {timeAgo(o.createdAt)}
                   </span>
                   {o.customerPhone && (
-                    <span className="text-[10px] font-mono text-success">{o.customerPhone}</span>
+                    <span className="text-xs font-mono text-success">{o.customerPhone}</span>
                   )}
                 </Link>
               ))}
@@ -727,8 +716,8 @@ export default function ShopDashboardPage() {
                   className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-muted"
                 >
                   <Loader2 className="size-3 animate-spin text-brand" />
-                  <span className="font-mono font-semibold text-brand">{o.tokenNumber ?? o.customerToken}</span>
-                  <span className="text-[11px] text-muted-foreground">{formatINRFromPaise(o.totalAmountPaise)}</span>
+                  <span className="font-mono font-semibold tabular-nums text-brand">{o.tokenNumber ?? o.customerToken}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{formatINRFromPaise(o.totalAmountPaise)}</span>
                 </Link>
               ))}
             </div>
@@ -746,42 +735,41 @@ export default function ShopDashboardPage() {
         </CardHeader>
         <CardContent className="px-0 pb-0">
           {recentOrders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <Inbox className="size-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium">No orders yet</p>
-              <p className="max-w-md text-xs text-muted-foreground">
-                Your shop has no orders. Share your QR code with customers so they can scan, upload, and pay directly to your UPI.
-              </p>
-              <Button asChild variant="outline" size="sm" className="mt-2 gap-1.5">
-                <Link href="/shop/settings"><QrCode className="size-4" /> View shop QR →</Link>
-              </Button>
-            </div>
+            <EmptyState
+              className="px-4 py-12"
+              icon={<Inbox className="size-5" />}
+              title="No orders yet"
+              description="Your shop has no orders. Share your QR code with customers so they can scan, upload, and pay directly to your UPI."
+              action={
+                <Button asChild variant="outline" size="sm" className="mt-2 gap-1.5">
+                  <Link href="/shop/settings"><QrCode className="size-4" /> View shop QR →</Link>
+                </Button>
+              }
+            />
           ) : (
             <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-4">Token</TableHead>
-                  <TableHead>Payment</TableHead>
+                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Placed</TableHead>
+                  <TableHead className="hidden sm:table-cell">Placed</TableHead>
                   <TableHead className="pr-4 text-right">View</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recentOrders.map((o) => (
                   <TableRow key={o.id}>
-                    <TableCell className="pl-4 font-mono font-semibold text-brand">
+                    <TableCell className="pl-4 font-mono font-semibold tabular-nums text-brand">
                       {o.tokenNumber ?? o.customerToken}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <PaymentMiniBadge status={o.status} paidAt={o.paidAt} />
                     </TableCell>
-                    <TableCell><StatusBadge status={o.status} /></TableCell>
-                    <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{timeAgo(o.createdAt)}</TableCell>
+                    <TableCell><OrderStatusBadge status={o.status} /></TableCell>
+                    <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">{timeAgo(o.createdAt)}</TableCell>
                     <TableCell className="pr-4 text-right">
                       <Button asChild size="sm" variant="ghost" className="gap-1">
                         <Link href={`/shop/orders/${o.id}`}><FileText className="size-3.5" /> Open</Link>
@@ -807,15 +795,15 @@ export default function ShopDashboardPage() {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Total orders</span>
-              <span className="font-mono font-semibold">{analytics?.orderCount.total ?? 0}</span>
+              <span className="font-mono font-semibold tabular-nums">{analytics?.orderCount.total ?? 0}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Paid orders</span>
-              <span className="font-mono font-semibold">{analytics?.orderCount.paid ?? 0}</span>
+              <span className="font-mono font-semibold tabular-nums">{analytics?.orderCount.paid ?? 0}</span>
             </div>
             <div className="flex items-center justify-between border-t pt-3">
               <span className="text-sm font-medium">Total revenue</span>
-              <Badge className="bg-success-soft text-success">{analytics?.revenue.formatted ?? formatINRFromPaise(0)}</Badge>
+              <Badge className="bg-success-soft text-success tabular-nums">{analytics?.revenue.formatted ?? formatINRFromPaise(0)}</Badge>
             </div>
           </CardContent>
         </Card>
@@ -832,7 +820,7 @@ export default function ShopDashboardPage() {
               {analytics && Object.entries(analytics.byStatus).map(([s, n]) => (
                 <div key={s} className="flex items-center justify-between rounded-md border border-border bg-card px-2.5 py-1.5">
                   <span className="text-muted-foreground">{s.replace(/_/g, ' ')}</span>
-                  <span className="font-mono font-semibold">{n}</span>
+                  <span className="font-mono font-semibold tabular-nums">{n}</span>
                 </div>
               ))}
               {!analytics && <p className="col-span-full text-xs text-muted-foreground">Analytics unavailable.</p>}
@@ -872,15 +860,19 @@ function Separator() {
 }
 
 function PaymentMiniBadge({ status, paidAt }: { status: string; paidAt: string | null }) {
-  let cls = 'border-border bg-muted text-muted-foreground';
-  let label = 'pending';
-  if (status === 'awaiting_payment') { label = 'pending'; }
-  else if (paidAt) { cls = 'border-success/30 bg-success-soft text-success'; label = 'paid'; }
-  if (status === 'cancelled') { cls = 'border-danger/30 bg-danger-soft text-danger'; label = 'rejected'; }
-  if (status === 'refunded') { cls = 'border-border bg-muted text-muted-foreground'; label = 'refunded'; }
-  return (
-    <Badge variant="outline" className={`text-[10px] ${cls}`}>
-      {label}
-    </Badge>
-  );
+  const variant = status === 'cancelled'
+    ? 'danger'
+    : status === 'refunded'
+      ? 'neutral'
+      : paidAt
+        ? 'success'
+        : 'warning';
+  const label = status === 'cancelled'
+    ? 'rejected'
+    : status === 'refunded'
+      ? 'refunded'
+      : paidAt
+        ? 'paid'
+        : 'pending';
+  return <StatusIndicator variant={variant} label={label} />;
 }

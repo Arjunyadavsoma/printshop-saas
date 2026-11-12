@@ -87,10 +87,10 @@ export function DeploymentOriginBanner() {
               <p className="text-sm font-medium text-foreground">
                 You&apos;re on a Vercel <strong>preview</strong> URL
               </p>
-              <p className="text-[11px] text-muted-foreground break-all">
+              <p className="text-xs text-muted-foreground break-all">
                 <code className="rounded bg-amber-100 px-1 py-0.5 text-amber-900">{state.host}</code> changes on every commit. Your printer pairing + shop QR are tied to a specific URL — they may not work here.
               </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 For daily use, open the <strong>stable production URL</strong> instead (it never changes):
               </p>
             </div>

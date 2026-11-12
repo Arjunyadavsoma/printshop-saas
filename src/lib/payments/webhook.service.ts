@@ -305,6 +305,52 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
 
   // 8. Handle the transition result.
   if (transitionResult.idempotent || !transitionResult.applied) {
+    // Phase 6.11 Workstream B: if the PaymentAttempt was not found, return 404
+    // (not 200) so the provider retries the webhook. The previous behavior
+    // returned 200, telling the provider "OK, don't retry" — which could
+    // lose a legitimate payment event if the attempt was temporarily unavailable
+    // (e.g., race between cache population and DB persistence).
+    if (transitionResult.reason.includes('PaymentAttempt not found')) {
+      // Phase 6.12: Durable unmatched-webhook recovery. Persist the VERIFIED
+      // callback in WebhookInbox for later matching by the reconciliation cron.
+      try {
+        const { db } = await import('@/lib/db');
+        await (db as any).webhookInbox.create({
+          data: {
+            id: crypto.randomUUID(),
+            provider: input.provider,
+            merchantOrderId,
+            providerEventId: v.txnId ?? null,
+            providerTxnId: v.txnId ?? null,
+            amountPaise: v.amountPaise,
+            currency: 'INR',
+            signatureValid: true,
+            processingStatus: 'unmatched',
+            nextRetryAt: new Date(Date.now() + 60_000),
+          },
+        });
+        logger.info('webhook: unmatched event persisted to WebhookInbox', {
+          merchantOrderId, providerEventId: v.txnId,
+        });
+      } catch (inboxErr) {
+        if (!isUniqueConstraintError(inboxErr)) {
+          logger.error('webhook: failed to persist unmatched event', {
+            merchantOrderId, error: inboxErr instanceof Error ? inboxErr.message : String(inboxErr),
+          });
+        }
+      }
+      logger.warn('webhook: PaymentAttempt not found — returning 404 for provider retry', {
+        merchantOrderId,
+        txnId: v.txnId,
+      });
+      return {
+        statusCode: 404,
+        responseBody: result.responseBody,
+        summary: 'PaymentAttempt not found — event persisted to inbox, provider should retry',
+        applied: false,
+        orderId: session.orderId,
+      };
+    }
     // Duplicate event, stale event, or already-processed — idempotent skip.
     if (v.txnId) await container.cache.set(processedKey, session.orderId, 86400);
     logger.info('webhook: idempotent skip (lifecycle)', {

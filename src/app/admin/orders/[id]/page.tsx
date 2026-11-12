@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ShoppingBag,
   ArrowLeft,
   RefreshCw,
   AlertCircle,
@@ -16,19 +15,25 @@ import {
   History,
   IndianRupee,
   ShieldCheck,
+  ShoppingBag,
 } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import {
   unwrap,
   type AdminOrderDetailResponse,
-  type OrderStatus,
   type FileStatus,
   type PrintJobStatus,
 } from '@/components/portal/admin-types';
-import { StatusBadge } from '@/components/portal/status-badge';
+import {
+  OrderStatusBadge,
+  StatusIndicator,
+  type StatusVariant,
+} from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageHeader } from '@/components/shared/page-header';
+import { TableSkeleton } from '@/components/shared/loading-skeleton';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -65,23 +70,35 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-const FILE_STATUS_COLORS: Record<FileStatus, string> = {
-  pending: 'bg-muted text-muted-foreground',
-  queued: 'bg-brand-soft text-brand',
-  printing: 'bg-muted text-muted-foreground',
-  completed: 'bg-success-soft text-success',
-  failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  needs_review: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+const FILE_STATUS_VARIANT: Record<FileStatus, StatusVariant> = {
+  pending: 'neutral',
+  queued: 'brand',
+  printing: 'neutral',
+  completed: 'success',
+  failed: 'danger',
+  needs_review: 'warning',
 };
 
-const JOB_STATUS_COLORS: Record<PrintJobStatus, string> = {
-  queued: 'bg-brand-soft text-brand',
-  assigned: 'bg-info-soft text-info',
-  printing: 'bg-muted text-muted-foreground',
-  completed: 'bg-success-soft text-success',
-  failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  needs_review: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+const JOB_STATUS_VARIANT: Record<PrintJobStatus, StatusVariant> = {
+  queued: 'brand',
+  assigned: 'info',
+  printing: 'neutral',
+  completed: 'success',
+  failed: 'danger',
+  needs_review: 'warning',
 };
+
+function FileStatusBadge({ status }: { status: FileStatus }) {
+  return (
+    <StatusIndicator variant={FILE_STATUS_VARIANT[status]} label={status.replace('_', ' ')} />
+  );
+}
+
+function JobStatusBadge({ status }: { status: PrintJobStatus }) {
+  return (
+    <StatusIndicator variant={JOB_STATUS_VARIANT[status]} label={status.replace('_', ' ')} />
+  );
+}
 
 interface InfoRowProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -93,10 +110,12 @@ interface InfoRowProps {
 function InfoRow({ icon: Icon, label, value, mono }: InfoRowProps) {
   return (
     <div className="flex items-start gap-2.5 py-2">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={`mt-0.5 text-sm break-words ${mono ? 'font-mono text-xs' : ''}`}>{value}</div>
+        <div className={`mt-0.5 text-sm break-words ${mono ? 'font-mono text-xs' : ''}`}>
+          {value}
+        </div>
       </div>
     </div>
   );
@@ -153,7 +172,7 @@ export default function AdminOrderDetailPage() {
       if (j.completedAt) timeline.push({ at: j.completedAt, label: `Print job completed (#${j.id.slice(0, 8)})`, icon: Printer, tone: 'text-success' });
     }
     if (data.order.status === 'collected') timeline.push({ at: data.order.updatedAt, label: 'Order collected', icon: ShieldCheck, tone: 'text-success' });
-    if (data.order.status === 'cancelled') timeline.push({ at: data.order.updatedAt, label: 'Order cancelled', icon: AlertCircle, tone: 'text-red-600' });
+    if (data.order.status === 'cancelled') timeline.push({ at: data.order.updatedAt, label: 'Order cancelled', icon: AlertCircle, tone: 'text-danger' });
     timeline.sort((a, b) => {
       const ta = a.at ? new Date(a.at).getTime() : 0;
       const tb = b.at ? new Date(b.at).getTime() : 0;
@@ -161,39 +180,54 @@ export default function AdminOrderDetailPage() {
     });
   }
 
+  const orderToken = data ? data.order.id.slice(0, 8) : '';
+
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="sr-only">Order detail</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/admin/orders')} className="gap-1">
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5 text-brand" />
-              {loading || !data ? (
-                <Skeleton className="h-6 w-48" />
-              ) : (
-                <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-                  Order <span className="font-mono">{data.order.id.slice(0, 8)}</span>
-                </h2>
-              )}
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">Admin order detail</p>
+    <div className="space-y-6">
+      <PageHeader
+        title={loading || !data ? 'Order detail' : `Order #${orderToken}`}
+        description="Admin order detail"
+        breadcrumbs={
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Link href="/admin/orders" className="hover:text-foreground">
+              Orders
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="text-foreground">#{orderToken || '…'}</span>
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/admin/orders')}
+              className="gap-1"
+            >
+              <ArrowLeft className="size-4" aria-hidden="true" /> Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={load}
+              disabled={loading}
+              className="min-h-[44px] gap-2"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              Refresh
+            </Button>
           </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+        }
+      />
 
       {error && (
-        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
+        <Card className="border-danger-border bg-danger-soft">
           <CardContent className="flex items-start gap-3 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-            <div className="text-sm text-red-800 dark:text-red-200">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
+            <div className="text-sm text-danger">
               <p className="font-semibold">Failed to load order</p>
               <p className="mt-1 font-mono text-xs">{error}</p>
             </div>
@@ -209,16 +243,18 @@ export default function AdminOrderDetailPage() {
       ) : (
         <>
           {/* Top status bar */}
-          <Card>
+          <Card className="bg-surface">
             <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="flex items-center gap-3">
-                <StatusBadge status={data.order.status} />
-                <span className="text-2xl font-bold tabular-nums">{inr(data.order.totalAmountPaise)}</span>
+                <OrderStatusBadge status={data.order.status} />
+                <span className="text-2xl font-semibold tabular-nums text-foreground">
+                  {inr(data.order.totalAmountPaise)}
+                </span>
                 <span className="text-sm text-muted-foreground">{data.order.currency}</span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums text-muted-foreground">
                 <span>Created {formatDateTime(data.order.createdAt)}</span>
-                <span aria-hidden>·</span>
+                <span aria-hidden="true">·</span>
                 <span>Updated {formatDateTime(data.order.updatedAt)}</span>
               </div>
             </CardContent>
@@ -226,17 +262,23 @@ export default function AdminOrderDetailPage() {
 
           <div className="grid gap-6 lg:grid-cols-3">
             {/* Shop + customer info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Shop &amp; customer</CardTitle>
-                <CardDescription>Order parties</CardDescription>
+            <Card className="bg-surface">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Shop &amp; customer</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Order parties
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-3">
                   <div className="text-xs font-medium text-muted-foreground">Shop</div>
-                  <Link href={`/admin/shops/${data.order.shopId}`} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
-                    <Store className="h-3.5 w-3.5" />
-                    {data.order.shopName} <span className="font-mono text-xs">/{data.order.shopSlug}</span>
+                  <Link
+                    href={`/admin/shops/${data.order.shopId}`}
+                    className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+                  >
+                    <Store className="size-3.5" aria-hidden="true" />
+                    {data.order.shopName}{' '}
+                    <span className="font-mono text-xs">/{data.order.shopSlug}</span>
                   </Link>
                 </div>
                 <Separator className="my-3" />
@@ -247,11 +289,12 @@ export default function AdminOrderDetailPage() {
             </Card>
 
             {/* Payment info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Payment</CardTitle>
-                <CardDescription>
-                  Transaction details for reconciliation. <strong>Credentials are never shown.</strong>
+            <Card className="bg-surface">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Payment</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Transaction details for reconciliation.{' '}
+                  <strong>Credentials are never shown.</strong>
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -260,32 +303,49 @@ export default function AdminOrderDetailPage() {
                 <InfoRow icon={CreditCard} label="UTR (bank reference)" value={data.order.paymentUtr ?? '—'} mono />
                 <InfoRow icon={IndianRupee} label="Total amount" value={inr(data.order.totalAmountPaise)} />
                 <InfoRow icon={CreditCard} label="Paid at" value={formatDateTime(data.order.paidAt)} />
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-brand/30 bg-brand-soft p-2.5 text-xs text-brand">
-                  <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>The txnId + UTR are shown for reconciliation. The shop's <strong>saltKey / merchantKey</strong> credentials are NOT exposed — only the shop owner controls them.</span>
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-brand-border bg-brand-soft p-2.5 text-xs text-brand">
+                  <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    The txnId + UTR are shown for reconciliation. The shop&rsquo;s{' '}
+                    <strong>saltKey / merchantKey</strong> credentials are NOT exposed — only the
+                    shop owner controls them.
+                  </span>
                 </div>
               </CardContent>
             </Card>
 
             {/* Status history timeline */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Status history</CardTitle>
-                <CardDescription>Order lifecycle events</CardDescription>
+            <Card className="bg-surface">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Status history</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Order lifecycle events
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {timeline.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">No events yet.</p>
+                  <EmptyState
+                    icon={<History className="size-6" aria-hidden="true" />}
+                    title="No events yet"
+                    description="Lifecycle events will appear here as the order progresses."
+                  />
                 ) : (
                   <ol className="relative space-y-3 border-l border-border pl-4">
                     {timeline.map((ev, i) => {
                       const Icon = ev.icon;
                       return (
                         <li key={i} className="relative">
-                          <span className={`absolute -left-[1.40rem] flex h-3 w-3 items-center justify-center rounded-full bg-background ring-2 ring-border`}>
-                            <Icon className={`h-3 w-3 ${ev.tone}`} />
+                          <span
+                            className={`absolute -left-[1.40rem] flex size-3 items-center justify-center rounded-full bg-surface ring-2 ring-border`}
+                          >
+                            <Icon
+                              className={`size-3 ${ev.tone}`}
+                              aria-hidden="true"
+                            />
                           </span>
-                          <div className="text-xs text-muted-foreground">{formatDateTime(ev.at)}</div>
+                          <div className="text-xs tabular-nums text-muted-foreground">
+                            {formatDateTime(ev.at)}
+                          </div>
                           <div className="mt-0.5 text-sm">{ev.label}</div>
                         </li>
                       );
@@ -297,31 +357,39 @@ export default function AdminOrderDetailPage() {
           </div>
 
           {/* File metadata */}
-          <Card>
-            <CardHeader>
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
+                <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
                 <div>
-                  <CardTitle className="text-base">Files ({data.files.length})</CardTitle>
-                  <CardDescription>Per-file metadata + pricing</CardDescription>
+                  <CardTitle className="text-base font-semibold">
+                    Files ({data.files.length})
+                  </CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground">
+                    Per-file metadata + pricing
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {data.files.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">No files uploaded.</p>
+                <EmptyState
+                  icon={<FileText className="size-6" aria-hidden="true" />}
+                  title="No files uploaded"
+                  description="Files will appear here once the customer uploads them."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Filename</TableHead>
-                        <TableHead className="text-right">Pages</TableHead>
-                        <TableHead className="text-right">Copies</TableHead>
-                        <TableHead>Color</TableHead>
-                        <TableHead>Paper</TableHead>
-                        <TableHead>Duplex</TableHead>
-                        <TableHead className="text-right">Size</TableHead>
+                        <TableHead className="hidden text-right sm:table-cell">Pages</TableHead>
+                        <TableHead className="hidden text-right sm:table-cell">Copies</TableHead>
+                        <TableHead className="hidden md:table-cell">Color</TableHead>
+                        <TableHead className="hidden md:table-cell">Paper</TableHead>
+                        <TableHead className="hidden lg:table-cell">Duplex</TableHead>
+                        <TableHead className="hidden text-right md:table-cell">Size</TableHead>
                         <TableHead className="text-right">Price</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
@@ -330,30 +398,36 @@ export default function AdminOrderDetailPage() {
                       {data.files.map((f) => (
                         <TableRow key={f.id}>
                           <TableCell>
-                            <div className="font-medium">{f.originalFilename}</div>
-                            <div className="font-mono text-xs text-muted-foreground">{f.mimeType}</div>
+                            <div className="font-medium text-foreground">
+                              {f.originalFilename}
+                            </div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {f.mimeType}
+                            </div>
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">{f.pageCount}</TableCell>
-                          <TableCell className="text-right tabular-nums">{f.copies}</TableCell>
-                          <TableCell className="text-xs">
-                            <Badge variant="outline" className={f.colorMode === 'color' ? 'border-border bg-muted text-muted-foreground' : 'border-border bg-muted text-muted-foreground'}>
-                              {f.colorMode === 'color' ? 'Colour' : 'B&W'}
-                            </Badge>
+                          <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                            {f.pageCount}
                           </TableCell>
-                          <TableCell className="font-mono text-xs uppercase">{f.paperSize}</TableCell>
+                          <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                            {f.copies}
+                          </TableCell>
+                          <TableCell className="hidden text-xs md:table-cell">
+                            {f.colorMode === 'color' ? 'Colour' : 'B&W'}
+                          </TableCell>
+                          <TableCell className="hidden font-mono text-xs uppercase md:table-cell">
+                            {f.paperSize}
+                          </TableCell>
+                          <TableCell className="hidden text-xs lg:table-cell">
+                            {f.duplex ? 'Yes' : 'No'}
+                          </TableCell>
+                          <TableCell className="hidden text-right text-xs tabular-nums md:table-cell">
+                            {formatBytes(f.sizeBytes)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {inr(f.pricePaise)}
+                          </TableCell>
                           <TableCell>
-                            {f.duplex ? (
-                              <Badge variant="outline" className="border-success/30 bg-success-soft text-success">Yes</Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatBytes(f.sizeBytes)}</TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">{inr(f.pricePaise)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`${FILE_STATUS_COLORS[f.status]} border-transparent font-medium`}>
-                              {f.status.replace('_', ' ')}
-                            </Badge>
+                            <FileStatusBadge status={f.status} />
                           </TableCell>
                         </TableRow>
                       ))}
@@ -365,53 +439,74 @@ export default function AdminOrderDetailPage() {
           </Card>
 
           {/* Print jobs */}
-          <Card>
-            <CardHeader>
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <Printer className="h-4 w-4 text-muted-foreground" />
+                <Printer className="size-4 text-muted-foreground" aria-hidden="true" />
                 <div>
-                  <CardTitle className="text-base">Print jobs ({data.printJobs.length})</CardTitle>
-                  <CardDescription>Per-file dispatch + agent execution</CardDescription>
+                  <CardTitle className="text-base font-semibold">
+                    Print jobs ({data.printJobs.length})
+                  </CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground">
+                    Per-file dispatch + agent execution
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {data.printJobs.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">No print jobs dispatched yet.</p>
+                <EmptyState
+                  icon={<Printer className="size-6" aria-hidden="true" />}
+                  title="No print jobs dispatched"
+                  description="Print jobs will appear here once files are queued for printing."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Job ID</TableHead>
-                        <TableHead>File ID</TableHead>
-                        <TableHead>Agent</TableHead>
+                        <TableHead className="hidden md:table-cell">File ID</TableHead>
+                        <TableHead className="hidden lg:table-cell">Agent</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Attempts</TableHead>
-                        <TableHead>Last error</TableHead>
-                        <TableHead>Queued</TableHead>
-                        <TableHead>Started</TableHead>
-                        <TableHead>Completed</TableHead>
+                        <TableHead className="hidden text-right sm:table-cell">Attempts</TableHead>
+                        <TableHead className="hidden lg:table-cell">Last error</TableHead>
+                        <TableHead className="hidden md:table-cell">Queued</TableHead>
+                        <TableHead className="hidden lg:table-cell">Started</TableHead>
+                        <TableHead className="hidden lg:table-cell">Completed</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {data.printJobs.map((j) => (
                         <TableRow key={j.id}>
                           <TableCell className="font-mono text-xs">{j.id.slice(0, 8)}</TableCell>
-                          <TableCell className="font-mono text-xs">{j.fileId.slice(0, 8)}</TableCell>
-                          <TableCell className="font-mono text-xs">{j.agentId ? j.agentId.slice(0, 8) : '—'}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`${JOB_STATUS_COLORS[j.status]} border-transparent font-medium`}>
-                              {j.status.replace('_', ' ')}
-                            </Badge>
+                          <TableCell className="hidden font-mono text-xs md:table-cell">
+                            {j.fileId.slice(0, 8)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">{j.attempts}</TableCell>
-                          <TableCell className="max-w-[200px] truncate text-xs text-red-700 dark:text-red-300" title={j.lastError ?? ''}>
+                          <TableCell className="hidden font-mono text-xs lg:table-cell">
+                            {j.agentId ? j.agentId.slice(0, 8) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <JobStatusBadge status={j.status} />
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                            {j.attempts}
+                          </TableCell>
+                          <TableCell
+                            className="hidden max-w-[200px] truncate text-xs text-danger lg:table-cell"
+                            title={j.lastError ?? ''}
+                          >
                             {j.lastError ?? '—'}
                           </TableCell>
-                          <TableCell className="text-xs">{formatDateTime(j.queuedAt)}</TableCell>
-                          <TableCell className="text-xs">{formatDateTime(j.startedAt)}</TableCell>
-                          <TableCell className="text-xs">{formatDateTime(j.completedAt)}</TableCell>
+                          <TableCell className="hidden text-xs tabular-nums md:table-cell">
+                            {formatDateTime(j.queuedAt)}
+                          </TableCell>
+                          <TableCell className="hidden text-xs tabular-nums lg:table-cell">
+                            {formatDateTime(j.startedAt)}
+                          </TableCell>
+                          <TableCell className="hidden text-xs tabular-nums lg:table-cell">
+                            {formatDateTime(j.completedAt)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -422,16 +517,18 @@ export default function AdminOrderDetailPage() {
           </Card>
 
           {/* Raw order metadata (debug aid) */}
-          <Card>
-            <CardHeader>
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Raw order metadata</CardTitle>
+                <History className="size-4 text-muted-foreground" aria-hidden="true" />
+                <CardTitle className="text-base font-semibold">Raw order metadata</CardTitle>
               </div>
-              <CardDescription>For support / debugging — no sensitive fields</CardDescription>
+              <CardDescription className="text-sm text-muted-foreground">
+                For support / debugging — no sensitive fields
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+              <pre className="overflow-x-auto rounded-lg border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
 {JSON.stringify({
   id: data.order.id,
   shopId: data.order.shopId,

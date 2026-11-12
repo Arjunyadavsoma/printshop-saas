@@ -300,11 +300,19 @@ describe('applyPaymentTransition — atomic transition contract', () => {
     // Second call — the SAME eventId. The PaymentEvent UNIQUE([provider, eventId])
     // constraint (simulated by the mock's create → throws on duplicate) is
     // caught → the lifecycle returns idempotent=true, applied=false.
+    //
+    // Phase 6.9 note: the idempotent path no longer queries the order inside
+    // the poisoned transaction (PostgreSQL 25P02). orderStatus is returned
+    // as 'unknown' — the caller doesn't use it for the idempotent skip path.
+    // The order's ACTUAL status is verified separately below.
     const r2 = await applyPaymentTransition(input);
     expect(r2.applied).toBe(false);
     expect(r2.idempotent).toBe(true);
     expect(r2.attemptStatus).toBe('paid');
-    expect(r2.orderStatus).toBe('paid');
+    // orderStatus is 'unknown' on the idempotent path (Phase 6.9 fix —
+    // the order is NOT queried inside the poisoned transaction). The
+    // actual order status is verified below via repos.orders.findById.
+    expect(r2.orderStatus).toBe('unknown');
 
     // Exactly ONE PaymentEvent row was persisted (the second call's create
     // threw a unique-violation + was caught).

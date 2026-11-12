@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 import {
   Store,
   Loader2,
@@ -314,7 +315,11 @@ export default function ShopRegisterPage() {
 
   // ── Render ──
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-soft px-4 py-6 sm:py-8">
+    <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-6 sm:py-8">
+      {/* Theme toggle (top-right corner) */}
+      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-2xl">
         {/* Brand */}
         <div className="mb-5 flex flex-col items-center text-center">
@@ -328,7 +333,7 @@ export default function ShopRegisterPage() {
         </div>
 
         {/* Progress */}
-        <Card className="border-border shadow-sm">
+        <Card className="border-border bg-surface shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -339,12 +344,12 @@ export default function ShopRegisterPage() {
                   return (
                     <div key={s.id} className="flex items-center gap-1.5">
                       <div
-                        className={`flex size-7 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors sm:size-8 ${
+                        className={`flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors sm:size-8 ${
                           active
                             ? 'border-brand bg-brand text-brand-foreground'
                             : done
                               ? 'border-success/30 bg-success-soft text-success'
-                              : 'border-border bg-card text-muted-foreground'
+                              : 'border-border bg-surface text-muted-foreground'
                         }`}
                         aria-current={active ? 'step' : undefined}
                       >
@@ -360,7 +365,7 @@ export default function ShopRegisterPage() {
                   );
                 })}
               </div>
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-xs">
                 Step {stepIndex + 1} of {STEPS.length}
               </Badge>
             </div>
@@ -429,7 +434,7 @@ export default function ShopRegisterPage() {
                             style={{ width: `${(passwordStrength(state.account.password).score / 5) * 100}%` }}
                           />
                         </div>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {passwordStrength(state.account.password).label}
                         </span>
                       </div>
@@ -470,7 +475,7 @@ export default function ShopRegisterPage() {
                 <div className="space-y-1.5">
                   <Label htmlFor="slug">Shop URL slug</Label>
                   <div className="flex items-center gap-2">
-                    <code className="inline-flex h-11 shrink-0 items-center rounded-md border border-border bg-muted px-2 text-xs text-muted-foreground sm:h-10">
+                    <code className="inline-flex h-11 shrink-0 items-center rounded-md border border-border bg-muted px-2 text-xs tabular-nums text-muted-foreground sm:h-10">
                       /shops/
                     </code>
                     <Input
@@ -482,29 +487,34 @@ export default function ShopRegisterPage() {
                       }}
                       placeholder="sharma-print"
                       disabled={submitting}
-                      className="h-11 flex-1 sm:h-10"
+                      className="h-11 flex-1 text-base sm:h-10"
                     />
                   </div>
                   {slugStatus === 'checking' && (
-                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Loader2 className="size-3 animate-spin" /> Checking availability…
                     </p>
                   )}
                   {slugStatus === 'ok' && (
-                    <p className="flex items-center gap-1 text-[11px] text-success">
+                    <p className="flex items-center gap-1 text-xs text-success">
                       <CheckCircle2 className="size-3" /> URL is available.
                     </p>
                   )}
                   {slugStatus === 'taken' && (
-                    <p className="flex items-center gap-1 text-[11px] text-danger">
+                    <p className="flex items-center gap-1 text-xs text-danger">
                       <AlertCircle className="size-3" /> This URL is already taken — pick another.
                     </p>
                   )}
                   {slugStatus === 'invalid' && (
-                    <p className="text-[11px] text-danger">Lowercase letters, digits and hyphens only.</p>
+                    <p className="text-xs text-danger">Lowercase letters, digits and hyphens only.</p>
                   )}
                   {businessErrors.slug && slugStatus === 'idle' && (
-                    <p className="text-[11px] text-danger">{businessErrors.slug}</p>
+                    <p className="text-xs text-danger">{businessErrors.slug}</p>
+                  )}
+                  {state.business.slug && slugStatus !== 'invalid' && (
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      Preview: /shops/{state.business.slug}
+                    </p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -554,11 +564,11 @@ export default function ShopRegisterPage() {
                         className={`rounded-lg border-2 p-2 text-center transition ${state.business.paymentMethods === opt.val ? 'border-brand/30 bg-brand-soft' : 'border-border hover:border-brand/30'}`}
                       >
                         <p className="text-xs font-medium text-foreground">{opt.label}</p>
-                        <p className="text-[10px] text-muted-foreground">{opt.desc}</p>
+                        <p className="text-xs text-muted-foreground">{opt.desc}</p>
                       </button>
                     ))}
                   </div>
-                  <p className="text-[10px] text-muted-foreground">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
+                  <p className="text-xs text-muted-foreground">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
                 </div>
 
                 {/* Pamphlet / cover sheet */}
@@ -566,7 +576,7 @@ export default function ShopRegisterPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <Label className="text-xs">Offer pamphlet / cover sheet</Label>
-                      <p className="text-[10px] text-muted-foreground">A folder/cover where printed pages are kept. Useful when customers print from home + pick up later.</p>
+                      <p className="text-xs text-muted-foreground">A folder/cover where printed pages are kept. Useful when customers print from home + pick up later.</p>
                     </div>
                     <Switch
                       checked={state.business.pamphletEnabled}
@@ -576,18 +586,18 @@ export default function ShopRegisterPage() {
                   {state.business.pamphletEnabled && (
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <Label className="text-[10px]" htmlFor="pamphlet-name">Pamphlet name</Label>
+                        <Label className="text-xs" htmlFor="pamphlet-name">Pamphlet name</Label>
                         <Input
                           id="pamphlet-name"
                           value={state.business.pamphletName}
                           onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletName: e.target.value } }))}
                           placeholder="Cover Sheet"
-                          className="h-11 sm:h-9"
+                          className="h-11 text-base"
                           disabled={submitting}
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px]" htmlFor="pamphlet-price">Price (₹)</Label>
+                        <Label className="text-xs" htmlFor="pamphlet-price">Price (₹)</Label>
                         <Input
                           id="pamphlet-price"
                           type="number"
@@ -595,7 +605,7 @@ export default function ShopRegisterPage() {
                           value={state.business.pamphletPricePaise / 100}
                           onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletPricePaise: Math.round(parseFloat(e.target.value || '0') * 100) } }))}
                           placeholder="10"
-                          className="h-11 sm:h-9"
+                          className="h-11 text-base"
                           disabled={submitting}
                         />
                       </div>
@@ -625,7 +635,7 @@ export default function ShopRegisterPage() {
                         className={`flex items-start gap-2.5 rounded-md border p-3 text-left transition-colors ${
                           checked
                             ? 'border-brand/30 bg-brand-soft'
-                            : 'border-border bg-card hover:bg-muted'
+                            : 'border-border bg-surface hover:bg-muted'
                         }`}
                       >
                         <div
@@ -637,7 +647,7 @@ export default function ShopRegisterPage() {
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span className="text-sm font-medium">{opt.label}</span>
-                          <span className="text-[11px] text-muted-foreground">{opt.description}</span>
+                          <span className="text-xs text-muted-foreground">{opt.description}</span>
                         </div>
                       </button>
                     );
@@ -710,7 +720,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={advance}
                   disabled={!canAdvance || submitting}
-                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
+                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand-hover"
                 >
                   Continue <ArrowRight className="size-4" />
                 </Button>
@@ -720,7 +730,7 @@ export default function ShopRegisterPage() {
                   size="sm"
                   onClick={() => void submit()}
                   disabled={submitting}
-                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
+                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand-hover"
                 >
                   {submitting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                   {submitting ? 'Creating shop…' : 'Create my shop'}
@@ -778,17 +788,17 @@ function Field({
         disabled={disabled}
         autoComplete={autoComplete}
         aria-invalid={Boolean(error)}
-        className="h-11 sm:h-10"
+        className="h-11 text-base sm:h-10"
       />
-      {error && <p className="text-[11px] text-danger">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
 
 function ReviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border bg-card p-3">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+    <div className="rounded-md border border-border bg-surface p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
       <div className="space-y-1.5">{children}</div>
     </div>
   );

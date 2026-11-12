@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { StatusBadge } from '@/components/portal/status-badge';
 import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
   Card,
@@ -15,9 +14,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
+import { PageHeader } from '@/components/shared/page-header';
+import { OrderStatusBadge } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { TableSkeleton } from '@/components/shared/loading-skeleton';
 import {
   Select,
   SelectContent,
@@ -55,7 +57,6 @@ import {
   getNextAutoPrinter,
 } from '@/lib/printlatch/client';
 import {
-  ClipboardList,
   RefreshCw,
   Loader2,
   Search,
@@ -570,28 +571,22 @@ export default function ShopOrdersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ClipboardList className="size-5 text-brand" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Orders</h1>
-            <p className="text-xs text-muted-foreground">
-              {orders.length} of {total} total · filtered to {filtered.length}
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load(true)}
-          disabled={refreshing}
-          className="min-h-[44px] gap-1.5"
-        >
-          {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Orders"
+        description={`${orders.length} of ${total} total · filtered to ${filtered.length}`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="min-h-[44px] gap-1.5"
+          >
+            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            Refresh
+          </Button>
+        }
+      />
 
       {/* Filters */}
       <Card className="border-border">
@@ -665,8 +660,8 @@ export default function ShopOrdersPage() {
         </CardHeader>
         <CardContent className="px-0 pb-0">
           {loading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            <div className="p-4">
+              <TableSkeleton rows={6} cols={5} />
             </div>
           ) : error ? (
             <div className="p-6 text-sm text-danger">
@@ -676,17 +671,16 @@ export default function ShopOrdersPage() {
               </div>
             </div>
           ) : paged.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <Inbox className="size-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium">No orders match your filters</p>
-              <p className="max-w-md text-xs text-muted-foreground">
-                {orders.length === 0
+            <EmptyState
+              className="px-4 py-12"
+              icon={<Inbox className="size-5" />}
+              title="No orders match your filters"
+              description={
+                orders.length === 0
                   ? 'No orders have been placed at your shop yet. New orders will appear here automatically.'
-                  : 'Try clearing the search or switching the status filter.'}
-              </p>
-            </div>
+                  : 'Try clearing the search or switching the status filter.'
+              }
+            />
           ) : (
             <Table className="min-w-[760px]">
               <TableHeader>
@@ -708,11 +702,11 @@ export default function ShopOrdersPage() {
                     />
                   </TableHead>
                   <TableHead className="pl-1">Token</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Payment</TableHead>
+                  <TableHead className="hidden md:table-cell">Customer</TableHead>
+                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Placed</TableHead>
+                  <TableHead className="hidden sm:table-cell">Placed</TableHead>
                   <TableHead className="pr-4 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -739,18 +733,18 @@ export default function ShopOrdersPage() {
                       <TableCell className="pl-1">
                         <Link
                           href={`/shop/orders/${o.id}`}
-                          className="font-mono font-semibold text-brand hover:underline"
+                          className="font-mono font-semibold tabular-nums text-brand hover:underline"
                         >
                           {o.tokenNumber ?? o.customerToken}
                         </Link>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
                         {o.customerPhone ?? <span className="italic">—</span>}
                       </TableCell>
-                      <TableCell><PaymentBadge status={pstatus === 'rejected' ? 'failed' : pstatus} /></TableCell>
-                      <TableCell><StatusBadge status={o.status} /></TableCell>
-                      <TableCell className="text-right font-mono text-sm">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</TableCell>
+                      <TableCell className="hidden sm:table-cell"><PaymentBadge status={pstatus === 'rejected' ? 'failed' : pstatus} /></TableCell>
+                      <TableCell><OrderStatusBadge status={o.status} /></TableCell>
+                      <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
+                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</TableCell>
                       <TableCell className="pr-4">
                         <div className="flex items-center justify-end gap-1.5">
                           {canVerify && (
@@ -760,6 +754,7 @@ export default function ShopOrdersPage() {
                                 variant="outline"
                                 onClick={() => void quickVerify(o.id, 'verify')}
                                 disabled={idBusy}
+                                aria-label="Verify payment"
                                 className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
                                 title="Verify payment"
                               >
@@ -772,6 +767,7 @@ export default function ShopOrdersPage() {
                                     size="sm"
                                     variant="outline"
                                     disabled={idBusy}
+                                    aria-label="Reject payment"
                                     className="min-h-[44px] min-w-[44px] gap-1 border-danger/30 text-danger hover:bg-danger-soft"
                                     title="Reject payment"
                                   >
@@ -804,6 +800,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickStart(o.id)}
                               disabled={idBusy}
+                              aria-label="Start printing"
                               className="min-h-[44px] gap-1 border-brand/30 text-brand hover:bg-brand-soft"
                               title="Start printing"
                             >
@@ -817,6 +814,7 @@ export default function ShopOrdersPage() {
                               variant="outline"
                               onClick={() => void quickReady(o.id)}
                               disabled={idBusy}
+                              aria-label="Mark ready for pickup"
                               className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
                               title="Mark ready for pickup"
                             >
@@ -841,7 +839,7 @@ export default function ShopOrdersPage() {
       {/* Pagination */}
       {filtered.length > PAGE_SIZE && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground tabular-nums">
             Page {safePage + 1} of {totalPages} · {filtered.length} orders
           </p>
           <div className="flex gap-2">
@@ -878,7 +876,7 @@ export default function ShopOrdersPage() {
                 <>
                   <div className="flex items-center gap-2 text-sm font-medium text-brand">
                     <Loader2 className="size-4 animate-spin" />
-                    <span>
+                    <span className="tabular-nums">
                       Printing order {batchState.currentOrderIdx} of {batchState.totalOrders}
                       {batchState.totalFilesInCurrentOrder > 0
                         ? `, file ${batchState.currentFileIdx} of ${batchState.totalFilesInCurrentOrder}`
@@ -905,23 +903,23 @@ export default function ShopOrdersPage() {
                   <span className="font-medium text-foreground">
                     {batchState.canceled ? 'Batch canceled.' : 'Batch complete.'}
                   </span>
-                  <span className="text-success">
+                  <span className="text-success tabular-nums">
                     <Check className="mr-0.5 inline size-3" />
                     {batchState.results.filter((r) => r.status === 'success').length} succeeded
                   </span>
-                  <span className="text-danger">
+                  <span className="text-danger tabular-nums">
                     <XCircle className="mr-0.5 inline size-3" />
                     {batchState.results.filter((r) => r.status === 'failed').length} failed
                   </span>
                   {batchState.results.some((r) => r.status === 'skipped') && (
-                    <span className="text-muted-foreground">
+                    <span className="text-muted-foreground tabular-nums">
                       <Ban className="mr-0.5 inline size-3" />
                       {batchState.results.filter((r) => r.status === 'skipped').length} skipped
                     </span>
                   )}
                   <details className="text-muted-foreground">
                     <summary className="cursor-pointer">Details</summary>
-                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto text-[11px]">
+                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto text-xs">
                       {batchState.results.map((r, idx) => (
                         <li key={idx} className="flex items-start gap-1">
                           {r.status === 'success' ? (
@@ -948,8 +946,8 @@ export default function ShopOrdersPage() {
               ) : (
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <Layers className="size-4 text-brand" />
-                  <span>{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="tabular-nums">{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     ({pagedEligible.length} eligible on this page)
                   </span>
                 </div>
@@ -1016,7 +1014,7 @@ export default function ShopOrdersPage() {
                     className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                   >
                     <PrinterIcon className="size-4" />
-                    Batch Print{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                    Batch Print{selectedIds.size > 0 ? <> (<span className="tabular-nums">{selectedIds.size}</span>)</> : ''}
                   </Button>
                 </>
               )}

@@ -50,6 +50,8 @@ services:
     buildCommand: cd mini-services/print-agent && bun install --frozen-lockfile
     startCommand: cd mini-services/print-agent && bun src/index.ts start
     envVars:
+      # F-10: PRINT_AGENT_DEMO must NOT be enabled in production.
+      # This service is for development/testing only.
       - key: PRINT_AGENT_DEMO
         value: "1"
       - key: PRINT_AGENT_API_URL

@@ -446,7 +446,7 @@ export function PdfPreview({
 
               {/* Page number */}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 py-0.5">
-                <span className="text-[10px] font-medium text-white">Page {pageNum}</span>
+                <span className="text-xs font-medium text-white">Page {pageNum}</span>
               </div>
             </div>
           );
