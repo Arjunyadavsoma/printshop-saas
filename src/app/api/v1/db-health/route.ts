@@ -12,19 +12,15 @@ import { db } from '@/lib/db';
  * + masked DATABASE_URL to unauthenticated callers.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // Authenticate: admin JWT OR setup key
+  // F-04 fix: Require Bearer header only. No query-string secrets.
+  // ADMIN_ACCESS_KEY is independent from SETUP_KEY and CRON_SECRET.
   const authHeader = req.headers.get('authorization') ?? '';
-  const hasAdminJwt = authHeader.startsWith('Bearer ');
-  const queryKey = new URL(req.url).searchParams.get('key') ?? '';
-  const expectedKey = process.env.SETUP_KEY ?? process.env.ADMIN_ACCESS_KEY ?? '';
-
-  // If no key configured, allow (dev mode — no secrets to protect)
-  // If key configured, require it
-  if (expectedKey && queryKey !== expectedKey) {
-    // Also check for admin JWT (would need to verify it — but we can't import withAuth here
-    // without restructuring. For now, require the key.)
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const expectedKey = process.env.ADMIN_ACCESS_KEY ?? '';
+  // Fail-closed: if no ADMIN_ACCESS_KEY configured, reject in production.
+  if (!expectedKey || token !== expectedKey) {
     return NextResponse.json(
-      { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required. Use ?key=<SETUP_KEY> or admin JWT.' } },
+      { success: false, error: { code: 'UNAUTHORIZED', message: 'Admin authentication required.' } },
       { status: 401 },
     );
   }

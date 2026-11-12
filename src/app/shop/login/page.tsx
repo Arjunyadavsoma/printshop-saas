@@ -22,7 +22,7 @@ interface LoginResponse {
   user?: { id: string; email: string; role: 'owner' | 'staff' | 'admin'; shopId: string | null };
 }
 
-const DEMO_ACCOUNTS: { email: string; label: string }[] = [
+const DEMO_ACCOUNTS: { email: string; label: string }[] = process.env.NODE_ENV === 'production' ? [] : [
   { email: 'owner@quickprint.demo', label: 'QuickPrint Demo Shop' },
   { email: 'owner@copycenter.demo', label: 'CopyCenter' },
   { email: 'owner@prinithub.demo', label: 'PrintHub Express' },

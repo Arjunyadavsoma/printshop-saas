@@ -10,7 +10,16 @@
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "test": "vitest run",
+    "test:unit": "vitest run --reporter=dot",
+    "test:integration": "vitest run src/lib/pricing/ src/lib/payments/ --reporter=dot",
+    "test:postgres": "vitest run src/lib/pricing/checkout-real-postgres.test.ts src/lib/pricing/app-webhook-integration.test.ts src/lib/pricing/app-checkout-concurrency.test.ts --reporter=dot",
+    "test:e2e": "playwright test --project=chromium",
+    "typecheck": "tsc --noEmit",
+    "build:check": "next build",
+    "prisma:validate": "prisma validate",
+    "prisma:migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",

@@ -5,7 +5,7 @@
   "installCommand": "bun install --frozen-lockfile",
   "regions": ["bom1"],
   "env": {
-    "APP_BASE_URL": "https://printshop-saas-three.vercel.app",
+    "APP_BASE_URL": "${APP_BASE_URL}",
     "DATABASE_PROVIDER": "prisma",
     "REALTIME_PROVIDER": "memory",
     "STORAGE_PROVIDER": "supabase",

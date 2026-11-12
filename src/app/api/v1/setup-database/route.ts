@@ -10,6 +10,14 @@ import { db } from '@/lib/db';
  * Security: requires ?key= matching SETUP_KEY or ADMIN_ACCESS_KEY env var.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // F-05 fix: This route is DISABLED in production. Database schema must be
+  // managed exclusively through Prisma migrations (prisma migrate deploy).
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: { code: 'DISABLED', message: 'Database setup is disabled in production. Use prisma migrate deploy.' } },
+      { status: 403 },
+    );
+  }
   const url = new URL(req.url);
   const providedKey = url.searchParams.get('key');
   const expectedKey = process.env.SETUP_KEY ?? process.env.ADMIN_ACCESS_KEY ?? '';
