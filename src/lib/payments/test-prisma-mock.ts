@@ -79,6 +79,11 @@ interface MockDb {
     findUnique: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
+  webhookInbox: {
+    create: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
   fileCleanupTask?: {
     findMany: ReturnType<typeof vi.fn>;
   };
@@ -275,7 +280,6 @@ function buildMock(): MockDb {
     },
     order: {
       findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
-        // Dynamic import to avoid circular dependency (see file header).
         const { getContainer } = await import('@/lib/container');
         return getContainer().db.findOne('order', where) as Promise<MockRow | null>;
       }),
@@ -283,6 +287,25 @@ function buildMock(): MockDb {
         const { getContainer } = await import('@/lib/container');
         const updated = await getContainer().db.update('order', where, data);
         return { count: updated.length };
+      }),
+    },
+    webhookInbox: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const id = (data.id as string) ?? crypto.randomUUID();
+        const row = { ...data, id } as MockRow;
+        state.events.set(`inbox-${id}`, row);
+        return row;
+      }),
+      findMany: vi.fn(async () => {
+        return Array.from(state.events.values()).filter((r) => r.id?.toString().startsWith('inbox-'));
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const key = `inbox-${where.id}`;
+        const row = state.events.get(key);
+        if (!row) return null;
+        const updated = { ...row, ...data };
+        state.events.set(key, updated);
+        return updated;
       }),
     },
     __internal: state,

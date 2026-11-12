@@ -248,6 +248,38 @@ model PaymentEvent {
   @@index([merchantOrderId])
 }
 
+// ─── Webhook Inbox (Phase 6.12) ──────────────────────────────────────
+// Durable storage for verified webhook callbacks that arrive before the
+// corresponding PaymentAttempt exists (race condition: callback beats
+// checkout persistence). The recovery worker (invoked by the reconciliation
+// cron) matches inbox entries to PaymentAttempts and processes them.
+//
+// Only VERIFIED callbacks (signature passed) are persisted here.
+// Unverified callbacks are rejected with 401 and NOT persisted.
+//
+// No secrets, authorization headers, or raw payload bytes are stored.
+
+model WebhookInbox {
+  id                   String    @id @default(uuid())
+  provider             String   // phonepe | paytm | googlepay
+  merchantOrderId      String   // the reference extracted from the payload
+  providerEventId      String?  // PSP's event ID (for dedup, if available)
+  providerTxnId        String?  // PSP's transaction ID
+  amountPaise          Int?     // amount from the verified payload
+  currency             String   @default("INR")
+  signatureValid       Boolean  @default(true) // always true — only verified events are stored
+  processingStatus     String   @default("unmatched") // unmatched|matched|processed|exhausted
+  receivedAt           DateTime @default(now())
+  processedAt          DateTime?
+  retryCount           Int      @default(0)
+  nextRetryAt          DateTime?
+  errorMessage         String?
+
+  @@unique([provider, providerEventId])
+  @@index([merchantOrderId])
+  @@index([processingStatus, nextRetryAt])
+}
+
 // ─── Sync infrastructure (Phase 5) ───────────────────────────────────
 // Bidirectional sync state for the PrintEXE Windows desktop client.
 // See docs/SYNC_PROTOCOL.md for the full design.

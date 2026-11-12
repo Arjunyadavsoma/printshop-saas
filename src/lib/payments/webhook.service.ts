@@ -311,6 +311,34 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
     // lose a legitimate payment event if the attempt was temporarily unavailable
     // (e.g., race between cache population and DB persistence).
     if (transitionResult.reason.includes('PaymentAttempt not found')) {
+      // Phase 6.12: Durable unmatched-webhook recovery. Persist the VERIFIED
+      // callback in WebhookInbox for later matching by the reconciliation cron.
+      try {
+        const { db } = await import('@/lib/db');
+        await (db as any).webhookInbox.create({
+          data: {
+            id: crypto.randomUUID(),
+            provider: input.provider,
+            merchantOrderId,
+            providerEventId: v.txnId ?? null,
+            providerTxnId: v.txnId ?? null,
+            amountPaise: v.amountPaise,
+            currency: 'INR',
+            signatureValid: true,
+            processingStatus: 'unmatched',
+            nextRetryAt: new Date(Date.now() + 60_000),
+          },
+        });
+        logger.info('webhook: unmatched event persisted to WebhookInbox', {
+          merchantOrderId, providerEventId: v.txnId,
+        });
+      } catch (inboxErr) {
+        if (!isUniqueConstraintError(inboxErr)) {
+          logger.error('webhook: failed to persist unmatched event', {
+            merchantOrderId, error: inboxErr instanceof Error ? inboxErr.message : String(inboxErr),
+          });
+        }
+      }
       logger.warn('webhook: PaymentAttempt not found — returning 404 for provider retry', {
         merchantOrderId,
         txnId: v.txnId,
@@ -318,7 +346,7 @@ export async function processWebhook(input: ProcessWebhookInput): Promise<Proces
       return {
         statusCode: 404,
         responseBody: result.responseBody,
-        summary: 'PaymentAttempt not found — provider should retry',
+        summary: 'PaymentAttempt not found — event persisted to inbox, provider should retry',
         applied: false,
         orderId: session.orderId,
       };
