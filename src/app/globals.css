@@ -191,12 +191,20 @@
   --warning: oklch(0.78 0.16 70);
   --warning-foreground: oklch(0.18 0.04 70);
   --warning-soft: oklch(0.3 0.06 70);
+  --warning-text: oklch(0.85 0.12 70);
   --info: oklch(0.7 0.13 230);
   --info-foreground: oklch(0.145 0 0);
   --info-soft: oklch(0.3 0.05 230);
   --danger: oklch(0.68 0.2 25);
   --danger-foreground: oklch(0.985 0 0);
   --danger-soft: oklch(0.3 0.07 25);
+  /* Square UI: page/surface layering for dark mode.
+     --page sits just above --background; --surface matches --card for
+     panels; --surface-elevated lifts hovered/active cards. All carry a
+     faint brand tint (hue 264) for cohesion. */
+  --page: oklch(0.16 0.006 264);
+  --surface: oklch(0.22 0.008 264);
+  --surface-elevated: oklch(0.27 0.01 264);
 }
 
 @layer base {
@@ -205,6 +213,18 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Square UI: tabular figures for financial / numeric alignment. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  /* Dense table metadata — only for justified compact numeric columns. */
+  .text-table-meta {
+    @apply text-xs text-muted-foreground;
   }
 }
 

@@ -18,12 +18,14 @@ import {
   type AdminShopListResponse,
   type AdminShopSummary,
 } from '@/components/portal/admin-types';
+import { StatusIndicator } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageHeader } from '@/components/shared/page-header';
+import { TableSkeleton } from '@/components/shared/loading-skeleton';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -113,46 +115,56 @@ export default function AdminShopsPage() {
   const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="sr-only">Shop directory</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Store className="h-5 w-5 text-brand" />
-            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Shop directory</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            All shops on the platform ({shops.length} total).
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Shops"
+        description={`All shops on the platform (${shops.length} total).`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            className="min-h-[44px] gap-2"
+          >
+            <RefreshCw
+              className={`size-4 ${loading ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            Refresh
+          </Button>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-          <CardDescription>Search by name, slug, or owner email</CardDescription>
+      {/* Filters card */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Filters</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Search by name, slug, or owner email
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <Input
                 type="search"
                 placeholder="Search shops…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
+                aria-label="Search shops"
               />
             </div>
             <Select
               value={statusFilter}
               onValueChange={(v) => setStatusFilter(v as 'all' | 'active' | 'inactive')}
             >
-              <SelectTrigger className="w-full sm:w-44">
+              <SelectTrigger className="w-full sm:w-44" aria-label="Filter by status">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
@@ -166,10 +178,10 @@ export default function AdminShopsPage() {
       </Card>
 
       {error && (
-        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
+        <Card className="border-danger-border bg-danger-soft">
           <CardContent className="flex items-start gap-3 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-            <div className="text-sm text-red-800 dark:text-red-200">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
+            <div className="text-sm text-danger">
               <p className="font-semibold">Failed to load shops</p>
               <p className="mt-1 font-mono text-xs">{error}</p>
             </div>
@@ -177,92 +189,99 @@ export default function AdminShopsPage() {
         </Card>
       )}
 
-      <Card>
+      <Card className="bg-surface">
         <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
+            <div className="p-4">
+              <TableSkeleton rows={8} cols={6} />
             </div>
           ) : pageItems.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              No shops match the current filters.
-            </p>
+            <EmptyState
+              icon={<Store className="size-6" aria-hidden="true" />}
+              title="No shops found"
+              description="No shops match the current filters. Try adjusting your search."
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Slug</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Orders</TableHead>
-                  <TableHead className="text-right">Paid sales</TableHead>
-                  <TableHead>Agents</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pageItems.map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer hover:bg-success-soft/40">
-                    <TableCell>
-                      <Link href={`/admin/shops/${s.id}`} className="block">
-                        <div className="font-medium text-foreground hover:text-brand">
-                          {s.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{s.subscriptionTier} tier</div>
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/admin/shops/${s.id}`} className="block">
-                        <span className="font-mono text-xs">{s.slug}</span>
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/admin/shops/${s.id}`} className="block">
-                        <span className="font-mono text-xs text-muted-foreground">{s.ownerEmail}</span>
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{formatDate(s.createdAt)}</TableCell>
-                    <TableCell>
-                      <Link href={`/admin/shops/${s.id}`} className="block">
-                        {s.isActive ? (
-                          <Badge variant="outline" className="border-success/30 bg-success-soft text-success">
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
-                            Inactive
-                          </Badge>
-                        )}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{s.stats.orderCount}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{inr(s.stats.paidSalesPaise)}</TableCell>
-                    <TableCell>
-                      <Link href={`/admin/shops/${s.id}`} className="block">
-                        <div className="flex items-center gap-1.5 text-xs">
-                          {s.stats.agentsOnline > 0 ? (
-                            <Wifi className="h-3.5 w-3.5 text-success" />
-                          ) : (
-                            <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                          <span className="tabular-nums">
-                            {s.stats.agentsOnline}/{s.stats.agentsTotal}
-                          </span>
-                        </div>
-                      </Link>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Shop</TableHead>
+                    <TableHead className="hidden md:table-cell">Slug</TableHead>
+                    <TableHead className="hidden lg:table-cell">Owner</TableHead>
+                    <TableHead className="hidden text-right md:table-cell">Orders</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Revenue</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden lg:table-cell">Created</TableHead>
+                    <TableHead className="hidden md:table-cell">Agents</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {pageItems.map((s) => (
+                    <TableRow key={s.id} className="cursor-pointer hover:bg-surface-elevated">
+                      <TableCell>
+                        <Link href={`/admin/shops/${s.id}`} className="block">
+                          <div className="font-medium text-brand hover:underline">
+                            {s.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{s.subscriptionTier} tier</div>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Link href={`/admin/shops/${s.id}`} className="block">
+                          <span className="font-mono text-xs">{s.slug}</span>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <Link href={`/admin/shops/${s.id}`} className="block">
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {s.ownerEmail}
+                          </span>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">
+                        {s.stats.orderCount}
+                      </TableCell>
+                      <TableCell className="hidden text-right font-medium tabular-nums sm:table-cell">
+                        {inr(s.stats.paidSalesPaise)}
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/admin/shops/${s.id}`} className="block">
+                          <StatusIndicator
+                            variant={s.isActive ? 'success' : 'neutral'}
+                            label={s.isActive ? 'Active' : 'Inactive'}
+                          />
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden text-sm tabular-nums lg:table-cell">
+                        {formatDate(s.createdAt)}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Link href={`/admin/shops/${s.id}`} className="block">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            {s.stats.agentsOnline > 0 ? (
+                              <Wifi className="size-3.5 text-success" aria-hidden="true" />
+                            ) : (
+                              <WifiOff className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            )}
+                            <span className="tabular-nums text-muted-foreground">
+                              {s.stats.agentsOnline}/{s.stats.agentsTotal}
+                            </span>
+                          </div>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs tabular-nums text-muted-foreground">
           Showing {pageItems.length === 0 ? 0 : page * PAGE_SIZE + 1}–{page * PAGE_SIZE + pageItems.length} of {filtered.length}
         </p>
         <div className="flex items-center gap-2">
@@ -272,10 +291,11 @@ export default function AdminShopsPage() {
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0 || loading}
             className="min-h-[44px] min-w-[44px] gap-1"
+            aria-label="Previous page"
           >
-            <ChevronLeft className="h-4 w-4" /> Prev
+            <ChevronLeft className="size-4" aria-hidden="true" /> Prev
           </Button>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs tabular-nums text-muted-foreground">
             Page {page + 1} of {totalPages}
           </span>
           <Button
@@ -284,8 +304,9 @@ export default function AdminShopsPage() {
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1 || loading}
             className="min-h-[44px] min-w-[44px] gap-1"
+            aria-label="Next page"
           >
-            Next <ChevronRight className="h-4 w-4" />
+            Next <ChevronRight className="size-4" aria-hidden="true" />
           </Button>
         </div>
       </div>

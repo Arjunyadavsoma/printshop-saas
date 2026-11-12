@@ -23,13 +23,14 @@ import { useApiClient } from '@/components/portal/use-api-client';
 import {
   unwrap,
   type AdminShopDetailResponse,
-  type OrderStatus,
 } from '@/components/portal/admin-types';
-import { StatusBadge } from '@/components/portal/status-badge';
+import { OrderStatusBadge, StatusIndicator } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageHeader } from '@/components/shared/page-header';
+import { TableSkeleton } from '@/components/shared/loading-skeleton';
 import { truncate } from '@/lib/utils';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -63,17 +64,49 @@ interface InfoRowProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: React.ReactNode;
+  mono?: boolean;
 }
 
-function InfoRow({ icon: Icon, label, value }: InfoRowProps) {
+function InfoRow({ icon: Icon, label, value, mono }: InfoRowProps) {
   return (
     <div className="flex items-start gap-2.5 py-2">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 text-sm break-words">{value}</div>
+        <div className={`mt-0.5 text-sm break-words ${mono ? 'font-mono text-xs' : ''}`}>
+          {value}
+        </div>
       </div>
     </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <Card className="bg-surface">
+      <CardContent className="flex items-center gap-3 p-5">
+        <div
+          className={`flex size-9 shrink-0 items-center justify-center rounded-md ${accent}`}
+          aria-hidden="true"
+        >
+          <Icon className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -113,36 +146,53 @@ export default function AdminShopDetailPage() {
   }, [api.ready, api.token, api.role, load]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="sr-only">Shop detail</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/admin/shops')} className="gap-1">
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-brand" />
-              {loading || !data ? (
-                <Skeleton className="h-6 w-40" />
-              ) : (
-                <h2 className="text-xl font-bold tracking-tight sm:text-2xl">{data.shop.name}</h2>
-              )}
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">Shop detail</p>
+    <div className="space-y-6">
+      <PageHeader
+        title={loading || !data ? 'Shop detail' : data.shop.name}
+        description="Shop detail"
+        breadcrumbs={
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Link href="/admin/shops" className="hover:text-foreground">
+              Shops
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="text-foreground">
+              {data ? data.shop.name : '…'}
+            </span>
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/admin/shops')}
+              className="gap-1"
+            >
+              <ArrowLeft className="size-4" aria-hidden="true" /> Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={load}
+              disabled={loading}
+              className="min-h-[44px] gap-2"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              Refresh
+            </Button>
           </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+        }
+      />
 
       {error && (
-        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
+        <Card className="border-danger-border bg-danger-soft">
           <CardContent className="flex items-start gap-3 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-            <div className="text-sm text-red-800 dark:text-red-200">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
+            <div className="text-sm text-danger">
               <p className="font-semibold">Failed to load shop</p>
               <p className="mt-1 font-mono text-xs">{error}</p>
             </div>
@@ -158,127 +208,184 @@ export default function AdminShopDetailPage() {
       ) : (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <ShoppingBag className="h-5 w-5 text-info" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Total orders</div>
-                  <div className="text-lg font-bold tabular-nums">{data.summary.totalOrders}</div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <IndianRupee className="h-5 w-5 text-success" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Paid orders</div>
-                  <div className="text-lg font-bold tabular-nums">{data.summary.paidOrders}</div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <Tag className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Revenue</div>
-                  <div className="text-lg font-bold tabular-nums">{inr(data.summary.revenuePaise)}</div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <Printer className="h-5 w-5 text-brand" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Agents online</div>
-                  <div className="text-lg font-bold tabular-nums">
-                    {data.summary.activeAgents} / {data.summary.totalAgents}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard
+              icon={ShoppingBag}
+              label="Total orders"
+              value={String(data.summary.totalOrders)}
+              accent="bg-info-soft text-info"
+            />
+            <StatCard
+              icon={IndianRupee}
+              label="Paid orders"
+              value={String(data.summary.paidOrders)}
+              accent="bg-success-soft text-success"
+            />
+            <StatCard
+              icon={Tag}
+              label="Revenue"
+              value={inr(data.summary.revenuePaise)}
+              accent="bg-muted text-muted-foreground"
+            />
+            <StatCard
+              icon={Printer}
+              label="Agents online"
+              value={`${data.summary.activeAgents} / ${data.summary.totalAgents}`}
+              accent="bg-brand-soft text-brand"
+            />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
             {/* Shop info */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base">Shop information</CardTitle>
-                <CardDescription>Identity, contact, subscription</CardDescription>
+            <Card className="bg-surface lg:col-span-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Shop information</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  Identity, contact, subscription
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                  <InfoRow icon={Store} label="Shop name" value={<span className="font-medium">{data.shop.name}</span>} />
-                  <InfoRow icon={Tag} label="Slug" value={<span className="font-mono">{data.shop.slug}</span>} />
+                  <InfoRow
+                    icon={Store}
+                    label="Shop name"
+                    value={<span className="font-medium">{data.shop.name}</span>}
+                  />
+                  <InfoRow icon={Tag} label="Slug" value={<span className="font-mono">{data.shop.slug}</span>} mono />
                   <InfoRow icon={MapPin} label="Address" value={data.shop.address || '—'} />
-                  <InfoRow icon={Phone} label="Phone" value={<span className="font-mono">{data.shop.phone || '—'}</span>} />
-                  <InfoRow icon={CreditCard} label="UPI ID" value={<span className="font-mono">{data.shop.upiId || '—'}</span>} />
-                  <InfoRow icon={Cpu} label="Payment provider" value={<span className="font-mono">{data.shop.paymentProvider}</span>} />
-                  <InfoRow icon={Tag} label="Subscription tier" value={<span className="font-mono">{data.shop.subscriptionTier}</span>} />
+                  <InfoRow icon={Phone} label="Phone" value={<span className="font-mono">{data.shop.phone || '—'}</span>} mono />
+                  <InfoRow icon={CreditCard} label="UPI ID" value={<span className="font-mono">{data.shop.upiId || '—'}</span>} mono />
+                  <InfoRow
+                    icon={Cpu}
+                    label="Payment provider"
+                    value={<span className="font-mono">{data.shop.paymentProvider}</span>}
+                    mono
+                  />
+                  <InfoRow
+                    icon={Tag}
+                    label="Subscription tier"
+                    value={<span className="font-mono">{data.shop.subscriptionTier}</span>}
+                    mono
+                  />
                   <InfoRow
                     icon={Tag}
                     label="Subscription expires"
-                    value={data.shop.subscriptionExpiresAt ? formatDateTime(data.shop.subscriptionExpiresAt) : '—'}
+                    value={
+                      data.shop.subscriptionExpiresAt
+                        ? formatDateTime(data.shop.subscriptionExpiresAt)
+                        : '—'
+                    }
                   />
-                  <InfoRow icon={Tag} label="Timezone" value={<span className="font-mono">{data.shop.timezone || '—'}</span>} />
-                  <InfoRow icon={Tag} label="Active" value={
-                    data.shop.isActive ? (
-                      <Badge variant="outline" className="border-success/30 bg-success-soft text-success">Yes</Badge>
-                    ) : (
-                      <Badge variant="outline" className="border-border bg-muted text-muted-foreground">No</Badge>
-                    )
-                  } />
-                  <InfoRow icon={Tag} label="Created at" value={formatDateTime(data.shop.createdAt)} />
-                  <InfoRow icon={Tag} label="Updated at" value={formatDateTime(data.shop.updatedAt)} />
+                  <InfoRow icon={Tag} label="Timezone" value={<span className="font-mono">{data.shop.timezone || '—'}</span>} mono />
+                  <InfoRow
+                    icon={Tag}
+                    label="Active"
+                    value={
+                      <StatusIndicator
+                        variant={data.shop.isActive ? 'success' : 'neutral'}
+                        label={data.shop.isActive ? 'Yes' : 'No'}
+                      />
+                    }
+                  />
+                  <InfoRow
+                    icon={Tag}
+                    label="Created at"
+                    value={formatDateTime(data.shop.createdAt)}
+                  />
+                  <InfoRow
+                    icon={Tag}
+                    label="Updated at"
+                    value={formatDateTime(data.shop.updatedAt)}
+                  />
                 </div>
 
                 <Separator className="my-4" />
 
-                <div className="text-xs font-medium text-muted-foreground">Pricing configuration</div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  Pricing configuration
+                </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
                   <PricingField label="B&W A4" value={inr(data.shop.pricingConfig.bw_a4_per_page)} />
                   <PricingField label="Color A4" value={inr(data.shop.pricingConfig.color_a4_per_page)} />
                   <PricingField label="B&W A3" value={inr(data.shop.pricingConfig.bw_a3_per_page)} />
                   <PricingField label="Color A3" value={inr(data.shop.pricingConfig.color_a3_per_page)} />
-                  <PricingField label="Duplex discount" value={`${data.shop.pricingConfig.duplex_discount}%`} />
-                  <PricingField label="Bulk threshold" value={`${data.shop.pricingConfig.bulk_threshold} pages`} />
-                  <PricingField label="Bulk discount" value={`${data.shop.pricingConfig.bulk_discount_pct}%`} />
-                  <PricingField label="Min order value" value={inr(data.shop.pricingConfig.min_order_value)} />
+                  <PricingField
+                    label="Duplex discount"
+                    value={`${data.shop.pricingConfig.duplex_discount}%`}
+                  />
+                  <PricingField
+                    label="Bulk threshold"
+                    value={`${data.shop.pricingConfig.bulk_threshold} pages`}
+                  />
+                  <PricingField
+                    label="Bulk discount"
+                    value={`${data.shop.pricingConfig.bulk_discount_pct}%`}
+                  />
+                  <PricingField
+                    label="Min order value"
+                    value={inr(data.shop.pricingConfig.min_order_value)}
+                  />
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   All per-page rates are in paise (1 INR = 100 paise). Payment credentials are
                   intentionally NOT shown.
                 </p>
+
+                <Separator className="my-4" />
+
+                <div className="text-xs font-medium text-muted-foreground">
+                  Payment config status
+                </div>
+                <div className="mt-2">
+                  <StatusIndicator
+                    variant={data.shop.paymentProvider ? 'success' : 'warning'}
+                    label={
+                      data.shop.paymentProvider
+                        ? `Configured (${data.shop.paymentProvider})`
+                        : 'Not configured'
+                    }
+                  />
+                </div>
               </CardContent>
             </Card>
 
             {/* Agents */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Print-agents</CardTitle>
-                <CardDescription>{data.agents.length} registered</CardDescription>
+            <Card className="bg-surface">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Print-agents</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  {data.agents.length} registered
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {data.agents.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">No agents registered.</p>
+                  <EmptyState
+                    icon={<Printer className="size-6" aria-hidden="true" />}
+                    title="No agents registered"
+                    description="Print-agents will appear here once the shop owner connects them."
+                  />
                 ) : (
                   <ul className="space-y-2">
                     {data.agents.map((a) => (
-                      <li key={a.id} className="rounded-md border border-border bg-card p-3">
+                      <li key={a.id} className="rounded-lg border border-border bg-surface p-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">{a.name}</div>
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {a.name}
+                            </div>
                             <div className="mt-0.5 truncate text-xs text-muted-foreground">
                               {a.printerName ?? 'No printer name'}
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 text-xs">
                             {a.isOnline ? (
-                              <Wifi className="h-3.5 w-3.5 text-success" />
+                              <Wifi className="size-3.5 text-success" aria-hidden="true" />
                             ) : (
-                              <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
+                              <WifiOff className="size-3.5 text-muted-foreground" aria-hidden="true" />
                             )}
-                            <span className={a.isOnline ? 'text-success' : 'text-muted-foreground'}>
+                            <span
+                              className={a.isOnline ? 'text-success' : 'text-muted-foreground'}
+                            >
                               {a.isOnline ? 'online' : 'offline'}
                             </span>
                           </div>
@@ -286,7 +393,9 @@ export default function AdminShopDetailPage() {
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           <span>v{a.version ?? '—'}</span>
                           <span>OS: {a.os ?? '—'}</span>
-                          <span>Last seen: {formatDateTime(a.lastSeenAt)}</span>
+                          <span className="tabular-nums">
+                            Last seen: {formatDateTime(a.lastSeenAt)}
+                          </span>
                         </div>
                       </li>
                     ))}
@@ -297,47 +406,68 @@ export default function AdminShopDetailPage() {
           </div>
 
           {/* Orders for this shop */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Orders for this shop</CardTitle>
-              <CardDescription>{data.orders.length} total orders</CardDescription>
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Orders for this shop</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                {data.orders.length} total orders
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {data.orders.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">No orders yet.</p>
+                <EmptyState
+                  icon={<ShoppingBag className="size-6" aria-hidden="true" />}
+                  title="No orders yet"
+                  description="Orders placed at this shop will appear here."
+                />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Order</TableHead>
-                      <TableHead>Customer token</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Txn ID</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Paid at</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.orders.map((o) => (
-                      <TableRow key={o.id}>
-                        <TableCell>
-                          <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
-                            {truncate(o.id, 8)}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{truncate(o.customerToken, 10)}</TableCell>
-                        <TableCell><StatusBadge status={o.status} /></TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">{inr(o.totalAmountPaise)}</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {o.paymentTxnId ? truncate(o.paymentTxnId, 12) : '—'}
-                        </TableCell>
-                        <TableCell className="text-xs">{formatDateTime(o.createdAt)}</TableCell>
-                        <TableCell className="text-xs">{formatDateTime(o.paidAt)}</TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order</TableHead>
+                        <TableHead className="hidden md:table-cell">Customer</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="hidden lg:table-cell">Txn ID</TableHead>
+                        <TableHead className="hidden md:table-cell">Created</TableHead>
+                        <TableHead className="hidden lg:table-cell">Paid at</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {data.orders.map((o) => (
+                        <TableRow key={o.id}>
+                          <TableCell>
+                            <Link
+                              href={`/admin/orders/${o.id}`}
+                              className="font-mono text-xs text-brand hover:underline"
+                            >
+                              {truncate(o.id, 8)}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="hidden font-mono text-xs md:table-cell">
+                            {truncate(o.customerToken, 10)}
+                          </TableCell>
+                          <TableCell>
+                            <OrderStatusBadge status={o.status} />
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {inr(o.totalAmountPaise)}
+                          </TableCell>
+                          <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
+                            {o.paymentTxnId ? truncate(o.paymentTxnId, 12) : '—'}
+                          </TableCell>
+                          <TableCell className="hidden text-xs tabular-nums md:table-cell">
+                            {formatDateTime(o.createdAt)}
+                          </TableCell>
+                          <TableCell className="hidden text-xs tabular-nums lg:table-cell">
+                            {formatDateTime(o.paidAt)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -349,9 +479,9 @@ export default function AdminShopDetailPage() {
 
 function PricingField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-medium tabular-nums">{value}</div>
+      <div className="mt-0.5 font-medium tabular-nums text-foreground">{value}</div>
     </div>
   );
 }

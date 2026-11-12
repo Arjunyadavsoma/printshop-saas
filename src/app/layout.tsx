@@ -90,8 +90,8 @@ export const metadata: Metadata = {
  */
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#d97706" }, // amber-600
-    { media: "(prefers-color-scheme: dark)", color: "#d97706" },
+    { media: "(prefers-color-scheme: light)", color: "#3157d5" }, // Square UI brand (oklch 0.50 0.19 264)
+    { media: "(prefers-color-scheme: dark)", color: "#1a1a1a" },
   ],
   width: "device-width",
   initialScale: 1,

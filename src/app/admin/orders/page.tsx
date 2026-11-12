@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  ShoppingBag,
   Search,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
+  ShoppingBag,
 } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import {
@@ -18,14 +18,15 @@ import {
   type AdminShopListResponse,
   type OrderStatus,
 } from '@/components/portal/admin-types';
-import { StatusBadge } from '@/components/portal/status-badge';
+import { OrderStatusBadge } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageHeader } from '@/components/shared/page-header';
+import { TableSkeleton } from '@/components/shared/loading-skeleton';
 import { truncate } from '@/lib/utils';
 import { formatINRFromPaise } from '@platform/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -128,46 +129,56 @@ export default function AdminOrdersPage() {
   const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="sr-only">All orders</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="h-5 w-5 text-brand" />
-            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">All orders</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every order across every shop ({orders.length} loaded).
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="All Orders"
+        description={`Every order across every shop (${orders.length} loaded).`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            className="gap-2"
+          >
+            <RefreshCw
+              className={`size-4 ${loading ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            Refresh
+          </Button>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-          <CardDescription>Search by order ID, shop name, or customer token</CardDescription>
+      {/* Filter card — search + status + shop */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Filters</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Search by order ID, shop name, or customer token
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <Input
                 type="search"
                 placeholder="Search order ID, shop name, customer token…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
+                aria-label="Search orders"
               />
             </div>
             <Select
               value={statusFilter}
               onValueChange={(v) => setStatusFilter(v as 'all' | OrderStatus)}
             >
-              <SelectTrigger className="w-full lg:w-48">
+              <SelectTrigger className="w-full lg:w-48" aria-label="Filter by status">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
@@ -181,7 +192,7 @@ export default function AdminOrdersPage() {
               value={shopFilter}
               onValueChange={(v) => setShopFilter(v)}
             >
-              <SelectTrigger className="w-full lg:w-60">
+              <SelectTrigger className="w-full lg:w-60" aria-label="Filter by shop">
                 <SelectValue placeholder="All shops" />
               </SelectTrigger>
               <SelectContent>
@@ -196,10 +207,10 @@ export default function AdminOrdersPage() {
       </Card>
 
       {error && (
-        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
+        <Card className="border-danger-border bg-danger-soft">
           <CardContent className="flex items-start gap-3 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-            <div className="text-sm text-red-800 dark:text-red-200">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
+            <div className="text-sm text-danger">
               <p className="font-semibold">Failed to load orders</p>
               <p className="mt-1 font-mono text-xs">{error}</p>
             </div>
@@ -207,16 +218,18 @@ export default function AdminOrdersPage() {
         </Card>
       )}
 
-      <Card>
+      <Card className="bg-surface">
         <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
+            <div className="p-4">
+              <TableSkeleton rows={10} cols={6} />
             </div>
           ) : pageItems.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              No orders match the current filters.
-            </p>
+            <EmptyState
+              icon={<ShoppingBag className="size-6" aria-hidden="true" />}
+              title="No orders found"
+              description="No orders match the current filters. Try adjusting your search or status."
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -224,36 +237,54 @@ export default function AdminOrdersPage() {
                   <TableRow>
                     <TableHead>Order ID</TableHead>
                     <TableHead>Shop</TableHead>
-                    <TableHead>Customer token</TableHead>
+                    <TableHead className="hidden lg:table-cell">Customer</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Txn ID</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Paid at</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="hidden md:table-cell">Txn ID</TableHead>
+                    <TableHead className="hidden md:table-cell">Created</TableHead>
+                    <TableHead className="hidden lg:table-cell">Paid at</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pageItems.map((o) => (
                     <TableRow key={o.id}>
                       <TableCell>
-                        <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
+                        <Link
+                          href={`/admin/orders/${o.id}`}
+                          className="font-mono text-xs text-brand hover:underline"
+                        >
                           {truncate(o.id, 10)}
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Link href={`/admin/shops/${o.shopId}`} className="block text-sm font-medium hover:underline">
+                        <Link
+                          href={`/admin/shops/${o.shopId}`}
+                          className="block text-sm font-medium text-brand hover:underline"
+                        >
                           {o.shopName}
                         </Link>
-                        <span className="font-mono text-xs text-muted-foreground">{o.shopSlug}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {o.shopSlug}
+                        </span>
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{truncate(o.customerToken, 10)}</TableCell>
-                      <TableCell><StatusBadge status={o.status} /></TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{inr(o.totalAmountPaise)}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="hidden font-mono text-xs lg:table-cell">
+                        {truncate(o.customerToken, 10)}
+                      </TableCell>
+                      <TableCell>
+                        <OrderStatusBadge status={o.status} />
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">
+                        {inr(o.totalAmountPaise)}
+                      </TableCell>
+                      <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                         {o.paymentTxnId ? truncate(o.paymentTxnId, 12) : '—'}
                       </TableCell>
-                      <TableCell className="text-xs">{formatDateTime(o.createdAt)}</TableCell>
-                      <TableCell className="text-xs">{formatDateTime(o.paidAt)}</TableCell>
+                      <TableCell className="hidden text-xs tabular-nums md:table-cell">
+                        {formatDateTime(o.createdAt)}
+                      </TableCell>
+                      <TableCell className="hidden text-xs tabular-nums lg:table-cell">
+                        {formatDateTime(o.paidAt)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -264,8 +295,8 @@ export default function AdminOrdersPage() {
       </Card>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs tabular-nums text-muted-foreground">
           Showing {pageItems.length === 0 ? 0 : page * PAGE_SIZE + 1}–{page * PAGE_SIZE + pageItems.length} of {filtered.length}
         </p>
         <div className="flex items-center gap-2">
@@ -275,10 +306,11 @@ export default function AdminOrdersPage() {
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0 || loading}
             className="min-h-[44px] min-w-[44px] gap-1"
+            aria-label="Previous page"
           >
-            <ChevronLeft className="h-4 w-4" /> Prev
+            <ChevronLeft className="size-4" aria-hidden="true" /> Prev
           </Button>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs tabular-nums text-muted-foreground">
             Page {page + 1} of {totalPages}
           </span>
           <Button
@@ -287,8 +319,9 @@ export default function AdminOrdersPage() {
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1 || loading}
             className="min-h-[44px] min-w-[44px] gap-1"
+            aria-label="Next page"
           >
-            Next <ChevronRight className="h-4 w-4" />
+            Next <ChevronRight className="size-4" aria-hidden="true" />
           </Button>
         </div>
       </div>

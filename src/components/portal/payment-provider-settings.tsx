@@ -802,7 +802,7 @@ function ProviderCard(props: ProviderCardProps) {
               {props.maskedFields.map((f) => (
                 <span key={f.label} className="text-muted-foreground">
                   <span className="font-medium text-foreground/80">{f.label}:</span>{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                     {f.value ?? '••••••••'}
                   </code>
                 </span>
@@ -897,7 +897,7 @@ function PhonePeFormPanel(props: PhonePeFormPanelProps) {
               <SelectItem value="v1">v1 — Standard (Salt Key + Salt Index)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Find your version in the PhonePe Business dashboard under API Keys.
           </p>
         </div>
@@ -936,7 +936,7 @@ function PhonePeFormPanel(props: PhonePeFormPanelProps) {
                 placeholder="1"
                 className="h-11 sm:h-9"
               />
-              <p className="text-[10px] text-muted-foreground">Usually <code>1</code>.</p>
+              <p className="text-xs text-muted-foreground">Usually <code>1</code>.</p>
             </div>
             <SecretField
               id="pp-merchant-id-v2"
@@ -990,7 +990,7 @@ function PhonePeFormPanel(props: PhonePeFormPanelProps) {
                 placeholder="1"
                 className="h-11 sm:h-9"
               />
-              <p className="text-[10px] text-muted-foreground">Usually <code>1</code>.</p>
+              <p className="text-xs text-muted-foreground">Usually <code>1</code>.</p>
             </div>
             <EnvSelect
               id="pp-env-v1"
@@ -1078,7 +1078,7 @@ function PaytmFormPanel(props: PaytmFormPanelProps) {
               placeholder={props.form.env === 'prod' ? 'DEFAULT' : 'WEBSTAGING'}
               className="h-11 sm:h-9"
             />
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Use <code>WEBSTAGING</code> for sandbox, <code>DEFAULT</code> for production.
             </p>
           </div>
@@ -1185,7 +1185,7 @@ function EnvSelect(props: EnvSelectProps) {
           <SelectItem value="prod">Production (live)</SelectItem>
         </SelectContent>
       </Select>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Use Sandbox until your account is verified, then switch to Production.
       </p>
     </div>
@@ -1298,7 +1298,7 @@ function WebhookRow(props: WebhookRowProps) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium">{props.label}</p>
-          <p className="text-[11px] text-muted-foreground">{props.description}</p>
+          <p className="text-xs text-muted-foreground">{props.description}</p>
         </div>
         <Button
           size="sm"
@@ -1309,7 +1309,7 @@ function WebhookRow(props: WebhookRowProps) {
           <Copy className="size-3.5" /> Copy URL
         </Button>
       </div>
-      <code className="block w-full overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-[11px]">
+      <code className="block w-full overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-xs">
         {absolute}
       </code>
     </div>

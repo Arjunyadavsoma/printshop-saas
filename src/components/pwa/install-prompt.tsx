@@ -138,7 +138,7 @@ export function InstallPrompt() {
               <p className="text-sm font-medium text-foreground">
                 Install PrintShop on this device
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Open it from your home screen / Start menu — full-screen, no
                 browser bar. Works offline for order lists once cached.
               </p>
@@ -192,7 +192,7 @@ export function InstallPrompt() {
               <p className="text-sm font-medium text-foreground">
                 Add PrintShop to your Home Screen
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Tap <Share className="inline size-3 align-text-bottom" /> Share →
                 <Plus className="inline size-3 align-text-bottom" /> Add to Home
                 Screen. It opens full-screen like a native app.

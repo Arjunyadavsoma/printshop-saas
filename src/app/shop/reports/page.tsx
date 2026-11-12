@@ -1,13 +1,30 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, RefreshCw, Download, IndianRupee, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { Loader2, RefreshCw, Download, CheckCircle2, Clock, Receipt } from 'lucide-react';
 import { formatINRFromPaise } from '@platform/utils';
+import { PageHeader } from '@/components/shared/page-header';
+import { EmptyState } from '@/components/shared/empty-state';
+import { OrderStatusBadge } from '@/components/shared/status-indicator';
+import { CardSkeleton } from '@/components/shared/loading-skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 interface DailyReport {
   date: string;
@@ -35,6 +52,51 @@ interface DailyReport {
     paymentVerified: boolean; paymentUtr: string | null;
     paidAt: string | null; createdAt: string;
   }>;
+}
+
+/** Bucket the day's orders into hourly revenue buckets, in the shop's tz. */
+function hourlyBuckets(
+  orders: DailyReport['orders'],
+  timezone: string,
+): Array<{ label: string; revenue: number; orders: number }> {
+  const map = new Map<number, { revenue: number; orders: number }>();
+  for (const o of orders) {
+    let hour: number;
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        hour: '2-digit',
+        hour12: false,
+      }).format(new Date(o.createdAt));
+      hour = parseInt(parts, 10);
+      if (hour === 24) hour = 0;
+    } catch {
+      hour = new Date(o.createdAt).getHours();
+    }
+    const slot = map.get(hour) ?? { revenue: 0, orders: 0 };
+    slot.revenue += o.totalAmountPaise;
+    slot.orders += 1;
+    map.set(hour, slot);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([h, v]) => ({
+      label: `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`,
+      revenue: v.revenue,
+      orders: v.orders,
+    }));
+}
+
+function formatTime(s: string | null | undefined): string {
+  if (!s) return '—';
+  try {
+    return new Date(s).toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return s;
+  }
 }
 
 export default function ReportsPage() {
@@ -80,91 +142,250 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const avgOrderValuePaise = useMemo(() => {
+    if (!report || report.summary.totalOrders === 0) return 0;
+    return Math.round(report.totals.totalOrderValuePaise / report.summary.totalOrders);
+  }, [report]);
+
+  const chartData = useMemo(
+    () => (report ? hourlyBuckets(report.orders, report.timezone) : []),
+    [report],
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Daily Report</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Reconciliation of orders, payments, and revenue.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" />
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading} className="gap-1.5 min-h-[44px]">
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          </Button>
-          {report && (
-            <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5 min-h-[44px]">
-              <Download className="size-4" /> CSV
+      <PageHeader
+        title="Daily Report"
+        description="Reconciliation of orders, payments, and revenue for the selected day."
+        actions={
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-auto"
+              aria-label="Report date"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load()}
+              disabled={loading}
+              className="gap-1.5"
+              aria-label="Refresh report"
+            >
+              {loading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
-          )}
-        </div>
-      </div>
+            {report && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportCSV}
+                className="gap-1.5"
+              >
+                <Download className="size-4" />
+                <span>CSV</span>
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-brand" />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
         </div>
       )}
 
-      {error && (
-        <Card className="border-destructive/30">
-          <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
+      {error && !loading && (
+        <Card className="bg-danger-soft border-danger-border">
+          <CardContent className="p-4 text-sm text-danger">{error}</CardContent>
         </Card>
       )}
 
       {report && !loading && (
         <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-            <MetricCard label="Total Orders" value={String(report.summary.totalOrders)} icon={IndianRupee} tone="text-foreground" />
-            <MetricCard label="Verified" value={String(report.summary.verifiedPayments)} icon={CheckCircle2} tone="text-success" />
-            <MetricCard label="Pending" value={String(report.summary.pendingPayments)} icon={Clock} tone="text-brand" />
-            <MetricCard label="Cancelled" value={String(report.summary.cancelledOrders)} icon={XCircle} tone="text-danger" />
-            <MetricCard label="By Status" value={Object.entries(report.summary.byStatus).map(([k,v]) => `${k}:${v}`).join(' ')} icon={IndianRupee} tone="text-muted-foreground" small />
+          {/* Summary metric cards */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <MetricCard
+              label="Revenue"
+              value={formatINRFromPaise(report.totals.totalOrderValuePaise)}
+              subtitle="Total order value"
+            />
+            <MetricCard
+              label="Orders"
+              value={String(report.summary.totalOrders)}
+              subtitle={`${report.summary.verifiedPayments} verified`}
+            />
+            <MetricCard
+              label="Avg order value"
+              value={formatINRFromPaise(avgOrderValuePaise)}
+              subtitle="Per order"
+            />
+            <MetricCard
+              label="Verified collections"
+              value={formatINRFromPaise(report.totals.verifiedCollectionsPaise)}
+              subtitle={`${report.summary.pendingPayments} pending`}
+            />
           </div>
 
-          {/* Financial totals */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MoneyCard label="Total Order Value" value={report.totals.totalOrderValue} tone="text-foreground" />
-            <MoneyCard label="Verified Collections" value={report.totals.verifiedCollections} tone="text-success" />
-            <MoneyCard label="Outstanding" value={report.totals.outstanding} tone="text-brand" />
-            <MoneyCard label="Cancelled Value" value={report.totals.cancelledValue} tone="text-danger" />
-          </div>
-
-          {/* Order list */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Order Details</CardTitle>
-              <CardDescription className="text-xs">{report.orders.length} orders on {report.date} ({report.timezone})</CardDescription>
+          {/* Revenue chart */}
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Revenue by hour</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Hourly distribution of order value for {report.date} ({report.timezone})
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px] text-sm">
-                  <thead className="bg-muted/60 text-xs">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Token</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground">Verified</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">UTR</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {report.orders.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No orders on this date.</td></tr>
-                    ) : report.orders.map(o => (
-                      <tr key={o.id}>
-                        <td className="px-3 py-2 font-mono text-foreground">{o.tokenNumber}</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{o.status}</Badge></td>
-                        <td className="px-3 py-2 text-right font-mono">{o.totalAmount}</td>
-                        <td className="px-3 py-2 text-center">
-                          {o.paymentVerified ? <CheckCircle2 className="mx-auto size-4 text-success" /> : <Clock className="mx-auto size-4 text-brand" />}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{o.paymentUtr ?? '—'}</td>
-                      </tr>
+              {chartData.length === 0 ? (
+                <EmptyState
+                  icon={<Receipt className="size-6" />}
+                  title="No chart data"
+                  description="No paid orders were placed on this date."
+                />
+              ) : (
+                <ChartContainer
+                  config={{ revenue: { label: 'Revenue', color: 'var(--brand)' } }}
+                  className="h-[250px] sm:h-[300px] w-full"
+                >
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 10, right: 12, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+                      stroke="var(--border)"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+                      stroke="var(--border)"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `₹${Math.round(v / 100)}`}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value) => formatINRFromPaise(Number(value))}
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey="revenue"
+                      name="Revenue"
+                      fill="var(--color-revenue)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Orders table */}
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Order details</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                {report.orders.length} orders on {report.date} ({report.timezone})
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {report.orders.length === 0 ? (
+                <EmptyState
+                  icon={<Receipt className="size-6" />}
+                  title="No orders today"
+                  description={`No orders were placed on ${report.date}.`}
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Token</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-center hidden sm:table-cell">Verified</TableHead>
+                      <TableHead className="hidden md:table-cell text-right">Time</TableHead>
+                      <TableHead className="hidden lg:table-cell">UTR</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.orders.map((o) => (
+                      <TableRow key={o.id}>
+                        <TableCell className="font-mono text-sm">{o.tokenNumber}</TableCell>
+                        <TableCell>
+                          <OrderStatusBadge status={o.status} />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {o.totalAmount}
+                        </TableCell>
+                        <TableCell className="text-center hidden sm:table-cell">
+                          {o.paymentVerified ? (
+                            <CheckCircle2
+                              className="mx-auto size-4 text-success"
+                              aria-label="Payment verified"
+                            />
+                          ) : (
+                            <Clock
+                              className="mx-auto size-4 text-warning-foreground"
+                              aria-label="Payment pending"
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell text-right tabular-nums text-sm text-muted-foreground">
+                          {formatTime(o.createdAt)}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
+                          {o.paymentUtr ?? '—'}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Payment reconciliation */}
+          <Card className="bg-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Payment reconciliation</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Status-based breakdown of order value for {report.date}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <PaymentRow
+                  label="Verified collections"
+                  value={formatINRFromPaise(report.totals.verifiedCollectionsPaise)}
+                  count={report.summary.verifiedPayments}
+                  tone="text-success"
+                />
+                <PaymentRow
+                  label="Outstanding"
+                  value={formatINRFromPaise(report.totals.outstandingPaise)}
+                  count={report.summary.pendingPayments}
+                  tone="text-warning-foreground"
+                />
+                <PaymentRow
+                  label="Cancelled value"
+                  value={formatINRFromPaise(report.totals.cancelledValuePaise)}
+                  count={report.summary.cancelledOrders}
+                  tone="text-danger"
+                />
               </div>
             </CardContent>
           </Card>
@@ -174,27 +395,46 @@ export default function ReportsPage() {
   );
 }
 
-function MetricCard({ label, value, icon: Icon, tone, small }: { label: string; value: string; icon: React.ComponentType<{ className?: string }>; tone: string; small?: boolean }) {
+function MetricCard({
+  label,
+  value,
+  subtitle,
+}: {
+  label: string;
+  value: string;
+  subtitle?: string;
+}) {
   return (
-    <Card>
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2">
-          <Icon className={`size-4 ${tone}`} />
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-        </div>
-        <p className={`mt-1 font-bold ${small ? 'text-xs' : 'text-xl'} ${tone}`}>{value}</p>
+    <Card className="bg-surface">
+      <CardContent className="p-5">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+          {value}
+        </p>
+        {subtitle && <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>}
       </CardContent>
     </Card>
   );
 }
 
-function MoneyCard({ label, value, tone }: { label: string; value: string; tone: string }) {
+function PaymentRow({
+  label,
+  value,
+  count,
+  tone,
+}: {
+  label: string;
+  value: string;
+  count: number;
+  tone: string;
+}) {
   return (
-    <Card>
-      <CardContent className="p-3">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-lg font-bold ${tone}`}>{value}</p>
-      </CardContent>
-    </Card>
+    <div className="rounded-md border border-border bg-surface p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <span className={`text-xs font-medium tabular-nums ${tone}`}>{count}</span>
+      </div>
+      <p className={`mt-1 text-lg font-semibold tabular-nums ${tone}`}>{value}</p>
+    </div>
   );
 }

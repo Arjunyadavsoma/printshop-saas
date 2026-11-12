@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Activity,
   RefreshCw,
   AlertCircle,
   Database,
@@ -12,12 +11,8 @@ import {
   Radio,
   Wifi,
   WifiOff,
-  Printer,
-  ShieldCheck,
   History,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import { useApiClient } from '@/components/portal/use-api-client';
 import {
@@ -27,14 +22,15 @@ import {
   type AdminAuditEntry,
   type AdminOrderListResponse,
   type ReadyResponse,
-  type OrderStatus,
 } from '@/components/portal/admin-types';
 import { truncate } from '@/lib/utils';
+import { StatusIndicator } from '@/components/shared/status-indicator';
+import { EmptyState } from '@/components/shared/empty-state';
+import { PageHeader } from '@/components/shared/page-header';
+import { CardSkeleton, TableSkeleton } from '@/components/shared/loading-skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -65,7 +61,7 @@ interface HealthState {
 /**
  * /admin/monitoring — operational monitoring.
  *
- * Combines three signals:
+ * Combines four signals:
  *   - /api/v1/ready → database / storage / cache / realtime health
  *   - /api/v1/admin/analytics → print-agent online/offline counts
  *   - /api/v1/admin/audit?limit=20 → recent audit log
@@ -73,10 +69,10 @@ interface HealthState {
  *     requiring review
  *
  * Honest status reporting:
- *   - "healthy" (green) only when a probe confirms it
- *   - "not_configured" (gray) when the dependency is using an in-memory dev
+ *   - "healthy" (success) only when a probe confirms it
+ *   - "not_configured" (neutral) when the dependency is using an in-memory dev
  *     stub (i.e. not surfaced by /ready on purpose)
- *   - "not_verified" (gray) when /ready doesn't include the check but the
+ *   - "not_verified" (neutral) when /ready doesn't include the check but the
  *     container names a provider
  *
  * No fake green status.
@@ -160,29 +156,32 @@ export default function AdminMonitoringPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="sr-only">Monitoring</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-brand" />
-            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Monitoring</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Service health, print-agent connectivity, failed jobs requiring review, and the recent audit log.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 min-h-[44px]">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="System Monitoring"
+        description="Service health, print-agent connectivity, failed jobs requiring review, and the recent audit log."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            className="min-h-[44px] gap-2"
+          >
+            <RefreshCw
+              className={`size-4 ${loading ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            Refresh
+          </Button>
+        }
+      />
 
       {error && (
-        <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
+        <Card className="border-danger-border bg-danger-soft">
           <CardContent className="flex items-start gap-3 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-            <div className="text-sm text-red-800 dark:text-red-200">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
+            <div className="text-sm text-danger">
               <p className="font-semibold">Failed to load monitoring data</p>
               <p className="mt-1 font-mono text-xs">{error}</p>
             </div>
@@ -191,15 +190,21 @@ export default function AdminMonitoringPage() {
       )}
 
       {/* Overall readiness banner */}
-      <Card className={ready?.ready ? 'border-success/30 bg-success-soft' : 'border-brand/30 bg-brand-soft'}>
+      <Card
+        className={
+          ready?.ready
+            ? 'border-success-border bg-success-soft'
+            : 'border-warning-border bg-warning-soft'
+        }
+      >
         <CardContent className="flex items-center gap-3 p-4">
           {ready?.ready ? (
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
+            <ShieldCheck className="size-5 shrink-0 text-success" aria-hidden="true" />
           ) : (
-            <AlertCircle className="h-5 w-5 shrink-0 text-brand" />
+            <AlertCircle className="size-5 shrink-0 text-warning-foreground" aria-hidden="true" />
           )}
           <div className="text-sm">
-            <span className="font-semibold">
+            <span className="font-semibold text-foreground">
               {ready ? (ready.ready ? 'Platform ready' : 'Platform NOT ready') : 'Readiness unknown'}
             </span>
             <span className="ml-2 text-muted-foreground">
@@ -211,19 +216,56 @@ export default function AdminMonitoringPage() {
         </CardContent>
       </Card>
 
-      {/* Service health grid */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Service health</CardTitle>
-          <CardDescription>
-            From GET /api/v1/ready + GET /api/v1/admin/analytics health section.
-            Honest status — never a fake green.
+      {/* Health status cards: API health, Database, Cron jobs, Webhooks */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)
+        ) : (
+          <>
+            <HealthCard
+              icon={ShieldCheck}
+              label="API health"
+              health={{
+                status: ready?.ready ? 'healthy' : 'unhealthy',
+                detail: ready ? (ready.ready ? 'All checks pass' : 'One or more checks fail') : 'No probe data',
+              }}
+            />
+            <HealthCard icon={Database} label="Database" health={healths.database} />
+            <HealthCard
+              icon={History}
+              label="Cron jobs"
+              health={{
+                status: 'not_verified',
+                detail: 'Cron runner not probed by /ready',
+              }}
+            />
+            <HealthCard
+              icon={Radio}
+              label="Webhooks"
+              health={{
+                status: 'not_verified',
+                detail: 'Webhook delivery not probed by /ready',
+              }}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Service health (full grid) */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Service health</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            From GET /api/v1/ready + GET /api/v1/admin/analytics health section. Honest status —
+            never a fake green.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+              {Array.from({ length: 4 }).map((_, i) => (
+                <CardSkeleton key={i} />
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -237,32 +279,38 @@ export default function AdminMonitoringPage() {
       </Card>
 
       {/* Print-agent connectivity */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Print-agent connectivity</CardTitle>
-          <CardDescription>From GET /api/v1/admin/analytics health section</CardDescription>
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Print-agent connectivity</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            From GET /api/v1/admin/analytics health section
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loading || !analytics ? (
-            <Skeleton className="h-20" />
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <CardSkeleton key={i} />
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-3 rounded-md border border-success/30 bg-success-soft p-4">
-                <Wifi className="h-6 w-6 text-success" />
+              <div className="flex items-center gap-3 rounded-lg border border-success-border bg-success-soft p-4">
+                <Wifi className="size-6 text-success" aria-hidden="true" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Online</div>
-                  <div className="text-2xl font-bold tabular-nums text-success">
+                  <p className="text-xs text-muted-foreground">Online</p>
+                  <p className="text-2xl font-semibold tabular-nums text-success">
                     {analytics.health.agentsOnline}
-                  </div>
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-md border border-border bg-muted p-4">
-                <WifiOff className="h-6 w-6 text-muted-foreground" />
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-muted p-4">
+                <WifiOff className="size-6 text-muted-foreground" aria-hidden="true" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Offline</div>
-                  <div className="text-2xl font-bold tabular-nums text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">Offline</p>
+                  <p className="text-2xl font-semibold tabular-nums text-muted-foreground">
                     {analytics.health.agentsOffline}
-                  </div>
+                  </p>
                 </div>
               </div>
             </div>
@@ -275,12 +323,14 @@ export default function AdminMonitoringPage() {
       </Card>
 
       {/* Failed jobs requiring review */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base">Failed jobs requiring review</CardTitle>
-              <CardDescription>Orders in <code className="font-mono">cancelled</code> state</CardDescription>
+              <CardTitle className="text-base font-semibold">Failed jobs requiring review</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Orders in <code className="font-mono text-xs">cancelled</code> state
+              </CardDescription>
             </div>
             <Link href="/admin/orders?status=cancelled">
               <Button variant="ghost" size="sm" className="text-brand">
@@ -291,41 +341,51 @@ export default function AdminMonitoringPage() {
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
+            <div className="p-4">
+              <TableSkeleton rows={4} cols={6} />
             </div>
           ) : !cancelled || cancelled.orders.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              <ShieldCheck className="mx-auto mb-2 h-6 w-6 text-success" />
-              No cancelled orders. All good.
-            </p>
+            <EmptyState
+              icon={<ShieldCheck className="size-6 text-success" aria-hidden="true" />}
+              title="No cancelled orders"
+              description="All clear — no failed jobs require review right now."
+            />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Order</TableHead>
                   <TableHead>Shop</TableHead>
-                  <TableHead>Customer token</TableHead>
+                  <TableHead className="hidden md:table-cell">Customer token</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Txn ID</TableHead>
-                  <TableHead>Cancelled at</TableHead>
+                  <TableHead className="hidden lg:table-cell">Txn ID</TableHead>
+                  <TableHead className="hidden md:table-cell">Cancelled at</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cancelled.orders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell>
-                      <Link href={`/admin/orders/${o.id}`} className="font-mono text-xs text-brand hover:underline">
+                      <Link
+                        href={`/admin/orders/${o.id}`}
+                        className="font-mono text-xs text-brand hover:underline"
+                      >
                         {truncate(o.id, 8)}
                       </Link>
                     </TableCell>
                     <TableCell className="text-sm">{o.shopName}</TableCell>
-                    <TableCell className="font-mono text-xs">{truncate(o.customerToken, 10)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{(o.totalAmountPaise / 100).toFixed(2)}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell className="hidden font-mono text-xs md:table-cell">
+                      {truncate(o.customerToken, 10)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {(o.totalAmountPaise / 100).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
                       {o.paymentTxnId ? truncate(o.paymentTxnId, 12) : '—'}
                     </TableCell>
-                    <TableCell className="text-xs">{formatDateTime(o.updatedAt)}</TableCell>
+                    <TableCell className="hidden text-xs tabular-nums md:table-cell">
+                      {formatDateTime(o.updatedAt)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -335,26 +395,30 @@ export default function AdminMonitoringPage() {
       </Card>
 
       {/* Audit log */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base">Recent audit log</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-base font-semibold">Recent audit log</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
                 From GET /api/v1/admin/audit?limit=20. Sensitive fields (raw
                 webhook bodies, credentials, UTRs) are NOT stored here.
               </CardDescription>
             </div>
-            <History className="h-4 w-4 text-muted-foreground" />
+            <History className="size-4 text-muted-foreground" aria-hidden="true" />
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
+            <div className="p-4">
+              <TableSkeleton rows={6} cols={6} />
             </div>
           ) : audit.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No audit entries.</p>
+            <EmptyState
+              icon={<History className="size-6" aria-hidden="true" />}
+              title="No audit entries"
+              description="Audit log entries will appear here as admins perform actions."
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -362,32 +426,36 @@ export default function AdminMonitoringPage() {
                   <TableRow>
                     <TableHead>When</TableHead>
                     <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Shop ID</TableHead>
-                    <TableHead>User ID</TableHead>
-                    <TableHead>IP</TableHead>
+                    <TableHead className="hidden md:table-cell">Entity</TableHead>
+                    <TableHead className="hidden lg:table-cell">Shop ID</TableHead>
+                    <TableHead className="hidden lg:table-cell">User ID</TableHead>
+                    <TableHead className="hidden md:table-cell">IP</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {audit.map((e) => (
                     <TableRow key={e.id}>
-                      <TableCell className="text-xs">{formatDateTime(e.createdAt)}</TableCell>
+                      <TableCell className="text-xs tabular-nums">
+                        {formatDateTime(e.createdAt)}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-mono text-xs">
                           {e.action}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="hidden text-xs md:table-cell">
                         <span className="font-mono">{e.entityType}</span>
                         <span className="ml-1 text-muted-foreground">#{truncate(e.entityId, 8)}</span>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
                         {e.shopId ? truncate(e.shopId, 8) : '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
                         {e.userId ? truncate(e.userId, 8) : '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{e.ip ?? '—'}</TableCell>
+                      <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
+                        {e.ip ?? '—'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -400,6 +468,60 @@ export default function AdminMonitoringPage() {
   );
 }
 
+function HealthCard({
+  icon: Icon,
+  label,
+  health,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  health: HealthState;
+}) {
+  const variant =
+    health.status === 'healthy'
+      ? 'success'
+      : health.status === 'unhealthy'
+        ? 'danger'
+        : 'neutral';
+  const detailLabel =
+    health.status === 'healthy'
+      ? 'Healthy'
+      : health.status === 'unhealthy'
+        ? 'Unhealthy'
+        : health.status === 'not_configured'
+          ? 'Not configured'
+          : 'Not verified';
+  return (
+    <Card className="bg-surface">
+      <CardContent className="flex items-start gap-3 p-5">
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+          aria-hidden="true"
+        >
+          <Icon className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <div className="mt-1.5">
+            <StatusIndicator variant={variant} label={`${label}: ${detailLabel}`} />
+          </div>
+          <p
+            className="mt-1.5 truncate font-mono text-xs text-muted-foreground"
+            title={health.detail}
+          >
+            {health.detail}
+          </p>
+          {typeof health.latencyMs === 'number' && (
+            <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+              latency: {health.latencyMs}ms
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function HealthTile({
   icon: Icon,
   label,
@@ -409,52 +531,50 @@ function HealthTile({
   label: string;
   health: HealthState;
 }) {
-  const config = {
-    healthy: {
-      ring: 'border-success/30',
-      bg: 'bg-success-soft',
-      icon: <CheckCircle2 className="h-5 w-5 text-success" />,
-      label: 'Healthy',
-      labelCls: 'text-success',
-    },
-    unhealthy: {
-      ring: 'border-red-200 dark:border-red-900',
-      bg: 'bg-red-50 dark:bg-red-950/40',
-      icon: <XCircle className="h-5 w-5 text-red-600" />,
-      label: 'Unhealthy',
-      labelCls: 'text-red-700 dark:text-red-300',
-    },
-    not_configured: {
-      ring: 'border-border',
-      bg: 'bg-muted',
-      icon: <HelpCircle className="h-5 w-5 text-muted-foreground" />,
-      label: 'Not configured',
-      labelCls: 'text-muted-foreground',
-    },
-    not_verified: {
-      ring: 'border-border',
-      bg: 'bg-muted',
-      icon: <HelpCircle className="h-5 w-5 text-muted-foreground" />,
-      label: 'Not verified',
-      labelCls: 'text-muted-foreground',
-    },
-  }[health.status];
-
+  const variant =
+    health.status === 'healthy'
+      ? 'success'
+      : health.status === 'unhealthy'
+        ? 'danger'
+        : 'neutral';
+  const detailLabel =
+    health.status === 'healthy'
+      ? 'Healthy'
+      : health.status === 'unhealthy'
+        ? 'Unhealthy'
+        : health.status === 'not_configured'
+          ? 'Not configured'
+          : 'Not verified';
+  const tileBorder =
+    health.status === 'healthy'
+      ? 'border-success-border'
+      : health.status === 'unhealthy'
+        ? 'border-danger-border'
+        : 'border-border';
+  const tileBg =
+    health.status === 'healthy'
+      ? 'bg-success-soft'
+      : health.status === 'unhealthy'
+        ? 'bg-danger-soft'
+        : 'bg-muted';
   return (
-    <div className={`flex items-start gap-3 rounded-md border ${config.ring} ${config.bg} p-4`}>
-      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+    <div className={`flex items-start gap-3 rounded-lg border ${tileBorder} ${tileBg} p-4`}>
+      <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium">{label}</span>
-          <span className={`text-xs font-medium ${config.labelCls}`}>{config.label}</span>
+          <span className="text-sm font-medium text-foreground">{label}</span>
+          <StatusIndicator variant={variant} label={`${label}: ${detailLabel}`} />
         </div>
-        <div className="mt-1 truncate font-mono text-xs text-muted-foreground" title={health.detail}>
+        <p
+          className="mt-1 truncate font-mono text-xs text-muted-foreground"
+          title={health.detail}
+        >
           {health.detail}
-        </div>
+        </p>
         {typeof health.latencyMs === 'number' && (
-          <div className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
             latency: {health.latencyMs}ms
-          </div>
+          </p>
         )}
       </div>
     </div>

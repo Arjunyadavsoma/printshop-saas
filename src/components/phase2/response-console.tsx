@@ -14,7 +14,7 @@ export function ResponseConsole({ log }: { log: LogEntry[] }) {
           <span className="text-xs font-medium text-white/70">Live request log (most recent first)</span>
           <Badge className="ml-auto bg-white/10 text-white hover:bg-white/20">{log.length} calls</Badge>
         </div>
-        <div className="max-h-72 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed">
+        <div className="max-h-72 overflow-y-auto p-3 font-mono text-xs leading-relaxed">
           {log.length === 0 ? (
             <p className="text-white/40">No calls yet — run a step above.</p>
           ) : (
