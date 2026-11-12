@@ -37,9 +37,10 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
 
     const file = await repos.files.findByIdAndOrder(fileId, order.id);
     if (!file) throw new NotFoundError('File not found');
-    if (file.status === 'needs_review') {
-      throw new ValidationError('File needs shopkeeper review before settings can be applied');
-    }
+    // Allow PATCH on needs_review files — the customer can change print settings
+    // (copies, color, paper, duplex) even before the shopkeeper verifies the page count.
+    // The page count was auto-set to 1 as a default; the shopkeeper can correct it
+    // via the /page-count endpoint. Pricing uses the current pageCount.
 
     const body = PatchFileSchema.parse(await req.json());
     const updated = { ...file, ...body };
