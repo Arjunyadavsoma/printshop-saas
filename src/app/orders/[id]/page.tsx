@@ -14,6 +14,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { PdfPreview } from '@/components/portal/pdf-preview';
+import { PageHeader } from '@/components/shared/page-header';
+import { EmptyState } from '@/components/shared/empty-state';
+import { CardSkeleton, PageSkeleton } from '@/components/shared/loading-skeleton';
+import { OrderStatusBadge } from '@/components/shared/status-indicator';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
 import type {
@@ -713,7 +717,7 @@ export default function OrderFlowPage() {
           </Link>
           <div className="flex items-center gap-2 text-xs">
             <span className="hidden text-muted-foreground sm:inline">Order</span>
-            <code className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">{orderId.slice(0, 8)}</code>
+            <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground">{orderId.slice(0, 8)}</code>
             {order?.tokenNumber && (
               <Badge variant="secondary" className="ml-1 font-mono">{order.tokenNumber}</Badge>
             )}
@@ -866,7 +870,7 @@ function OrderStepper({ current }: { current: Step }) {
             <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:h-9 sm:w-9 ${done ? 'bg-success text-success-foreground' : active ? 'bg-brand text-brand-foreground' : 'bg-muted text-muted-foreground'}`}>
               {done ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
             </div>
-            <span className={`text-[10px] sm:text-xs ${active ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
+            <span className={`text-xs ${active ? 'font-medium text-foreground' : 'text-muted-foreground'}`} aria-current={active ? 'step' : undefined}>{s.label}</span>
           </li>
         );
       })}
@@ -912,7 +916,7 @@ function UploadStep(props: {
             onDrop={props.onDrop}
             className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors sm:p-6 ${props.dragOver ? 'border-brand bg-brand-soft' : 'border-border'}`}
           >
-            <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground" />
+            <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <p className="mt-2 text-sm text-foreground">Drag files here, or</p>
             <Button
               type="button"
@@ -931,7 +935,7 @@ function UploadStep(props: {
               className="hidden"
               onChange={props.onPick}
             />
-            <p className="mt-2 text-[11px] text-muted-foreground">PDF, images, Office docs, text — max 25MB per file.</p>
+            <p className="mt-2 text-xs text-muted-foreground">PDF, images, Office docs, text — max 25MB per file.</p>
           </div>
           {props.uploadError && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
@@ -962,9 +966,9 @@ function UploadStep(props: {
       {/* Sticky summary + next */}
       <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Estimated total</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated total</p>
           <p className="text-2xl font-bold text-foreground">{formatINRFromPaise(props.orderTotal)}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {props.serverCalculated
               ? 'Server-confirmed total · may change if you adjust settings.'
               : props.hasShop
@@ -1090,7 +1094,7 @@ function ConfigureStep(props: {
 
       <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             {props.serverCalculated ? 'Server-confirmed total' : 'Estimated total'}
           </p>
           <p className="text-2xl font-bold text-foreground">{formatINRFromPaise(props.orderTotal)}</p>
@@ -1146,7 +1150,7 @@ function CheckoutStep(props: {
                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="truncate">{f.filename}</span>
                       </div>
-                      <span className="ml-6 text-[11px] text-muted-foreground">{f.pageCount} pages</span>
+                      <span className="ml-6 text-xs text-muted-foreground">{f.pageCount} pages</span>
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {f.copies}× · {f.colorMode === 'bw' ? 'B&W' : 'Colour'} · {f.paperSize.toUpperCase()}
@@ -1233,9 +1237,9 @@ function PayStep(props: {
         <CardContent className="space-y-4">
           {/* Amount — prominent */}
           <div className="rounded-lg bg-brand-soft p-4 text-center ring-1 ring-brand/30">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount to pay</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Amount to pay</p>
             <p className="mt-1 text-3xl font-bold text-foreground sm:text-4xl lg:text-5xl">{amount}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
+            <p className="mt-1 text-xs text-muted-foreground">direct to shopkeeper&apos;s UPI · 0% commission</p>
           </div>
 
           {/* TWO payment options — clearly separated */}
@@ -1246,7 +1250,7 @@ function PayStep(props: {
                 <Smartphone className="h-5 w-5" />
               </div>
               <p className="text-sm font-semibold text-foreground">Option 1: Pay by UPI App</p>
-              <p className="text-[11px] text-muted-foreground">Opens your UPI app (GPay, PhonePe, Paytm) with the amount prefilled.</p>
+              <p className="text-xs text-muted-foreground">Opens your UPI app (GPay, PhonePe, Paytm) with the amount prefilled.</p>
               <button
                 type="button"
                 onClick={launchUpi}
@@ -1258,7 +1262,7 @@ function PayStep(props: {
                 Pay {amount} with UPI
               </button>
               {!upiUri && (
-                <p className="text-[10px] text-brand">UPI app payment not available — use the QR instead.</p>
+                <p className="text-xs text-brand">UPI app payment not available — use the QR instead.</p>
               )}
             </div>
 
@@ -1268,7 +1272,7 @@ function PayStep(props: {
                 <QrCode className="h-5 w-5" />
               </div>
               <p className="text-sm font-semibold text-foreground">Option 2: Scan QR Code</p>
-              <p className="text-[11px] text-muted-foreground">Scan with any UPI app to pay the exact amount.</p>
+              <p className="text-xs text-muted-foreground">Scan with any UPI app to pay the exact amount.</p>
               {desktopQr ? (
                 <div className="rounded-lg bg-white p-2 ring-1 ring-border">
                   <img
@@ -1286,7 +1290,7 @@ function PayStep(props: {
                   No QR
                 </div>
               )}
-              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              <p className="mt-2 text-center text-xs text-muted-foreground">
                 {isShopkeeperQr
                   ? 'Scan with any UPI app (GPay, PhonePe, Paytm) to pay.'
                   : 'Scan this QR with your UPI app to pay.'}
@@ -1296,7 +1300,7 @@ function PayStep(props: {
             {/* UPI ID manual fallback */}
             {props.shopUpiId && (
             <div className="rounded-lg bg-muted/40 p-3 text-center">
-              <p className="text-[11px] text-muted-foreground">Or enter UPI ID manually in your app:</p>
+              <p className="text-xs text-muted-foreground">Or enter UPI ID manually in your app:</p>
               <p className="mt-0.5 font-mono text-sm font-medium text-foreground">{props.shopUpiId}</p>
             </div>
             )}
@@ -1358,11 +1362,11 @@ function TrackStep(props: {
         <CardContent className="space-y-4">
           {/* Confirmation — show the CANONICAL token (same as the shopkeeper sees) */}
           <div className="rounded-lg bg-muted/60 p-4 text-center">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your token</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Your token</p>
             <p className="font-mono text-2xl font-bold break-words text-brand sm:text-3xl sm:tracking-widest">
               {props.order.tokenNumber ?? props.order.customerToken}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Show this at the counter.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Show this at the counter.</p>
           </div>
 
           {/* ── Payment status indicator (SEPARATE from order-processing status) ── */}
@@ -1384,12 +1388,12 @@ function TrackStep(props: {
             </p>
             {props.order.paidAt ? (
               <>
-                <p className="mt-0.5 text-[11px] text-success">
+                <p className="mt-0.5 text-xs text-success">
                   Confirmed {new Date(props.order.paidAt).toLocaleString('en-IN')}
                   {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
                 </p>
                 {/* Auto/Manual verification badge */}
-                <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                   props.order.paymentTxnId?.startsWith('manual-')
                     ? 'bg-brand-soft text-brand'
                     : 'bg-success-soft text-success'
@@ -1398,7 +1402,7 @@ function TrackStep(props: {
                 </span>
               </>
             ) : (
-              <p className="mt-0.5 text-[11px] text-brand">
+              <p className="mt-0.5 text-xs text-brand">
                 The shopkeeper will verify your UPI payment after you pay.
               </p>
             )}
@@ -1413,17 +1417,17 @@ function TrackStep(props: {
             <p className={`mt-1 text-sm font-semibold ${done ? 'text-success' : cancelled ? 'text-destructive' : 'text-brand'}`}>
               {statusLabel(s)}
             </p>
-            <p className="text-[10px] text-muted-foreground">status: {s}</p>
+            <p className="text-xs text-muted-foreground">status: {s}</p>
           </div>
 
           {/* Order ID + amount */}
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-lg bg-muted/60 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Order ID</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Order ID</p>
               <p className="mt-0.5 font-mono text-xs text-foreground">{props.order.orderId.slice(0, 8)}…</p>
             </div>
             <div className="rounded-lg bg-muted/60 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Amount</p>
               <p className="mt-0.5 text-sm font-semibold text-foreground">{formatINRFromPaise(props.order.totalAmountPaise)}</p>
             </div>
           </div>
@@ -1520,16 +1524,16 @@ function FileCard(props: {
             <FileText className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">{f.filename}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {f.pageCount > 0 ? `${f.pageCount} pages · ` : ''}{f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
               </p>
               {isReview && (
-                <p className="mt-1 text-[11px] text-brand">
+                <p className="mt-1 text-xs text-brand">
                   Needs shopkeeper review — settings may be locked until the shopkeeper sets a page count.
                 </p>
               )}
               {isFailed && f.uploadError && (
-                <p className="mt-1 text-[11px] text-destructive">{f.uploadError}</p>
+                <p className="mt-1 text-xs text-destructive">{f.uploadError}</p>
               )}
             </div>
           </div>
@@ -1577,7 +1581,7 @@ function FileCard(props: {
         {isUploading && (
           <div className="mt-3">
             <Progress value={f.uploadProgress} className="h-2" />
-            <p className="mt-1 text-right text-[11px] text-muted-foreground">{f.uploadProgress}%</p>
+            <p className="mt-1 text-right text-xs text-muted-foreground">{f.uploadProgress}%</p>
           </div>
         )}
 
@@ -1585,7 +1589,7 @@ function FileCard(props: {
         {!isUploading && !isFailed && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <Label className="text-[10px] text-muted-foreground">Copies</Label>
+              <Label className="text-xs text-muted-foreground">Copies</Label>
               <Input
                 type="number"
                 min={1}
@@ -1597,7 +1601,7 @@ function FileCard(props: {
               />
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Colour</Label>
+              <Label className="text-xs text-muted-foreground">Colour</Label>
               <ToggleGroup
                 type="single"
                 value={f.colorMode}
@@ -1605,12 +1609,12 @@ function FileCard(props: {
                 disabled={isReview}
                 className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="bw" className="h-11 px-2 text-[11px] sm:h-8">B&W</ToggleGroupItem>
-                <ToggleGroupItem value="color" className="h-11 px-2 text-[11px] sm:h-8">Color</ToggleGroupItem>
+                <ToggleGroupItem value="bw" className="h-11 px-2 text-xs sm:h-8">B&W</ToggleGroupItem>
+                <ToggleGroupItem value="color" className="h-11 px-2 text-xs sm:h-8">Color</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Paper</Label>
+              <Label className="text-xs text-muted-foreground">Paper</Label>
               <ToggleGroup
                 type="single"
                 value={f.paperSize}
@@ -1618,25 +1622,25 @@ function FileCard(props: {
                 disabled={isReview}
                 className="h-11 sm:h-8"
               >
-                <ToggleGroupItem value="a4" className="h-11 px-2 text-[11px] sm:h-8">A4</ToggleGroupItem>
-                <ToggleGroupItem value="a3" className="h-11 px-2 text-[11px] sm:h-8">A3</ToggleGroupItem>
-                <ToggleGroupItem value="letter" className="h-11 px-2 text-[11px] sm:h-8">LTR</ToggleGroupItem>
-                <ToggleGroupItem value="legal" className="h-11 px-2 text-[11px] sm:h-8">LGL</ToggleGroupItem>
+                <ToggleGroupItem value="a4" className="h-11 px-2 text-xs sm:h-8">A4</ToggleGroupItem>
+                <ToggleGroupItem value="a3" className="h-11 px-2 text-xs sm:h-8">A3</ToggleGroupItem>
+                <ToggleGroupItem value="letter" className="h-11 px-2 text-xs sm:h-8">LTR</ToggleGroupItem>
+                <ToggleGroupItem value="legal" className="h-11 px-2 text-xs sm:h-8">LGL</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <div>
-              <Label className="text-[10px] text-muted-foreground">Duplex</Label>
+              <Label className="text-xs text-muted-foreground">Duplex</Label>
               <div className="flex h-11 items-center sm:h-8">
                 <Switch
                   checked={f.duplex}
                   onCheckedChange={(v) => props.onUpdate(f.fileId, { duplex: v })}
                   disabled={isReview}
                 />
-                <span className="ml-2 text-[11px] text-muted-foreground">{f.duplex ? 'On' : 'Off'}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{f.duplex ? 'On' : 'Off'}</span>
               </div>
             </div>
             <div className="sm:col-span-2 lg:col-span-4">
-              <Label className="text-[10px] text-muted-foreground">Page range (optional)</Label>
+              <Label className="text-xs text-muted-foreground">Page range (optional)</Label>
               <Input
                 type="text"
                 value={f.pageRange}
@@ -1651,7 +1655,7 @@ function FileCard(props: {
 
         {!isUploading && !isFailed && (
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {f.dirty ? 'Unsaved — applying…' : f.patching ? 'Saving…' : 'Saved'}
             </span>
             <span className="text-sm font-semibold text-foreground">{formatINRFromPaise(displayPriceForFile(f, props.shop))}</span>

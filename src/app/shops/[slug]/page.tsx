@@ -216,11 +216,11 @@ export default function ShopDetailPage() {
                   <CardContent>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="rounded-lg bg-muted/60 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">UPI ID</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">UPI ID</p>
                         <p className="mt-1 break-words font-mono text-sm font-medium text-foreground">{shop.upiId}</p>
                       </div>
                       <div className="rounded-lg bg-muted/60 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Payment provider</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment provider</p>
                         <p className="mt-1 text-sm font-medium text-foreground capitalize">{shop.paymentProvider}</p>
                       </div>
                     </div>
@@ -270,15 +270,15 @@ export default function ShopDetailPage() {
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Duplex discount</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Duplex discount</p>
                         <p className="mt-0.5 font-medium text-foreground">{shop.pricingConfig.duplex_discount}% off</p>
                       </div>
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Bulk threshold</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Bulk threshold</p>
                         <p className="mt-0.5 font-medium text-foreground">{'≥ '}{shop.pricingConfig.bulk_threshold} pages</p>
                       </div>
                       <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Bulk discount</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Bulk discount</p>
                         <p className="mt-0.5 font-medium text-foreground">{shop.pricingConfig.bulk_discount_pct}% off</p>
                       </div>
                     </div>

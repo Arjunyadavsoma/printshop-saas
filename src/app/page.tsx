@@ -423,19 +423,19 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
       <CardContent className="pt-4">
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
             <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
               {formatINRFromPaise(shop.pricingSummary.bwA4PerPage)}
             </p>
           </div>
           <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Colour / page</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Colour / page</p>
             <p className="mt-0.5 text-sm font-semibold text-foreground tabular-nums">
               {formatINRFromPaise(shop.pricingSummary.colorA4PerPage)}
             </p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] break-words text-muted-foreground">
+        <p className="mt-2 text-xs break-words text-muted-foreground">
           Min. order {formatINRFromPaise(shop.pricingSummary.minOrderValue)} · UPI {shop.upiId}
         </p>
       </CardContent>
