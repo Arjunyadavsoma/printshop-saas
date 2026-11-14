@@ -14,6 +14,8 @@
 -- explanation instead of a generic "needs review".
 --
 -- This migration is purely additive — no columns are removed or renamed.
+-- Uses IF NOT EXISTS so it is safe to run even if the columns were manually
+-- added to the database before the migration was applied (idempotent).
 
-ALTER TABLE "PrintFile" ADD COLUMN "pageCountSource" TEXT NOT NULL DEFAULT 'placeholder';
-ALTER TABLE "PrintFile" ADD COLUMN "processingError" TEXT;
+ALTER TABLE "PrintFile" ADD COLUMN IF NOT EXISTS "pageCountSource" TEXT NOT NULL DEFAULT 'placeholder';
+ALTER TABLE "PrintFile" ADD COLUMN IF NOT EXISTS "processingError" TEXT;
