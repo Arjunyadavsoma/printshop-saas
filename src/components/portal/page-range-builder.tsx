@@ -103,6 +103,25 @@ export function PageRangeBuilder({
     setManualSuccess(null);
   };
 
+  // ── Quick select: odd pages (1, 3, 5, ...) ──
+  const selectOdd = () => {
+    const odd: number[] = [];
+    for (let p = 1; p <= pageCount; p += 2) odd.push(p);
+    onChange(odd);
+  };
+
+  // ── Quick select: even pages (2, 4, 6, ...) ──
+  const selectEven = () => {
+    const even: number[] = [];
+    for (let p = 2; p <= pageCount; p += 2) even.push(p);
+    onChange(even.length > 0 ? even : null);
+  };
+
+  // ── Quick select: all pages (null = print all) ──
+  const selectAll = () => {
+    onChange(null);
+  };
+
   // ─<arg_value>Apply manual input ──
   const applyManual = () => {
     setManualError(null);
@@ -147,6 +166,37 @@ export function PageRangeBuilder({
             ? `All ${pageCount} pages`
             : `${selectedCount} of ${pageCount} pages selected`}
         </span>
+      </div>
+
+      {/* Quick-select buttons */}
+      <div className="flex flex-wrap gap-1.5">
+        <Button
+          type="button"
+          variant={isAllPages ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={selectAll}
+          className="h-8 text-xs"
+        >
+          All pages
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={selectOdd}
+          className="h-8 text-xs"
+        >
+          Odd
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={selectEven}
+          className="h-8 text-xs"
+        >
+          Even
+        </Button>
       </div>
 
       {/* Tabs */}

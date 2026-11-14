@@ -517,4 +517,111 @@ describe('POST /api/v1/orders/:id/files — confirm upload + page count', () => 
     expect(files[0]!.pricePaise).toBe(0);
     expect(files[0]!.processingError).not.toBeNull();
   });
+
+  it('7. idempotent: confirming the same storageKey twice returns the existing file (no duplicate)', async () => {
+    // A browser retry (network timeout after the server already processed
+    // the confirmation) must NOT create a duplicate file record or
+    // double-count the order total. The second call returns the existing
+    // file with `idempotent: true`.
+    const fileId = crypto.randomUUID();
+    const key = storageKey(shopId, orderId, fileId);
+    const bytes = minimalPdfBytes();
+    await (container.storage as InMemoryStorageAdapter).put(key, bytes, 'application/pdf');
+
+    const { POST } = await import('@/app/api/v1/orders/[id]/files/route');
+    const body = {
+      fileId,
+      storageKey: key,
+      filename: 'dup-test.pdf',
+      mimeType: 'application/pdf',
+      size: bytes.length,
+    };
+
+    // First confirmation — normal.
+    const req1 = orderAuthedReq('POST', `/api/v1/orders/${orderId}/files`, { body });
+    const res1 = await POST(req1, { params: Promise.resolve({ id: orderId }) });
+    const json1 = await res1.json();
+    expect(res1.status).toBe(200);
+    expect(json1.success).toBe(true);
+    const firstFileId = json1.data.fileId;
+    const firstPrice = json1.data.pricePaise;
+
+    // Second confirmation — same storageKey (retry).
+    const req2 = orderAuthedReq('POST', `/api/v1/orders/${orderId}/files`, { body });
+    const res2 = await POST(req2, { params: Promise.resolve({ id: orderId }) });
+    const json2 = await res2.json();
+    expect(res2.status).toBe(200);
+    expect(json2.success).toBe(true);
+    // Same file ID — not a new record.
+    expect(json2.data.fileId).toBe(firstFileId);
+    // The idempotent flag tells the client this was a replay.
+    expect(json2.data.idempotent).toBe(true);
+    // Price is the same — not double-counted.
+    expect(json2.data.pricePaise).toBe(firstPrice);
+
+    // Only ONE file in the database — no duplicate.
+    const files = await repos.files.findByOrder(orderId);
+    expect(files).toHaveLength(1);
+    // Order total reflects one file, not two.
+    expect(json2.data.orderTotalPaise).toBe(firstPrice);
+  });
+
+  it('8. stale-response fix: pricing failure after extraction returns persisted needs_review (not stale pending)', async () => {
+    // When page-count extraction succeeds but pricing fails (e.g. the shop
+    // has an empty pricing config), the confirm endpoint must update the
+    // file to needs_review/placeholder in the DATABASE and return the
+    // PERSISTED values — NOT the stale in-memory values (pending/
+    // auto_extracted) that existed before the pricing failure.
+    //
+    // This is the stale-response bug: the response previously returned
+    // the original `file` variable which still had status='pending',
+    // pageCountSource='auto_extracted', processingError=null — even
+    // though the database had been updated to needs_review/placeholder/
+    // <error message>.
+
+    // Break the shop's pricing config so pricing fails after extraction.
+    await repos.shops.update(shopId, {
+      pricingConfig: {} as unknown as ReturnType<typeof createDefaultPricingConfig>,
+    });
+
+    const fileId = crypto.randomUUID();
+    const key = storageKey(shopId, orderId, fileId);
+    const bytes = minimalPdfBytes();
+    await (container.storage as InMemoryStorageAdapter).put(key, bytes, 'application/pdf');
+
+    const { POST } = await import('@/app/api/v1/orders/[id]/files/route');
+    const req = orderAuthedReq('POST', `/api/v1/orders/${orderId}/files`, {
+      body: {
+        fileId,
+        storageKey: key,
+        filename: 'stale-test.pdf',
+        mimeType: 'application/pdf',
+        size: bytes.length,
+      },
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: orderId }) });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    // The page count WAS extracted (pdf-lib parsed the minimal PDF), but
+    // pricing failed because the config is empty. The response MUST
+    // reflect the PERSISTED state — needs_review/placeholder — not the
+    // stale in-memory state (pending/auto_extracted).
+    expect(json.data.status).toBe('needs_review');
+    expect(json.data.pageCountSource).toBe('placeholder');
+    expect(json.data.needsReview).toBe(true);
+    expect(json.data.pricePaise).toBe(0);
+    expect(json.data.processingError).not.toBeNull();
+    // The processing error should mention pricing/config.
+    expect(json.data.processingError).toMatch(/pricing|config/i);
+
+    // Verify the DATABASE also has the correct state (not just the response).
+    const files = await repos.files.findByOrder(orderId);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.status).toBe('needs_review');
+    expect(files[0]!.pageCountSource).toBe('placeholder');
+    expect(files[0]!.pricePaise).toBe(0);
+    expect(files[0]!.processingError).not.toBeNull();
+  });
 });
