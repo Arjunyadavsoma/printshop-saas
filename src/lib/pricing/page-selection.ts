@@ -128,3 +128,50 @@ export function resolveBillablePages(
   }
   return { billablePages: selected.length, selectedPages: selected };
 }
+
+/**
+ * Convert a sorted, de-duplicated array of page numbers into a list of
+ * contiguous range tuples. For example `[1,2,3,5,6,8]` becomes
+ * `[{from:1,to:3}, {from:5,to:6}, {from:8,to:8}]`.
+ *
+ * Used by the visual page-range builder to render removable chips.
+ */
+export function pagesToRanges(pages: number[]): Array<{ from: number; to: number }> {
+  if (pages.length === 0) return [];
+  // De-duplicate + sort so duplicate page numbers don't break the
+  // contiguous-run detection.
+  const sorted = [...new Set(pages)].sort((a, b) => a - b);
+  const ranges: Array<{ from: number; to: number }> = [];
+  let start = sorted[0];
+  let end = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+    } else {
+      ranges.push({ from: start, to: end });
+      start = sorted[i];
+      end = sorted[i];
+    }
+  }
+  ranges.push({ from: start, to: end });
+  return ranges;
+}
+
+/**
+ * Format a range tuple as a human-readable chip label.
+ * `{from:1, to:3}` → `"1-3"`, `{from:8, to:8}` → `"8"`.
+ */
+export function formatRange(range: { from: number; to: number }): string {
+  return range.from === range.to ? `${range.from}` : `${range.from}-${range.to}`;
+}
+
+/**
+ * Parse a page-range string into a list of range tuples for chip display.
+ * Returns `null` if the string is empty or malformed (use the raw string
+ * for display in that case).
+ */
+export function parseRangeString(range: string, maxPages: number): Array<{ from: number; to: number }> | null {
+  const pages = parsePageRange(range, maxPages);
+  if (pages === null) return null;
+  return pagesToRanges(pages);
+}

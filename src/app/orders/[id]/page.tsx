@@ -13,6 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Progress } from '@/components/ui/progress';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { PdfPreview } from '@/components/portal/pdf-preview';
+import { PageRangeBuilder } from '@/components/portal/page-range-builder';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageSkeleton } from '@/components/shared/loading-skeleton';
@@ -1182,6 +1183,19 @@ function ConfigureStep(props: {
                 </ToggleGroup>
               </div>
             </div>
+
+            {/* Advanced page-range builder — replaces the old PdfPreview
+                onSelectionChange as the primary selection mechanism. The
+                PdfPreview (above) still provides a visual reference for PDFs;
+                both share the same selectedPages state so they stay synced. */}
+            {!isPlaceholder && f.pageCount > 0 && (
+              <PageRangeBuilder
+                pageCount={f.pageCount}
+                selectedPages={f.selectedPages ?? null}
+                disabled={false}
+                onChange={(pages) => props.onUpdate(f.fileId, { selectedPages: pages, dirty: true })}
+              />
+            )}
 
             {/* Per-file price display */}
             <div className="flex flex-col gap-1 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">

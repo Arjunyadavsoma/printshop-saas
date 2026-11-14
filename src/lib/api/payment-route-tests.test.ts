@@ -168,14 +168,14 @@ beforeEach(async () => {
   customerToken = 'TOK' + Math.random().toString(36).slice(2, 8).toUpperCase();
   const order = await repos.orders.create({ shopId, customerToken });
   orderId = order.id;
-  // Total amount: ₹100 = 10000 paise
+  // Total amount: ₹100 = 10000 paise (50 pages × ₹2/page B&W A4 = 10000)
   const file = await repos.files.create({
     orderId,
     originalFilename: 'doc.pdf',
     storageKey: `test/${orderId}/doc.pdf`,
     mimeType: 'application/pdf',
     sizeBytes: 1024,
-    pageCount: 1,
+    pageCount: 50,
   });
   await repos.files.update(file.id, { pricePaise: 10000 });
   await repos.orders.update(orderId, { totalAmountPaise: 10000 });
