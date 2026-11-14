@@ -1087,19 +1087,16 @@ function ConfigureStep(props: {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* PDF Preview — visual reference only (page selection is via the
-                PageRangeBuilder below). Hidden for placeholder files. */}
+            {/* PDF Preview — visual reference only. Page selection is handled
+                entirely by the PageRangeBuilder below (no onSelectionChange
+                callback — the PdfPreview used to auto-select all pages on
+                load, which overrode the "All pages" default state). */}
             {f.rawFile && !isPlaceholder && (
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <PdfPreview
                   file={f.rawFile}
                   mimeType={f.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/*'}
                   pageCount={f.pageCount || null}
-                  onSelectionChange={(selectedPages) => {
-                    // Treat empty selection as "all pages" (null) — the user
-                    // should never end up with 0 selected pages.
-                    props.onUpdate(f.fileId, { selectedPages: selectedPages && selectedPages.length > 0 ? selectedPages : null, dirty: true });
-                  }}
                 />
               </div>
             )}

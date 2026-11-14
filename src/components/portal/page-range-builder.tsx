@@ -49,7 +49,10 @@ export function PageRangeBuilder({
     [selectedPages],
   );
   const selectedCount = selectedPages?.length ?? pageCount;
-  const isAllPages = selectedPages === null;
+  // "All pages" is active when selectedPages is null OR when the selection
+  // happens to include every page (e.g. the user added range 1-N manually).
+  // This prevents the "All pages" button from fighting with a full selection.
+  const isAllPages = selectedPages === null || (pageCount > 0 && selectedPages.length >= pageCount);
 
   // ── Add range (builder tab) ──
   const addRange = () => {
