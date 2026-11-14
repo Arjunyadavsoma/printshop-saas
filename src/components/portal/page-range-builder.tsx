@@ -168,20 +168,21 @@ export function PageRangeBuilder({
         </span>
       </div>
 
-      {/* Quick-select buttons */}
+      {/* Quick-select buttons — "All pages" is the default (highlighted). */}
       <div className="flex flex-wrap gap-1.5">
         <Button
           type="button"
           variant={isAllPages ? 'secondary' : 'outline'}
           size="sm"
           onClick={selectAll}
-          className="h-8 text-xs"
+          className="h-8 gap-1 text-xs"
         >
+          {isAllPages && <CheckCircle2 className="h-3 w-3" />}
           All pages
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant={!isAllPages && selectedCount > 0 && selectedPages?.every((p) => p % 2 === 1) ? 'secondary' : 'outline'}
           size="sm"
           onClick={selectOdd}
           className="h-8 text-xs"
@@ -190,7 +191,7 @@ export function PageRangeBuilder({
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant={!isAllPages && selectedCount > 0 && selectedPages?.every((p) => p % 2 === 0) ? 'secondary' : 'outline'}
           size="sm"
           onClick={selectEven}
           className="h-8 text-xs"

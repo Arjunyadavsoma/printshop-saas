@@ -1784,105 +1784,15 @@ function FileCard(props: {
           </div>
         )}
 
-        {/* Settings — only for uploaded files (placeholder files have all
-            settings disabled until the customer supplies a page count). */}
-        {!isUploading && !isFailed && (
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label className="text-xs text-muted-foreground">Copies</Label>
-              <Input
-                type="number"
-                min={1}
-                max={500}
-                value={f.copies}
-                onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Number(e.target.value) || 1) })}
-                disabled={isReview}
-                className="mt-1 h-10 text-sm tabular-nums"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Colour</Label>
-              <ToggleGroup
-                type="single"
-                value={f.colorMode}
-                onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode })}
-                disabled={isReview}
-                className="mt-1"
-              >
-                <ToggleGroupItem value="bw" className="h-10 px-2 text-xs">B&W</ToggleGroupItem>
-                <ToggleGroupItem value="color" className="h-10 px-2 text-xs">Color</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Paper</Label>
-              <ToggleGroup
-                type="single"
-                value={f.paperSize}
-                onValueChange={(v) => v && props.onUpdate(f.fileId, { paperSize: v as PaperSize })}
-                disabled={isReview}
-                className="mt-1"
-              >
-                <ToggleGroupItem value="a4" className="h-10 px-2 text-xs">A4</ToggleGroupItem>
-                <ToggleGroupItem value="a3" className="h-10 px-2 text-xs">A3</ToggleGroupItem>
-                <ToggleGroupItem value="letter" className="h-10 px-2 text-xs">LTR</ToggleGroupItem>
-                <ToggleGroupItem value="legal" className="h-10 px-2 text-xs">LGL</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Duplex</Label>
-              <div className="mt-1 flex h-10 items-center">
-                <Switch
-                  checked={f.duplex}
-                  onCheckedChange={(v) => props.onUpdate(f.fileId, { duplex: v })}
-                  disabled={isReview}
-                />
-                <span className="ml-2 text-xs text-muted-foreground">{f.duplex ? 'On' : 'Off'}</span>
-              </div>
-            </div>
-            <div className="sm:col-span-2 lg:col-span-4">
-              <Label className="text-xs text-muted-foreground">Page range (optional)</Label>
-              <Input
-                type="text"
-                value={f.pageRange}
-                onChange={(e) => props.onUpdate(f.fileId, { pageRange: e.target.value })}
-                placeholder={'e.g. 1-5, 8, 12-14 — leave blank to print all'}
-                disabled={isReview}
-                className="mt-1 h-10 text-sm"
-              />
-            </div>
-          </div>
-        )}
-
-        {!isUploading && !isFailed && (
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              {f.dirty ? 'Unsaved — applying…' : f.patching ? 'Saving…' : 'Saved'}
-            </span>
-            <span className="text-sm font-semibold tabular-nums text-foreground">
-              {isReview ? 'Pending' : formatINRFromPaise(displayPriceForFile(f, props.shop))}
-            </span>
-          </div>
+        {/* Hint for uploaded files — print settings are configured in the
+            Configure step, not here. This avoids duplicate settings. */}
+        {!isUploading && !isFailed && !isReview && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {f.pageCount > 0 ? `${f.pageCount} page${f.pageCount === 1 ? '' : 's'} detected` : ''}
+            {' · '}Configure print settings in the next step
+          </p>
         )}
       </CardContent>
     </Card>
   );
-}
-
-// Live client-side price (or last-known server price) for a single file card.
-function displayPriceForFile(f: LocalFile, shop: ShopInfo | null): number {
-  if (!shop) return f.pricePaise;
-  if (!f.dirty) return f.pricePaise;
-  try {
-    const input: PricingInput = {
-      pages: f.pageCount || 1,
-      copies: f.copies,
-      colorMode: f.colorMode,
-      paperSize: f.paperSize,
-      duplex: f.duplex,
-      shopPricingConfig: shop.pricingConfig,
-    };
-    return priceFile(input).totalPaise;
-  } catch {
-    return f.pricePaise;
-  }
 }
