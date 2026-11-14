@@ -14,6 +14,10 @@ const PatchFileSchema = z.object({
   pageRange: z.string().max(100).nullable().optional(),
   paperSize: z.enum(['a4', 'a3', 'letter', 'legal']).optional(),
   duplex: z.boolean().optional(),
+  // Customer-set page count — used when auto-detection wasn't possible
+  // (legacy .doc, encrypted PDF, etc.) or to correct an auto-detected value.
+  // The server re-prices using this count.
+  pageCount: z.number().int().min(1).max(10000).optional(),
 });
 
 /** PATCH /api/v1/orders/:id/files/:fileId — update print settings + reprice.
@@ -37,9 +41,6 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
 
     const file = await repos.files.findByIdAndOrder(fileId, order.id);
     if (!file) throw new NotFoundError('File not found');
-    if (file.status === 'needs_review') {
-      throw new ValidationError('File needs shopkeeper review before settings can be applied');
-    }
 
     const body = PatchFileSchema.parse(await req.json());
     const updated = { ...file, ...body };
@@ -60,7 +61,11 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
     // the file's previously-persisted `pageRange`. This matches the
     // behaviour of `updated.copies` / `updated.colorMode` etc. below.
     const effectivePageRange = body.pageRange !== undefined ? body.pageRange : updated.pageRange;
-    const resolved = resolveBillablePages(effectivePageRange, file.pageCount);
+    // Use the customer-supplied page count if present, else the file's
+    // persisted count, else default to 1 (covers legacy files that were
+    // created before the default-page-count change).
+    const effectivePageCount = body.pageCount !== undefined ? body.pageCount : (file.pageCount ?? 1);
+    const resolved = resolveBillablePages(effectivePageRange, effectivePageCount);
     if ('error' in resolved) {
       throw new ValidationError(resolved.error);
     }
@@ -94,6 +99,7 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
     return ok({
       file: {
         id: saved.id,
+        pageCount: saved.pageCount,
         copies: saved.copies,
         colorMode: saved.colorMode,
         paperSize: saved.paperSize,

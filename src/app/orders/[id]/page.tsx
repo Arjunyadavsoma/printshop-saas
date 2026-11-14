@@ -55,6 +55,8 @@ interface StatusFile {
   copies: number;
   colorMode: ColorMode;
   duplex: boolean;
+  pageCount?: number | null;
+  pricePaise?: number;
   printedAt: string | null;
 }
 
@@ -82,14 +84,18 @@ interface UploadUrlResponse {
 
 interface ConfirmFileResponse {
   fileId: string;
-  pageCount: number | null;
+  pageCount: number;
+  pageCountEstimated: boolean;
   status: FileStatus;
+  pricePaise: number;
+  orderTotalPaise: number;
   needsReview: boolean;
 }
 
 interface PatchFileResponse {
   file: {
     id: string;
+    pageCount: number;
     copies: number;
     colorMode: ColorMode;
     paperSize: PaperSize;
@@ -126,6 +132,7 @@ interface LocalFile {
   fileId: string;
   filename: string;
   pageCount: number;
+  pageCountEstimated: boolean;
   size: number;
   copies: number;
   colorMode: ColorMode;
@@ -263,24 +270,27 @@ export default function OrderFlowPage() {
           return {
             ...existing,
             filename: f.filename,
+            pageCount: f.pageCount ?? existing.pageCount ?? 1,
             copies: f.copies,
             colorMode: f.colorMode,
             duplex: f.duplex,
-            status: f.status === 'needs_review' ? 'needs_review' : 'uploaded',
+            pricePaise: f.pricePaise ?? existing.pricePaise,
+            status: 'uploaded',
           };
         }
         return {
           fileId: f.id,
           filename: f.filename,
-          pageCount: 0,
+          pageCount: f.pageCount ?? 1,
+          pageCountEstimated: false,
           size: 0,
           copies: f.copies,
           colorMode: f.colorMode,
           duplex: f.duplex,
           paperSize: 'a4' as PaperSize,
           pageRange: '',
-          pricePaise: 0,
-          status: f.status === 'needs_review' ? 'needs_review' : 'uploaded',
+          pricePaise: f.pricePaise ?? 0,
+          status: 'uploaded',
           uploadProgress: 100,
           uploadError: null,
           dirty: false,
@@ -412,41 +422,21 @@ export default function OrderFlowPage() {
         throw new Error(cf.data?.error?.message ?? 'File confirmation failed');
       }
 
-      // 4) Replace placeholder with the real file.
-      const needsReview = c.needsReview;
-      const finalStatus: LocalFile['status'] = needsReview ? 'needs_review' : 'uploaded';
+      // 4) Replace placeholder with the real file. The confirm endpoint
+      // already priced the file (default settings) and recalculated the
+      // order total — no separate auto-PATCH needed.
       setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? {
         ...f,
         fileId: c.fileId,
-        pageCount: c.pageCount ?? 0,
-        status: finalStatus,
+        pageCount: c.pageCount,
+        pageCountEstimated: c.pageCountEstimated,
+        pricePaise: c.pricePaise,
+        status: 'uploaded',
         uploadProgress: 100,
         dirty: false,
       } : f));
-
-      // 5) Auto-PATCH the default settings so the server prices the file.
-      if (!needsReview) {
-        const def = { copies: 1, colorMode: 'bw' as ColorMode, paperSize: 'a4' as PaperSize, duplex: false };
-        const pr = await api.request<{ data?: PatchFileResponse; error?: { message?: string } }>(
-          'PATCH',
-          `/api/v1/orders/${orderId}/files/${c.fileId}`,
-          { body: def, headers: orderAuthHeaders },
-        );
-        const d = pr.data?.data;
-        if (d) {
-          setFiles((prev) => prev.map((f) => f.fileId === c.fileId ? {
-            ...f,
-            copies: d.file.copies,
-            colorMode: d.file.colorMode,
-            paperSize: d.file.paperSize,
-            duplex: d.file.duplex,
-            pricePaise: d.file.pricePaise,
-            dirty: false,
-          } : f));
-          setOrderTotalPaise(d.orderTotalPaise);
-          setServerCalculated(true);
-        }
-      }
+      setOrderTotalPaise(c.orderTotalPaise);
+      setServerCalculated(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.';
       setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? { ...f, status: 'failed', uploadError: msg } : f));
@@ -473,6 +463,7 @@ export default function OrderFlowPage() {
         fileId: placeholderId,
         filename: file.name,
         pageCount: 0,
+        pageCountEstimated: false,
         size: file.size,
         copies: 1,
         colorMode: 'bw',
@@ -546,12 +537,13 @@ export default function OrderFlowPage() {
 
     // If the file hasn't been confirmed yet, defer PATCH.
     const f = files.find((x) => x.fileId === fileId);
-    if (!f || f.status === 'uploading' || f.status === 'failed' || f.status === 'needs_review') return;
+    if (!f || f.status === 'uploading' || f.status === 'failed') return;
 
     // PATCH the patch to the server. The server recalculates the price.
     setFiles((prev) => prev.map((x) => x.fileId === fileId ? { ...x, patching: true } : x));
     const body: Record<string, unknown> = {};
     if (patch.copies !== undefined) body.copies = patch.copies;
+    if (patch.pageCount !== undefined) body.pageCount = patch.pageCount;
     if (patch.colorMode !== undefined) body.colorMode = patch.colorMode;
     if (patch.paperSize !== undefined) body.paperSize = patch.paperSize;
     if (patch.duplex !== undefined) body.duplex = patch.duplex;
@@ -587,6 +579,7 @@ export default function OrderFlowPage() {
       if (!d) return { ...x, patching: false };
       return {
         ...x,
+        pageCount: d.file.pageCount,
         copies: d.file.copies,
         colorMode: d.file.colorMode,
         paperSize: d.file.paperSize,
@@ -1044,18 +1037,14 @@ function ConfigureStep(props: {
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-5 w-5 shrink-0 text-brand" />
               <span className="truncate">{f.filename}</span>
-              {f.status === 'needs_review' ? (
-                <Badge variant="outline" className="ml-auto shrink-0 border-brand/30 bg-brand-soft text-brand">Awaiting review</Badge>
-              ) : (
-                <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
-                  {f.pageCount > 0 ? `${f.pageCount} pages` : 'Unknown pages'}
-                </Badge>
-              )}
+              <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
+                {f.pageCount > 0 ? `${f.pageCount} page${f.pageCount === 1 ? '' : 's'}${f.pageCountEstimated ? ' · est.' : ''}` : 'Unknown pages'}
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* PDF Preview with page selection — only for parseable files */}
-            {f.rawFile && f.status !== 'needs_review' && (
+            {/* PDF Preview with page selection */}
+            {f.rawFile && (
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <PdfPreview
                   file={f.rawFile}
@@ -1067,20 +1056,21 @@ function ConfigureStep(props: {
                 />
               </div>
             )}
-            {f.status === 'needs_review' && (
-              <div className="flex items-start gap-3 rounded-lg border border-brand-border bg-brand-soft p-3 text-sm text-brand">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-medium">Awaiting shopkeeper review</p>
-                  <p className="mt-0.5 text-xs text-brand">
-                    This file&apos;s page count couldn&apos;t be detected automatically (e.g. legacy .doc or unsupported format). The shopkeeper will confirm the page count and price it. You&apos;ll be able to pay once review is complete.
-                  </p>
-                </div>
-              </div>
-            )}
 
             {/* Print settings — responsive grid */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-foreground">Page count</Label>
+                <p className="text-xs text-muted-foreground">{f.pageCountEstimated ? 'Estimated — enter the actual count.' : 'Total pages to print.'}</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={f.pageCount}
+                  onChange={(e) => props.onUpdate(f.fileId, { pageCount: Math.max(1, Math.min(10000, Number(e.target.value) || 1)), dirty: true })}
+                  className="h-10 tabular-nums"
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium text-foreground">Copies</Label>
                 <p className="text-xs text-muted-foreground">1 to 500 copies.</p>
@@ -1090,7 +1080,6 @@ function ConfigureStep(props: {
                   max={500}
                   value={f.copies}
                   onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Math.min(500, Number(e.target.value) || 1)), dirty: true })}
-                  disabled={f.status === 'needs_review'}
                   className="h-10 tabular-nums"
                 />
               </div>
@@ -1101,7 +1090,6 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.colorMode}
                   onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode, dirty: true })}
-                  disabled={f.status === 'needs_review'}
                   className="mt-0"
                 >
                   <ToggleGroupItem value="bw" className="h-10 text-xs">B&W</ToggleGroupItem>
@@ -1114,7 +1102,6 @@ function ConfigureStep(props: {
                 <select
                   value={f.paperSize}
                   onChange={(e) => props.onUpdate(f.fileId, { paperSize: e.target.value as PaperSize, dirty: true })}
-                  disabled={f.status === 'needs_review'}
                   className="h-10 w-full rounded-md border border-input bg-surface px-3 text-sm"
                 >
                   <option value="a4">A4</option>
@@ -1130,7 +1117,6 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.duplex ? 'duplex' : 'simplex'}
                   onValueChange={(v) => props.onUpdate(f.fileId, { duplex: v === 'duplex', dirty: true })}
-                  disabled={f.status === 'needs_review'}
                   className="mt-0"
                 >
                   <ToggleGroupItem value="simplex" className="h-10 text-xs">Single</ToggleGroupItem>
@@ -1142,20 +1128,12 @@ function ConfigureStep(props: {
             {/* Per-file price display */}
             <div className="flex flex-col gap-1 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
               <span className="text-xs tabular-nums text-muted-foreground">
-                {f.status === 'needs_review' ? (
-                  <span className="text-brand">Pending shopkeeper review — page count &amp; price to be confirmed</span>
-                ) : f.selectedPages && f.selectedPages.length < f.pageCount ? (
-                  `${f.selectedPages.length} of ${f.pageCount} pages selected`
-                ) : (
-                  `${f.pageCount || '?'} pages × ${f.copies} copies`
-                )}
+                {f.selectedPages && f.selectedPages.length < f.pageCount
+                  ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
+                  : `${f.pageCount || '?'} pages × ${f.copies} copies`}
               </span>
               <span className="text-lg font-semibold tabular-nums text-foreground sm:text-right">
-                {f.status === 'needs_review' ? (
-                  <span className="text-base font-medium text-muted-foreground">Pending</span>
-                ) : (
-                  formatINRFromPaise(f.dirty ? 0 : f.pricePaise)
-                )}
+                {formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
               </span>
             </div>
           </CardContent>
@@ -1195,8 +1173,6 @@ function CheckoutStep(props: {
   onBack: () => void;
 }) {
   const priced = props.files.filter((f) => f.status === 'uploaded');
-  const reviewFiles = props.files.filter((f) => f.status === 'needs_review');
-  const blocked = reviewFiles.length > 0;
   return (
     <div className="space-y-4">
       <Card className="bg-surface">
@@ -1207,19 +1183,6 @@ function CheckoutStep(props: {
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Awaiting-review banner — blocks checkout until the shopkeeper sets page counts */}
-          {blocked && (
-            <div className="flex items-start gap-3 rounded-lg border border-brand-border bg-brand-soft p-3 text-sm text-brand">
-              <Clock className="mt-0.5 h-5 w-5 shrink-0" />
-              <div className="space-y-1">
-                <p className="font-medium">{reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} awaiting shopkeeper review</p>
-                <p className="text-xs text-brand">
-                  {reviewFiles.map((f) => f.filename).join(', ')} — the page count for {reviewFiles.length === 1 ? 'this file' : 'these files'} couldn&apos;t be detected automatically. The shopkeeper will confirm the page count and price, then you can pay. No charge until review is complete.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Line items table */}
           <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
             <table className="w-full min-w-[480px] text-sm">
@@ -1231,7 +1194,7 @@ function CheckoutStep(props: {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {priced.length === 0 && reviewFiles.length === 0 && (
+                {priced.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">No files yet — upload a file to begin.</td>
                   </tr>
@@ -1253,28 +1216,10 @@ function CheckoutStep(props: {
                     <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{formatINRFromPaise(f.pricePaise)}</td>
                   </tr>
                 ))}
-                {reviewFiles.map((f) => (
-                  <tr key={f.fileId} className="bg-brand-soft/40">
-                    <td className="px-3 py-2 text-foreground">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 shrink-0 text-brand" />
-                        <span className="truncate">{f.filename}</span>
-                      </div>
-                      <span className="ml-6 text-xs text-brand">Pending review</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
-                      {f.copies}× · {f.colorMode === 'bw' ? 'B&W' : 'Colour'} · {f.paperSize.toUpperCase()}
-                      {f.duplex ? ' · duplex' : ''}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums text-muted-foreground">—</td>
-                  </tr>
-                ))}
               </tbody>
               <tfoot>
                 <tr className="bg-muted/40">
-                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>
-                    {blocked ? 'Total (priced files — review pending)' : 'Server-confirmed total'}
-                  </td>
+                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>Server-confirmed total</td>
                   <td className="px-3 py-2 text-right text-lg font-semibold tabular-nums text-foreground">{formatINRFromPaise(props.orderTotalPaise)}</td>
                 </tr>
               </tfoot>
@@ -1304,9 +1249,9 @@ function CheckoutStep(props: {
           <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0 || blocked}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            {blocked ? 'Awaiting review' : 'Create payment'}
+            Create payment
           </Button>
         </CardFooter>
       </Card>
@@ -1641,14 +1586,6 @@ function FileCard(props: {
               <p className="text-xs tabular-nums text-muted-foreground">
                 {f.pageCount > 0 ? `${f.pageCount} pages · ` : ''}{f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
               </p>
-              {isReview && (
-                <div className="mt-2 flex items-start gap-2 rounded-md border border-brand-border bg-brand-soft p-2 text-xs text-brand">
-                  <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    <span className="font-medium">Awaiting shopkeeper review.</span> The page count will be confirmed by the shop and the file priced. You&apos;ll be able to pay once review is complete.
-                  </span>
-                </div>
-              )}
               {isFailed && f.uploadError && (
                 <p className="mt-1 text-xs text-danger">{f.uploadError}</p>
               )}
