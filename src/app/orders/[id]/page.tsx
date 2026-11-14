@@ -807,7 +807,17 @@ export default function OrderFlowPage() {
                   serverCalculated={serverCalculated}
                   onUpdate={updateFile}
                   onBack={() => setStep('upload')}
-                  onCheckout={() => setStep('checkout')}
+                  onCheckout={() => {
+                    // Auto-select all pages for any file with no explicit
+                    // selection (null or empty array). This ensures the
+                    // checkout step always has a valid page selection —
+                    // the user never ends up with "0 pages selected".
+                    setFiles((prev) => prev.map((f) => ({
+                      ...f,
+                      selectedPages: f.selectedPages && f.selectedPages.length > 0 ? f.selectedPages : null,
+                    })));
+                    setStep('checkout');
+                  }}
                 />
               )}
 
@@ -1077,8 +1087,8 @@ function ConfigureStep(props: {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* PDF Preview with page selection — hidden for placeholder files
-                (the raw bytes are typically a .doc/.ppt we can't render). */}
+            {/* PDF Preview — visual reference only (page selection is via the
+                PageRangeBuilder below). Hidden for placeholder files. */}
             {f.rawFile && !isPlaceholder && (
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <PdfPreview
@@ -1086,7 +1096,9 @@ function ConfigureStep(props: {
                   mimeType={f.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/*'}
                   pageCount={f.pageCount || null}
                   onSelectionChange={(selectedPages) => {
-                    props.onUpdate(f.fileId, { selectedPages, dirty: true });
+                    // Treat empty selection as "all pages" (null) — the user
+                    // should never end up with 0 selected pages.
+                    props.onUpdate(f.fileId, { selectedPages: selectedPages && selectedPages.length > 0 ? selectedPages : null, dirty: true });
                   }}
                 />
               </div>
@@ -1094,38 +1106,42 @@ function ConfigureStep(props: {
 
             {/* Placeholder hint — the auto-extractor couldn't read this file.
                 The customer MUST enter the page count before the file can be
-                priced or the other settings unlocked. */}
+                priced or the other settings unlocked. The page-count input
+                lives HERE (not in the settings grid) so it's only shown when
+                needed. */}
             {isPlaceholder && (
-              <div className="flex items-start gap-2 rounded-lg border border-brand-border bg-brand-soft p-3 text-xs text-brand">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-medium">This file&apos;s page count couldn&apos;t be auto-detected.</p>
-                  <p className="mt-0.5">Enter the actual page count below to price it. {f.processingError ? ` ${f.processingError}` : ''}</p>
+              <div className={`space-y-3 rounded-lg border border-brand-border bg-brand-soft p-3`}>
+                <div className="flex items-start gap-2 text-xs text-brand">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">This file&apos;s page count couldn&apos;t be auto-detected.</p>
+                    <p className="mt-0.5">Enter the actual page count below to price it. {f.processingError ? ` ${f.processingError}` : ''}</p>
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor={`pc-${f.fileId}`} className="text-xs text-muted-foreground">Page count</Label>
+                    <Input
+                      id={`pc-${f.fileId}`}
+                      type="number"
+                      min={1}
+                      max={10000}
+                      value={pageCountValue}
+                      placeholder="e.g. 12"
+                      onChange={(e) => props.onUpdate(f.fileId, { pageCount: Math.max(1, Math.min(10000, Number(e.target.value) || 1)), dirty: true })}
+                      className="mt-1 h-10 tabular-nums"
+                      aria-required={isPlaceholder}
+                    />
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Print settings — responsive grid. The Page count field is
-                first and is always editable (it unlocks pricing for
-                placeholders). The other fields are disabled when the file is
-                a placeholder — they can't be priced without a page count. */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              <div className={`space-y-1.5 ${isPlaceholder ? 'rounded-lg bg-brand-soft/50 p-2 ring-1 ring-brand-border' : ''}`}>
-                <Label className="text-sm font-medium text-foreground">Page count</Label>
-                <p className="text-xs text-muted-foreground">
-                  {isPlaceholder ? 'Enter the actual page count to price this file.' : 'Total pages to print. Edit if the auto-detected count is wrong.'}
-                </p>
-                <Input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={pageCountValue}
-                  placeholder={isPlaceholder ? 'e.g. 12' : undefined}
-                  onChange={(e) => props.onUpdate(f.fileId, { pageCount: Math.max(1, Math.min(10000, Number(e.target.value) || 1)), dirty: true })}
-                  className="h-10 tabular-nums"
-                  aria-required={isPlaceholder}
-                />
-              </div>
+            {/* Print settings — 4-column grid (Copies, Colour, Paper, Sides).
+                The Page count field is removed from here — it's auto-detected
+                (shown in the badge above) or entered via the placeholder hint.
+                Settings are disabled for placeholder files (no page count yet). */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium text-foreground">Copies</Label>
                 <p className="text-xs text-muted-foreground">1 to 500 copies.</p>
@@ -1184,10 +1200,10 @@ function ConfigureStep(props: {
               </div>
             </div>
 
-            {/* Advanced page-range builder — replaces the old PdfPreview
-                onSelectionChange as the primary selection mechanism. The
-                PdfPreview (above) still provides a visual reference for PDFs;
-                both share the same selectedPages state so they stay synced. */}
+            {/* Advanced page-range builder — defaults to "All pages"
+                (selectedPages=null). If the user clears all ranges, it
+                resets to all pages. The builder is shown for any file with
+                a known page count (auto-extracted or customer-entered). */}
             {!isPlaceholder && f.pageCount > 0 && (
               <PageRangeBuilder
                 pageCount={f.pageCount}
