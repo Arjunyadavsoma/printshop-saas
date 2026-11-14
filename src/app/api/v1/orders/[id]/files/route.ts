@@ -65,19 +65,36 @@ export const POST = withRateLimit<{ id: string }>(
       throw new ValidationError(`Size mismatch: declared ${body.size}, stored ${head.size}`);
     }
 
+    // ── Idempotency: if a file with this storageKey already exists for this
+    // order, return it instead of creating a duplicate. This handles browser
+    // retries (network timeout after the server already processed the
+    // confirmation). Without this, a retry would create a second file record
+    // and double-count the order total. ──
+    const existing = await repos.files.findByOrder(order.id);
+    const existingFile = existing.find((f) => f.storageKey === body.storageKey);
+    if (existingFile) {
+      const orderTotal = await recalcOrderTotal(order.id);
+      return ok({
+        fileId: existingFile.id,
+        pageCount: existingFile.pageCount,
+        pageCountSource: existingFile.pageCountSource,
+        pageCountEstimated: existingFile.pageCountSource === 'placeholder',
+        status: existingFile.status,
+        pricePaise: existingFile.pricePaise,
+        processingError: existingFile.processingError,
+        orderTotalPaise: orderTotal,
+        needsReview: existingFile.status === 'needs_review',
+        idempotent: true,
+      });
+    }
+
     // ── Page-count extraction ──
     // Fetch the raw bytes so the parser can read the document structure.
-    // All production adapters (R2, S3, Supabase) implement getBytes; the
-    // InMemory test adapter does too. If an adapter lacks getBytes, bytes
-    // are null and the file is marked placeholder (needs manual entry).
-    const hasGetBytes =
-      typeof (storage as unknown as { getBytes?: unknown }).getBytes === 'function';
-    const bytes = hasGetBytes
-      ? await (storage as unknown as {
-          getBytes: (k: string) => Promise<{ bytes: Uint8Array } | null>;
-        })
-          .getBytes(body.storageKey)
-          .then((r) => r?.bytes ?? null)
+    // The StorageAdapter interface defines `getBytes` as an optional method;
+    // all production adapters (R2, S3, Supabase) implement it. If absent,
+    // bytes are null and the file is marked placeholder (needs manual entry).
+    const bytes = storage.getBytes
+      ? (await storage.getBytes(body.storageKey))?.bytes ?? null
       : null;
 
     const parsedPageCount = await parsePageCount(body.mimeType, bytes);
@@ -117,9 +134,15 @@ export const POST = withRateLimit<{ id: string }>(
       processingError,
     });
 
+    // `finalFile` tracks the PERSISTED record after every update. The API
+    // response MUST return `finalFile`, not the stale `file` variable —
+    // otherwise the client sees pre-update status/source/price values that
+    // don't match the database (the stale-response bug).
+    let finalFile = file;
+    let pricePaise = 0;
+
     // Price the file ONLY if the page count was auto-extracted (trustworthy).
     // Placeholder files stay at pricePaise=0 and status='needs_review'.
-    let pricePaise = 0;
     if (pageCountSource === 'auto_extracted' && pageCount !== null) {
       try {
         const priced = priceFileFromRecord(
@@ -127,15 +150,17 @@ export const POST = withRateLimit<{ id: string }>(
           shop,
         );
         pricePaise = priced.totalPaise;
-        await repos.files.update(file.id, { pricePaise });
+        finalFile = await repos.files.update(file.id, { pricePaise });
       } catch (pricingErr) {
         // Pricing failed (missing config, invalid range) — mark the file
-        // so the UI can explain. Don't crash the upload.
+        // so the UI can explain. Don't crash the upload. Capture the
+        // updated record so the response reflects the persisted state.
         const msg = pricingErr instanceof Error ? pricingErr.message : 'Pricing failed';
-        await repos.files.update(file.id, {
+        finalFile = await repos.files.update(file.id, {
           status: 'needs_review',
           processingError: msg,
           pageCountSource: 'placeholder',
+          pricePaise: 0,
         });
       }
     }
@@ -148,28 +173,29 @@ export const POST = withRateLimit<{ id: string }>(
       userId: null,
       action: 'file.upload',
       entityType: 'file',
-      entityId: file.id,
+      entityId: finalFile.id,
       metadata: {
         filename: body.filename,
         size: body.size,
-        pageCount,
-        pageCountSource,
-        pricePaise,
-        needsReview: status === 'needs_review',
+        pageCount: finalFile.pageCount,
+        pageCountSource: finalFile.pageCountSource,
+        pricePaise: finalFile.pricePaise,
+        needsReview: finalFile.status === 'needs_review',
       },
       ip: req.headers.get('x-forwarded-for') ?? null,
     });
 
+    // Return the FINAL persisted record — never the stale `file` variable.
     return ok({
-      fileId: file.id,
-      pageCount: file.pageCount,
-      pageCountSource: file.pageCountSource,
-      pageCountEstimated: pageCountSource === 'placeholder',
-      status: file.status,
-      pricePaise,
-      processingError: file.processingError,
+      fileId: finalFile.id,
+      pageCount: finalFile.pageCount,
+      pageCountSource: finalFile.pageCountSource,
+      pageCountEstimated: finalFile.pageCountSource === 'placeholder',
+      status: finalFile.status,
+      pricePaise: finalFile.pricePaise,
+      processingError: finalFile.processingError,
       orderTotalPaise: orderTotal,
-      needsReview: status === 'needs_review',
+      needsReview: finalFile.status === 'needs_review',
     });
     } catch (cause) {
       return fail(toAppError(cause));
