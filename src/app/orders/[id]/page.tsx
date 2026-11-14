@@ -56,6 +56,8 @@ interface StatusFile {
   colorMode: ColorMode;
   duplex: boolean;
   pageCount?: number | null;
+  pageCountSource?: string;
+  processingError?: string | null;
   pricePaise?: number;
   printedAt: string | null;
 }
@@ -84,10 +86,12 @@ interface UploadUrlResponse {
 
 interface ConfirmFileResponse {
   fileId: string;
-  pageCount: number;
+  pageCount: number | null;
+  pageCountSource: 'auto_extracted' | 'placeholder';
   pageCountEstimated: boolean;
-  status: FileStatus;
+  status: 'pending' | 'needs_review';
   pricePaise: number;
+  processingError: string | null;
   orderTotalPaise: number;
   needsReview: boolean;
 }
@@ -95,12 +99,15 @@ interface ConfirmFileResponse {
 interface PatchFileResponse {
   file: {
     id: string;
-    pageCount: number;
+    pageCount: number | null;
+    pageCountSource: string;
     copies: number;
     colorMode: ColorMode;
     paperSize: PaperSize;
     duplex: boolean;
     pricePaise: number;
+    status: string;
+    processingError: string | null;
   };
   orderTotalPaise: number;
   lineItems: Array<{ label: string; quantity: number; unitPaise: number; subtotalPaise: number }>;
@@ -132,7 +139,8 @@ interface LocalFile {
   fileId: string;
   filename: string;
   pageCount: number;
-  pageCountEstimated: boolean;
+  pageCountSource: string;
+  processingError: string | null;
   size: number;
   copies: number;
   colorMode: ColorMode;
@@ -261,28 +269,36 @@ export default function OrderFlowPage() {
     setOrderTotalPaise(data.totalAmountPaise);
     setServerCalculated(true);
 
-    // Hydrate local file state from the server (only basic fields).
+    // Hydrate local file state from the server. The status endpoint may
+    // omit pageCount/pageCountSource/processingError/pricePaise on legacy
+    // deployments — fall back to existing local values, then to safe defaults
+    // ('placeholder' / 0 / null). needs_review files keep that status so the
+    // Configure / Checkout UIs can prompt the customer for a page count.
     setFiles((prev) => {
       const byId = new Map(prev.map((f) => [f.fileId, f]));
       const next: LocalFile[] = data.files.map((f) => {
+        const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
         const existing = byId.get(f.id);
         if (existing) {
           return {
             ...existing,
             filename: f.filename,
-            pageCount: f.pageCount ?? existing.pageCount ?? 1,
+            pageCount: f.pageCount ?? existing.pageCount ?? 0,
+            pageCountSource: f.pageCountSource ?? existing.pageCountSource ?? 'placeholder',
+            processingError: f.processingError ?? existing.processingError ?? null,
             copies: f.copies,
             colorMode: f.colorMode,
             duplex: f.duplex,
-            pricePaise: f.pricePaise ?? existing.pricePaise,
-            status: 'uploaded',
+            pricePaise: f.pricePaise ?? existing.pricePaise ?? 0,
+            status: isReview ? 'needs_review' : 'uploaded',
           };
         }
         return {
           fileId: f.id,
           filename: f.filename,
-          pageCount: f.pageCount ?? 1,
-          pageCountEstimated: false,
+          pageCount: f.pageCount ?? 0,
+          pageCountSource: f.pageCountSource ?? 'placeholder',
+          processingError: f.processingError ?? null,
           size: 0,
           copies: f.copies,
           colorMode: f.colorMode,
@@ -290,7 +306,7 @@ export default function OrderFlowPage() {
           paperSize: 'a4' as PaperSize,
           pageRange: '',
           pricePaise: f.pricePaise ?? 0,
-          status: 'uploaded',
+          status: isReview ? 'needs_review' : 'uploaded',
           uploadProgress: 100,
           uploadError: null,
           dirty: false,
@@ -423,15 +439,18 @@ export default function OrderFlowPage() {
       }
 
       // 4) Replace placeholder with the real file. The confirm endpoint
-      // already priced the file (default settings) and recalculated the
-      // order total — no separate auto-PATCH needed.
+      // either priced the file (pageCountSource='auto_extracted',
+      // status='pending') OR marked it needs_review (pageCountSource=
+      // 'placeholder', pricePaise=0, status='needs_review'). For placeholder
+      // files the customer must enter the page count via PATCH before checkout.
       setFiles((prev) => prev.map((f) => f.fileId === placeholderId ? {
         ...f,
         fileId: c.fileId,
-        pageCount: c.pageCount,
-        pageCountEstimated: c.pageCountEstimated,
+        pageCount: c.pageCount ?? 0,
+        pageCountSource: c.pageCountSource,
+        processingError: c.processingError,
         pricePaise: c.pricePaise,
-        status: 'uploaded',
+        status: c.status === 'needs_review' ? 'needs_review' : 'uploaded',
         uploadProgress: 100,
         dirty: false,
       } : f));
@@ -463,7 +482,8 @@ export default function OrderFlowPage() {
         fileId: placeholderId,
         filename: file.name,
         pageCount: 0,
-        pageCountEstimated: false,
+        pageCountSource: 'placeholder',
+        processingError: null,
         size: file.size,
         copies: 1,
         colorMode: 'bw',
@@ -529,6 +549,10 @@ export default function OrderFlowPage() {
   }, []);
 
   // ─── File settings update ───
+  // PATCHing is allowed for ANY priced file AND for needs_review files —
+  // the customer sets the page count on a placeholder by PATCHing pageCount,
+  // which transitions the server-side source to 'customer_declared' and
+  // prices the file (status → 'pending').
   const updateFile = useCallback(async (fileId: string, patch: Partial<LocalFile>) => {
     setFiles((prev) => prev.map((f) => {
       if (f.fileId !== fileId) return f;
@@ -579,12 +603,15 @@ export default function OrderFlowPage() {
       if (!d) return { ...x, patching: false };
       return {
         ...x,
-        pageCount: d.file.pageCount,
+        pageCount: d.file.pageCount ?? 0,
+        pageCountSource: d.file.pageCountSource,
+        processingError: d.file.processingError,
         copies: d.file.copies,
         colorMode: d.file.colorMode,
         paperSize: d.file.paperSize,
         duplex: d.file.duplex,
         pricePaise: d.file.pricePaise,
+        status: d.file.status === 'needs_review' ? 'needs_review' : 'uploaded',
         dirty: false,
         patching: false,
       };
@@ -1031,20 +1058,27 @@ function ConfigureStep(props: {
 }) {
   return (
     <div className="space-y-4">
-      {props.files.map((f) => (
-        <Card key={f.fileId} className="bg-surface">
+      {props.files.map((f) => {
+        const isPlaceholder = f.pageCountSource === 'placeholder';
+        const pageCountValue = f.pageCount > 0 ? f.pageCount : '';
+        return (
+        <Card key={f.fileId} className={`bg-surface ${isPlaceholder ? 'border-brand-border' : 'border-border'}`}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-5 w-5 shrink-0 text-brand" />
               <span className="truncate">{f.filename}</span>
-              <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
-                {f.pageCount > 0 ? `${f.pageCount} page${f.pageCount === 1 ? '' : 's'}${f.pageCountEstimated ? ' · est.' : ''}` : 'Unknown pages'}
+              <Badge
+                variant={isPlaceholder ? 'outline' : 'secondary'}
+                className={`ml-auto shrink-0 text-xs tabular-nums ${isPlaceholder ? 'border-brand-border bg-brand-soft text-brand' : ''}`}
+              >
+                {isPlaceholder ? 'Page count required' : `${f.pageCount} page${f.pageCount === 1 ? '' : 's'}`}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* PDF Preview with page selection */}
-            {f.rawFile && (
+            {/* PDF Preview with page selection — hidden for placeholder files
+                (the raw bytes are typically a .doc/.ppt we can't render). */}
+            {f.rawFile && !isPlaceholder && (
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <PdfPreview
                   file={f.rawFile}
@@ -1057,18 +1091,38 @@ function ConfigureStep(props: {
               </div>
             )}
 
-            {/* Print settings — responsive grid */}
+            {/* Placeholder hint — the auto-extractor couldn't read this file.
+                The customer MUST enter the page count before the file can be
+                priced or the other settings unlocked. */}
+            {isPlaceholder && (
+              <div className="flex items-start gap-2 rounded-lg border border-brand-border bg-brand-soft p-3 text-xs text-brand">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">This file&apos;s page count couldn&apos;t be auto-detected.</p>
+                  <p className="mt-0.5">Enter the actual page count below to price it. {f.processingError ? ` ${f.processingError}` : ''}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Print settings — responsive grid. The Page count field is
+                first and is always editable (it unlocks pricing for
+                placeholders). The other fields are disabled when the file is
+                a placeholder — they can't be priced without a page count. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="space-y-1.5">
+              <div className={`space-y-1.5 ${isPlaceholder ? 'rounded-lg bg-brand-soft/50 p-2 ring-1 ring-brand-border' : ''}`}>
                 <Label className="text-sm font-medium text-foreground">Page count</Label>
-                <p className="text-xs text-muted-foreground">{f.pageCountEstimated ? 'Estimated — enter the actual count.' : 'Total pages to print.'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {isPlaceholder ? 'Enter the actual page count to price this file.' : 'Total pages to print. Edit if the auto-detected count is wrong.'}
+                </p>
                 <Input
                   type="number"
                   min={1}
                   max={10000}
-                  value={f.pageCount}
+                  value={pageCountValue}
+                  placeholder={isPlaceholder ? 'e.g. 12' : undefined}
                   onChange={(e) => props.onUpdate(f.fileId, { pageCount: Math.max(1, Math.min(10000, Number(e.target.value) || 1)), dirty: true })}
                   className="h-10 tabular-nums"
+                  aria-required={isPlaceholder}
                 />
               </div>
               <div className="space-y-1.5">
@@ -1080,6 +1134,7 @@ function ConfigureStep(props: {
                   max={500}
                   value={f.copies}
                   onChange={(e) => props.onUpdate(f.fileId, { copies: Math.max(1, Math.min(500, Number(e.target.value) || 1)), dirty: true })}
+                  disabled={isPlaceholder}
                   className="h-10 tabular-nums"
                 />
               </div>
@@ -1090,9 +1145,10 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.colorMode}
                   onValueChange={(v) => v && props.onUpdate(f.fileId, { colorMode: v as ColorMode, dirty: true })}
+                  disabled={isPlaceholder}
                   className="mt-0"
                 >
-                  <ToggleGroupItem value="bw" className="h-10 text-xs">B&W</ToggleGroupItem>
+                  <ToggleGroupItem value="bw" className="h-10 text-xs">B&amp;W</ToggleGroupItem>
                   <ToggleGroupItem value="color" className="h-10 text-xs">Colour</ToggleGroupItem>
                 </ToggleGroup>
               </div>
@@ -1102,7 +1158,8 @@ function ConfigureStep(props: {
                 <select
                   value={f.paperSize}
                   onChange={(e) => props.onUpdate(f.fileId, { paperSize: e.target.value as PaperSize, dirty: true })}
-                  className="h-10 w-full rounded-md border border-input bg-surface px-3 text-sm"
+                  disabled={isPlaceholder}
+                  className="h-10 w-full rounded-md border border-input bg-surface px-3 text-sm disabled:opacity-50"
                 >
                   <option value="a4">A4</option>
                   <option value="a3">A3</option>
@@ -1117,6 +1174,7 @@ function ConfigureStep(props: {
                   type="single"
                   value={f.duplex ? 'duplex' : 'simplex'}
                   onValueChange={(v) => props.onUpdate(f.fileId, { duplex: v === 'duplex', dirty: true })}
+                  disabled={isPlaceholder}
                   className="mt-0"
                 >
                   <ToggleGroupItem value="simplex" className="h-10 text-xs">Single</ToggleGroupItem>
@@ -1128,17 +1186,20 @@ function ConfigureStep(props: {
             {/* Per-file price display */}
             <div className="flex flex-col gap-1 rounded-lg bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
               <span className="text-xs tabular-nums text-muted-foreground">
-                {f.selectedPages && f.selectedPages.length < f.pageCount
-                  ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
-                  : `${f.pageCount || '?'} pages × ${f.copies} copies`}
+                {isPlaceholder
+                  ? 'Pending page count'
+                  : f.selectedPages && f.selectedPages.length < f.pageCount
+                    ? `${f.selectedPages.length} of ${f.pageCount} pages selected`
+                    : `${f.pageCount || '?'} pages × ${f.copies} copies`}
               </span>
               <span className="text-lg font-semibold tabular-nums text-foreground sm:text-right">
-                {formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
+                {isPlaceholder ? '—' : formatINRFromPaise(f.dirty ? 0 : f.pricePaise)}
               </span>
             </div>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
 
       {/* Sticky pricing summary */}
       <Card className="bg-surface lg:sticky lg:bottom-6">
@@ -1172,7 +1233,18 @@ function CheckoutStep(props: {
   onCheckout: () => void;
   onBack: () => void;
 }) {
+  // Priced files are those that the server has accepted and priced — they
+  // carry a non-placeholder page count and a non-zero price. needs_review /
+  // placeholder files are excluded from the line-items total and from
+  // checkout (the server rejects placeholder files at checkout anyway).
+  // In LocalFile terms, server statuses 'pending' and 'queued' map to
+  // 'uploaded' (set by loadOrder / uploadOne), so 'uploaded' covers both.
   const priced = props.files.filter((f) => f.status === 'uploaded');
+  const reviewFiles = props.files.filter(
+    (f) => f.status === 'needs_review' || f.pageCountSource === 'placeholder',
+  );
+  const pricedTotal = priced.reduce((acc, f) => acc + f.pricePaise, 0);
+  const hasReview = reviewFiles.length > 0;
   return (
     <div className="space-y-4">
       <Card className="bg-surface">
@@ -1183,6 +1255,20 @@ function CheckoutStep(props: {
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Banner — files awaiting page count. The customer must resolve
+              these in the Configure step before checkout can proceed. */}
+          {hasReview && (
+            <div className="flex items-start gap-2 rounded-lg border border-brand-border bg-brand-soft p-3 text-sm text-brand">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">
+                  {reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} need{reviewFiles.length === 1 ? 's' : ''} a page count before checkout.
+                </p>
+                <p className="mt-0.5 text-brand">Enter the page count in the Configure step.</p>
+              </div>
+            </div>
+          )}
+
           {/* Line items table */}
           <div className="overflow-x-auto rounded-lg border border-border sm:overflow-hidden">
             <table className="w-full min-w-[480px] text-sm">
@@ -1194,7 +1280,7 @@ function CheckoutStep(props: {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {priced.length === 0 && (
+                {priced.length === 0 && reviewFiles.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">No files yet — upload a file to begin.</td>
                   </tr>
@@ -1209,18 +1295,31 @@ function CheckoutStep(props: {
                       <span className="ml-6 text-xs tabular-nums text-muted-foreground">{f.pageCount} pages</span>
                     </td>
                     <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
-                      {f.copies}× · {f.colorMode === 'bw' ? 'B&W' : 'Colour'} · {f.paperSize.toUpperCase()}
+                      {f.copies}× · {f.colorMode === 'bw' ? 'B&amp;W' : 'Colour'} · {f.paperSize.toUpperCase()}
                       {f.duplex ? ' · duplex' : ''}
                       {f.pageRange ? ` · ${f.pageRange}` : ''}
                     </td>
                     <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{formatINRFromPaise(f.pricePaise)}</td>
                   </tr>
                 ))}
+                {reviewFiles.map((f) => (
+                  <tr key={f.fileId} className="bg-brand-soft/30">
+                    <td className="px-3 py-2 text-foreground">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{f.filename}</span>
+                        <Badge variant="outline" className="border-brand-border bg-brand-soft text-xs text-brand">Page count required</Badge>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">—</td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums text-muted-foreground">—</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="bg-muted/40">
-                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>Server-confirmed total</td>
-                  <td className="px-3 py-2 text-right text-lg font-semibold tabular-nums text-foreground">{formatINRFromPaise(props.orderTotalPaise)}</td>
+                  <td className="px-3 py-2 font-medium text-foreground" colSpan={2}>Server-confirmed total{hasReview ? ' (priced files only)' : ''}</td>
+                  <td className="px-3 py-2 text-right text-lg font-semibold tabular-nums text-foreground">{formatINRFromPaise(pricedTotal)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1249,7 +1348,7 @@ function CheckoutStep(props: {
           <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0}>
+          <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout} disabled={props.busy || priced.length === 0 || hasReview}>
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
             Create payment
           </Button>
@@ -1573,7 +1672,7 @@ function FileCard(props: {
   const { file: f } = props;
   const isUploading = f.status === 'uploading';
   const isFailed = f.status === 'failed';
-  const isReview = f.status === 'needs_review';
+  const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
 
   return (
     <Card className={`bg-surface ${isFailed ? 'border-danger-border' : isReview ? 'border-brand-border' : 'border-border'}`}>
@@ -1584,7 +1683,8 @@ function FileCard(props: {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-foreground">{f.filename}</p>
               <p className="text-xs tabular-nums text-muted-foreground">
-                {f.pageCount > 0 ? `${f.pageCount} pages · ` : ''}{f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
+                {f.size > 0 ? `${(f.size / 1024).toFixed(0)} KB` : '—'}
+                {!isReview && f.pageCount > 0 ? ` · ${f.pageCount} pages` : ''}
               </p>
               {isFailed && f.uploadError && (
                 <p className="mt-1 text-xs text-danger">{f.uploadError}</p>
@@ -1639,7 +1739,23 @@ function FileCard(props: {
           </div>
         )}
 
-        {/* Settings — only for uploaded files */}
+        {/* Placeholder banner — the file has no trustworthy page count, so it
+            can't be priced. Direct the customer to the Configure step. */}
+        {isReview && !isFailed && !isUploading && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-brand-border bg-brand-soft p-3 text-xs text-brand">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-medium">Page count required</p>
+              <p className="mt-0.5">
+                Enter the number of pages in the Configure step to get a price.
+                {f.processingError ? ` ${f.processingError}` : ''}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Settings — only for uploaded files (placeholder files have all
+            settings disabled until the customer supplies a page count). */}
         {!isUploading && !isFailed && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
@@ -1712,7 +1828,9 @@ function FileCard(props: {
             <span className="text-xs text-muted-foreground">
               {f.dirty ? 'Unsaved — applying…' : f.patching ? 'Saving…' : 'Saved'}
             </span>
-            <span className="text-sm font-semibold tabular-nums text-foreground">{formatINRFromPaise(displayPriceForFile(f, props.shop))}</span>
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {isReview ? 'Pending' : formatINRFromPaise(displayPriceForFile(f, props.shop))}
+            </span>
           </div>
         )}
       </CardContent>

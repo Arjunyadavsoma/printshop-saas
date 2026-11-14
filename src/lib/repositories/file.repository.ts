@@ -1,4 +1,4 @@
-import type { PrintFile, FileStatus, ColorMode, PaperSize } from '@platform/core/domain';
+import type { PrintFile, FileStatus, ColorMode, PageCountSource, PaperSize } from '@platform/core/domain';
 import { BaseRepository } from './base.repository';
 import { NotFoundError } from '@platform/core/errors';
 
@@ -10,6 +10,7 @@ interface PrintFileRow {
   mimeType: string;
   sizeBytes: number;
   pageCount: number | null;
+  pageCountSource: string;
   copies: number;
   colorMode: string;
   pageRange: string | null;
@@ -17,6 +18,7 @@ interface PrintFileRow {
   duplex: boolean;
   pricePaise: number;
   status: string;
+  processingError: string | null;
   printedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -31,6 +33,10 @@ function toDomain(row: PrintFileRow): PrintFile {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     pageCount: row.pageCount,
+    // Older rows inserted before the source-tracking migration default to
+    // 'placeholder' — they pre-date the source field and cannot be assumed
+    // verified. The DB column has DEFAULT 'placeholder' for the same reason.
+    pageCountSource: (row.pageCountSource ?? 'placeholder') as PageCountSource,
     copies: row.copies,
     colorMode: row.colorMode as ColorMode,
     pageRange: row.pageRange,
@@ -38,6 +44,7 @@ function toDomain(row: PrintFileRow): PrintFile {
     duplex: row.duplex,
     pricePaise: row.pricePaise,
     status: row.status as FileStatus,
+    processingError: row.processingError ?? null,
     printedAt: row.printedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -85,6 +92,10 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
     mimeType: string;
     sizeBytes: number;
     pageCount: number | null;
+    pageCountSource?: PageCountSource;
+    status?: FileStatus;
+    pricePaise?: number;
+    processingError?: string | null;
   }): Promise<PrintFile> {
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -94,13 +105,18 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
       pageCount: input.pageCount,
+      // Default to 'placeholder' when the caller doesn't supply a source —
+      // this matches the DB column default and the conservative stance that
+      // a count is unverified until the parser / a human says otherwise.
+      pageCountSource: input.pageCountSource ?? (input.pageCount !== null && input.pageCount > 0 ? 'auto_extracted' : 'placeholder'),
       copies: 1,
       colorMode: 'bw',
       pageRange: null,
       paperSize: 'a4',
       duplex: false,
-      pricePaise: 0,
-      status: 'pending',
+      pricePaise: input.pricePaise ?? 0,
+      status: input.status ?? 'pending',
+      processingError: input.processingError ?? null,
       printedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),

@@ -109,7 +109,7 @@ describe('enqueuePaidOrderPrint — idempotent PrintJob creation', () => {
       storageKey: 'k',
       mimeType: 'application/pdf',
       sizeBytes: 100,
-      pageCount: 1,
+      pageCount: 1, pageCountSource: 'auto_extracted',
     });
     fileId = file.id;
   });

@@ -5,8 +5,8 @@ import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
-import { priceFile, type PricingInput } from '@platform/core/pricing';
-import { resolveBillablePages } from '@/lib/pricing/page-selection';
+import { priceFileFromRecord, recalcOrderTotal } from '@/lib/pricing/price-file';
+import type { PrintFile, PageCountSource } from '@platform/core/domain';
 
 const PatchFileSchema = z.object({
   copies: z.number().int().min(1).max(500).optional(),
@@ -14,20 +14,19 @@ const PatchFileSchema = z.object({
   pageRange: z.string().max(100).nullable().optional(),
   paperSize: z.enum(['a4', 'a3', 'letter', 'legal']).optional(),
   duplex: z.boolean().optional(),
-  // Customer-set page count — used when auto-detection wasn't possible
-  // (legacy .doc, encrypted PDF, etc.) or to correct an auto-detected value.
-  // The server re-prices using this count.
+  /** Customer-set page count — marks the source as `customer_declared`. */
   pageCount: z.number().int().min(1).max(10000).optional(),
 });
 
 /** PATCH /api/v1/orders/:id/files/:fileId — update print settings + reprice.
  *
- * SEC-001 fix: behind withOrderAccess — caller must present the order's
- * `customerToken` before any print-setting mutation runs. Previously
- * anyone who learned the order UUID could PATCH another customer's files
- * (re-pricing their order, flipping color/duplex, etc.). The `fileId`
- * is still read from ctx.params inside the handler — withOrderAccess only
- * loads + verifies the `order`, the file lookup remains the handler's job. */
+ * The customer can update copies, colour, paper, duplex, page range, and
+ * page count. When a page count is supplied for a placeholder file, the
+ * source becomes `customer_declared` and the file transitions from
+ * `needs_review` to `pending` (priced).
+ *
+ * SEC-001: behind withOrderAccess — caller must present the order's
+ * `customerToken` before any mutation. */
 export const PATCH = withRateLimit<{ id: string; fileId: string }>(
   'patch-file',
   60,
@@ -43,71 +42,80 @@ export const PATCH = withRateLimit<{ id: string; fileId: string }>(
     if (!file) throw new NotFoundError('File not found');
 
     const body = PatchFileSchema.parse(await req.json());
-    const updated = { ...file, ...body };
 
-    // P1-15 fix: server-authoritative page selection.
-    // Before this fix the PATCH endpoint used `file.pageCount` (the FULL
-    // document length) for pricing even when the customer supplied a
-    // `pageRange` selecting only a subset of pages. A 3-of-200 selection
-    // was billed for 200 — direct revenue leakage.
-    //
-    // Now we parse + validate `pageRange` against `file.pageCount` and use
-    // the resulting selected-pages count as the pricing input. When
-    // `pageRange` is null/empty (legacy orders, "print all" UX), we
-    // fall back to `file.pageCount` — preserving backward compatibility.
-    //
-    // The `pageRange` value used for pricing is the EFFECTIVE one — body
-    // takes precedence (the customer may have just changed it), otherwise
-    // the file's previously-persisted `pageRange`. This matches the
-    // behaviour of `updated.copies` / `updated.colorMode` etc. below.
-    const effectivePageRange = body.pageRange !== undefined ? body.pageRange : updated.pageRange;
-    // Use the customer-supplied page count if present, else the file's
-    // persisted count, else default to 1 (covers legacy files that were
-    // created before the default-page-count change).
-    const effectivePageCount = body.pageCount !== undefined ? body.pageCount : (file.pageCount ?? 1);
-    const resolved = resolveBillablePages(effectivePageRange, effectivePageCount);
-    if ('error' in resolved) {
-      throw new ValidationError(resolved.error);
+    // Build the updated file object (not yet persisted).
+    const updated: PrintFile = { ...file, ...body };
+
+    // If the customer supplied a page count, mark the source as
+    // customer_declared (unless it was shopkeeper_confirmed, which is higher
+    // trust and shouldn't be downgraded by a customer edit).
+    if (body.pageCount !== undefined) {
+      updated.pageCount = body.pageCount;
+      if (file.pageCountSource !== 'shopkeeper_confirmed') {
+        updated.pageCountSource = 'customer_declared' as PageCountSource;
+      }
     }
-    const billablePages = resolved.billablePages;
 
-    // Recompute this file's price using the shop's pricing config + the real
-    // pricing engine from @platform/core.
     const shop = await repos.shops.findById(order.shopId);
     if (!shop) throw new NotFoundError('Shop not found');
 
-    const pricingInput: PricingInput = {
-      pages: billablePages, // ← was `file.pageCount ?? 1` (P1-15 revenue bug)
-      copies: updated.copies,
-      colorMode: updated.colorMode,
-      paperSize: updated.paperSize,
-      duplex: updated.duplex,
-      shopPricingConfig: shop.pricingConfig,
-    };
-    const result = priceFile(pricingInput);
+    // Price the file ONLY if a trustworthy page count is available.
+    // Placeholder files (pageCount=null) stay unpriced and in needs_review.
+    let pricePaise = file.pricePaise;
+    let status = file.status;
+    let processingError = file.processingError;
+    let lineItems: Awaited<ReturnType<typeof priceFileFromRecord>>['lineItems'] = [];
+
+    if (updated.pageCount !== null && updated.pageCount > 0) {
+      try {
+        const priced = priceFileFromRecord(updated, shop);
+        pricePaise = priced.totalPaise;
+        lineItems = priced.lineItems;
+        status = 'pending';
+        processingError = null;
+      } catch (pricingErr) {
+        // Re-throw ValidationError (invalid page range, invalid page count) —
+        // the customer gets a 400 with a clear error message, not a silent
+        // needs_review state.
+        if (pricingErr instanceof ValidationError) throw pricingErr;
+        // Other pricing errors (missing config, etc.) → needs_review.
+        const msg = pricingErr instanceof Error ? pricingErr.message : 'Pricing failed';
+        status = 'needs_review';
+        processingError = msg;
+        pricePaise = 0;
+      }
+    } else {
+      status = 'needs_review';
+      processingError = processingError ?? 'Page count is required before pricing.';
+      pricePaise = 0;
+    }
 
     const saved = await repos.files.update(file.id, {
       ...body,
-      pricePaise: result.totalPaise,
+      pageCount: updated.pageCount,
+      pageCountSource: updated.pageCountSource,
+      pricePaise,
+      status,
+      processingError,
     });
 
-    // Recompute the order total as the sum of all file prices.
-    const siblings = await repos.files.findByOrder(order.id);
-    const orderTotal = siblings.reduce((acc, f) => acc + f.pricePaise, 0);
-    await repos.orders.update(order.id, { totalAmountPaise: orderTotal });
+    const orderTotal = await recalcOrderTotal(order.id);
 
     return ok({
       file: {
         id: saved.id,
         pageCount: saved.pageCount,
+        pageCountSource: saved.pageCountSource,
         copies: saved.copies,
         colorMode: saved.colorMode,
         paperSize: saved.paperSize,
         duplex: saved.duplex,
         pricePaise: saved.pricePaise,
+        status: saved.status,
+        processingError: saved.processingError,
       },
       orderTotalPaise: orderTotal,
-      lineItems: result.lineItems,
+      lineItems,
     });
     } catch (cause) {
       return fail(toAppError(cause));

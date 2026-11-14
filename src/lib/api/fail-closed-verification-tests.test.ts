@@ -78,7 +78,7 @@ beforeEach(async () => {
   await repos.shops.create({
     id: shopId, name: 'Test Shop', slug: `test-${shopId.slice(0,8)}`, ownerUserId: user.id,
     upiId: 'test@upi', paymentProvider: 'googlepay', paymentCredentials: '',
-    pricingConfig: JSON.stringify(createDefaultPricingConfig()), address: '123 St', phone: '555',
+    pricingConfig: createDefaultPricingConfig(), address: '123 St', phone: '555',
     timezone: 'Asia/Kolkata', isActive: true, subscriptionTier: 'free', subscriptionExpiresAt: null,
     description: null, businessHours: null, logoUrl: null, upiQrStorageKey: null, servicesJson: null,
     paymentPhone: null, paymentInstructions: null, cashOnPickup: false, paymentMethods: 'both',
@@ -101,8 +101,8 @@ beforeEach(async () => {
   const fileId = crypto.randomUUID();
   await container.db.insert('printFile', {
     id: fileId, orderId, originalFilename: 'test.pdf', storageKey: `shops/${shopId}/orders/${orderId}/${fileId}`,
-    mimeType: 'application/pdf', sizeBytes: 1024, pageCount: 5, copies: 1, colorMode: 'bw',
-    pageRange: null, paperSize: 'a4', duplex: false, pricePaise: 1000, status: 'pending',
+    mimeType: 'application/pdf', sizeBytes: 1024, pageCount: 5, pageCountSource: 'auto_extracted', copies: 1, colorMode: 'bw',
+    pageRange: null, paperSize: 'a4', duplex: false, pricePaise: 1000, status: 'pending', processingError: null,
     printedAt: null, createdAt: new Date(), updatedAt: new Date(),
   });
   // Update order total

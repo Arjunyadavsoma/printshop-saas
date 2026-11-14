@@ -6,6 +6,7 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { rememberPaymentSession } from '@/lib/payments/webhook.service';
+import { priceFileFromRecord } from '@/lib/pricing/price-file';
 import { db } from '@/lib/db';
 import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
@@ -19,10 +20,12 @@ import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
  * the database, and THEN passed to the adapter. If persistence fails, the
  * provider is never contacted.
  *
- * P1-15 fix (amount integrity): the checkout amount is sourced EXCLUSIVELY
- * from `order.totalAmountPaise` — the server-calculated, persisted total
- * written by the PATCH `/files/[fileId]` route after re-pricing. NO
- * client-supplied amount is accepted (the request body is not even read).
+ * Amount integrity: checkout INDEPENDENTLY recalculates every file's price
+ * using the shop's CURRENT pricing config (which may have changed since the
+ * customer's last PATCH). The recalculated total is persisted and used as
+ * the authoritative checkout amount. NO client-supplied amount is accepted
+ * (the request body is not even read). Placeholder/unpriced files are
+ * rejected — a missing page count can never produce a zero-cost checkout.
  *
  * Phase 6.3 fix (idempotency): the merchantOrderId is now a STABLE
  * function of the order id (`checkout-${order.id}`) instead of a random
@@ -65,24 +68,45 @@ export const POST = withRateLimit<{ id: string }>(
 
     const files = await repos.files.findByOrder(order.id);
     if (files.length === 0) throw new ValidationError('Cannot checkout an order with no files');
-    // Validate that ALL files have been priced. Files with pricePaise === 0
-    // are either: (a) not yet configured (customer hasn't set print settings),
-    // (b) awaiting shopkeeper review (needs_review status), or (c) genuinely
-    // free (which should be explicitly configured, not a default).
-    const needsReview = files.filter((f) => f.status === 'needs_review');
-    if (needsReview.length > 0) {
+
+    // ── INDEPENDENTLY recalculate every file's price ──
+    // The checkout amount is NOT trusted from the persisted total. We
+    // re-price every file using the shop's CURRENT pricing config (which
+    // may have changed since the customer's last PATCH) and persist the
+    // recalculated prices + order total. Placeholder files (unverified
+    // page count) are rejected — they can never produce a bill.
+    const pricingErrors: string[] = [];
+    let authoritativeTotal = 0;
+
+    for (const f of files) {
+      if (f.pageCountSource === 'placeholder' || f.pageCount === null || f.pageCount <= 0) {
+        pricingErrors.push(
+          `"${f.originalFilename}" has no verified page count — ` +
+          'the customer or shopkeeper must set the page count before checkout.',
+        );
+        continue;
+      }
+      try {
+        const priced = priceFileFromRecord(f, shop);
+        if (priced.totalPaise !== f.pricePaise) {
+          await repos.files.update(f.id, { pricePaise: priced.totalPaise, status: 'pending' });
+        }
+        authoritativeTotal += priced.totalPaise;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Pricing failed';
+        pricingErrors.push(`"${f.originalFilename}": ${msg}`);
+      }
+    }
+
+    if (pricingErrors.length > 0) {
       throw new ValidationError(
-        `${needsReview.length} file(s) require shopkeeper review before checkout — ` +
-        `the shopkeeper must set the page count. File(s): ${needsReview.map(f => f.originalFilename).join(', ')}`,
+        `Cannot checkout — ${pricingErrors.length} file(s) have pricing issues:\n` +
+        pricingErrors.map((e) => `  • ${e}`).join('\n'),
       );
     }
-    const unpriced = files.filter((f) => f.pricePaise === 0);
-    if (unpriced.length > 0) {
-      throw new ValidationError(
-        `${unpriced.length} file(s) have no price — set print settings (copies, color, paper) first. ` +
-        `File(s): ${unpriced.map(f => f.originalFilename).join(', ')}`,
-      );
-    }
+
+    // Persist the recalculated order total (the authoritative checkout amount).
+    await repos.orders.update(order.id, { totalAmountPaise: authoritativeTotal });
 
     const container = getContainer();
 
@@ -153,7 +177,7 @@ export const POST = withRateLimit<{ id: string }>(
             orderId: order.id,
             provider: shop.paymentProvider,
             merchantOrderId,
-            amountPaise: order.totalAmountPaise, // ← server-calculated, persisted
+            amountPaise: authoritativeTotal, // ← server-calculated, persisted
             currency: 'INR',
             status: 'created',
             idempotencyKey,
@@ -177,7 +201,7 @@ export const POST = withRateLimit<{ id: string }>(
                 orderId: order.id,
                 provider: shop.paymentProvider,
                 merchantOrderId,
-                amountPaise: order.totalAmountPaise,
+                amountPaise: authoritativeTotal,
                 currency: 'INR',
                 status: 'created',
                 idempotencyKey,
@@ -198,7 +222,7 @@ export const POST = withRateLimit<{ id: string }>(
     const adapter = container.paymentRegistry.get(shop.paymentProvider);
     const intent = await adapter.createPaymentIntent({
       orderId: order.id,
-      amountPaise: order.totalAmountPaise,
+      amountPaise: authoritativeTotal,
       shopUpiId: shop.upiId,
       shopName: shop.name,
       customerToken: order.customerToken,
@@ -212,7 +236,7 @@ export const POST = withRateLimit<{ id: string }>(
       const upiParams = new URLSearchParams();
       upiParams.set('pa', shop.upiId);
       upiParams.set('pn', shop.name);
-      upiParams.set('am', (order.totalAmountPaise / 100).toFixed(2));
+      upiParams.set('am', (authoritativeTotal / 100).toFixed(2));
       upiParams.set('cu', 'INR');
       upiParams.set('tn', order.customerToken);
       upiParams.set('tr', intent.merchantOrderId);
@@ -227,7 +251,7 @@ export const POST = withRateLimit<{ id: string }>(
     await rememberPaymentSession(intent.merchantOrderId, {
       orderId: order.id,
       shopId: shop.id,
-      amountPaise: order.totalAmountPaise,
+      amountPaise: authoritativeTotal,
       provider: shop.paymentProvider,
     });
 
@@ -238,7 +262,7 @@ export const POST = withRateLimit<{ id: string }>(
       entityType: 'order',
       entityId: order.id,
       metadata: {
-        amountPaise: order.totalAmountPaise,
+        amountPaise: authoritativeTotal,
         provider: intent.provider,
         merchantOrderId: intent.merchantOrderId,
         idempotent: !!existingAttempt,

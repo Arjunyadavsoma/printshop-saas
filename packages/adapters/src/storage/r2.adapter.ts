@@ -84,6 +84,19 @@ export class R2StorageAdapter implements StorageAdapter {
     }
   }
 
+  async getBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    try {
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const bytes = await (res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined)?.transformToByteArray?.();
+      if (!bytes) return null;
+      return { bytes, contentType: res.ContentType ?? 'application/octet-stream' };
+    } catch (e: unknown) {
+      const err = e as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (err?.name === 'NoSuchKey' || err?.name === 'NotFound' || err?.$metadata?.httpStatusCode === 404) return null;
+      throw e;
+    }
+  }
+
   async head(key: string): Promise<{ size: number; contentType: string } | null> {
     try {
       const res = await this.client.send(

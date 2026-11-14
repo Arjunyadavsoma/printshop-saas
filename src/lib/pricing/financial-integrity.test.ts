@@ -164,7 +164,7 @@ beforeEach(async () => {
     storageKey: `test/${orderId}/five-page-doc.pdf`,
     mimeType: 'application/pdf',
     sizeBytes: 1024,
-    pageCount: 5,
+    pageCount: 5, pageCountSource: 'auto_extracted',
   });
   fileId = file.id;
   // Files start at pricePaise=0; the PATCH route computes the real price.
@@ -352,7 +352,7 @@ describe('Phase 6.2 financial-integrity: concurrent update safety', () => {
       storageKey: `test/${orderId}/second-doc.pdf`,
       mimeType: 'application/pdf',
       sizeBytes: 1024,
-      pageCount: 5,
+      pageCount: 5, pageCountSource: 'auto_extracted',
     });
     const file2Id = file2.id;
 

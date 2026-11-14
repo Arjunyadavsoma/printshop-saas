@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { FILE_STATUSES, type ColorMode, type FileStatus, type PaperSize } from './enums';
+import {
+  FILE_STATUSES,
+  PAGE_COUNT_SOURCES,
+  type ColorMode,
+  type FileStatus,
+  type PageCountSource,
+  type PaperSize,
+} from './enums';
 
 /**
  * A single file within an order. `storageKey` is the opaque object key in the
@@ -14,6 +21,19 @@ export interface PrintFile {
   mimeType: string;
   sizeBytes: number;
   pageCount: number | null;
+  /** Origin of the page count — determines whether the file can be priced.
+   *
+   *  - `auto_extracted`       — the parser confidently extracted the count
+   *                             (PDF, DOCX, PPTX, XLSX, images). Billable.
+   *  - `customer_declared`    — the customer entered the count manually.
+   *                             Billable, but the shopkeeper can correct it.
+   *  - `shopkeeper_confirmed` — the shopkeeper verified or set the count.
+   *                             Highest trust. Billable.
+   *  - `placeholder`          — no trustworthy count available. The file is
+   *                             in `needs_review` status and CANNOT be priced
+   *                             or checked out until a count is supplied.
+   */
+  pageCountSource: PageCountSource;
   copies: number;
   colorMode: ColorMode;
   pageRange: string | null;
@@ -21,6 +41,10 @@ export interface PrintFile {
   duplex: boolean;
   pricePaise: number;
   status: FileStatus;
+  /** Processing/extraction error message — null when healthy. Set when
+   * page-count extraction fails so the UI can explain why the file needs
+   * review (e.g. "corrupted PDF", "encrypted document"). */
+  processingError: string | null;
   printedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +58,7 @@ export const PrintFileSchema = z.object({
   mimeType: z.string().min(1),
   sizeBytes: z.number().int().nonnegative(),
   pageCount: z.number().int().positive().nullable(),
+  pageCountSource: z.enum(PAGE_COUNT_SOURCES as [PageCountSource, ...PageCountSource[]]),
   copies: z.number().int().positive(),
   colorMode: z.enum(['bw', 'color'] as [ColorMode, ...ColorMode[]]),
   pageRange: z.string().max(100).nullable(),
@@ -41,6 +66,7 @@ export const PrintFileSchema = z.object({
   duplex: z.boolean(),
   pricePaise: z.number().int().nonnegative(),
   status: z.enum(FILE_STATUSES as [FileStatus, ...FileStatus[]]),
+  processingError: z.string().nullable(),
   printedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),

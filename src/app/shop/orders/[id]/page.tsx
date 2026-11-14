@@ -88,6 +88,8 @@ interface PrintFile {
   mimeType: string;
   sizeBytes: number;
   pageCount: number | null;
+  pageCountSource?: string;
+  processingError?: string | null;
   copies: number;
   colorMode: 'bw' | 'color';
   pageRange: string | null;
@@ -224,6 +226,13 @@ export default function ShopOrderDetailPage() {
   // File download state.
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Page-count review state — for placeholder / needs_review files. The
+  // shopkeeper can set or correct the page count inline; the server marks
+  // the source as `shopkeeper_confirmed` and prices the file.
+  const [pageCountDrafts, setPageCountDrafts] = useState<Record<string, string>>({});
+  const [settingPageCount, setSettingPageCount] = useState<string | null>(null);
+  const [pageCountError, setPageCountError] = useState<string | null>(null);
 
   // A11Y-001: keep the tab title in sync with the loaded order so screen-reader
   // users + browser-history/tab-switcher users see "Order <token> · PrintShop SaaS"
@@ -426,6 +435,49 @@ export default function ShopOrderDetailPage() {
     }
   };
 
+  // Set or correct a file's page count (shopkeeper-only). The server marks
+  // the source as `shopkeeper_confirmed` (highest trust), prices the file
+  // using the shop's current config, and transitions it to `pending`. Used
+  // to resolve placeholder files the auto-extractor couldn't read.
+  const setPageCount = async (file: PrintFile) => {
+    const draft = pageCountDrafts[file.id] ?? '';
+    const n = Number(draft);
+    if (!Number.isInteger(n) || n < 1 || n > 10000) {
+      setPageCountError('Enter a whole number between 1 and 10,000.');
+      return;
+    }
+    setSettingPageCount(file.id);
+    setPageCountError(null);
+    try {
+      const r = await api.request<{ error?: { message?: string } }>(
+        'POST',
+        `/api/v1/shops/me/orders/${orderId}/files/${file.id}/page-count`,
+        { body: { pageCount: n } },
+      );
+      if (r.status >= 400) {
+        const msg = r.data?.error?.message ?? `Could not set page count (HTTP ${r.status}).`;
+        setPageCountError(msg);
+        toast.error('Could not set page count', { description: msg });
+        return;
+      }
+      toast.success('Page count set', {
+        description: `${file.originalFilename} priced and ready for checkout.`,
+      });
+      setPageCountDrafts((prev) => {
+        const next = { ...prev };
+        delete next[file.id];
+        return next;
+      });
+      await load(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setPageCountError(msg);
+      toast.error('Network error', { description: msg });
+    } finally {
+      setSettingPageCount(null);
+    }
+  };
+
   // ── Render: loading ──
   if (loading) {
     return <PageSkeleton />;
@@ -470,6 +522,12 @@ export default function ShopOrderDetailPage() {
   if (!order) return null;
 
   const displayToken = order.tokenNumber ?? order.customerToken;
+  // Files that need a manual page count — placeholder / needs_review. These
+  // couldn't be auto-priced (legacy .doc, encrypted PDF, parser failure).
+  // The shopkeeper resolves them via the inline "Set page count" form below.
+  const reviewFiles = order.files.filter(
+    (f) => f.status === 'needs_review' || f.pageCountSource === 'placeholder',
+  );
 
   return (
     <div className="space-y-6">
@@ -704,6 +762,72 @@ export default function ShopOrderDetailPage() {
         </CardContent>
       </Card>
 
+      {/* ── Files awaiting review ──
+          Placeholder / needs_review files couldn't be auto-priced (legacy .doc,
+          encrypted PDF, etc.). The shopkeeper sets the page count inline; the
+          server marks the source as `shopkeeper_confirmed`, prices the file,
+          and transitions it to `pending`. The customer can then check out. */}
+      {reviewFiles.length > 0 && (
+        <Card className="border-brand/30 bg-brand-soft">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-brand">
+              <AlertTriangle className="size-5" /> Files awaiting review
+            </CardTitle>
+            <CardDescription className="text-brand">
+              {reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} need{reviewFiles.length === 1 ? 's' : ''} a page count before they can be priced or checked out. Set the count below to price each file.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {reviewFiles.map((f) => (
+              <div key={f.id} className="rounded-md border border-brand-border bg-surface p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="size-4 shrink-0 text-brand" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{f.originalFilename}</p>
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        {formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}
+                        {f.processingError ? ` · ${f.processingError}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor={`page-count-${f.id}`} className="text-xs text-muted-foreground">Page count</Label>
+                      <Input
+                        id={`page-count-${f.id}`}
+                        type="number"
+                        min={1}
+                        max={10000}
+                        inputMode="numeric"
+                        value={pageCountDrafts[f.id] ?? ''}
+                        onChange={(e) => {
+                          setPageCountDrafts((prev) => ({ ...prev, [f.id]: e.target.value }));
+                          setPageCountError(null);
+                        }}
+                        placeholder="e.g. 12"
+                        disabled={settingPageCount === f.id}
+                        className="h-10 w-full sm:w-32 tabular-nums"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => void setPageCount(f)}
+                      disabled={settingPageCount === f.id || !pageCountDrafts[f.id]}
+                      className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
+                    >
+                      {settingPageCount === f.id ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                      Set &amp; price
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {pageCountError && <p className="text-xs text-danger">⚠ {pageCountError}</p>}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Print instructions + files table ── */}
       <Card>
         <CardHeader>
@@ -740,6 +864,7 @@ export default function ShopOrderDetailPage() {
                 <TableBody>
                   {order.files.map((f) => {
                     const isCollected = order.status === 'collected' || order.status === 'cancelled';
+                    const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
                     return (
                       <TableRow key={f.id}>
                         <TableCell className="pl-4">
@@ -748,7 +873,11 @@ export default function ShopOrderDetailPage() {
                             <span className="text-xs text-muted-foreground">{formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">{f.pageCount ?? 'Unknown'}</TableCell>
+                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">
+                          {isReview ? (
+                            <Badge variant="outline" className="border-brand-border bg-brand-soft text-xs text-brand">Review</Badge>
+                          ) : (f.pageCount ?? 'Unknown')}
+                        </TableCell>
                         <TableCell className="hidden md:table-cell font-mono text-sm tabular-nums">{f.copies}</TableCell>
                         <TableCell className="hidden md:table-cell">
                           <Badge
@@ -766,7 +895,9 @@ export default function ShopOrderDetailPage() {
                             ? <Badge variant="outline" className="border-success/30 bg-success-soft text-success">duplex</Badge>
                             : <span className="text-muted-foreground">simplex</span>}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(f.pricePaise)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm tabular-nums">
+                          {isReview ? <span className="text-muted-foreground">Pending</span> : formatINRFromPaise(f.pricePaise)}
+                        </TableCell>
                         <TableCell className="pr-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
@@ -783,7 +914,7 @@ export default function ShopOrderDetailPage() {
                               file={f}
                               orderId={orderId}
                               api={api}
-                              disabled={isCollected}
+                              disabled={isCollected || isReview}
                             />
                           </div>
                         </TableCell>
@@ -798,12 +929,14 @@ export default function ShopOrderDetailPage() {
                 <Separator />
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Print instructions</p>
                 <div className="space-y-2">
-                  {order.files.map((f) => (
-                    <div key={f.id} className="rounded-md border border-border bg-card p-3 text-sm">
+                  {order.files.map((f) => {
+                    const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
+                    return (
+                    <div key={f.id} className={`rounded-md border bg-card p-3 text-sm ${isReview ? 'border-brand-border' : 'border-border'}`}>
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <span className="font-medium">{f.originalFilename}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">
-                          {f.pageCount ?? 'Unknown'} pages · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
+                          {isReview ? 'Page count required' : `${f.pageCount ?? 'Unknown'} pages`} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
                         </span>
                       </div>
                       <Separator className="my-2" />
@@ -815,8 +948,12 @@ export default function ShopOrderDetailPage() {
                         <Instruction label="MIME" value={formatMime(f.mimeType)} />
                         <Instruction label="Status" value={f.status.replace(/_/g, ' ')} />
                       </div>
+                      {isReview && f.processingError && (
+                        <p className="mt-2 text-xs text-brand">⚠ {f.processingError}</p>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
                   <span className="text-success">Total order value</span>

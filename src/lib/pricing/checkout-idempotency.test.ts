@@ -105,7 +105,7 @@ beforeEach(async () => {
   await repos.shops.create({
     id: shopId, name: 'Idem Shop', slug: `idem-${shopId.slice(0, 8)}`, ownerUserId: user.id,
     upiId: 'idem@upi', paymentProvider: 'googlepay', paymentCredentials: '',
-    pricingConfig: JSON.stringify(createDefaultPricingConfig()), address: '123 St', phone: '555',
+    pricingConfig: createDefaultPricingConfig(), address: '123 St', phone: '555',
     timezone: 'Asia/Kolkata', isActive: true, subscriptionTier: 'free', subscriptionExpiresAt: null,
     description: null, businessHours: null, logoUrl: null, upiQrStorageKey: null, servicesJson: null,
     paymentPhone: null, paymentInstructions: null, cashOnPickup: false, paymentMethods: 'both',
@@ -125,9 +125,9 @@ beforeEach(async () => {
   await container.db.insert('printFile', {
     id: fileId, orderId, originalFilename: 'doc.pdf',
     storageKey: `shops/${shopId}/orders/${orderId}/${fileId}`,
-    mimeType: 'application/pdf', sizeBytes: 1024, pageCount: 3, copies: 1,
+    mimeType: 'application/pdf', sizeBytes: 1024, pageCount: 3, pageCountSource: 'auto_extracted', copies: 1,
     colorMode: 'bw', pageRange: null, paperSize: 'a4', duplex: false,
-    pricePaise: 1000, status: 'pending', printedAt: null,
+    pricePaise: 1000, status: 'pending', processingError: null, printedAt: null,
     createdAt: new Date(), updatedAt: new Date(),
   });
   await repos.orders.update(orderId, { totalAmountPaise: 1000 } as any);
@@ -274,35 +274,39 @@ describe('Phase 6.3 — checkout idempotency', () => {
     expect(created[0].merchantOrderId).toBe(`checkout-${orderId}`);
   });
 
-  it('7. order total changed before checkout — checkout amount = updated totalAmountPaise', async () => {
-    // Update the order total to a different amount.
+  it('7. checkout independently recalculates amount (not stale persisted total)', async () => {
+    // Update the order total to a different amount. The checkout should NOT
+    // trust this — it recalculates from the file's actual settings.
     await repos.orders.update(orderId, { totalAmountPaise: 5000 } as any);
 
     const { res, json } = await doCheckout();
     expect(res.status).toBe(200);
-    expect(json.data.amountPaise).toBe(5000);
+    // File: 3 pages × 1 copy × ₹2/page B&W A4 = 600 paise (above ₹5 min).
+    expect(json.data.amountPaise).toBe(600);
 
-    // The persisted PaymentAttempt should also carry the updated amount.
+    // The persisted PaymentAttempt carries the RECALCULATED amount.
     const attempts = [...attemptsMap().values()];
-    expect(attempts[0].amountPaise).toBe(5000);
+    expect(attempts[0].amountPaise).toBe(600);
   });
 
-  it('8. order configuration changed before checkout — checkout validates files + uses latest state', async () => {
-    // Add a second file with a price.
+  it('8. order configuration changed before checkout — checkout recalculates from latest file state', async () => {
+    // Add a second file.
     const file2 = crypto.randomUUID();
     await container.db.insert('printFile', {
       id: file2, orderId, originalFilename: 'doc2.pdf',
       storageKey: `shops/${shopId}/orders/${orderId}/${file2}`,
-      mimeType: 'application/pdf', sizeBytes: 2048, pageCount: 5, copies: 1,
+      mimeType: 'application/pdf', sizeBytes: 2048, pageCount: 5, pageCountSource: 'auto_extracted', copies: 1,
       colorMode: 'bw', pageRange: null, paperSize: 'a4', duplex: false,
-      pricePaise: 2000, status: 'pending', printedAt: null,
+      pricePaise: 2000, status: 'pending', processingError: null, printedAt: null,
       createdAt: new Date(), updatedAt: new Date(),
     });
+    // Stale persisted total — checkout should ignore it and recalculate.
     await repos.orders.update(orderId, { totalAmountPaise: 3000 } as any);
 
     const { res, json } = await doCheckout();
     expect(res.status).toBe(200);
-    expect(json.data.amountPaise).toBe(3000);
+    // File1: 3×200=600, File2: 5×200=1000. Total=1600.
+    expect(json.data.amountPaise).toBe(1600);
   });
 
   it.skip('9. payment callback arriving during retry (N/A — requires real webhook delivery)', () => {

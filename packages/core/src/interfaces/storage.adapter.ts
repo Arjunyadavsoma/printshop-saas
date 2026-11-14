@@ -47,4 +47,12 @@ export interface StorageAdapter {
 
   /** Fetch the `Content-Length` / `Content-Type` headers without a download. */
   head(key: string): Promise<{ size: number; contentType: string } | null>;
+
+  /**
+   * Fetch the raw object bytes for document processing (page-count parsing).
+   * Optional — adapters that don't support direct byte reads can omit this.
+   * The confirm endpoint degrades gracefully: if `getBytes` is absent, the
+   * file's page count is marked as `placeholder` and requires manual entry.
+   */
+  getBytes?(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
 }

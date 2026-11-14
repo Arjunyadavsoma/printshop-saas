@@ -105,6 +105,7 @@ model PrintFile {
   mimeType         String
   sizeBytes        Int
   pageCount        Int?
+  pageCountSource  String     @default("placeholder")
   copies           Int        @default(1)
   colorMode        String     @default("bw")
   pageRange        String?
@@ -112,6 +113,7 @@ model PrintFile {
   duplex           Boolean    @default(false)
   pricePaise       Int        @default(0)
   status           String     @default("pending")
+  processingError  String?
   printedAt        DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt

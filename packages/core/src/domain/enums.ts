@@ -65,6 +65,32 @@ export const FILE_STATUSES: readonly FileStatus[] = [
   'needs_review',
 ] as const;
 
+/**
+ * The origin and trust level of a file's `pageCount`.
+ *
+ * - `auto_extracted`     — the parser confidently extracted the count (PDF,
+ *                          DOCX, PPTX, XLSX, images). Safe to bill.
+ * - `customer_declared`  — the customer entered the count manually (e.g. for
+ *                          a legacy .doc the parser couldn't read). Billable
+ *                          but the shopkeeper can correct it.
+ * - `shopkeeper_confirmed` — the shopkeeper verified or set the count.
+ *                          Highest trust. Billable.
+ * - `placeholder`        — no trustworthy count is available. The file is in
+ *                          `needs_review` status and CANNOT be priced or
+ *                          checked out until a count is supplied.
+ */
+export type PageCountSource =
+  | 'auto_extracted'
+  | 'customer_declared'
+  | 'shopkeeper_confirmed'
+  | 'placeholder';
+export const PAGE_COUNT_SOURCES: readonly PageCountSource[] = [
+  'auto_extracted',
+  'customer_declared',
+  'shopkeeper_confirmed',
+  'placeholder',
+] as const;
+
 /** Print job lifecycle (agent-facing). */
 export type PrintJobStatus = 'queued' | 'assigned' | 'printing' | 'completed' | 'failed' | 'needs_review';
 export const PRINT_JOB_STATUSES: readonly PrintJobStatus[] = [
