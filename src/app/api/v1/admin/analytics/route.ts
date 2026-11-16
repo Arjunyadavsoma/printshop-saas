@@ -1,4 +1,4 @@
-import { withAuth } from '@/lib/api/with-auth';
+import { withAdminPermission } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { getContainer } from '@/lib/container';
 import { ok } from '@/lib/api/envelope';
@@ -14,8 +14,10 @@ import { ORDER_STATUSES, type OrderStatus } from '@platform/core/domain';
  * - platformRevenuePaise = 0 (no commission model in this product — documented)
  *
  * All amounts are integer paise. Never float.
+ *
+ * Authorization: requires the `finance.read` admin permission.
  */
-export const GET = withAuth(async (req) => {
+export const GET = withAdminPermission('finance.read', async (req) => {
   const url = req.nextUrl;
   // Optional date filter (ISO date string, e.g. 2026-10-22)
   const dateFilter = url.searchParams.get('date');
@@ -101,4 +103,4 @@ export const GET = withAuth(async (req) => {
       agentsOffline: offlineAgents,
     },
   });
-}, ['admin']);
+});

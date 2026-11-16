@@ -1,12 +1,14 @@
-import { withAuth } from '@/lib/api/with-auth';
+import { withAdminPermission } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 
 /**
  * GET /api/v1/admin/audit — recent audit log entries (admin only).
  * Does NOT expose raw webhook bodies, credentials, or payment payloads.
+ *
+ * Authorization: requires the `audit.read` admin permission.
  */
-export const GET = withAuth(async (req) => {
+export const GET = withAdminPermission('audit.read', async (req) => {
   const url = req.nextUrl;
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 200);
 
@@ -30,4 +32,4 @@ export const GET = withAuth(async (req) => {
       createdAt: e.createdAt,
     })),
   });
-}, ['admin']);
+});

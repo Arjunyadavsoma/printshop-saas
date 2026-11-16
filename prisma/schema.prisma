@@ -64,6 +64,11 @@ model User {
   passwordHash String
   role         String     @default("owner")
   shopId       String?
+  // JSON-encoded array of AdminPermission values. Only meaningful when
+  // role = 'admin'. null for non-admin roles. Stored as text (not a
+  // Postgres jsonb column) so existing migrations don't need a type
+  // change — the field is parsed in the repository layer.
+  adminPermissions String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   auditLogs    AuditLog[]

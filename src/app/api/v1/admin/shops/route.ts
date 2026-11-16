@@ -1,4 +1,4 @@
-import { withAuth } from '@/lib/api/with-auth';
+import { withAdminPermission } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 
@@ -12,8 +12,12 @@ import { ok } from '@/lib/api/envelope';
  *   - agentsOnline + agentsTotal (from the print_agents table)
  *
  * All monetary values are integer paise.
+ *
+ * Authorization: requires the `finance.read` admin permission (read-only
+ * surface — a read-only admin can see shop financials, while shop
+ * suspension/approval requires `shops.suspend` / `shops.approve`).
  */
-export const GET = withAuth(async (req) => {
+export const GET = withAdminPermission('finance.read', async (req) => {
   const url = req.nextUrl;
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '100', 10) || 100, 200);
   const offset = parseInt(url.searchParams.get('offset') ?? '0', 10) || 0;
@@ -89,4 +93,4 @@ export const GET = withAuth(async (req) => {
     }),
     pagination: { limit, offset, total: shops.length },
   });
-}, ['admin']);
+});

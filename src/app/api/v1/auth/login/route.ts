@@ -52,14 +52,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // via the env var, not via the DB password hash).
       let adminUser = await repos.users.findByEmail(adminEmail);
       if (!adminUser) {
-        // Create the admin user on first login.
+        // First env-var admin login: bootstrap with super-admin perms.
+        // The env-var admin is the platform owner and gets every permission.
+        // Subsequent admins are provisioned by an existing super-admin via
+        // /api/v1/admin/users and receive a narrowed permission set.
         adminUser = await repos.users.create(
-          { email: adminEmail, phone: '+919999999999', password: adminPassword, role: 'admin', shopId: null },
+          { email: adminEmail, phone: '+919999999999', password: adminPassword, role: 'admin', shopId: null, adminPermissions: ['*'] },
           container.auth,
         );
       }
       // Issue tokens.
-      const access = await container.auth.issueAccessToken({ id: adminUser.id, shopId: null, role: 'admin' });
+      const access = await container.auth.issueAccessToken({ id: adminUser.id, shopId: null, role: 'admin', adminPermissions: adminUser.adminPermissions });
       const refresh = await container.auth.issueRefreshToken({ id: adminUser.id, shopId: null, role: 'admin' });
       await repos.audit.log({
         shopId: null, userId: adminUser.id, action: 'auth.login', entityType: 'user', entityId: adminUser.id,
@@ -79,7 +82,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       throw new UnauthorizedError('No shop associated with this account');
     }
 
-    const access = await container.auth.issueAccessToken({ id: user.id, shopId: user.shopId, role: user.role });
+    const access = await container.auth.issueAccessToken({
+      id: user.id, shopId: user.shopId, role: user.role,
+      adminPermissions: user.role === 'admin' ? user.adminPermissions : undefined,
+    });
     const refresh = await container.auth.issueRefreshToken({ id: user.id, shopId: user.shopId, role: user.role });
 
     await repos.audit.log({

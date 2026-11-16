@@ -1,12 +1,14 @@
-import { withAuth } from '@/lib/api/with-auth';
+import { withAdminPermission } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { NotFoundError } from '@platform/core/errors';
 
 /**
  * GET /api/v1/admin/shops/:id — full shop detail + order summary (admin only).
+ *
+ * Authorization: requires the `finance.read` admin permission.
  */
-export const GET = withAuth<{ id: string }>(async (_req, ctx) => {
+export const GET = withAdminPermission<{ id: string }>('finance.read', async (_req, ctx) => {
   try {
     const { id } = await ctx.params;
     const shop = await repos.shops.findById(id);
@@ -64,4 +66,4 @@ export const GET = withAuth<{ id: string }>(async (_req, ctx) => {
   } catch (cause) {
     return fail(toAppError(cause));
   }
-}, ['admin']);
+});

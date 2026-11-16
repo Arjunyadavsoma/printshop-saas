@@ -10,6 +10,40 @@
 export type UserRole = 'owner' | 'staff' | 'admin';
 export const USER_ROLES: readonly UserRole[] = ['owner', 'staff', 'admin'] as const;
 
+/**
+ * Fine-grained permissions a platform administrator may hold.
+ *
+ * The `admin` role grants access to the admin surface; `AdminPermission`
+ * gates *which* admin actions a given admin can perform. A super-admin
+ * is denoted by the synthetic wildcard `'*'` (matches every permission).
+ *
+ * Non-admin roles (`owner`, `staff`) never receive permissions — their
+ * access is tenant-scoped to their own shop and enforced by `withAuth`
+ * plus the entitlement service.
+ */
+export type AdminPermission =
+  | '*'                       // super-admin — every permission
+  | 'shops.approve'           // approve / reject shop applications
+  | 'shops.suspend'           // suspend / restore a shop
+  | 'subscription.manage'     // assign plan, grant / extend free period
+  | 'payments.refund'         // issue refunds, reverse payments
+  | 'users.manage'            // create / suspend / delete user accounts
+  | 'config.manage'           // change platform configuration
+  | 'audit.read'              // read the audit log
+  | 'finance.read';           // read financial reports + reconciliation
+
+export const ADMIN_PERMISSIONS: readonly AdminPermission[] = [
+  '*',
+  'shops.approve',
+  'shops.suspend',
+  'subscription.manage',
+  'payments.refund',
+  'users.manage',
+  'config.manage',
+  'audit.read',
+  'finance.read',
+] as const;
+
 /** Subscription tier a shop can be on. */
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 export const SUBSCRIPTION_TIERS: readonly SubscriptionTier[] = [

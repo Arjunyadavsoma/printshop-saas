@@ -5,7 +5,8 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError, requestId, logRequest } from './envelope';
 import { rateLimit, rateKey } from './rate-limit';
 import { ForbiddenError, UnauthorizedError } from '@platform/core/errors';
-import type { UserRole, User, PrintAgent } from '@platform/core/domain';
+import type { UserRole, User, PrintAgent, AdminPermission } from '@platform/core/domain';
+import { hasAdminPermission } from '@platform/core/domain';
 
 /** Time + log a handler call, set the X-Request-Id response header. */
 async function timed<P>(
@@ -34,6 +35,8 @@ export interface Principal {
   role: UserRole;
   email: string;
   user: User;
+  /** Current admin permissions (from DB, not from JWT). null for non-admins. */
+  adminPermissions: User['adminPermissions'];
 }
 
 type RouteParams = Record<string, string>;
@@ -75,12 +78,18 @@ export function withAuth<P extends RouteParams = RouteParams>(
         throw new UnauthorizedError('Token shop scope is stale');
       }
 
+      // Permissions are NOT trusted from the JWT. The principal below
+      // carries the DB-resolved `adminPermissions`, so a super-admin who
+      // narrows a subordinate's role sees the change take effect on the
+      // next request. withAdminPermission does the per-route check.
+
       const principal: Principal = {
         userId: user.id,
         shopId: user.shopId,
         role: user.role,
         email: user.email,
         user,
+        adminPermissions: user.adminPermissions,
       };
       return await timed(req, () => handler(req, ctx, principal));
     } catch (cause) {
@@ -91,6 +100,41 @@ export function withAuth<P extends RouteParams = RouteParams>(
       return res;
     }
   };
+}
+
+/**
+ * Wrap an admin route handler with role + permission enforcement.
+ *
+ * - Requires `role === 'admin'` (calls withAuth with `['admin']`).
+ * - Requires the DB-resolved `adminPermissions` to grant `required`.
+ * - `'*'` (super-admin) matches every permission.
+ * - Empty/null perms fail closed.
+ *
+ * Use this for every privileged admin action. Prefer it over the bare
+ * `withAuth(handler, ['admin'])` form so the route declares its required
+ * permission at the binding site — auditable in one place.
+ */
+export function withAdminPermission<P extends RouteParams = RouteParams>(
+  required: AdminPermission,
+  handler: AuthHandler<P>,
+) {
+  // Forward `P` so route handlers with typed params (e.g. `[id]`) keep
+  // their `ctx.params` shape. The cast is sound: withAuth's only use of
+  // `P` is to thread `ctx` through to the handler unchanged.
+  return withAuth<P>(async (req, ctx, principal) => {
+    if (principal.role !== 'admin') {
+      // Defensive: withAuth(['admin']) already enforces this, but we
+      // double-check so the route is safe even if someone refactors the
+      // allowedRoles argument away.
+      throw new ForbiddenError('Admin role required');
+    }
+    // The principal's perms were resolved from the DB by withAuth, so this
+    // check is current as of this request.
+    if (!hasAdminPermission(principal.adminPermissions, required)) {
+      throw new ForbiddenError(`Missing admin permission: ${required}`);
+    }
+    return handler(req, ctx, principal);
+  }, ['admin']);
 }
 
 /** The verified agent principal (a registered print-agent daemon). */

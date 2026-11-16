@@ -1,5 +1,6 @@
 import type {
   AuthAdapter,
+  TokenSubject,
 } from '@platform/core/interfaces';
 import type { AccessTokenClaims, RefreshTokenClaims, User, UserRole } from '@platform/core/domain';
 import type { CacheAdapter } from '@platform/core/interfaces';
@@ -138,16 +139,25 @@ export class JwtAuthAdapter implements AuthAdapter {
 
   // ---------- token issuance ----------
 
-  async issueAccessToken(user: Pick<User, 'id' | 'shopId' | 'role'>): Promise<{ token: string; claims: AccessTokenClaims }> {
+  async issueAccessToken(user: TokenSubject): Promise<{ token: string; claims: AccessTokenClaims }> {
     const { token, claims } = await this.sign(
-      { sub: user.id, shopId: user.shopId, role: user.role, type: 'access' },
+      {
+        sub: user.id,
+        shopId: user.shopId,
+        role: user.role,
+        // Only admins carry permissions; null for everyone else keeps the
+        // JWT small and means `withAdminPermission` fails closed for any
+        // non-admin token regardless of what middleware asks for.
+        perms: user.role === 'admin' ? (user.adminPermissions ?? null) : null,
+        type: 'access',
+      },
       this.config.accessSecret,
       this.config.accessTtlSeconds,
     );
     return { token, claims: claims as unknown as AccessTokenClaims };
   }
 
-  async issueRefreshToken(user: Pick<User, 'id' | 'shopId' | 'role'>): Promise<{ token: string; claims: RefreshTokenClaims }> {
+  async issueRefreshToken(user: TokenSubject): Promise<{ token: string; claims: RefreshTokenClaims }> {
     const jti = crypto.randomUUID();
     const { token, claims } = await this.sign(
       { sub: user.id, shopId: user.shopId, role: user.role, type: 'refresh', jti },

@@ -1,4 +1,5 @@
-import type { User, UserRole } from '@platform/core/domain';
+import type { User, UserRole, AdminPermission } from '@platform/core/domain';
+import { ADMIN_PERMISSIONS } from '@platform/core/domain';
 import type { AuthAdapter } from '@platform/core/interfaces';
 import { BaseRepository } from './base.repository';
 import { UnauthorizedError } from '@platform/core/errors';
@@ -10,8 +11,33 @@ interface UserRow {
   passwordHash: string;
   role: string;
   shopId: string | null;
+  adminPermissions: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * Parse the `adminPermissions` text column into a typed array.
+ * Invalid / unknown values are dropped silently (defence in depth) so a
+ * hand-edited DB row can't crash the API. Empty / null → null (no perms).
+ */
+function parsePerms(raw: string | null | undefined): AdminPermission[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const valid = new Set<string>(ADMIN_PERMISSIONS);
+    const filtered = parsed.filter((p): p is AdminPermission => typeof p === 'string' && valid.has(p));
+    return filtered.length === 0 ? null : filtered;
+  } catch {
+    return null;
+  }
+}
+
+/** Serialise permissions for storage. null/empty → null (smaller, clearer). */
+function serializePerms(perms: AdminPermission[] | null | undefined): string | null {
+  if (!perms || perms.length === 0) return null;
+  return JSON.stringify(perms);
 }
 
 function toDomain(row: UserRow): User {
@@ -22,6 +48,7 @@ function toDomain(row: UserRow): User {
     passwordHash: row.passwordHash,
     role: row.role as UserRole,
     shopId: row.shopId,
+    adminPermissions: parsePerms(row.adminPermissions),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -44,6 +71,7 @@ export class UserRepository extends BaseRepository<UserRow> {
     password: string;
     role: UserRole;
     shopId: string | null;
+    adminPermissions?: AdminPermission[] | null;
   }, auth: AuthAdapter): Promise<User> {
     const passwordHash = await auth.hashPassword(input.password);
     const row = await this.insertOne({
@@ -53,6 +81,7 @@ export class UserRepository extends BaseRepository<UserRow> {
       passwordHash,
       role: input.role,
       shopId: input.shopId,
+      adminPermissions: serializePerms(input.adminPermissions ?? null),
       createdAt: new Date(),
       updatedAt: new Date(),
     } as UserRow);
@@ -70,7 +99,11 @@ export class UserRepository extends BaseRepository<UserRow> {
 
   /** Update a user — the only mutator the seed service should use. */
   async update(id: string, patch: Partial<User>): Promise<User> {
-    const [updated] = await this.updateWhere({ id }, patch as Partial<UserRow>);
+    const rowPatch: Partial<UserRow> = { ...patch } as Partial<UserRow>;
+    if (patch.adminPermissions !== undefined) {
+      rowPatch.adminPermissions = serializePerms(patch.adminPermissions);
+    }
+    const [updated] = await this.updateWhere({ id }, rowPatch);
     if (!updated) throw new UnauthorizedError(`User ${id} not found`);
     return toDomain(updated);
   }

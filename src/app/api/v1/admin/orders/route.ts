@@ -1,4 +1,4 @@
-import { withAuth } from '@/lib/api/with-auth';
+import { withAdminPermission } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 
@@ -14,8 +14,10 @@ import { ok } from '@/lib/api/envelope';
  *   - REAL pagination total: previously returned `enriched.length` (the
  *     current page size) as `total`, so the UI couldn't tell if there was
  *     a next page. Now calls countAll(status) for the global total.
+ *
+ * Authorization: requires the `finance.read` admin permission.
  */
-export const GET = withAuth(async (req) => {
+export const GET = withAdminPermission('finance.read', async (req) => {
   const url = req.nextUrl;
   const status = url.searchParams.get('status') ?? undefined;
   const shopId = url.searchParams.get('shopId') ?? undefined;
@@ -57,4 +59,4 @@ export const GET = withAuth(async (req) => {
     : await repos.orders.countAll(status);
 
   return ok({ orders: enriched, pagination: { limit, offset, total } });
-}, ['admin']);
+});
