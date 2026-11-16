@@ -183,7 +183,7 @@ describe('Phase 5 — dispatchPending (email channel)', () => {
     expect(summary.failed).toBe(0);
 
     // The row should be pending with attempts=1 + a future nextAttemptAt.
-    const rows = await repos.notifications.findMany({ channel: 'email' });
+    const rows = await repos.notifications.listByChannel('email');
     const row = rows[0];
     expect(row.status).toBe('pending');
     expect(row.attempts).toBe(1);
@@ -211,8 +211,8 @@ describe('Phase 5 — dispatchPending (email channel)', () => {
     // First dispatch — retries (attempts=1).
     await svc.dispatchPending(10);
     // Force the nextAttemptAt to now so the next dispatch picks it up.
-    const rows = await repos.notifications.findMany({ channel: 'email' });
-    await repos.notifications.updateWhere({ id: rows[0].id }, { nextAttemptAt: new Date() } as never);
+    const rows = await repos.notifications.listByChannel('email');
+    await repos.notifications.setNextAttemptAt(rows[0].id, new Date());
 
     // Second dispatch — fails again, hits maxAttempts=2, status=failed.
     const summary = await svc.dispatchPending(10);

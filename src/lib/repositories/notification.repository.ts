@@ -136,6 +136,29 @@ export class NotificationRepository extends BaseRepository<NotificationRow> {
     return rows.map(toDomain);
   }
 
+  /** List notifications by channel (for tests + admin inspection). */
+  async listByChannel(channel: NotificationChannel, opts: { limit?: number; offset?: number } = {}): Promise<Notification[]> {
+    const rows = await this.findMany({ channel }, {
+      limit: opts.limit ?? 100,
+      offset: opts.offset ?? 0,
+      order: ['createdAt', 'desc'],
+    });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * Force the nextAttemptAt for a notification (test helper). The
+   * dispatch loop only picks rows with nextAttemptAt <= now; tests
+   * use this to "release" a backed-off row immediately.
+   */
+  async setNextAttemptAt(id: string, when: Date): Promise<Notification | null> {
+    const [updated] = await this.updateWhere({ id }, {
+      nextAttemptAt: when,
+      updatedAt: new Date(),
+    } as Partial<NotificationRow>);
+    return updated ? toDomain(updated) : null;
+  }
+
   /** List notifications ready to dispatch (nextAttemptAt <= now, status=pending). */
   async listReady(now: Date, limit: number = 50): Promise<Notification[]> {
     const all = await this.findMany({ status: 'pending' }, { limit: 1000 });
