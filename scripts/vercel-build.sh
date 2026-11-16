@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Vercel build script — generates the Prisma client + builds Next.js.
+# Vercel build script — generates the Prisma client, applies pending
+# migrations, and builds Next.js.
 #
-# The schema.prisma now permanently declares provider = "postgresql"
-# (matching production Supabase). The old sqlite↔postgresql switching
-# logic has been removed — it was a no-op since the schema already
-# had postgresql.
+# CRITICAL: `prisma migrate deploy` runs BEFORE `next build` so the
+# database schema is always in sync with the deployed code. Without
+# this, a deployment that adds new columns will crash at runtime
+# (e.g. "column does not exist" errors).
 #
 # This script is called by vercel.json's buildCommand.
 
@@ -19,7 +20,16 @@ echo "→ Generating Prisma client..."
 bunx prisma generate 2>&1 | tail -3
 echo "  ✓ Prisma client generated"
 
-# ── 2. Build Next.js ──
+# ── 2. Apply pending database migrations ──
+echo "→ Applying pending database migrations..."
+if [ -n "${DATABASE_URL:-}" ]; then
+  bunx prisma migrate deploy 2>&1 | tail -10
+  echo "  ✓ Migrations applied"
+else
+  echo "  ⚠ DATABASE_URL not set — skipping migrations (development only)"
+fi
+
+# ── 3. Build Next.js ──
 echo "→ Building Next.js..."
 bunx next build 2>&1 | tail -5
 echo "  ✓ Next.js build complete"
