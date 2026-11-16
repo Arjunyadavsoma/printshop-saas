@@ -2,15 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Download, CheckCircle2, Clock, Receipt } from 'lucide-react';
-import { formatINRFromPaise } from '@platform/utils';
-import { PageHeader } from '@/components/shared/page-header';
-import { EmptyState } from '@/components/shared/empty-state';
-import { OrderStatusBadge } from '@/components/shared/status-indicator';
-import { CardSkeleton } from '@/components/shared/loading-skeleton';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -19,422 +26,601 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
+import { EmptyState } from '@/components/shared/empty-state';
+import { CardSkeleton, TableSkeleton } from '@/components/shared/loading-skeleton';
+import { OrderStatusBadge, ORDER_STATUS_CONFIG } from '@/components/shared/status-indicator';
+import { formatINRFromPaise } from '@platform/utils';
+import { formatDate } from '@/lib/utils';
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+  Loader2,
+  RefreshCw,
+  Download,
+  IndianRupee,
+  Clock,
+  RotateCcw,
+  Receipt,
+  Users,
+  FileBarChart,
+  TrendingUp,
+} from 'lucide-react';
 
-interface DailyReport {
-  date: string;
-  timezone: string;
-  summary: {
-    totalOrders: number;
-    verifiedPayments: number;
-    pendingPayments: number;
-    cancelledOrders: number;
-    byStatus: Record<string, number>;
-  };
-  totals: {
-    totalOrderValue: string;
-    verifiedCollections: string;
-    outstanding: string;
-    cancelledValue: string;
-    totalOrderValuePaise: number;
-    verifiedCollectionsPaise: number;
-    outstandingPaise: number;
-    cancelledValuePaise: number;
-  };
-  orders: Array<{
-    id: string; tokenNumber: string; status: string;
-    totalAmount: string; totalAmountPaise: number;
-    paymentVerified: boolean; paymentUtr: string | null;
-    paidAt: string | null; createdAt: string;
-  }>;
+/**
+ * Reports & analytics page.
+ *
+ * All metrics here are derived CLIENT-SIDE from the orders list
+ * (`GET /api/v1/shops/me/orders?limit=200`). The dedicated analytics
+ * endpoint may be gated (HTTP 403) on the free tier, so we deliberately
+ * avoid depending on it — the shopkeeper gets a useful report regardless
+ * of their subscription.
+ *
+ * The shopkeeper picks a date range preset (today / 7d / 30d / all time)
+ * and we filter orders by `createdAt`, then aggregate:
+ *   - revenue summary (paid / pending / refunded)
+ *   - orders by status breakdown
+ *   - top customers by order value
+ */
+
+type DateRange = 'today' | '7d' | '30d' | 'all';
+
+interface OrderRow {
+  id: string;
+  customerToken: string;
+  tokenNumber?: string | null;
+  status:
+    | 'awaiting_payment'
+    | 'paid'
+    | 'printing'
+    | 'ready'
+    | 'collected'
+    | 'cancelled'
+    | 'refunded';
+  totalAmountPaise: number;
+  createdAt: string;
+  paidAt: string | null;
+  customerPhone?: string | null;
 }
 
-/** Bucket the day's orders into hourly revenue buckets, in the shop's tz. */
-function hourlyBuckets(
-  orders: DailyReport['orders'],
-  timezone: string,
-): Array<{ label: string; revenue: number; orders: number }> {
-  const map = new Map<number, { revenue: number; orders: number }>();
-  for (const o of orders) {
-    let hour: number;
-    try {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        hour: '2-digit',
-        hour12: false,
-      }).format(new Date(o.createdAt));
-      hour = parseInt(parts, 10);
-      if (hour === 24) hour = 0;
-    } catch {
-      hour = new Date(o.createdAt).getHours();
-    }
-    const slot = map.get(hour) ?? { revenue: 0, orders: 0 };
-    slot.revenue += o.totalAmountPaise;
-    slot.orders += 1;
-    map.set(hour, slot);
+interface CustomerAgg {
+  phone: string;
+  totalOrders: number;
+  totalValuePaise: number;
+  lastOrderAt: string;
+}
+
+const RANGE_LABEL: Record<DateRange, string> = {
+  today: 'Today',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  all: 'All time',
+};
+
+/** True if the ISO timestamp falls inside the selected range. */
+function withinRange(iso: string, range: DateRange): boolean {
+  if (range === 'all') return true;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  const now = Date.now();
+  if (range === 'today') {
+    const d = new Date(iso);
+    const today = new Date();
+    return (
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+    );
   }
-  return Array.from(map.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([h, v]) => ({
-      label: `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`,
-      revenue: v.revenue,
-      orders: v.orders,
-    }));
+  const days = range === '7d' ? 7 : 30;
+  return t >= now - days * 24 * 60 * 60 * 1000;
 }
 
-function formatTime(s: string | null | undefined): string {
-  if (!s) return '—';
-  try {
-    return new Date(s).toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return s;
-  }
-}
+/** Statuses that represent successfully collected revenue. */
+const PAID_STATUSES = new Set(['paid', 'printing', 'ready', 'collected']);
 
 export default function ReportsPage() {
   const api = useApiClient();
-  const [report, setReport] = useState<DailyReport | null>(null);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [range, setRange] = useState<DateRange>('30d');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const r = await api.request<{ data?: DailyReport; error?: { message?: string } }>(
-      'GET', `/api/v1/shops/me/reports/daily?date=${date}`,
-    );
-    setLoading(false);
-    if (r.status !== 200 || !r.data?.data) {
-      setError(r.data?.error?.message ?? 'Failed to load report');
-      return;
+  useEffect(() => {
+    document.title = 'Reports · PrintShop SaaS';
+  }, []);
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const r = await api.request<{
+          data?: OrderRow[];
+          error?: { message?: string };
+        }>('GET', '/api/v1/shops/me/orders?limit=200');
+        if (r.status === 200 && r.data?.data) {
+          setOrders(r.data.data);
+        } else if (r.status === 401) {
+          setError('Session expired. Please log in again.');
+        } else {
+          setError(r.data?.error?.message ?? 'Could not load orders for the report.');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Network error');
+      } finally {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      }
+    },
+    [api],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // ── Filter orders by the selected date range ──
+  const rangedOrders = useMemo(
+    () => orders.filter((o) => withinRange(o.createdAt, range)),
+    [orders, range],
+  );
+
+  // ── Revenue summary ──
+  const summary = useMemo(() => {
+    let paidPaise = 0;
+    let pendingPaise = 0;
+    let refundedPaise = 0;
+    let paidCount = 0;
+    let pendingCount = 0;
+    let refundedCount = 0;
+    for (const o of rangedOrders) {
+      if (o.status === 'awaiting_payment') {
+        pendingPaise += o.totalAmountPaise;
+        pendingCount += 1;
+      } else if (o.status === 'refunded') {
+        refundedPaise += o.totalAmountPaise;
+        refundedCount += 1;
+      } else if (PAID_STATUSES.has(o.status)) {
+        paidPaise += o.totalAmountPaise;
+        paidCount += 1;
+      }
     }
-    setReport(r.data.data);
-  }, [api, date]);
+    return {
+      paidPaise,
+      pendingPaise,
+      refundedPaise,
+      paidCount,
+      pendingCount,
+      refundedCount,
+    };
+  }, [rangedOrders]);
 
-  useEffect(() => { void load(); }, [load]);
+  // ── Orders by status breakdown ──
+  // Walk the canonical status order (from ORDER_STATUS_CONFIG) so the
+  // table reads left-to-right along the order lifecycle, then append any
+  // unknown statuses at the end.
+  const statusBreakdown = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const o of rangedOrders) {
+      counts.set(o.status, (counts.get(o.status) ?? 0) + 1);
+    }
+    const known = Object.keys(ORDER_STATUS_CONFIG).filter((s) => counts.has(s));
+    const unknown = Array.from(counts.keys()).filter(
+      (s) => !ORDER_STATUS_CONFIG[s],
+    );
+    return [...known, ...unknown]
+      .map((status) => ({ status, count: counts.get(status) ?? 0 }))
+      .sort((a, b) => b.count - a.count);
+  }, [rangedOrders]);
 
+  // ── Top customers by order value ──
+  const topCustomers = useMemo<CustomerAgg[]>(() => {
+    const map = new Map<string, CustomerAgg>();
+    for (const o of rangedOrders) {
+      const phone = (o.customerPhone ?? '').trim();
+      if (!phone) continue; // walk-ins have no phone — skip
+      const existing = map.get(phone);
+      if (existing) {
+        existing.totalOrders += 1;
+        existing.totalValuePaise += o.totalAmountPaise;
+        if (new Date(o.createdAt).getTime() > new Date(existing.lastOrderAt).getTime()) {
+          existing.lastOrderAt = o.createdAt;
+        }
+      } else {
+        map.set(phone, {
+          phone,
+          totalOrders: 1,
+          totalValuePaise: o.totalAmountPaise,
+          lastOrderAt: o.createdAt,
+        });
+      }
+    }
+    return Array.from(map.values())
+      .sort((a, b) => b.totalValuePaise - a.totalValuePaise)
+      .slice(0, 10);
+  }, [rangedOrders]);
+
+  // ── CSV export of the ranged orders ──
   const exportCSV = () => {
-    if (!report) return;
+    if (rangedOrders.length === 0) return;
     const rows = [
-      ['Token', 'Status', 'Amount', 'Payment Verified', 'UTR', 'Paid At', 'Created At'],
-      ...report.orders.map(o => [
-        o.tokenNumber, o.status, o.totalAmount,
-        o.paymentVerified ? 'Yes' : 'No',
-        o.paymentUtr ?? '', o.paidAt ?? '', o.createdAt,
+      ['Token', 'Customer Phone', 'Status', 'Amount (INR)', 'Paid At', 'Created At'],
+      ...rangedOrders.map((o) => [
+        o.tokenNumber ?? o.customerToken,
+        o.customerPhone ?? '',
+        o.status,
+        (o.totalAmountPaise / 100).toFixed(2),
+        o.paidAt ?? '',
+        o.createdAt,
       ]),
     ];
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const csv = rows
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `daily-report-${report.date}.csv`;
+    a.download = `report-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const avgOrderValuePaise = useMemo(() => {
-    if (!report || report.summary.totalOrders === 0) return 0;
-    return Math.round(report.totals.totalOrderValuePaise / report.summary.totalOrders);
-  }, [report]);
+  // ── Render: loading ──
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Reports"
+          description="Revenue, order status, and top customers for the selected period."
+        />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+        <div className="space-y-4">
+          <TableSkeleton rows={6} cols={4} />
+        </div>
+      </div>
+    );
+  }
 
-  const chartData = useMemo(
-    () => (report ? hourlyBuckets(report.orders, report.timezone) : []),
-    [report],
-  );
+  // ── Render: hard error (no data loaded) ──
+  if (error && orders.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Reports"
+          description="Revenue, order status, and top customers for the selected period."
+        />
+        <Card className="border-danger/30 bg-danger-soft">
+          <CardHeader>
+            <CardTitle className="text-base text-danger">
+              Couldn&apos;t load the report
+            </CardTitle>
+            <CardDescription className="text-danger">{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={() => void load()}
+              variant="outline"
+              size="sm"
+              className="min-h-[44px] gap-1.5"
+            >
+              <RefreshCw className="size-4" /> Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Daily Report"
-        description="Reconciliation of orders, payments, and revenue for the selected day."
+        title="Reports"
+        description="Revenue, order status, and top customers for the selected period."
         actions={
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-auto"
-              aria-label="Report date"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={range} onValueChange={(v) => setRange(v as DateRange)}>
+              <SelectTrigger
+                size="sm"
+                className="min-h-[44px] w-[150px] gap-1.5"
+                aria-label="Filter by date range"
+              >
+                <CalendarIcon />
+                <SelectValue placeholder="Date range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void load()}
-              disabled={loading}
-              className="gap-1.5"
+              onClick={() => void load(true)}
+              disabled={refreshing}
+              className="min-h-[44px] gap-1.5"
               aria-label="Refresh report"
             >
-              {loading ? (
+              {refreshing ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <RefreshCw className="size-4" />
               )}
               <span className="hidden sm:inline">Refresh</span>
             </Button>
-            {report && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportCSV}
-                className="gap-1.5"
-              >
-                <Download className="size-4" />
-                <span>CSV</span>
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCSV}
+              disabled={rangedOrders.length === 0}
+              className="min-h-[44px] gap-1.5"
+              aria-label="Download CSV"
+            >
+              <Download className="size-4" />
+              <span className="hidden sm:inline">CSV</span>
+            </Button>
           </div>
         }
       />
 
-      {loading && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </div>
-      )}
-
-      {error && !loading && (
-        <Card className="bg-danger-soft border-danger-border">
-          <CardContent className="p-4 text-sm text-danger">{error}</CardContent>
+      {error && (
+        <Card className="border-warning/30 bg-warning-soft">
+          <CardContent className="p-4 text-sm text-warning-foreground">
+            {error}
+          </CardContent>
         </Card>
       )}
 
-      {report && !loading && (
-        <>
-          {/* Summary metric cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard
-              label="Revenue"
-              value={formatINRFromPaise(report.totals.totalOrderValuePaise)}
-              subtitle="Total order value"
-            />
-            <MetricCard
-              label="Orders"
-              value={String(report.summary.totalOrders)}
-              subtitle={`${report.summary.verifiedPayments} verified`}
-            />
-            <MetricCard
-              label="Avg order value"
-              value={formatINRFromPaise(avgOrderValuePaise)}
-              subtitle="Per order"
-            />
-            <MetricCard
-              label="Verified collections"
-              value={formatINRFromPaise(report.totals.verifiedCollectionsPaise)}
-              subtitle={`${report.summary.pendingPayments} pending`}
-            />
-          </div>
+      {/* Range context banner */}
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <FileBarChart className="size-4" aria-hidden="true" />
+        <span>
+          Showing <span className="font-medium text-foreground tabular-nums">{rangedOrders.length}</span>{' '}
+          order{rangedOrders.length === 1 ? '' : 's'} for{' '}
+          <span className="font-medium text-foreground">{RANGE_LABEL[range]}</span>.
+        </span>
+      </div>
 
-          {/* Revenue chart */}
-          <Card className="bg-surface">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Revenue by hour</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                Hourly distribution of order value for {report.date} ({report.timezone})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {chartData.length === 0 ? (
-                <EmptyState
-                  icon={<Receipt className="size-6" />}
-                  title="No chart data"
-                  description="No paid orders were placed on this date."
-                />
-              ) : (
-                <ChartContainer
-                  config={{ revenue: { label: 'Revenue', color: 'var(--brand)' } }}
-                  className="h-[250px] sm:h-[300px] w-full"
-                >
-                  <BarChart
-                    data={chartData}
-                    margin={{ top: 10, right: 12, left: 0, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-                      stroke="var(--border)"
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-                      stroke="var(--border)"
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(v: number) => `₹${Math.round(v / 100)}`}
-                    />
-                    <ChartTooltip
-                      content={
-                        <ChartTooltipContent
-                          formatter={(value) => formatINRFromPaise(Number(value))}
-                        />
-                      }
-                    />
-                    <Bar
-                      dataKey="revenue"
-                      name="Revenue"
-                      fill="var(--color-revenue)"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
+      {/* Revenue summary */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <RevenueCard
+          label="Total revenue"
+          value={formatINRFromPaise(summary.paidPaise)}
+          subtitle={`${summary.paidCount} paid order${summary.paidCount === 1 ? '' : 's'}`}
+          icon={<IndianRupee className="size-4" aria-hidden="true" />}
+          tone="text-success"
+          bg="bg-success-soft"
+        />
+        <RevenueCard
+          label="Pending revenue"
+          value={formatINRFromPaise(summary.pendingPaise)}
+          subtitle={`${summary.pendingCount} awaiting payment`}
+          icon={<Clock className="size-4" aria-hidden="true" />}
+          tone="text-warning-foreground"
+          bg="bg-warning-soft"
+        />
+        <RevenueCard
+          label="Refunded"
+          value={formatINRFromPaise(summary.refundedPaise)}
+          subtitle={`${summary.refundedCount} refunded order${summary.refundedCount === 1 ? '' : 's'}`}
+          icon={<RotateCcw className="size-4" aria-hidden="true" />}
+          tone="text-muted-foreground"
+          bg="bg-muted"
+        />
+      </div>
 
-          {/* Orders table */}
-          <Card className="bg-surface">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Order details</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                {report.orders.length} orders on {report.date} ({report.timezone})
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {report.orders.length === 0 ? (
-                <EmptyState
-                  icon={<Receipt className="size-6" />}
-                  title="No orders today"
-                  description={`No orders were placed on ${report.date}.`}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Token</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-center hidden sm:table-cell">Verified</TableHead>
-                      <TableHead className="hidden md:table-cell text-right">Time</TableHead>
-                      <TableHead className="hidden lg:table-cell">UTR</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.orders.map((o) => (
-                      <TableRow key={o.id}>
-                        <TableCell className="font-mono text-sm">{o.tokenNumber}</TableCell>
-                        <TableCell>
-                          <OrderStatusBadge status={o.status} />
+      {/* Orders by status breakdown */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Receipt className="size-4 text-brand" aria-hidden="true" />
+            Orders by status
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            How orders in this period are distributed across the order lifecycle.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {rangedOrders.length === 0 ? (
+            <EmptyState
+              className="px-4 py-12"
+              icon={<Receipt className="size-6" />}
+              title="No orders in this period"
+              description="Try a wider date range, or wait for customers to place orders."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[420px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Status</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="pr-4 text-right">Share</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {statusBreakdown.map(({ status, count }) => {
+                    const pct =
+                      rangedOrders.length > 0
+                        ? Math.round((count / rangedOrders.length) * 100)
+                        : 0;
+                    return (
+                      <TableRow key={status}>
+                        <TableCell className="pl-4">
+                          <OrderStatusBadge status={status} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {o.totalAmount}
+                        <TableCell className="text-right font-mono font-medium tabular-nums">
+                          {count}
                         </TableCell>
-                        <TableCell className="text-center hidden sm:table-cell">
-                          {o.paymentVerified ? (
-                            <CheckCircle2
-                              className="mx-auto size-4 text-success"
-                              aria-label="Payment verified"
-                            />
-                          ) : (
-                            <Clock
-                              className="mx-auto size-4 text-warning-foreground"
-                              aria-label="Payment pending"
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-right tabular-nums text-sm text-muted-foreground">
-                          {formatTime(o.createdAt)}
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
-                          {o.paymentUtr ?? '—'}
+                        <TableCell className="pr-4 text-right text-sm text-muted-foreground tabular-nums">
+                          {pct}%
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-          {/* Payment reconciliation */}
-          <Card className="bg-surface">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Payment reconciliation</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                Status-based breakdown of order value for {report.date}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <PaymentRow
-                  label="Verified collections"
-                  value={formatINRFromPaise(report.totals.verifiedCollectionsPaise)}
-                  count={report.summary.verifiedPayments}
-                  tone="text-success"
-                />
-                <PaymentRow
-                  label="Outstanding"
-                  value={formatINRFromPaise(report.totals.outstandingPaise)}
-                  count={report.summary.pendingPayments}
-                  tone="text-warning-foreground"
-                />
-                <PaymentRow
-                  label="Cancelled value"
-                  value={formatINRFromPaise(report.totals.cancelledValuePaise)}
-                  count={report.summary.cancelledOrders}
-                  tone="text-danger"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
+      {/* Top customers by order value */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Users className="size-4 text-brand" aria-hidden="true" />
+            Top customers by order value
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            The 10 customers who spent the most in this period.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {topCustomers.length === 0 ? (
+            <EmptyState
+              className="px-4 py-12"
+              icon={<Users className="size-6" />}
+              title="No customer data yet"
+              description="Customers with a phone number appear here once they place an order in this period."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[560px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4 w-12 text-right">#</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="text-right">Total value</TableHead>
+                    <TableHead className="hidden sm:table-cell pr-4 text-right">Last order</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {topCustomers.map((c, idx) => (
+                    <TableRow key={c.phone}>
+                      <TableCell className="pl-4 text-right text-sm text-muted-foreground tabular-nums">
+                        {idx + 1}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm tabular-nums">
+                        {c.phone}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {c.totalOrders}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium tabular-nums">
+                        {formatINRFromPaise(c.totalValuePaise)}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell pr-4 text-right text-sm text-muted-foreground">
+                        {formatDate(c.lastOrderAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Period totals footer */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <TrendingUp className="size-4 text-brand" aria-hidden="true" />
+            Period totals
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            A quick snapshot of {RANGE_LABEL[range].toLowerCase()}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <TotalCell
+              label="Total orders"
+              value={String(rangedOrders.length)}
+            />
+            <TotalCell
+              label="Avg order value"
+              value={formatINRFromPaise(
+                rangedOrders.length > 0
+                  ? Math.round(
+                      rangedOrders.reduce((a, o) => a + o.totalAmountPaise, 0) /
+                        rangedOrders.length,
+                    )
+                  : 0,
+              )}
+            />
+            <TotalCell
+              label="Unique customers"
+              value={String(topCustomers.length)}
+            />
+            <TotalCell
+              label="Refund rate"
+              value={
+                rangedOrders.length > 0
+                  ? `${Math.round((summary.refundedCount / rangedOrders.length) * 100)}%`
+                  : '0%'
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function MetricCard({
+/* ── Local UI helpers ────────────────────────────────────────────────── */
+
+function CalendarIcon() {
+  return <FileBarChart className="size-4 opacity-70" aria-hidden="true" />;
+}
+
+function RevenueCard({
   label,
   value,
   subtitle,
+  icon,
+  tone,
+  bg,
 }: {
   label: string;
   value: string;
-  subtitle?: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  tone: string;
+  bg: string;
 }) {
   return (
     <Card className="bg-surface">
-      <CardContent className="p-5">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+      <CardContent className="flex flex-col gap-2 p-5">
+        <div className={`flex size-8 items-center justify-center rounded-md ${bg}`}>
+          <span className={tone}>{icon}</span>
+        </div>
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="text-2xl font-semibold tabular-nums text-foreground">
           {value}
-        </p>
-        {subtitle && <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>}
+        </span>
+        <span className="text-xs text-muted-foreground">{subtitle}</span>
       </CardContent>
     </Card>
   );
 }
 
-function PaymentRow({
-  label,
-  value,
-  count,
-  tone,
-}: {
-  label: string;
-  value: string;
-  count: number;
-  tone: string;
-}) {
+function TotalCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-surface p-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <span className={`text-xs font-medium tabular-nums ${tone}`}>{count}</span>
-      </div>
-      <p className={`mt-1 text-lg font-semibold tabular-nums ${tone}`}>{value}</p>
+    <div className="rounded-md border border-border bg-card p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+        {value}
+      </p>
     </div>
   );
 }

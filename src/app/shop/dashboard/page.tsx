@@ -38,7 +38,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { formatINRFromPaise } from '@platform/utils';
-import { timeAgo } from '@/lib/utils';
+import { formatDate, timeAgo } from '@/lib/utils';
 import {
   Loader2,
   Printer as PrinterIcon,
@@ -56,11 +56,14 @@ import {
   Check,
   Settings as SettingsIcon,
   QrCode,
-  Sparkles,
   Plus,
   Terminal,
   Cpu,
   ArrowRight,
+  Users,
+  Wrench,
+  ClipboardList,
+  Phone,
 } from 'lucide-react';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
 import { DeploymentOriginBanner } from '@/components/pwa/deployment-banner';
@@ -207,13 +210,16 @@ export default function ShopDashboardPage() {
 
   const todays = useMemo(() => {
     const todaysOrders = orders.filter((o) => isToday(o.createdAt));
-    const todaysPaid = todaysOrders.filter(
-      (o) => o.status !== 'awaiting_payment' && o.status !== 'cancelled',
-    );
-    const revenuePaise = todaysPaid.reduce((acc, o) => acc + o.totalAmountPaise, 0);
+    // Today's revenue = sum of order totals for orders that were PAID today
+    // (paidAt falls on today's calendar date). This is what the shopkeeper
+    // actually collected today — an order placed yesterday but paid this
+    // morning counts toward today's revenue, not yesterday's.
+    const paidToday = orders.filter((o) => o.paidAt && isToday(o.paidAt));
+    const revenuePaise = paidToday.reduce((acc, o) => acc + o.totalAmountPaise, 0);
     return {
       total: todaysOrders.length,
       newOrders: todaysOrders.length,
+      paidTodayCount: paidToday.length,
       awaitingPayment: todaysOrders.filter((o) => o.status === 'awaiting_payment').length,
       awaitingPrinting: todaysOrders.filter((o) => o.status === 'paid').length,
       printing: todaysOrders.filter((o) => o.status === 'printing').length,
@@ -362,12 +368,45 @@ export default function ShopDashboardPage() {
     );
   }
 
+  // Summary cards — all derived from the orders list (client-side
+  // aggregation) because the analytics endpoint may be gated (HTTP 403)
+  // on the free tier. The four cards the shopkeeper sees first on the
+  // dashboard: today's order count, today's collected revenue, how many
+  // orders are waiting for payment verification, and the total order count
+  // in the recent window.
   const stats = [
-    { label: "Today's orders", value: String(todays.total), icon: Inbox, tone: 'text-brand', bg: 'bg-brand-soft' },
-    { label: 'New', value: String(todays.newOrders), icon: Sparkles, tone: 'text-info', bg: 'bg-info-soft' },
-    { label: 'Awaiting payment', value: String(todays.awaitingPayment), icon: Clock, tone: 'text-brand', bg: 'bg-brand-soft' },
-    { label: 'Printing', value: String(todays.printing), icon: PrinterIcon, tone: 'text-brand', bg: 'bg-brand-soft' },
-    { label: 'Ready for pickup', value: String(todays.ready), icon: PackageCheck, tone: 'text-success', bg: 'bg-success-soft' },
+    {
+      label: "Today's orders",
+      value: String(todays.total),
+      hint: `Placed today`,
+      icon: Inbox,
+      tone: 'text-brand',
+      bg: 'bg-brand-soft',
+    },
+    {
+      label: "Today's revenue",
+      value: formatINRFromPaise(todays.revenue),
+      hint: `${todays.paidTodayCount} paid today`,
+      icon: IndianRupee,
+      tone: 'text-success',
+      bg: 'bg-success-soft',
+    },
+    {
+      label: 'Pending payments',
+      value: String(paymentQueue.length),
+      hint: 'Awaiting verification',
+      icon: Clock,
+      tone: 'text-warning-foreground',
+      bg: 'bg-warning-soft',
+    },
+    {
+      label: 'Total orders',
+      value: String(orders.length),
+      hint: 'In recent view',
+      icon: ClipboardList,
+      tone: 'text-info',
+      bg: 'bg-info-soft',
+    },
   ];
 
   return (
@@ -469,7 +508,7 @@ export default function ShopDashboardPage() {
       )}
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {stats.map((s) => {
           const Icon = s.icon;
           return (
@@ -480,6 +519,7 @@ export default function ShopDashboardPage() {
                 </div>
                 <span className="text-sm text-muted-foreground">{s.label}</span>
                 <span className="text-2xl font-semibold tabular-nums text-foreground">{s.value}</span>
+                <span className="text-xs text-muted-foreground">{s.hint}</span>
               </CardContent>
             </Card>
           );
@@ -528,10 +568,10 @@ export default function ShopDashboardPage() {
         <Card className="border-success/30 bg-success-soft">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-success">
-              <IndianRupee className="size-4" /> Today's sales
+              <IndianRupee className="size-4" /> Today's revenue
             </CardTitle>
             <CardDescription className="text-success text-xs">
-              From <span className="tabular-nums">{todays.total}</span> orders · paid orders only.
+              Collected today from <span className="tabular-nums">{todays.paidTodayCount}</span> paid order{todays.paidTodayCount === 1 ? '' : 's'}.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -539,7 +579,7 @@ export default function ShopDashboardPage() {
               {formatINRFromPaise(todays.revenue)}
             </p>
             <p className="mt-1 text-xs text-success tabular-nums">
-              Completed: {todays.completed} · Ready: {todays.ready} · Printing: {todays.printing}
+              Placed today: {todays.total} · Completed: {todays.completed} · Ready: {todays.ready} · Printing: {todays.printing}
             </p>
           </CardContent>
         </Card>
@@ -747,38 +787,58 @@ export default function ShopDashboardPage() {
               }
             />
           ) : (
-            <Table className="min-w-[640px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-4">Token</TableHead>
-                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="hidden sm:table-cell">Placed</TableHead>
-                  <TableHead className="pr-4 text-right">View</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentOrders.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="pl-4 font-mono font-semibold tabular-nums text-brand">
-                      {o.tokenNumber ?? o.customerToken}
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell">
-                      <PaymentMiniBadge status={o.status} paidAt={o.paidAt} />
-                    </TableCell>
-                    <TableCell><OrderStatusBadge status={o.status} /></TableCell>
-                    <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">{timeAgo(o.createdAt)}</TableCell>
-                    <TableCell className="pr-4 text-right">
-                      <Button asChild size="sm" variant="ghost" className="gap-1">
-                        <Link href={`/shop/orders/${o.id}`}><FileText className="size-3.5" /> Open</Link>
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Token</TableHead>
+                    <TableHead className="hidden sm:table-cell">Customer phone</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead className="hidden md:table-cell">Date</TableHead>
+                    <TableHead className="pr-4 text-right">View</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {recentOrders.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell className="pl-4 font-mono font-semibold tabular-nums text-brand">
+                        {o.tokenNumber ?? o.customerToken}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {o.customerPhone ? (
+                          <span className="inline-flex items-center gap-1.5 font-mono text-sm tabular-nums">
+                            <Phone className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            {o.customerPhone}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Walk-in</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm tabular-nums">
+                        {formatINRFromPaise(o.totalAmountPaise)}
+                      </TableCell>
+                      <TableCell><OrderStatusBadge status={o.status} /></TableCell>
+                      <TableCell>
+                        <PaymentMiniBadge status={o.status} paidAt={o.paidAt} />
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                        <div className="flex flex-col">
+                          <span>{formatDate(o.createdAt)}</span>
+                          <span className="text-xs">{timeAgo(o.createdAt)}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="pr-4 text-right">
+                        <Button asChild size="sm" variant="ghost" className="min-h-[44px] gap-1">
+                          <Link href={`/shop/orders/${o.id}`}><FileText className="size-3.5" /> Open</Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -835,18 +895,27 @@ export default function ShopDashboardPage() {
           <CardTitle className="flex items-center gap-2 text-base">
             <Plus className="size-4 text-brand" /> Quick actions
           </CardTitle>
+          <CardDescription className="text-xs">
+            Jump to the pages you use most often.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
+            <Link href="/shop/orders"><ClipboardList className="size-4" /> Orders</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
+            <Link href="/shop/customers"><Users className="size-4" /> Customers</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
+            <Link href="/shop/services"><Wrench className="size-4" /> Services</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
+            <Link href="/shop/reports"><FileText className="size-4" /> Reports</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
             <Link href="/shop/settings"><SettingsIcon className="size-4" /> Settings</Link>
           </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/shop/orders"><FileText className="size-4" /> All orders</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/shop/settings"><QrCode className="size-4" /> Shop QR</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
             <Link href="/shop/printer"><PrinterIcon className="size-4" /> Print agent</Link>
           </Button>
         </CardContent>

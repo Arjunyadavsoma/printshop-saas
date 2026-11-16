@@ -16,6 +16,7 @@ import {
   Clock,
   QrCode,
   Settings,
+  ShieldCheck,
 } from 'lucide-react';
 
 /**
@@ -38,6 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/shop/services', label: 'Services & Pricing', icon: Wrench },
       { href: '/shop/payments', label: 'Payments', icon: CreditCard },
       { href: '/shop/reports', label: 'Reports', icon: FileBarChart },
+      { href: '/shop/staff', label: 'Staff & Permissions', icon: ShieldCheck },
     ],
   },
   {
