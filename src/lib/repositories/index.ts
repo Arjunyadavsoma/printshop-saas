@@ -8,6 +8,7 @@ export { PrintJobRepository } from './print-job.repository';
 export { PrintAgentRepository } from './print-agent.repository';
 export { SubscriptionRepository } from './subscription.repository';
 export { CustomerAccountRepository } from './customer-account.repository';
+export { NotificationRepository } from './notification.repository';
 
 import { ShopRepository } from './shop.repository';
 import { UserRepository } from './user.repository';
@@ -18,6 +19,7 @@ import { PrintJobRepository } from './print-job.repository';
 import { PrintAgentRepository } from './print-agent.repository';
 import { SubscriptionRepository } from './subscription.repository';
 import { CustomerAccountRepository } from './customer-account.repository';
+import { NotificationRepository } from './notification.repository';
 
 /** Lazy singleton repos — one per table. Routes import these. The adapter is
  *  resolved lazily from the container on each call, so setContainerForTesting
@@ -32,4 +34,5 @@ export const repos = {
   printAgents: new PrintAgentRepository('printAgent'),
   subscriptions: new SubscriptionRepository('subscription'),
   customerAccounts: new CustomerAccountRepository('customerAccount'),
+  notifications: new NotificationRepository('notification'),
 };

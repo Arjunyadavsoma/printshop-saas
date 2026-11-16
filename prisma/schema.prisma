@@ -416,3 +416,55 @@ model FileCleanupTask {
   @@index([scheduledAt])
   @@index([printFileId])
 }
+
+// Phase 5 — durable notification outbox.
+//
+// One row per notification attempt. The NotificationService writes a
+// row when an event occurs; a cron (Phase 7) drains the outbox by
+// calling the channel adapter (Email / SMS / in-app) and updating
+// the row's status.
+//
+// Deduplication: `dedupKey` is a stable hash of (eventType,
+// recipientId, entityId) so a retried webhook or a duplicate event
+// does not create a second notification. NULL when no dedup is
+// wanted (e.g. marketing broadcasts).
+//
+// Retry: `attempts` counts tries; `nextAttemptAt` is the next
+// eligible dispatch time (exponential backoff). `maxAttempts`
+// caps retries; after that the row is `failed`.
+model Notification {
+  id            String    @id @default(uuid())
+  // Tenant scope. NULL for platform-level notifications (e.g. admin
+  // alerts). Indexed for the per-shop notification list.
+  shopId        String?
+  // Recipient — a CustomerAccount.id, User.id, or a raw email/phone
+  // for anonymous recipients. We keep it as a string to avoid a
+  // rigid FK; the route layer resolves the recipient.
+  recipientId   String?
+  recipientEmail String?
+  recipientPhone String?
+  channel       String   // email|sms|in_app|push
+  eventType     String   // order.paid, subscription.expiring, etc.
+  entityId      String?  // the order / subscription / file id
+  subject       String?
+  body          String
+  // JSON: template vars, links, action buttons.
+  payload       String?
+  // Deduplication — NULL means no dedup. Unique per (dedupKey) so a
+  // retried event does not create a duplicate row.
+  dedupKey      String?  @unique
+  status        String   @default("pending") // pending|sent|failed|skipped
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(5)
+  nextAttemptAt DateTime @default(now())
+  lastError     String?
+  sentAt        DateTime?
+  readAt        DateTime? // for in_app notifications
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([shopId, status])
+  @@index([recipientId, status])
+  @@index([nextAttemptAt])
+  @@index([eventType])
+}

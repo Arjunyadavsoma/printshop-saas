@@ -6,3 +6,4 @@ export * from './file';
 export * from './print-job';
 export * from './subscription';
 export * from './customer-account';
+export * from './notification';
