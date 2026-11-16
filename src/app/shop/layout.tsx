@@ -8,6 +8,7 @@ import type { NavGroup } from '@/components/layout/app-sidebar';
 import {
   LayoutDashboard,
   ClipboardList,
+  Monitor,
   Users,
   Wrench,
   CreditCard,
@@ -22,8 +23,8 @@ import {
 /**
  * Sidebar navigation for the shopkeeper portal.
  *
- * Main group: Dashboard, Orders, Customers, Services & Pricing, Payments,
- * Reports & Analytics.
+ * Main group: Dashboard, Orders, Devices, Customers, Services & Pricing,
+ * Payments, Reports & Analytics.
  * Settings group: Shop Profile, Business Hours, Payments & UPI, Shop QR,
  * Shop Settings.
  *
@@ -35,6 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/shop/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/shop/orders', label: 'Orders', icon: ClipboardList },
+      { href: '/shop/devices', label: 'Devices', icon: Monitor },
       { href: '/shop/customers', label: 'Customers', icon: Users },
       { href: '/shop/services', label: 'Services & Pricing', icon: Wrench },
       { href: '/shop/payments', label: 'Payments', icon: CreditCard },

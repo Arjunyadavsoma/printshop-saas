@@ -144,20 +144,71 @@ model PrintJob {
 }
 
 model PrintAgent {
-  id          String    @id @default(uuid())
-  shopId      String
-  name        String
-  tokenHash   String
-  lastSeenAt  DateTime?
-  printerName String?
-  isOnline    Boolean   @default(false)
-  version     String?
-  os          String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  shop        Shop      @relation(fields: [shopId], references: [id])
+  id              String    @id @default(uuid())
+  shopId          String
+  name            String
+  tokenHash       String
+  lastSeenAt      DateTime?
+  printerName     String?
+  isOnline        Boolean   @default(false)
+  version         String?
+  os              String?
+  isEnabled       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  pairingTickets  PairingTicket[]
+  deviceCommands  DeviceCommand[]
 
   @@index([shopId, isOnline])
+  @@index([shopId, isEnabled])
+}
+
+/// Single-use, short-lived pairing ticket for the PrintEXE companion.
+/// Created by an authenticated shopkeeper, consumed once by the companion
+/// to exchange for a device token. Only the SHA-256 hash is stored.
+model PairingTicket {
+  id              String    @id @default(uuid())
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  agentId         String?
+  agent           PrintAgent? @relation(fields: [agentId], references: [id])
+  createdByUserId String
+  ticketHash      String    @unique
+  status          String    @default("active") // active|consumed|expired|revoked
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  deviceName      String?
+  deviceMetadata  String?
+
+  @@index([shopId, status])
+  @@index([expiresAt])
+}
+
+/// Remote command sent from the website to a PrintEXE companion device.
+/// Commands are persisted before delivery, validated against an allowlist,
+/// and tracked through their full lifecycle.
+model DeviceCommand {
+  id              String    @id @default(uuid())
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  agentId         String
+  agent           PrintAgent @relation(fields: [agentId], references: [id])
+  commandType     String    // refresh_printers|pause|resume|cancel_job|retry_job|test_print|diagnostics
+  payload         String    // JSON string — validated per command type
+  status          String    @default("requested") // requested|delivered|accepted|executing|succeeded|failed|expired|cancelled
+  initiatedBy     String    // user ID who sent the command
+  result          String?   // JSON string with execution result/error
+  idempotencyKey  String    @unique
+  expiresAt       DateTime
+  deliveredAt     DateTime?
+  executedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shopId, agentId, status])
+  @@index([agentId, status])
 }
 
 model Subscription {

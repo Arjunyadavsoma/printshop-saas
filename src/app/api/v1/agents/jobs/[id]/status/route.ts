@@ -61,7 +61,13 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
       await publish(channel, 'job.completed', { jobId: id, fileId: job.fileId });
       await maybeMarkOrderReady(job.fileId, shopId, channel);
     } else if (body.status === 'failed') {
-      await repos.printJobs.update(id, { status: 'failed', lastError: body.lastError ?? null });
+      // Increment the attempts counter on failure so retry logic can
+      // track how many times a job has been attempted.
+      await repos.printJobs.update(id, {
+        status: 'failed',
+        lastError: body.lastError ?? null,
+        attempts: (job.attempts ?? 0) + 1,
+      });
       await repos.files.update(job.fileId, { status: 'failed' });
       await publish(channel, 'job.failed', { jobId: id, fileId: job.fileId, error: body.lastError });
     }

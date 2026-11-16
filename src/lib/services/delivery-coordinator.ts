@@ -83,6 +83,14 @@ export async function dispatchDelivery(
   const eligible = await findEligibleAgents(shopId);
   const targetAgent = eligible[0] ?? null; // first eligible (future: workload-aware)
 
+  // Look up the orderId from the PrintFile so the job.dispatch event
+  // includes it — the companion needs orderId for its local queue.
+  let orderId: string | undefined;
+  try {
+    const file = await (db as any).printFile.findUnique({ where: { id: fileId }, select: { orderId: true } });
+    orderId = file?.orderId;
+  } catch { /* graceful degradation */ }
+
   // Create a delivery attempt record (in the PrintDeliveryAttempt table)
   // Wrapped in try/catch — the table may not exist until db:push is run
   let attemptId = crypto.randomUUID();
@@ -114,7 +122,7 @@ export async function dispatchDelivery(
     void container.realtime.publish(channel, 'job.dispatch', {
       jobId: printJobId,
       fileId,
-      orderId: undefined, // the caller can include this if available
+      orderId: orderId, // resolved from PrintFile.orderId — companion needs this
       filename,
       downloadUrl,
       copies: jobSettings.copies,
