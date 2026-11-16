@@ -53,6 +53,65 @@ export const SUBSCRIPTION_TIERS: readonly SubscriptionTier[] = [
   'enterprise',
 ] as const;
 
+/**
+ * Lifecycle of a shop subscription / entitlement, from approval to expiry.
+ *
+ * The lifecycle is **server-authoritative**: every state transition is
+ * driven by either an admin action (`admin_approved`, `granted_free`,
+ * `suspended`, `restored`) or an automated cron (`expired`,
+ * `grace_period`, `renewed`, `cancelled`). The shopkeeper cannot move
+ * the state directly — they can only retry a payment, which (on
+ * success) drives the state to `active` via the payment webhook.
+ *
+ * `EntitlementAccess` is derived from `SubscriptionStatus` +
+ * `currentPeriodEnd` (see `EntitlementService.deriveAccess`):
+ *   - admin_approved, granted_free, active, renewed, grace_period,
+ *     payment_pending → `active` (shop may operate)
+ *   - trial → `active` (during the trial window)
+ *   - expired, suspended, cancelled → `inactive` (shop is locked out of
+ *     order-creating / file-uploading routes, but may still access its
+ *     own billing + data-export pages to recover access)
+ */
+export type SubscriptionStatus =
+  | 'admin_approved'      // admin approved the application; no plan yet
+  | 'granted_free'        // admin granted a free period (free-tier access)
+  | 'trial'               // time-boxed trial of a paid tier
+  | 'active'              // paid + within the current period
+  | 'payment_pending'    // period ended, payment in flight (still active)
+  | 'grace_period'        // period ended, payment failed, short grace
+  | 'expired'             // period ended, no renewal
+  | 'suspended'           // admin suspended the shop
+  | 'cancelled'           // shopkeeper or admin cancelled the subscription
+  | 'renewed';            // a new period was started (transient → active)
+
+export const SUBSCRIPTION_STATUSES: readonly SubscriptionStatus[] = [
+  'admin_approved',
+  'granted_free',
+  'trial',
+  'active',
+  'payment_pending',
+  'grace_period',
+  'expired',
+  'suspended',
+  'cancelled',
+  'renewed',
+] as const;
+
+/**
+ * The high-level access decision the entitlement service returns.
+ * `inactive` shops are locked out of order-creating / file-uploading
+ * routes, but NEVER out of their own billing + data-export pages.
+ */
+export type EntitlementAccess = 'active' | 'inactive';
+
+/**
+ * Grace period (days) before a shop with a failed payment is moved from
+ * `payment_pending` to `expired`. Configurable per deployment via env
+ * var `SUBSCRIPTION_GRACE_DAYS`; the default matches the existing
+ * product policy of 7 days.
+ */
+export const DEFAULT_GRACE_DAYS = 7;
+
 /** Payment providers supported by the PaymentAdapter abstraction. */
 export type PaymentProvider = 'phonepe' | 'paytm' | 'googlepay' | 'razorpay' | 'cashfree';
 export const PAYMENT_PROVIDERS: readonly PaymentProvider[] = [

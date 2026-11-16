@@ -4,3 +4,4 @@ export * from './user';
 export * from './order';
 export * from './file';
 export * from './print-job';
+export * from './subscription';

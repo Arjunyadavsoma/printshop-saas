@@ -61,19 +61,13 @@ export const PrintJobSchema = z.object({
   updatedAt: z.date(),
 });
 
-/** Internal SaaS subscription record (we charge the shop, not the customer). */
-export interface Subscription {
-  id: string;
-  shopId: string;
-  tier: 'free' | 'starter' | 'pro' | 'enterprise';
-  status: 'active' | 'past_due' | 'cancelled';
-  currentPeriodStart: Date;
-  currentPeriodEnd: Date;
-  provider: 'internal' | 'razorpay' | 'manual';
-  providerSubscriptionId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/** Internal SaaS subscription record (we charge the shop, not the customer).
+ *
+ * MOVED to `subscription.ts` (Phase 2). Re-exported here so existing
+ * imports `from '@platform/core/domain'` keep working — the new file
+ * has the wider `SubscriptionStatus` union + the entitlement service.
+ */
+export type { Subscription } from './subscription';
 
 /** Append-only audit trail for every state transition. */
 export interface AuditLog {

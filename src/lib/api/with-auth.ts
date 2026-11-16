@@ -137,6 +137,67 @@ export function withAdminPermission<P extends RouteParams = RouteParams>(
   }, ['admin']);
 }
 
+/**
+ * Wrap a shopkeeper route with JWT auth + role + entitlement enforcement.
+ *
+ * The shopkeeper must have an `active` entitlement (subscription is
+ * within its period AND the shop row is `isActive`). If the shop is
+ * `inactive`, the route returns 402 with the decision's reason code so
+ * the UI can show the shopkeeper exactly why they are locked out.
+ *
+ * Admins are exempt — they are not shop-scoped, so the entitlement
+ * check does not apply.
+ *
+ * The `EntitlementDecision` is threaded into the principal so the
+ * handler can read the tier + period end without a second DB lookup.
+ */
+export async function withEntitlement<P extends RouteParams = RouteParams>(
+  handler: (req: NextRequest, ctx: RouteCtx<P>, principal: Principal & { entitlement: import('@platform/core/domain').EntitlementDecision }) => Promise<NextResponse>,
+) {
+  return withAuth<P>(async (req, ctx, principal) => {
+    // Admins are not shop-scoped — skip the entitlement check.
+    if (principal.role === 'admin') {
+      // Give admins a synthetic 'active' decision so handlers that read
+      // the tier don't need a special case.
+      const syntheticEntitlement: import('@platform/core/domain').EntitlementDecision = {
+        access: 'active',
+        status: 'active',
+        tier: 'enterprise',
+        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        reason: 'ok',
+      };
+      return handler(req, ctx, { ...principal, entitlement: syntheticEntitlement });
+    }
+
+    if (!principal.shopId) {
+      throw new ForbiddenError('Shop scope is required for this route');
+    }
+
+    const { DefaultEntitlementService } = await import('@/lib/services/entitlement.service');
+    const service = new DefaultEntitlementService();
+    const decision = await service.check(principal.shopId);
+    if (decision.access !== 'active') {
+      // 402 Payment Required is the right semantic: the shop's access
+      // has lapsed; they need to renew. The body carries the reason
+      // code so the UI can show the shopkeeper a targeted message.
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: 'ENTITLEMENT_INACTIVE',
+            message: `Shop entitlement is ${decision.reason}`,
+            reason: decision.reason,
+            status: decision.status,
+            currentPeriodEnd: decision.currentPeriodEnd.toISOString(),
+          },
+        },
+        { status: 402 },
+      );
+    }
+    return handler(req, ctx, { ...principal, entitlement: decision });
+  });
+}
+
 /** The verified agent principal (a registered print-agent daemon). */
 export interface AgentPrincipal {
   agent: PrintAgent;
