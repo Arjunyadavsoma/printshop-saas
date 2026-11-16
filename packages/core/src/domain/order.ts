@@ -25,6 +25,13 @@ export interface Order {
   notes: string | null;
   /** Human-friendly per-shop sequential token (e.g. "A104", "B205"). */
   tokenNumber: string | null;
+  /**
+   * Phase 4: link to a CustomerAccount. Null for guest orders (the
+   * existing flow). Set when a customer logs in and claims the order
+   * via `POST /api/v1/me/orders/claim`. A customer may have orders
+   * across multiple shops under one account.
+   */
+  customerAccountId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +52,7 @@ export const OrderSchema = z.object({
   customerPhone: z.string().max(20).nullable(),
   notes: z.string().max(1000).nullable(),
   tokenNumber: z.string().max(20).nullable(),
+  customerAccountId: z.string().uuid().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

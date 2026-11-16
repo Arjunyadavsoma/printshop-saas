@@ -17,6 +17,7 @@ interface OrderRow {
   customerPhone: string | null;
   notes: string | null;
   tokenNumber: string | null;
+  customerAccountId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +37,7 @@ function toDomain(row: OrderRow): Order {
     customerPhone: row.customerPhone,
     notes: row.notes,
     tokenNumber: row.tokenNumber,
+    customerAccountId: row.customerAccountId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -65,6 +67,20 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     if (opts.status) filter.status = opts.status;
     const rows = await this.findMany(filter, {
       limit: opts.limit ?? 50,
+      offset: opts.offset ?? 0,
+      order: ['createdAt', 'desc'],
+    });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * List orders linked to a customer account (Phase 4). Across all
+   * shops the customer has ordered from — customers are not
+   * shop-scoped. Used by `GET /api/v1/me/customer`.
+   */
+  async listByCustomerAccount(customerAccountId: string, opts: { limit?: number; offset?: number } = {}): Promise<Order[]> {
+    const rows = await this.findMany({ customerAccountId }, {
+      limit: opts.limit ?? 100,
       offset: opts.offset ?? 0,
       order: ['createdAt', 'desc'],
     });
@@ -108,6 +124,7 @@ export class OrderRepository extends BaseRepository<OrderRow> {
     customerPhone?: string | null;
     notes?: string | null;
     tokenNumber?: string | null;
+    customerAccountId?: string | null;
   }): Promise<Order> {
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -123,6 +140,7 @@ export class OrderRepository extends BaseRepository<OrderRow> {
       customerPhone: input.customerPhone ?? null,
       notes: input.notes ?? null,
       tokenNumber: input.tokenNumber ?? null,
+      customerAccountId: input.customerAccountId ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as OrderRow);

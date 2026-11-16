@@ -6,9 +6,18 @@
  * safely exhaustively-switched in TypeScript.
  */
 
-/** Roles a user account may hold. */
-export type UserRole = 'owner' | 'staff' | 'admin';
-export const USER_ROLES: readonly UserRole[] = ['owner', 'staff', 'admin'] as const;
+/**
+ * Roles a user account may hold.
+ *
+ * `'customer'` is the global consumer role (a Customer Account). The
+ * other three are shop-side / platform-side. A customer is NOT
+ * shop-scoped — their `shopId` is always null on the User row, and
+ * their orders are linked by `Order.customerAccountId` (a nullable
+ * FK added in Phase 4) so a customer can have orders across multiple
+ * shops under one login.
+ */
+export type UserRole = 'owner' | 'staff' | 'admin' | 'customer';
+export const USER_ROLES: readonly UserRole[] = ['owner', 'staff', 'admin', 'customer'] as const;
 
 /**
  * Fine-grained permissions a platform administrator may hold.

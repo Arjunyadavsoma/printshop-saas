@@ -77,6 +77,40 @@ model User {
   @@index([shopId])
 }
 
+// Phase 4 — global customer account (separate from the shop-scoped
+// `Customer` CRM row). One row per consumer who has signed up. A
+// customer may place orders at multiple shops; the link is via
+// `Order.customerAccountId`.
+//
+// Identity correctness:
+//   - `email` is the unique key (verified). A customer cannot register
+//     twice with the same email.
+//   - `phone` is optional contact info, NOT a unique identity —
+//     family members may share a phone, and customers may change
+//     phones. Verified via OTP when provided.
+//   - `passwordHash` uses the same PBKDF2-SHA256 600k-iteration scheme
+//     as shop-side User rows.
+//   - `deactivatedAt` supports soft-delete; the row is retained for
+//     financial/audit history per Phase 6.
+model CustomerAccount {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  phoneVerified Boolean    @default(false)
+  emailVerified Boolean    @default(false)
+  // Soft-delete: setting this moves the account into a deactivated
+  // state. Login is refused, but the row + order history is retained
+  // for audit. Reactivation is a separate admin action.
+  deactivatedAt DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  orders        Order[]
+
+  @@index([email])
+}
+
 model Order {
   id               String           @id @default(uuid())
   shopId           String
@@ -91,15 +125,22 @@ model Order {
   customerPhone    String?
   notes            String?
   tokenNumber      String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  // Phase 4: link a guest order to a CustomerAccount after the customer
+  // logs in + claims the order via verified phone/email. Nullable so
+  // existing guest orders keep working unchanged. Indexed for the
+  // customer's order-history query.
+  customerAccountId String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
   shop             Shop             @relation(fields: [shopId], references: [id])
+  customerAccount  CustomerAccount? @relation(fields: [customerAccountId], references: [id])
   files            PrintFile[]
   paymentAttempts  PaymentAttempt[]
 
   @@unique([shopId, tokenNumber])
   @@index([shopId, status])
   @@index([customerToken])
+  @@index([customerAccountId])
 }
 
 model PrintFile {
