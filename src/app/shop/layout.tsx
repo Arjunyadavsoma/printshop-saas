@@ -8,30 +8,36 @@ import type { NavGroup } from '@/components/layout/app-sidebar';
 import {
   LayoutDashboard,
   ClipboardList,
-  Printer as PrinterIcon,
+  Users,
+  Wrench,
+  CreditCard,
   FileBarChart,
   Store,
   Clock,
-  CreditCard,
   QrCode,
+  Settings,
 } from 'lucide-react';
 
 /**
  * Sidebar navigation for the shopkeeper portal.
  *
- * Two groups: a main group (Overview, Orders, Printer Setup, Daily Report)
- * and a "Settings" group with hash-deep-link sub-items for each tab on the
- * settings page. The settings page reads the hash on mount and opens the
- * matching tab. Hash-deep-links avoid query-string Suspense-boundary
- * concerns and keep the URL readable.
+ * Main group: Dashboard, Orders, Customers, Services & Pricing, Payments,
+ * Reports & Analytics.
+ * Settings group: Shop Profile, Business Hours, Payments & UPI, Shop QR,
+ * Shop Settings.
+ *
+ * PrintLatch / printer setup has been removed from the main navigation —
+ * it is not a core shopkeeper feature.
  */
 const NAV_GROUPS: NavGroup[] = [
   {
     items: [
-      { href: '/shop/dashboard', label: 'Overview', icon: LayoutDashboard },
+      { href: '/shop/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/shop/orders', label: 'Orders', icon: ClipboardList },
-      { href: '/shop/printer', label: 'Printer Setup', icon: PrinterIcon },
-      { href: '/shop/reports', label: 'Daily Report', icon: FileBarChart },
+      { href: '/shop/customers', label: 'Customers', icon: Users },
+      { href: '/shop/services', label: 'Services & Pricing', icon: Wrench },
+      { href: '/shop/payments', label: 'Payments', icon: CreditCard },
+      { href: '/shop/reports', label: 'Reports', icon: FileBarChart },
     ],
   },
   {
@@ -41,6 +47,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/shop/settings#hours', label: 'Business Hours', icon: Clock, sub: true },
       { href: '/shop/settings#payment', label: 'Payments & UPI', icon: CreditCard, sub: true },
       { href: '/shop/settings#qr', label: 'Shop QR Code', icon: QrCode, sub: true },
+      { href: '/shop/settings', label: 'All Settings', icon: Settings, sub: true },
     ],
   },
 ];
