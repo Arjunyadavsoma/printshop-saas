@@ -1555,54 +1555,70 @@ function TrackStep(props: {
             <p className="mt-1 text-xs text-muted-foreground">Show this at the counter.</p>
           </div>
 
-          {/* ── Payment status indicator (SEPARATE from order-processing status) ── */}
-          {/* ROOT CAUSE FIX: the old code showed a permanent spinner even when
-              payment was confirmed (because the spinner was tied to the ORDER
-              status, not the PAYMENT status). Now the payment status has its
-              own indicator: green checkmark when paidAt !== null, amber clock
-              when pending. A UPI app launch, browser return, or customer-
-              submitted UTR NEVER sets paidAt — only an authorized shopkeeper
-              or a verified provider webhook can do that. */}
-          <div className={`rounded-lg p-4 text-center ${props.order.paidAt ? 'bg-success-soft ring-1 ring-success-border' : 'bg-brand-soft ring-1 ring-brand-border'}`}>
-            {props.order.paidAt ? (
+          {/* ── Single unified status banner ──
+              Merges the old "Payment Pending" + "Awaiting payment" banners
+              into one. Shows the current state + verification method when
+              paid (auto-verified via webhook or manual by shopkeeper). */}
+          <div className={`rounded-lg p-4 text-center ${
+            done ? 'bg-success-soft ring-1 ring-success-border'
+            : cancelled ? 'bg-danger-soft ring-1 ring-danger-border'
+            : props.order.paidAt ? 'bg-success-soft ring-1 ring-success-border'
+            : 'bg-brand-soft ring-1 ring-brand-border'
+          }`}>
+            {done ? (
               <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
+            ) : cancelled ? (
+              <XCircle className="mx-auto h-8 w-8 text-danger" />
+            ) : props.order.paidAt ? (
+              <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
+            ) : s === 'printing' ? (
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand" />
             ) : (
               <Clock className="mx-auto h-8 w-8 text-brand" />
             )}
-            <p className={`mt-1 text-sm font-semibold ${props.order.paidAt ? 'text-success' : 'text-brand'}`}>
-              {props.order.paidAt ? 'Payment Confirmed' : 'Payment Pending'}
+
+            {/* Status title */}
+            <p className={`mt-2 text-sm font-semibold ${
+              done ? 'text-success'
+              : cancelled ? 'text-danger'
+              : props.order.paidAt ? 'text-success'
+              : 'text-brand'
+            }`}>
+              {cancelled ? 'Order Cancelled'
+              : done ? (s === 'collected' ? 'Order Completed' : 'Ready for Pickup')
+              : props.order.paidAt ? 'Payment Confirmed'
+              : s === 'printing' ? 'Printing in Progress'
+              : 'Payment Pending'}
             </p>
-            {props.order.paidAt ? (
+
+            {/* Subtitle / details */}
+            {props.order.paidAt && !cancelled ? (
               <>
                 <p className="mt-0.5 text-xs tabular-nums text-success">
                   Confirmed {new Date(props.order.paidAt).toLocaleString('en-IN')}
                   {props.order.paymentUtr ? ` · UTR ${props.order.paymentUtr}` : ''}
                 </p>
-                {/* Auto/Manual verification badge */}
+                {/* Verification method badge */}
                 <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                   props.order.paymentTxnId?.startsWith('manual-')
                     ? 'bg-brand-soft text-brand'
                     : 'bg-success-soft text-success'
                 }`}>
-                  {props.order.paymentTxnId?.startsWith('manual-') ? ' Manual verification' : ' Auto-verified'}
+                  {props.order.paymentTxnId?.startsWith('manual-') ? 'Verified by shopkeeper' : 'Auto-verified'}
                 </span>
+                {/* If printing/ready after payment, show that too */}
+                {s === 'printing' && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">Your document is being printed.</p>
+                )}
+                {s === 'ready' && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">Ready for pickup — show your token at the counter.</p>
+                )}
               </>
-            ) : (
+            ) : !cancelled && !done ? (
               <p className="mt-0.5 text-xs text-brand">
                 The shopkeeper will verify your UPI payment after you pay.
               </p>
-            )}
-          </div>
-
-          {/* ── Order-processing status (SEPARATE from payment status) ── */}
-          {/* This shows the ORDER lifecycle: paid → printing → ready → collected.
-              The spinner here is correct — it indicates the order is being
-              processed, NOT that payment is still being verified. */}
-          <div className={`rounded-lg p-4 text-center ${done ? 'bg-success-soft ring-1 ring-success-border' : cancelled ? 'bg-danger-soft ring-1 ring-danger-border' : 'bg-brand-soft ring-1 ring-brand-border'}`}>
-            {done ? <CheckCircle2 className="mx-auto h-8 w-8 text-success" /> : cancelled ? <XCircle className="mx-auto h-8 w-8 text-danger" /> : <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand" />}
-            <div className="mt-2 flex justify-center">
-              <OrderStatusBadge status={s} />
-            </div>
+            ) : null}
           </div>
 
           {/* Order ID + amount */}
