@@ -50,6 +50,8 @@ model Shop {
   orders                Order[]
   agents                PrintAgent[]
   printJobs             PrintJob[]
+  pairingTickets        PairingTicket[]
+  deviceCommands        DeviceCommand[]
   subscription          Subscription?
   users                 User[]
   paymentAttempts       PaymentAttempt[]
