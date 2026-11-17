@@ -307,7 +307,7 @@ describe('Phase 3 (P2-2) — payment webhook idempotency on real PostgreSQL', ()
       deliver(pool, { moid: 'm10', eventId: 'TXN-10', txnId: 'TXN-10', shopId: 'shop-p3', orderId: 'o10' }),
       deliver(pool, { moid: 'm10', eventId: 'TXN-10', txnId: 'TXN-10', shopId: 'shop-p3', orderId: 'o10' }),
     ]);
-    expect(r1.applied + r2.applied).toBe(1);
+    expect([r1, r2].filter((r) => r.applied).length).toBe(1);
     const s = await financialState(pool, 'm10', 'o10');
     expect(s.processedEvents).toBe(1);
   }, TIMEOUT);

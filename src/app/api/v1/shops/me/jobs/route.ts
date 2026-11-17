@@ -48,10 +48,17 @@ export const GET = withRateLimit('jobs-list', 60, 60, async (req): Promise<NextR
     const jobs: Array<{
       jobId: string; fileId: string; fileName: string | null; status: string;
       attempts: number; lastError: string | null; startedAt: Date | null;
-      completedAt: Date | null; createdAt: Date;
+      completedAt: Date | null; createdAt: Date; queuedAt: Date | null;
+      deviceName: string | null; devicePrinterName: string | null;
     }> = [];
     for (const j of sorted) {
       const file = await container.db.findOne<{ id: string; originalFilename: string }>('printFile', { id: j.fileId });
+      // Device + selected-printer context for the operator-resolution view
+      // (Phase 3 §3: the operator reviews printer/delivery evidence).
+      const agentId = (j as { agentId?: string }).agentId;
+      const agent = agentId
+        ? await container.db.findOne<{ id: string; name: string; printerName: string | null }>('printAgent', { id: agentId })
+        : null;
       jobs.push({
         jobId: j.id,
         fileId: j.fileId,
@@ -62,6 +69,9 @@ export const GET = withRateLimit('jobs-list', 60, 60, async (req): Promise<NextR
         startedAt: j.startedAt,
         completedAt: j.completedAt,
         createdAt: j.createdAt,
+        queuedAt: (j as { queuedAt?: Date }).queuedAt ?? null,
+        deviceName: agent?.name ?? null,
+        devicePrinterName: agent?.printerName ?? null,
       });
     }
     return ok({ jobs, count: jobs.length });
