@@ -50,6 +50,7 @@ import {
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
 import { PaymentProviderSettings } from '@/components/portal/payment-provider-settings';
+import { ChangePasswordCard } from '@/components/portal/change-password-card';
 import { PageHeader } from '@/components/shared/page-header';
 import { CardSkeleton } from '@/components/shared/loading-skeleton';
 
@@ -173,6 +174,8 @@ export default function ShopSettingsPage() {
       // Spec uses "#qr" → Shop QR Code tab (the actual "qr" is the
       // shop-ordering QR, not the UPI-QR upload).
       qr: 'shop-qr',
+      // H16: deep-link to the security / change-password tab.
+      security: 'security',
     };
     const mapped = alias[raw];
     if (mapped && mapped !== tab) setTab(mapped);
@@ -663,6 +666,10 @@ export default function ShopSettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="shop-qr" className="gap-1.5">
             <QrCode className="size-3.5" aria-hidden="true" /> Shop QR
+          </TabsTrigger>
+          {/* H16: Security tab — change-password flow. */}
+          <TabsTrigger value="security" className="gap-1.5">
+            <Lock className="size-3.5" aria-hidden="true" /> Security
           </TabsTrigger>
         </TabsList>
 
@@ -1180,6 +1187,11 @@ export default function ShopSettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Security tab (H16) — change password + account security ── */}
+        <TabsContent value="security" className="space-y-4">
+          <ChangePasswordCard />
         </TabsContent>
       </Tabs>
     </div>

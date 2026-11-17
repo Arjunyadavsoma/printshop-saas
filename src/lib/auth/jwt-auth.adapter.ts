@@ -321,6 +321,28 @@ export class JwtAuthAdapter implements AuthAdapter {
     return claims as unknown as AccessTokenClaims;
   }
 
+  /**
+   * H16 fix: side-effect-free refresh-token verification.
+   *
+   * Unlike `rotateRefreshToken`, this does NOT delete the jti from the cache
+   * or mint a new token pair — it just returns the claims (or null if the
+   * token is malformed, expired, or has the wrong issuer/audience). The
+   * logout route uses this to extract `jti` so it can call
+   * `revokeRefreshToken(jti)`.
+   *
+   * Note: we do NOT additionally require the jti to still be live in the
+   * cache here. The rotate path does (replay guard), but for logout the
+   * caller's intent is "kill this session if it's still alive" — if the jti
+   * was already revoked/rotated, `cache.del()` is a no-op and logout still
+   * succeeds idempotently. This matches the user's mental model: pressing
+   * "Log out" should always work, even if the session was already gone.
+   */
+  async verifyRefreshToken(token: string): Promise<RefreshTokenClaims | null> {
+    const claims = await this.verify(token, this.config.refreshSecret);
+    if (!claims || claims.type !== 'refresh' || typeof claims.jti !== 'string') return null;
+    return claims as unknown as RefreshTokenClaims;
+  }
+
   async rotateRefreshToken(token: string): Promise<{ access: string; refresh: string } | null> {
     const claims = await this.verify(token, this.config.refreshSecret);
     if (!claims || claims.type !== 'refresh' || typeof claims.jti !== 'string') return null;

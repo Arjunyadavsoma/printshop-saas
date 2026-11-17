@@ -70,8 +70,38 @@ model User {
   updatedAt    DateTime   @updatedAt
   auditLogs    AuditLog[]
   shop         Shop?      @relation(fields: [shopId], references: [id])
+  passwordResetTokens PasswordResetToken[]
 
   @@index([shopId])
+}
+
+// ─── Password reset tokens (H16) ───────────────────────────────────────
+// Single-use, short-lived tokens for the "forgot password" flow. We store
+// ONLY the SHA-256 hash of the token — never the plaintext. The plaintext
+// token is sent to the user via email (or captured to memory by the
+// StubEmailAdapter in dev) and is never persisted anywhere.
+//
+// Lifecycle:
+//   1. POST /api/v1/auth/forgot-password → generate token, store hash,
+//      expiry=15min, send email with `?token=<plaintext>` link.
+//   2. POST /api/v1/auth/reset-password → hash the submitted token, look
+//      up by hash, check expiry + not-yet-used, update the user's
+//      passwordHash, mark `usedAt`, revoke all refresh tokens (TODO — needs
+//      a RefreshToken table to enumerate jtis per user; for now the old
+//      tokens remain live until their TTL expires).
+//   3. Token is single-use: `usedAt` is checked on every reset attempt.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  // SHA-256 hash of the plaintext reset token (never store the plaintext).
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Order {

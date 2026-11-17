@@ -67,8 +67,17 @@ const RegisterSchema = z.object({
   services: z.array(z.string().max(40)).max(20).default([]),
   // Payment method customization (shopkeeper selects during registration)
   paymentMethods: z.enum(['upi', 'cash', 'both', 'split']).default('both'),
-  // Pamphlet / cover sheet feature
-  pamphletEnabled: z.boolean().default(false),
+  // Pamphlet / cover sheet feature.
+  // M1 fix: hard-reject `pamphletEnabled: true` at registration too (the
+  // PATCH /shops/me route has the same guard). The pricing engine never
+  // bills for the pamphlet, so allowing it to be enabled would configure
+  // a surcharge that customers are never charged — a ledger mismatch.
+  // Use a refine() that fires ONLY when the caller explicitly passes
+  // `true`; the default `false` is unaffected.
+  pamphletEnabled: z.boolean().refine(
+    (v) => v === false,
+    { message: 'The pamphlet / cover-sheet feature is not yet billed at checkout. Leave pamphletEnabled disabled.' },
+  ).default(false),
   pamphletPricePaise: z.number().int().min(0).max(100000).default(0),
   pamphletName: z.string().max(100).nullable().optional(),
 });

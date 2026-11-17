@@ -6,7 +6,7 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 import { rememberPaymentSession } from '@/lib/payments/webhook.service';
-import { priceFileFromRecord } from '@/lib/pricing/price-file';
+import { priceFileFromRecord, applyOrderMinimum } from '@/lib/pricing/price-file';
 import { db } from '@/lib/db';
 import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
@@ -115,6 +115,17 @@ export const POST = withRateLimit<{ id: string }>(
         pricingErrors.map((e) => `  • ${e}`).join('\n'),
       );
     }
+
+    // M1 fix (ledger mismatch): apply the per-order `min_order_value` floor
+    // using the SAME helper that `recalcOrderTotal` uses. Previously the
+    // checkout summed the per-file prices WITHOUT re-applying the bump, so
+    // a shop with `min_order_value=500` whose customer uploaded a single
+    // 1-page ₹2 file would silently charge ₹2 at checkout (the PATCH path
+    // had bumped Order.totalAmountPaise to ₹5, but checkout overwrote it
+    // back to ₹2). Now both paths share `applyOrderMinimum` — they can
+    // never drift. The bumped total flows to PaymentAttempt.amountPaise
+    // AND the UPI URI amount, so the entire ledger stays consistent.
+    authoritativeTotal = applyOrderMinimum(authoritativeTotal, shop);
 
     // Persist the recalculated order total (the authoritative checkout amount).
     await repos.orders.update(order.id, { totalAmountPaise: authoritativeTotal });

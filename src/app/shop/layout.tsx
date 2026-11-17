@@ -51,6 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/shop/settings#hours', label: 'Business Hours', icon: Clock, sub: true },
       { href: '/shop/settings#payment', label: 'Payments & UPI', icon: CreditCard, sub: true },
       { href: '/shop/settings#qr', label: 'Shop QR Code', icon: QrCode, sub: true },
+      { href: '/shop/settings#security', label: 'Account Security', icon: ShieldCheck, sub: true },
       { href: '/shop/settings', label: 'All Settings', icon: Settings, sub: true },
     ],
   },
@@ -73,8 +74,15 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   // their customer-facing QR landing page.
   const [shopSlug, setShopSlug] = useState<string | null>(null);
 
-  // Login + register pages render bare (no sidebar, no auth gate).
-  const isLoginPage = pathname === '/shop/login' || pathname === '/shop/register';
+  // Login + register + password-reset pages render bare (no sidebar, no auth gate).
+  // H16: forgot-password and reset-password are unauthenticated flows — they
+  // run BEFORE the user has a valid session. The auth gate would otherwise
+  // redirect them to /shop/login before they could submit their reset token.
+  const isLoginPage =
+    pathname === '/shop/login' ||
+    pathname === '/shop/register' ||
+    pathname === '/shop/forgot-password' ||
+    pathname === '/shop/reset-password';
 
   // Auth gate: redirect to login unless we're already on it.
   useEffect(() => {
@@ -116,11 +124,14 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
     );
   }
 
-  const logout = () => {
-    api.clearAuth();
+  const logout = async () => {
+    // H16: revoke the refresh-token jti server-side BEFORE clearing client
+    // state. The logout() helper fires POST /api/v1/auth/logout (best-effort,
+    // keepalive=true so it survives the navigation below) then clearAuth().
     // Hard navigation — avoids any RSC transition race. The auth state is
     // cleared in the shared context + localStorage; a full page load
     // guarantees the login page mounts fresh with no stale token.
+    await api.logout();
     window.location.href = '/shop/login';
   };
 

@@ -48,6 +48,17 @@ export interface ApiResponse<T = unknown> {
 interface AuthContextValue extends AuthState {
   ready: boolean;
   setAuth: (token: string, refreshToken: string, role: string, email: string) => void;
+  /**
+   * Server-side logout: POST the refresh token to /api/v1/auth/logout so the
+   * server can revoke its jti. Then clearAuth(). Best-effort — if the network
+   * call fails, we still clearAuth() so the user is logged out client-side.
+   *
+   * H16 fix: previously clearAuth() was the ONLY logout, which left the
+   * refresh-token jti live in the server cache for up to 30 days. A stolen
+   * refresh token continued to work after "logout". Now we revoke server-side
+   * first, then clearAuth().
+   */
+  logout: () => Promise<void>;
   clearAuth: () => void;
   request: <T = unknown>(
     method: string,
@@ -111,6 +122,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, []);
+
+  // ── Server-side logout (H16) ───────────────────────────────────────
+  // POST the refresh token to /api/v1/auth/logout so the server can revoke
+  // its jti (delete `refresh:${jti}` from the cache). Then clearAuth().
+  //
+  // Best-effort: if the network call fails (offline, server down, expired
+  // token already), we still clearAuth() so the user is logged out
+  // client-side. The refresh token is no longer in localStorage, so the
+  // auto-refresh path can't use it — the session is effectively dead even
+  // if the server-side jti lingers (it'll expire naturally within 30 days).
+  const logout = useCallback(async () => {
+    const rt = refreshToken;
+    try {
+      if (rt) {
+        await fetch('/api/v1/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: rt }),
+          // Use keepalive so the request survives the page navigation that
+          // the caller is about to perform (logout → redirect to /login).
+          keepalive: true,
+        });
+      }
+    } catch {
+      // Network failure / server down — proceed with clearAuth() anyway.
+    } finally {
+      clearAuth();
+    }
+  }, [refreshToken, clearAuth]);
 
   // ── Auto-refresh on 401 ────────────────────────────────────────────
   // When a request returns 401, try to refresh the access token using the
@@ -204,8 +244,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Memoize so consumers' useEffect deps are stable across renders (unless
   // the actual state values change).
   const value = useMemo<AuthContextValue>(
-    () => ({ token, refreshToken, role, email, ready, setAuth, clearAuth, request }),
-    [token, refreshToken, role, email, ready, setAuth, clearAuth, request],
+    () => ({ token, refreshToken, role, email, ready, setAuth, logout, clearAuth, request }),
+    [token, refreshToken, role, email, ready, setAuth, logout, clearAuth, request],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

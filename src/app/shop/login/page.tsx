@@ -139,7 +139,19 @@ export default function ShopLoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+                  {/* H16: forgot-password link. The page always renders (even
+                  if the email field is empty) because the user might have
+                  forgotten which email they used — clicking through to the
+                  forgot-password page lets them enter it there. */}
+                  <Link
+                    href="/shop/forgot-password"
+                    className="text-xs font-medium text-brand hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"

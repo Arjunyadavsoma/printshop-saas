@@ -73,6 +73,34 @@ export function priceFileFromRecord(file: PrintFile, shop: Shop): {
 }
 
 /**
+ * Apply the per-shop `min_order_value` floor to a file-sum total.
+ *
+ * M1 fix (ledger mismatch): this is the SINGLE authoritative implementation of
+ * the order-level minimum-order bump. Both {@link recalcOrderTotal} (called by
+ * PATCH /files/[fileId] and confirm) AND the checkout route MUST call this —
+ * previously only `recalcOrderTotal` applied the bump, so the checkout's plain
+ * file-sum silently shrank `Order.totalAmountPaise` (and `PaymentAttempt.amountPaise`)
+ * below the shop's configured minimum between the last PATCH and the payment.
+ *
+ * Semantics:
+ *   - If `fileSum === 0` (no priced files yet), returns 0 — don't surface a fake
+ *     minimum charge for files that can't be priced.
+ *   - If `fileSum > 0 && fileSum < min_order_value`, returns `min_order_value`.
+ *   - Otherwise returns `fileSum` unchanged.
+ *
+ * The bump is NOT attributed to any individual PrintFile.pricePaise — it's an
+ * order-level adjustment. The receipt renders it as a "Minimum order adjustment"
+ * line item so the customer can see why Total > sum-of-files.
+ */
+export function applyOrderMinimum(fileSum: number, shop: Shop): number {
+  const minOrderValue = shop.pricingConfig.min_order_value ?? 0;
+  if (fileSum > 0 && fileSum < minOrderValue) {
+    return minOrderValue;
+  }
+  return fileSum;
+}
+
+/**
  * Recalculate the order total from persisted file records.
  *
  * Sums `pricePaise` across all files in the order and persists the total.
@@ -84,6 +112,9 @@ export function priceFileFromRecord(file: PrintFile, shop: Shop): {
  * of N small files could be billed at N× the minimum. Now a 3-file order
  * totalling ₹6 against a ₹10 minimum pays ₹10 (the minimum once), not ₹30
  * (the minimum thrice).
+ *
+ * M1 fix: the bump logic lives in {@link applyOrderMinimum} so the checkout
+ * route can call the SAME function — the two paths can never drift again.
  */
 export async function recalcOrderTotal(orderId: string): Promise<number> {
   const order = await repos.orders.findById(orderId);
@@ -94,13 +125,9 @@ export async function recalcOrderTotal(orderId: string): Promise<number> {
   const files = await repos.files.findByOrder(orderId);
   const fileSum = files.reduce((acc, f) => acc + f.pricePaise, 0);
 
-  // Apply the per-order minimum once — but ONLY when there is at least one
-  // priced file. If all files are placeholder/needs_review (pricePaise=0),
-  // the order total stays 0 so the customer doesn't see a fake minimum charge
-  // for files that can't be priced yet.
-  const hasPricedFile = files.some((f) => f.pricePaise > 0);
-  const minOrderValue = shop.pricingConfig.min_order_value ?? 0;
-  const total = hasPricedFile && fileSum < minOrderValue ? minOrderValue : fileSum;
+  // applyOrderMinimum already guards the "no priced files" case (fileSum===0
+  // → returns 0, no fake minimum charge for unpriced placeholders).
+  const total = applyOrderMinimum(fileSum, shop);
 
   await repos.orders.update(orderId, { totalAmountPaise: total });
   return total;

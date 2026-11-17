@@ -62,8 +62,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [api.ready, api.token, api.role, isLoginRoute, router]);
 
-  function handleLogout() {
-    api.clearAuth();
+  async function handleLogout() {
+    // H16: revoke the refresh-token jti server-side BEFORE clearing client
+    // state. Best-effort — logout() swallows network errors and always
+    // calls clearAuth().
+    await api.logout();
     router.replace('/admin/login');
   }
 
