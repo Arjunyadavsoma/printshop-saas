@@ -544,9 +544,20 @@ returned ONCE. Audit event `device.token_rotated`; realtime
 
 ### 13.6 Credential hashing
 
-Device tokens and pairing tickets are never stored in plaintext:
-`HMAC-SHA256(key = 'print-agent-salt', token)` for device tokens
-(domain-separated pepper, stored in code — rotating it requires a deploy
-and invalidates all devices), SHA-256 for pairing tickets. Token formats:
-`uuid-uuid` (legacy `agents/register`), 64-hex (`companion/pair` and
-`companion/token/rotate`).
+Device tokens and pairing tickets are never stored in plaintext. Device
+tokens use a versioned verifier (Phase C): new credentials store
+`v2:<HMAC-SHA256(key = DEVICE_TOKEN_PEPPER, token)>`; pre-Phase-C verifiers
+(bare `HMAC-SHA256('print-agent-salt', token)`) keep verifying until each
+device rotates its token through `POST /api/v1/companion/token/rotate`
+— the only path that migrates a verifier to v2. `DEVICE_TOKEN_PEPPER` is
+required in production (validated at startup) and never exposed outside the
+server. Legacy verification can be retired once
+`SELECT count(*) FROM "PrintAgent" WHERE "tokenHash" NOT LIKE 'v2:%'` is 0.
+Pairing tickets store SHA-256 hashes. Token formats: `uuid-uuid` (legacy
+`agents/register`), 64-hex (`companion/pair` and `companion/token/rotate`).
+
+**Previous-credential policy during the 10-minute rotation overlap:** the
+old token is accepted only for rotation recovery, heartbeat, and read-only
+polling (jobs/pending, commands GET, sync pull/status). State-mutating
+calls (job status, delivery receipts, command reports, sync push) require
+the current token (`403 TOKEN_OVERLAP_READ_ONLY` otherwise).

@@ -1,9 +1,11 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { getContainer } from '@/lib/container';
 import { ok } from '@/lib/api/envelope';
+import { hashDeviceToken } from '@/lib/api/device-token';
+import { isEntitled } from '@/lib/api/entitlements';
 import { AppError, UnauthorizedError, NotFoundError } from '@platform/core/errors';
 import type { NextRequest, NextResponse } from 'next/server';
 
@@ -25,8 +27,9 @@ import type { NextRequest, NextResponse } from 'next/server';
  *      updated, another companion beat us; return 409.
  *   5. Mint a cryptographically random device token (32 bytes hex). Store ONLY
  *      its hash as printAgent.tokenHash — the plaintext token is returned ONCE.
- *      The hash uses the same HMAC-SHA-256 + 'print-agent-salt' scheme as
- *      `withDeviceAuth` so the freshly-minted token authenticates immediately.
+ *      The hash uses the versioned HMAC scheme from '@/lib/api/device-token'
+ *      (the same scheme `withDeviceAuth` verifies), so the freshly-minted
+ *      token authenticates immediately.
  *   6. Link the ticket to the new agent (agentId) + persist device metadata.
  *   7. Audit-log the pairing (shopId, agentId, deviceName — never the token).
  *
@@ -107,12 +110,28 @@ export const POST = withRateLimit('pairing-consume', 10, 60, async (req: NextReq
     );
   }
 
-  // 5. Mint the long-lived device token + create the PrintAgent.
-  //    The token hash MUST match withDeviceAuth's scheme (HMAC-SHA-256 with
-  //    the 'print-agent-salt' pepper) so the companion can authenticate
+  // 5. multi_device entitlement re-check at CONSUME time. The gate in
+  //    /pairing/begin runs at ticket MINT time; two shopkeepers (or two
+  //    tabs) can mint tickets concurrently when the shop has zero devices,
+  //    so consuming both would create two "first" devices. Re-checking here
+  //    — plus the post-insert over-limit disable below — makes the plan
+  //    limit hold even under concurrent pairing.
+  const shopAgents = await repos.printAgents.listByShop(ticket.shopId);
+  const enabledDeviceCount = shopAgents.filter((d) => d.isEnabled !== false).length;
+  if (enabledDeviceCount >= 1 && !(await isEntitled(ticket.shopId, 'multi_device'))) {
+    throw new AppError(
+      'ENTITLEMENT_REQUIRED: multi_device — your current plan supports one paired Windows device. Upgrade the subscription to connect more.',
+      'ENTITLEMENT_REQUIRED',
+      403,
+    );
+  }
+
+  // 6. Mint the long-lived device token + create the PrintAgent.
+  //    The token hash MUST match withDeviceAuth's scheme (versioned HMAC —
+  //    see '@/lib/api/device-token') so the companion can authenticate
   //    immediately after pairing.
   const deviceToken = randomBytes(32).toString('hex');
-  const tokenHash = createHmac('sha256', 'print-agent-salt').update(deviceToken).digest('hex');
+  const tokenHash = hashDeviceToken(deviceToken);
 
   const agentRow = await db.insert<{
     id: string;
@@ -141,6 +160,31 @@ export const POST = withRateLimit('pairing-consume', 10, 60, async (req: NextReq
     createdAt: now,
     updatedAt: now,
   });
+
+  // 6b. Close the concurrent-pairing race deterministically: re-count AFTER
+  //     the insert. If the shop now exceeds its entitlement, disable the
+  //     device we just created and reject the pairing — the OTHER device
+  //     (already enabled before this request started) keeps working, and no
+  //     over-limit device can authenticate.
+  const afterInsert = await repos.printAgents.listByShop(ticket.shopId);
+  const enabledAfter = afterInsert.filter((d) => d.isEnabled !== false).length;
+  if (enabledAfter > 1 && !(await isEntitled(ticket.shopId, 'multi_device'))) {
+    await db.update('printAgent', { id: agentRow.id }, { isEnabled: false, isOnline: false });
+    await repos.audit.log({
+      shopId: ticket.shopId,
+      userId: ticket.createdByUserId,
+      action: 'device.limit_disabled',
+      entityType: 'PrintAgent',
+      entityId: agentRow.id,
+      metadata: { deviceName: body.deviceName, reason: 'multi_device entitlement exceeded by concurrent pairing' },
+      ip: req.headers.get('x-forwarded-for') ?? null,
+    });
+    throw new AppError(
+      'ENTITLEMENT_REQUIRED: multi_device — a second device was disabled because your plan supports one paired Windows device. Upgrade the subscription to connect more.',
+      'ENTITLEMENT_REQUIRED',
+      403,
+    );
+  }
 
   // 6. Link the ticket → agent + persist the device metadata the companion
   //    reported (for the dashboard's "Devices" list).

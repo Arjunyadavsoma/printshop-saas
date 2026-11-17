@@ -1,9 +1,9 @@
-import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
 import { isEntitled } from '@/lib/api/entitlements';
+import { hashDeviceToken } from '@/lib/api/device-token';
 import { ForbiddenError } from '@platform/core/errors';
 
 const RegisterSchema = z.object({
@@ -34,7 +34,7 @@ export const POST = withAuth(async (req, ctx, principal) => {
   }
 
   const token = crypto.randomUUID() + '-' + crypto.randomUUID();
-  const tokenHash = createHmac('sha256', 'print-agent-salt').update(token).digest('hex');
+  const tokenHash = hashDeviceToken(token);
   const agent = await repos.printAgents.create({ shopId: shop.id, name: body.name, tokenHash });
   await repos.printAgents.update(agent.id, {
     os: body.os ?? null,

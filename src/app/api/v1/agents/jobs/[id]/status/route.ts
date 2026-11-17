@@ -50,7 +50,16 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
         { status: 'printing', agentId: agent.id, startedAt: now },
       );
       if (claimed.length === 0) {
-        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — already claimed by another agent` });
+        // Distinguish crash-leftover from a live multi-device race loss: the
+        // job row records WHO claimed it (job.agentId). If it was THIS agent
+        // in a previous process run, the physical outcome is unknown (crash
+        // recovery — PrintEXE parks the job locally and reports
+        // needs_review). If it was a different agent, that device is actively
+        // printing — the loser simply cancels its local copy.
+        const reason = job.agentId === agent.id
+          ? `job is 'printing' — claimed by this device in a previous session (crash recovery: outcome unknown, do not reprint)`
+          : `job is 'printing' — already claimed by another agent`;
+        return ok({ jobId: id, skipped: true, reason });
       }
       await repos.files.update(job.fileId, { status: 'printing' });
       await publish(channel, 'job.printing', { jobId: id, fileId: job.fileId });
@@ -99,7 +108,15 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
       if (updated.length === 0) {
         return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — needs_review only applies to 'printing' or 'queued' jobs` });
       }
-      await repos.files.update(job.fileId, { status: 'needs_review' });
+      // NOTE: the FILE's status is deliberately NOT changed here. The device
+      // path previously wrote file.status='needs_review', which collides with
+      // the shop/customer UIs' meaning of the same value on files ("needs a
+      // page count before pricing") — a paid, already-priced file parked by
+      // the device appeared in those panels and could not be resolved there.
+      // The file stays 'printing' (set at claim time); the JOB row carries
+      // needs_review, which is what the devices page and job state machine
+      // use. The operator-resolution endpoint (POST /shops/me/jobs/{id}/resolve)
+      // moves both job and file when a human decides the outcome.
       await publish(channel, 'job.needs_review', {
         jobId: id,
         fileId: job.fileId,

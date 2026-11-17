@@ -49,6 +49,12 @@ export const DELETE = withAuth(async (req, ctx, principal) => {
     });
   }
 
+  // Delete the agent's remote commands first: DeviceCommand.agentId is
+  // RESTRICT (schema-aligned FK, migration 20251118000003), so the agent
+  // row cannot be deleted while commands reference it. Commands addressed
+  // to a revoked agent are dead by definition.
+  await container.db.delete('deviceCommand', { agentId: agent.id });
+
   // Delete the agent row — this revokes the token (hash is gone)
   await container.db.delete('printAgent', { id: agent.id, shopId: shop.id });
 
