@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Vercel build script — generates the Prisma client, applies pending
-# migrations (non-fatal), and builds Next.js.
+# migrations (with timeout, non-fatal), and builds Next.js.
 #
-# `prisma migrate deploy` is wrapped in `|| true` so a migration failure
-# (e.g. DATABASE_URL not set at build time, connection timeout) does NOT
-# abort the build. The columns were manually applied to production and
-# the migration SQL uses IF NOT EXISTS, so a skipped migration is safe.
+# `prisma migrate deploy` is wrapped in `timeout 30 ... || true` so:
+#   1. If it hangs (e.g. Supabase pooled connection doesn't support
+#      migration session operations), it's killed after 30s.
+#   2. If it fails (connection refused, SSL error), the build continues.
+#   3. If it succeeds, migrations are applied.
+# The migration SQL uses IF NOT EXISTS and the columns were manually
+# applied to production, so a skipped migration is safe.
 #
 # This script is called by vercel.json's buildCommand.
 
@@ -20,14 +23,11 @@ echo "→ Generating Prisma client..."
 bunx prisma generate 2>&1 | tail -3
 echo "  ✓ Prisma client generated"
 
-# ── 2. Apply pending database migrations (non-fatal) ──
-# Wrapped in `|| true` so the build doesn't fail if DATABASE_URL is not
-# available at build time or the migration connection fails. The
-# migration uses IF NOT EXISTS so it's safe to run or skip.
-echo "→ Applying pending database migrations..."
+# ── 2. Apply pending database migrations (30s timeout, non-fatal) ──
+echo "→ Applying pending database migrations (30s timeout)..."
 if [ -n "${DATABASE_URL:-}" ]; then
-  bunx prisma migrate deploy 2>&1 | tail -10 || true
-  echo "  ✓ Migration step complete"
+  timeout 30 bunx prisma migrate deploy 2>&1 | tail -10 || true
+  echo "  ✓ Migration step complete (may have been skipped or timed out)"
 else
   echo "  ⚠ DATABASE_URL not set — skipping migrations"
 fi
