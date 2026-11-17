@@ -553,8 +553,9 @@ device rotates its token through `POST /api/v1/companion/token/rotate`
 required in production (validated at startup) and never exposed outside the
 server. Legacy verification can be retired once
 `SELECT count(*) FROM "PrintAgent" WHERE "tokenHash" NOT LIKE 'v2:%'` is 0.
-Pairing tickets store SHA-256 hashes. Token formats: `uuid-uuid` (legacy
-`agents/register`), 64-hex (`companion/pair` and `companion/token/rotate`).
+Pairing tickets store SHA-256 hashes. Token formats: 64-hex (32 CSPRNG bytes
+— all new issuance since Phase 2, including `agents/register`); `uuid-uuid`
+(pre-Phase-2 manual registrations only; still verify until rotated).
 
 **Job listing + operator resolution (shopkeeper JWT):**
 - `GET /api/v1/shops/me/jobs?status=needs_review` — recent jobs (max 100)
