@@ -185,7 +185,7 @@ describe('Phase 6.5 — Real PostgreSQL independent-connection concurrency', () 
 
   it('12. 20 independent connections, different orders → all succeed', async () => {
     for (let i = 0; i < 20; i++) {
-      await pool.query(`INSERT INTO "Order" (id, "shopId", "customerToken", status, "totalAmountPaise", currency, "createdAt", "updatedAt") VALUES ($1, 'shop-1', $2, 'awaiting_payment', 10000, 'INR', NOW(), NOW()) ON CONFLICT DO NOTHING`, [`order-b-${i}`, `TOK${i}`]);
+      await pool.query(`INSERT INTO "Order" (id, "shopId", "customerToken", status, "totalAmountPaise", currency, "createdAt", "updatedAt") VALUES ($1, 'shop-1', $2, 'awaiting_payment', 10000, 'INR', NOW(), NOW()) ON CONFLICT DO NOTHING`, [`order-b-${i}`, `TOKb${i}`]);
     }
     const clients = await Promise.all(Array.from({ length: 20 }, () => pool.connect()));
     try {

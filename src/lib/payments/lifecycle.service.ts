@@ -382,7 +382,31 @@ export async function applyPaymentTransition(
     },
     {
       timeout: 10_000, // 10-second timeout — matches provider API timeouts
-      isolationLevel: 'Serializable' as any, // strongest isolation — prevents phantom reads
+      // PHASE 3 (P2-2) ROOT-CAUSE FIX — was: 'Serializable'.
+      //
+      // SERIALIZABLE (PostgreSQL SSI) is WRONG for this transaction even
+      // though it sounds safest: two CONCURRENT duplicate webhooks both read
+      // the attempt/order (read) and then write — an SSI rw-conflict. The
+      // loser fails at COMMIT with SQLSTATE 40001 (Prisma P2034) INSTEAD of
+      // at the INSERT with 23505 (Prisma P2002), so the deliberate
+      // unique-arbitration path below never fires. In the worst interleaving
+      // BOTH deliveries abort → ZERO financial effects for one real payment
+      // (Phase 2 defect P2-2, reproduced deterministically).
+      //
+      // Correctness under READ COMMITTED is provided by DATABASE ARBITRATION,
+      // not isolation level:
+      //   1. PaymentEvent UNIQUE([provider, eventId]) — the duplicate INSERT
+      //      fails with P2002 → caught below → idempotent skip (exactly one
+      //      event row wins).
+      //   2. PaymentAttempt updateMany guarded on status IN (created,pending)
+      //      — atomic conditional transition; a concurrent loser observes
+      //      count=0 → stale-event skip (no double effect).
+      //   3. Order updateMany guarded on status = 'awaiting_payment' (+
+      //      paymentTxnId UNIQUE) — atomic conditional transition.
+      // Each statement is independently atomic; no check-then-act race on
+      // the financial effects. A rollback of the winner leaves NO event row,
+      // so the provider's retry re-processes safely (invariant 4).
+      isolationLevel: 'ReadCommitted' as any,
     },
   );
 }
