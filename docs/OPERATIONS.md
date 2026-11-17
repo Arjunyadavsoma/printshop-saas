@@ -81,3 +81,39 @@ is a pending decision — see docs/KNOWN_LIMITATIONS.md.
   re-pair (previous credential is read-only).
 - 409 `ROTATION_CONFLICT` → concurrent rotation; retry with the current
   credential.
+
+
+---
+
+## Phase 3 runbook additions
+
+### Payment webhook idempotency (P2-2 fix)
+`applyPaymentTransition` (src/lib/payments/lifecycle.service.ts) runs at
+READ COMMITTED with database-level arbitration:
+1. `PaymentEvent UNIQUE([provider, eventId])` — duplicate INSERT loses with
+   23505 → idempotent skip.
+2. `PaymentAttempt` conditional UPDATE (status IN created/pending).
+3. `Order` conditional UPDATE (status = awaiting_payment, paymentTxnId
+   UNIQUE).
+Do NOT raise this transaction back to SERIALIZABLE: SSI rw-conflicts abort
+concurrent duplicate deliveries with 40001, producing ZERO financial
+effects for one real payment (Phase 2 defect P2-2, fixed in Phase 3).
+Concurrency evidence: src/lib/payments/payment-webhook-concurrency-phase3.test.ts
+(16 scenarios, independent connections) and
+src/lib/pricing/app-webhook-integration.test.ts (15 scenarios, real app path).
+
+If a webhook delivery is lost entirely (provider never retried), use the
+status-check/reconciliation path — it funnels through the same
+`applyPaymentTransition` and cannot double-apply.
+
+### Uncertain print jobs (operator resolution)
+- Devices park genuinely uncertain physical outcomes as `needs_review`
+  (crash after spooler acceptance, completion-report failure, stale
+  printing state from a previous session). They are never retried or
+  reprinted automatically.
+- Shopkeeper workflow: Shop Portal → Print Jobs → "Needs review" tab →
+  inspect document/device/printer evidence → Mark printed / Mark failed
+  (confirm dialog) → resolution recorded with operator identity
+  (`AuditLog.userId`), timestamp and outcome (`action = 'job.resolved'`).
+- Resolved jobs are terminal. If the paper was NOT printed, create a fresh
+  print request (do not re-run the old job).

@@ -922,3 +922,21 @@ curl -s https://printshop-saas-three.vercel.app/api/v1/health
 | `prisma/schema.prisma` | Full database schema |
 | `Caddyfile` | Gateway routing (`XTransformPort` query) |
 | `.env.example` | All environment variables |
+
+
+---
+
+## Phase 3: pending-job storage failures (device behavior)
+
+The SaaS pending-jobs endpoint can respond with `200 {jobs, failedJobs}` or
+`503 {error: {code: "STORAGE_UNAVAILABLE", details: {failedJobs,
+retryable: true}}}` when the document store cannot presign downloads.
+Device guidance:
+- Treat `503 STORAGE_UNAVAILABLE` as transient: back off and keep polling;
+  do NOT report jobs as failed — they remain queued server-side and will be
+  delivered once storage recovers.
+- Treat `failedJobs[].code = DOCUMENT_MISSING | JOB_INVALID` as permanent for
+  that job: do not poll for it again; the shop operator resolves it from the
+  website (Print Jobs view).
+- Jobs that appear in `jobs[]` are processed normally (atomic claim via
+  `POST /agents/jobs/{id}/status`).

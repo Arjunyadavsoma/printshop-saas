@@ -570,3 +570,28 @@ old token is accepted only for rotation recovery, heartbeat, and read-only
 polling (jobs/pending, commands GET, sync pull/status). State-mutating
 calls (job status, delivery receipts, command reports, sync push) require
 the current token (`403 TOKEN_OVERLAP_READ_ONLY` otherwise).
+
+
+---
+
+## Phase 3 additions (branch phase3-critical-repairs)
+
+### Print jobs — operator surface
+- `GET /api/v1/shops/me/jobs?status=<status>` rows now also carry
+  `deviceName`, `devicePrinterName` and `queuedAt` (device + printer
+  evidence for the operator-resolution view). Shop-scoped by the JWT.
+- Website surface: `/shop/print-jobs` ("Print Jobs" in the shop portal nav).
+  Job-level uncertainty (`needs_review`) is displayed distinctly from
+  completed/failed; resolution calls the audited
+  `POST /shops/me/jobs/{jobId}/resolve` endpoint only.
+
+### Device job delivery — storage failures (P2-1)
+`GET /api/v1/agents/jobs/pending` never silently returns an empty list when
+queued jobs exist but cannot be prepared:
+- `200` `{jobs, failedJobs, agentId}` — healthy jobs returned; per-job
+  failures in `failedJobs[]` with `code` ∈ `DOCUMENT_MISSING` |
+  `JOB_INVALID` | `STORAGE_UNAVAILABLE` and a device-actionable message.
+- `503` `{error: {code: "STORAGE_UNAVAILABLE", details: {failedJobs,
+  retryable: true}}}` — every queued job failed for a storage reason.
+  Devices back off and retry; jobs stay queued and are offered again.
+  Provider error details are logged server-side only, never in responses.
