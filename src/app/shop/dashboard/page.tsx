@@ -153,7 +153,7 @@ export default function ShopDashboardPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   // Printer-engine status for the "Choose your print engine" callout. The
   // shopkeeper picks between PrintLatch + Native Windows Printer on the
-  // /shop/printer page; here we just surface whether they've picked yet.
+  // /shop/devices page; here we just surface whether they've picked yet.
   const [printerEngine, setPrinterEngine] = useState<PrintEngine | null | undefined>(undefined);
   const [printerConnected, setPrinterConnected] = useState(false);
 
@@ -163,7 +163,14 @@ export default function ShopDashboardPage() {
     try {
       const [shopR, ordersR, analyticsR, agentsR] = await Promise.all([
         api.request<{ data?: ShopInfo }>('GET', '/api/v1/shops/me'),
-        api.request<{ data?: OrderRow[] }>('GET', '/api/v1/shops/me/orders?limit=50'),
+        // H-1 / Live H-1 fix: fetch up to 200 orders (same window as the
+        // Payments page) so the dashboard's all-time sales summary can be
+        // derived from the SAME data source as Payments — instead of from
+        // the analytics endpoint (which is entitlement-gated + returns 0s
+        // for free-tier shops, causing the dashboard to contradict the
+        // Payments page). Limit=50 was also too small to cover a busy
+        // shop's history.
+        api.request<{ data?: OrderRow[] }>('GET', '/api/v1/shops/me/orders?limit=200'),
         api.request<{ data?: Analytics }>('GET', '/api/v1/shops/me/analytics'),
         api.request<{ data?: AgentRow[] }>('GET', '/api/v1/shops/me/agents'),
       ]);
@@ -242,6 +249,31 @@ export default function ShopDashboardPage() {
     () => orders.filter((o) => o.status === 'printing'),
     [orders],
   );
+
+  // ── All-time sales summary ──
+  // H-1 / Live H-1 fix: the dashboard previously read this from the
+  // `/api/v1/shops/me/analytics` endpoint, which is entitlement-gated and
+  // returns zeros on the free tier — causing the dashboard to contradict
+  // the Payments page (which derives its numbers client-side from the
+  // orders list). Now both pages derive from the SAME data source: the
+  // up-to-200-orders window fetched above. Per the audit:
+  //   total orders = orders.length
+  //   paid orders  = orders.filter(o => o.paidAt !== null).length
+  //   total revenue = sum of totalAmountPaise for paid orders
+  // (`paidAt !== null` is the canonical "the money landed" signal —
+  // a paid order with no paidAt is in-flight, not collected.)
+  const allTimeSummary = useMemo(() => {
+    const paidOrders = orders.filter((o) => o.paidAt !== null);
+    const totalRevenuePaise = paidOrders.reduce(
+      (acc, o) => acc + o.totalAmountPaise,
+      0,
+    );
+    return {
+      totalOrders: orders.length,
+      paidOrders: paidOrders.length,
+      totalRevenuePaise,
+    };
+  }, [orders]);
 
   // ── Setup checklist ──
   const checklist = useMemo(() => {
@@ -496,7 +528,9 @@ export default function ShopDashboardPage() {
                   </div>
                 </div>
                 <Button asChild size="sm" className="mt-3 gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 min-h-[44px]">
-                  <Link href="/shop/printer">
+                  {/* M22 fix: link to /shop/devices (live) instead of
+                      /shop/printer (dead placeholder). */}
+                  <Link href="/shop/devices">
                     {printerEngine === null ? 'Choose your engine' : 'Finish setup'}
                     <ArrowRight className="size-4" />
                   </Link>
@@ -604,7 +638,9 @@ export default function ShopDashboardPage() {
             </div>
           </div>
           <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/shop/printer">
+            {/* M22 fix: link to /shop/devices (live) instead of
+                /shop/printer (dead placeholder). */}
+            <Link href="/shop/devices">
               <PrinterIcon className="size-4" />
               {anyAgentOnline ? 'Manage' : 'Set up'}
             </Link>
@@ -855,15 +891,15 @@ export default function ShopDashboardPage() {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Total orders</span>
-              <span className="font-mono font-semibold tabular-nums">{analytics?.orderCount.total ?? 0}</span>
+              <span className="font-mono font-semibold tabular-nums">{allTimeSummary.totalOrders}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Paid orders</span>
-              <span className="font-mono font-semibold tabular-nums">{analytics?.orderCount.paid ?? 0}</span>
+              <span className="font-mono font-semibold tabular-nums">{allTimeSummary.paidOrders}</span>
             </div>
             <div className="flex items-center justify-between border-t pt-3">
               <span className="text-sm font-medium">Total revenue</span>
-              <Badge className="bg-success-soft text-success tabular-nums">{analytics?.revenue.formatted ?? formatINRFromPaise(0)}</Badge>
+              <Badge className="bg-success-soft text-success tabular-nums">{formatINRFromPaise(allTimeSummary.totalRevenuePaise)}</Badge>
             </div>
           </CardContent>
         </Card>
@@ -916,7 +952,9 @@ export default function ShopDashboardPage() {
             <Link href="/shop/settings"><SettingsIcon className="size-4" /> Settings</Link>
           </Button>
           <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
-            <Link href="/shop/printer"><PrinterIcon className="size-4" /> Print agent</Link>
+            {/* M22 fix: link to /shop/devices (live) instead of
+                /shop/printer (dead placeholder). */}
+            <Link href="/shop/devices"><PrinterIcon className="size-4" /> Print agent</Link>
           </Button>
         </CardContent>
       </Card>

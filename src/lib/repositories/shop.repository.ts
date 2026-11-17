@@ -153,6 +153,59 @@ export class ShopRepository extends BaseRepository<ShopRow> {
     return rows.map(toDomain);
   }
 
+  /**
+   * Search active shops by a free-text query (matches name OR address,
+   * case-insensitive) with pagination. Returns the page slice for the
+   * given offset/limit.
+   *
+   * H14 fix: the public shops list endpoint (`GET /api/v1/shops?q=…`)
+   * previously called `listActive(limit+1, offset)` and THEN filtered
+   * in memory — which meant the `pagination.total` and `pagination.hasNext`
+   * values were wrong (they reflected the un-filtered count, not the
+   * search-matched count). This method moves the filtering into the DB
+   * query so totals + hasNext are correct.
+   *
+   * Uses Prisma-style `OR` + `contains` + `mode: 'insensitive'` operators.
+   * The in-memory adapter (used in tests) also supports these operators
+   * (see `InMemoryDatabaseAdapter.matches`).
+   *
+   * When `query` is empty/null/whitespace, this delegates to `listActive`
+   * (no OR clause is emitted) — same fast-path as before.
+   */
+  async searchActive(query: string, limit = 20, offset = 0): Promise<Shop[]> {
+    const q = (query ?? '').trim();
+    if (!q) return this.listActive(limit, offset);
+    const rows = await this.findMany(
+      {
+        isActive: true,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { address: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      { limit, offset, order: ['createdAt', 'desc'] },
+    );
+    return rows.map(toDomain);
+  }
+
+  /**
+   * Count active shops matching the search query (mirror of
+   * {@link searchActive} for total-count calculation). Used by the public
+   * shops list endpoint to return the correct `pagination.total` value
+   * after a search.
+   */
+  async countActiveWithQuery(query: string): Promise<number> {
+    const q = (query ?? '').trim();
+    if (!q) return this.countWhere({ isActive: true });
+    return this.countWhere({
+      isActive: true,
+      OR: [
+        { name: { contains: q, mode: 'insensitive' } },
+        { address: { contains: q, mode: 'insensitive' } },
+      ],
+    });
+  }
+
   /** List ALL shops (admin only). Includes inactive. */
   async listAll(limit = 100, offset = 0): Promise<Shop[]> {
     const rows = await this.findMany(

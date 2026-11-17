@@ -1209,7 +1209,7 @@ function PrintLatchButton({
   // If agent is not connected, show a link to the setup page.
   if (agentConnected === false) {
     return (
-      <a href="/shop/printer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
+      <a href="/shop/devices" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
         <PrinterIcon className="size-3" />
         Set up printer
       </a>

@@ -17,13 +17,46 @@ import { UnauthorizedError } from '@platform/core/errors';
  * rejected by the register handler (and the DB unique index on `slug`).
  *
  * Returns `{ available: boolean, slug: string }` on success and a soft
- * `{ available: false, reason: 'invalid' | 'taken' | 'error' }` envelope for
- * non-exceptional cases (invalid slug format, slug already taken, or
- * unexpected probe error) — never throws 5xx for normal user input.
+ * `{ available: false, reason: 'invalid' | 'reserved' | 'taken' | 'error' }`
+ * envelope for non-exceptional cases (invalid slug format, reserved slug,
+ * slug already taken, or unexpected probe error) — never throws 5xx for
+ * normal user input.
+ *
+ * H10 fix: the probe now ALSO rejects reserved slugs (`admin`, `api`,
+ * `shop`, `login`, etc.) before hitting the DB — so the client shows
+ * "reserved" inline immediately, instead of letting the user submit the
+ * form and get a 409 from POST /register. The reserved list is kept in
+ * sync with the one in register/route.ts.
  *
  * Rate-limited at 30 requests / 60s per IP to prevent slug-enumeration
  * scraping.
  */
+
+/** Reserved slugs — must stay in sync with src/app/api/v1/auth/register/route.ts. */
+const RESERVED_SLUGS = new Set([
+  'admin',
+  'api',
+  'shop',
+  'shops',
+  'login',
+  'register',
+  'auth',
+  'sw',
+  '_next',
+]);
+
+/** Returns true if the slug is reserved (cannot be registered as a shop URL). */
+function isReservedSlug(slug: string): boolean {
+  const normalised = slug.replace(/^-+|-+$/g, '');
+  if (RESERVED_SLUGS.has(slug) || RESERVED_SLUGS.has(normalised)) return true;
+  for (const reserved of RESERVED_SLUGS) {
+    if (slug.startsWith(`${reserved}-`) || slug.startsWith(`${reserved}_`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await rateLimit(getContainer().cache, rateKey(req, 'slug-check'), 30, 60);
@@ -34,6 +67,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return ok({ available: false, reason: 'invalid', slug: slugRaw });
     }
     const slug = parsed.data;
+
+    // H10 fix: reject reserved slugs inline — the user shouldn't be allowed
+    // to even submit `admin` or `api` as their shop URL.
+    if (isReservedSlug(slug)) {
+      return ok({ available: false, reason: 'reserved', slug });
+    }
 
     const taken = await repos.shops.findBySlug(slug);
     if (taken) {

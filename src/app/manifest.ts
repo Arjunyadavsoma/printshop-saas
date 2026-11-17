@@ -77,7 +77,9 @@ export default function manifest(): MetadataRoute.Manifest {
         name: 'Printer Setup',
         short_name: 'Printer',
         description: 'Configure your print engine (PrintLatch or Native Windows Printer)',
-        url: '/shop/printer',
+        // M22 fix: /shop/printer is a dead redirect placeholder; the live
+        // device-management route is /shop/devices.
+        url: '/shop/devices',
         icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }],
       },
       {

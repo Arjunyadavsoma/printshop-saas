@@ -495,20 +495,96 @@ export default function ShopSettingsPage() {
 
   const printQr = () => {
     if (!qr?.pngDataUrl) return;
-    const w = window.open('', '_blank', 'width=480,height=640');
-    if (!w) return;
-    w.document.write(`
-      <html><head><title>Print QR — ${shop?.name ?? 'Shop'}</title></head>
-      <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif">
-        <h1 style="margin:0 0 8px;font-size:24px">${shop?.name ?? 'Shop'}</h1>
-        <p style="margin:0 0 24px;color:#555">Scan to start an order</p>
-        <img src="${qr.pngDataUrl}" alt="QR" style="width:300px;height:300px" />
-        <p style="margin-top:24px;color:#555;font-size:12px">${qr.customerUrl}</p>
-      </body></html>
-    `);
-    w.document.close();
-    w.focus();
-    w.print();
+    // M21 fix: previously this used `window.open()` + `w.document.write()`
+    // with the shop name + customer URL interpolated directly into the
+    // HTML string. If the shop name contained `</script>` or other HTML,
+    // it would be interpreted as markup (XSS) — and the opened window
+    // inherits the opener's origin, so script execution had full access
+    // to the parent app's localStorage (auth tokens).
+    //
+    // Now we open the print window with `noopener,noreferrer` (the
+    // returned handle is null in some browsers, so we re-acquire the
+    // document via the second argument to open() — that's the window
+    // itself) and build the print document with safe DOM manipulation:
+    // `document.createElement()` + `textContent` (NEVER innerHTML) so
+    // the shop name and URL are treated as plain text, not HTML.
+    //
+    // The `noopener` feature also breaks the opener reference, so even if
+    // a future bug let script run in the print window, it couldn't reach
+    // back into the parent app's storage.
+    const printWin = window.open('', '_blank', 'width=480,height=640,noopener,noreferrer');
+    if (!printWin) {
+      // Popup blocked — surface to the user instead of silently failing.
+      console.warn('[printQr] popup blocked by browser');
+      return;
+    }
+    const doc = printWin.document;
+
+    // ── Build the print document entirely with safe DOM APIs ──
+    doc.title = `Print QR — ${shop?.name ?? 'Shop'}`;
+
+    // Body styles (no user data here, safe to set via textContent-style APIs)
+    const style = doc.createElement('style');
+    style.textContent = `
+      html, body { margin: 0; padding: 0; }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #1f2937;
+      }
+      h1 { margin: 0 0 8px; font-size: 24px; font-weight: 600; }
+      .sub { margin: 0 0 24px; color: #555; font-size: 14px; }
+      .url { margin-top: 24px; color: #555; font-size: 12px; word-break: break-all; text-align: center; max-width: 320px; }
+      img { width: 300px; height: 300px; }
+    `;
+    doc.head.appendChild(style);
+
+    // Shop name — textContent, never innerHTML. If the shopkeeper named
+    // their shop `<script>alert(1)</script>` this renders as literal text.
+    const h1 = doc.createElement('h1');
+    h1.textContent = shop?.name ?? 'Shop';
+    doc.body.appendChild(h1);
+
+    const sub = doc.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = 'Scan to start an order';
+    doc.body.appendChild(sub);
+
+    // QR image — the src is a data: URL we generated server-side. Setting
+    // it via setAttribute('src', ...) is safe (the value is a PNG base64
+    // string we control, not user input). The alt text is also plain text.
+    const img = doc.createElement('img');
+    img.setAttribute('src', qr.pngDataUrl);
+    img.setAttribute('alt', 'QR code for the shop order URL');
+    doc.body.appendChild(img);
+
+    const urlP = doc.createElement('p');
+    urlP.className = 'url';
+    // textContent — if the customer URL somehow contained HTML, it would
+    // be rendered as text, not parsed as markup.
+    urlP.textContent = qr.customerUrl ?? '';
+    doc.body.appendChild(urlP);
+
+    // Trigger print after the image has a chance to decode. Without this,
+    // some browsers print a blank page because the data: URL image hasn't
+    // loaded yet when print() fires synchronously.
+    img.addEventListener('load', () => {
+      printWin.focus();
+      printWin.print();
+    });
+    // Fallback in case 'load' already fired (cached image) or fails.
+    setTimeout(() => {
+      try {
+        printWin.focus();
+        printWin.print();
+      } catch {
+        // Best-effort — the user can also Ctrl+P.
+      }
+    }, 250);
   };
 
   // ── Render ──

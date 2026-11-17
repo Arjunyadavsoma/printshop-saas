@@ -133,7 +133,37 @@ function validateDatabaseProvider(): string {
  * The DB UNIQUE constraint on paymentTxnId is the authoritative idempotency guard
  * (the cache check is a secondary fast-path, not the authoritative guard).
  * Rate limiting is per-invocation on serverless — acceptable for a pilot/demo.
+ *
+ * H11 fix: the previous implementation only checked `UPSTASH_REDIS_REST_URL`
+ * + `UPSTASH_REDIS_REST_TOKEN`, but the Redis adapter is constructed below
+ * with `REDIS_URL` + `REDIS_TOKEN` (the standard Upstash env-var names that
+ * Vercel's Upstash integration provisions). The mismatch meant the
+ * fall-back to `memory` fired EVEN WHEN `REDIS_URL`/`REDIS_TOKEN` were
+ * correctly set — silently downgrading to per-process caching. Now we
+ * accept EITHER set of env-var names (preferring UPSTASH_REDIS_REST_* for
+ * backward compatibility, then REDIS_URL/TOKEN), and log which one we
+ * picked so misconfiguration is visible in logs.
  */
+function resolveRedisConfig(): { url: string; token: string; source: string } | null {
+  // Prefer the canonical Upstash REST env-var names (what Vercel's Upstash
+  // integration provisions). These are the ones the adapter was originally
+  // documented to use.
+  const upstashUrl = env('UPSTASH_REDIS_REST_URL');
+  const upstashToken = env('UPSTASH_REDIS_REST_TOKEN');
+  if (upstashUrl && upstashToken) {
+    return { url: upstashUrl, token: upstashToken, source: 'UPSTASH_REDIS_REST_*' };
+  }
+  // Fall back to the alternate names used elsewhere in the codebase (the
+  // adapter constructor reads REDIS_URL / REDIS_TOKEN). Both sets are
+  // commonly provisioned by Upstash — accept either.
+  const redisUrl = env('REDIS_URL');
+  const redisToken = env('REDIS_TOKEN');
+  if (redisUrl && redisToken) {
+    return { url: redisUrl, token: redisToken, source: 'REDIS_*' };
+  }
+  return null;
+}
+
 function validateCacheProvider(): string {
   const provider = env('CACHE_PROVIDER', 'memory');
   if (process.env.NODE_ENV === 'production' && provider === 'memory') {
@@ -142,12 +172,22 @@ function validateCacheProvider(): string {
     // but DB UNIQUE constraints still guard payment idempotency).
     console.warn('[container] CACHE_PROVIDER=memory in production — rate limiting is per-invocation. DB UNIQUE constraints still guard payment idempotency. Set CACHE_PROVIDER=redis + Upstash credentials for proper rate limiting.');
   }
-  // Also gracefully handle missing Upstash credentials when CACHE_PROVIDER=redis.
+  // H11 fix: gracefully handle missing Redis credentials under either
+  // env-var name set. If CACHE_PROVIDER=redis but NEITHER
+  // UPSTASH_REDIS_REST_* nor REDIS_* is set, fall back to memory cache
+  // (with a loud warning in production — don't crash the app).
   if (provider === 'redis') {
-    if (!env('UPSTASH_REDIS_REST_URL') || !env('UPSTASH_REDIS_REST_TOKEN')) {
-      console.error('[container] CACHE_PROVIDER=redis but UPSTASH_REDIS_REST_URL/TOKEN not set — falling back to memory cache.');
+    const cfg = resolveRedisConfig();
+    if (!cfg) {
+      if (process.env.NODE_ENV === 'production') {
+        console.warn('[container] CACHE_PROVIDER=redis but no Redis credentials found (checked UPSTASH_REDIS_REST_URL/TOKEN and REDIS_URL/TOKEN). Falling back to memory cache. Set one of those env-var pairs in your hosting provider to enable shared rate limiting + idempotency.');
+      } else {
+        console.warn('[container] CACHE_PROVIDER=redis but no Redis credentials set — falling back to memory cache (dev).');
+      }
       return 'memory';
     }
+    // Log which env-var pair is being used so misconfiguration is visible.
+    console.log(`[container] Redis cache configured from ${cfg.source} env vars.`);
   }
   return provider;
 }
@@ -284,11 +324,16 @@ function buildContainer(): Container {
     : new InMemoryStorageAdapter();
 
   // Cache
+  // H11 fix: use resolveRedisConfig() to pick whichever env-var pair is
+  // configured (UPSTASH_REDIS_REST_* or REDIS_*). validateCacheProvider()
+  // already validated that credentials exist when provider==='redis', so
+  // the cast is safe here. Falls back to memory otherwise.
+  const cacheProvider = env('CACHE_PROVIDER', 'memory');
+  const redisCfg = cacheProvider === 'redis' ? resolveRedisConfig() : null;
   const cache: CacheAdapter =
-    env('CACHE_PROVIDER', 'memory') === 'redis' ? new UpstashCacheAdapter({
-      url: env('REDIS_URL'),
-      token: env('REDIS_TOKEN'),
-    }) : new InMemoryCacheAdapter();
+    cacheProvider === 'redis' && redisCfg
+      ? new UpstashCacheAdapter({ url: redisCfg.url, token: redisCfg.token })
+      : new InMemoryCacheAdapter();
 
   // Realtime — socket.io relay (pushes to the dashboard mini-service on :3004)
   // when REALTIME_PROVIDER=socketio; else in-memory for tests/single-process.

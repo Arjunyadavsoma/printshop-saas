@@ -547,14 +547,19 @@ export default function ReportsPage() {
               label="Total orders"
               value={String(rangedOrders.length)}
             />
+            {/* M-6 fix: AOV was previously computed as totalRevenue /
+                totalOrders (using ALL orders as the denominator, including
+                awaiting_payment + cancelled + refunded). This understated
+                the average ticket size because unpaid/cancelled orders
+                inflated the denominator. Per the audit, AOV should be
+                totalRevenue / paidOrderCount — i.e., the average value of
+                orders that actually got paid. Labelled "Avg paid order
+                value" so it's explicit which denominator is used. */}
             <TotalCell
-              label="Avg order value"
+              label="Avg paid order value"
               value={formatINRFromPaise(
-                rangedOrders.length > 0
-                  ? Math.round(
-                      rangedOrders.reduce((a, o) => a + o.totalAmountPaise, 0) /
-                        rangedOrders.length,
-                    )
+                summary.paidCount > 0
+                  ? Math.round(summary.paidPaise / summary.paidCount)
                   : 0,
               )}
             />

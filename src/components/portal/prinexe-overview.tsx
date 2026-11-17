@@ -80,7 +80,7 @@ export function PrintEXEOverview() {
           <div className="flex flex-col items-center gap-2 py-3 text-center">
             <Monitor className="size-6 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm text-muted-foreground">No devices registered</p>
-            <a href="/shop/printer" className="text-xs text-brand hover:underline">
+            <a href="/shop/devices" className="text-xs text-brand hover:underline">
               Set up a device →
             </a>
           </div>
@@ -134,7 +134,7 @@ export function PrintEXEOverview() {
               )}
             </div>
 
-            <a href="/shop/printer" className="block text-center text-xs text-brand hover:underline">
+            <a href="/shop/devices" className="block text-center text-xs text-brand hover:underline">
               Manage devices →
             </a>
           </>

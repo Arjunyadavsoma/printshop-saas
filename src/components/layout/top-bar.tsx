@@ -32,7 +32,11 @@ export interface TopBarProps {
 const DEFAULT_ROUTE_LABELS: Record<string, string> = {
   '/shop/dashboard': 'Dashboard',
   '/shop/orders': 'Orders',
-  '/shop/printer': 'Printers',
+  // M22 fix: /shop/printer is a dead placeholder page — the canonical
+  // device-management route is /shop/devices. The top bar previously
+  // derived the title "Printers" from the dead route; now it derives
+  // "Devices" from the live route.
+  '/shop/devices': 'Devices',
   '/shop/reports': 'Reports',
   '/shop/settings': 'Settings',
   '/admin': 'Overview',

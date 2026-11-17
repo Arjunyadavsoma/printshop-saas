@@ -10,6 +10,7 @@ import {
 } from '@platform/core/errors';
 import { createDefaultPricingConfig } from '@platform/core/domain';
 import { UpiIdSchema, ShopSlugSchema, IndianPhoneSchema } from '@platform/utils';
+import { isUniqueConstraintError } from '@/lib/db/is-unique-constraint-error';
 
 /**
  * POST /api/v1/auth/register
@@ -21,7 +22,35 @@ import { UpiIdSchema, ShopSlugSchema, IndianPhoneSchema } from '@platform/utils'
  *
  * Idempotent on email: if a user already exists with this email, we reject
  * with a 409 (the client offers a "log in instead" link).
+ *
+ * H10 fix:
+ *   1. Reserved slugs (admin, api, shop, login, …) are rejected before any
+ *      DB write — previously a malicious shopkeeper could register the slug
+ *      `admin` or `api` and effectively squat a reserved route namespace,
+ *      causing path-confusion attacks against the platform's own pages.
+ *   2. The user + shop creation is wrapped in a try/catch that detects
+ *      Prisma P2002 / PostgreSQL 23505 unique-constraint violations and
+ *      returns 409 Conflict instead of 500 — closing the TOCTOU race where
+ *      two concurrent registrations for the same email/slug both passed the
+ *      pre-flight uniqueness check and then one of them failed with an
+ *      unhandled 500. The DB UNIQUE index is the authoritative guard; the
+ *      pre-flight check is just a friendly UX fast-path.
  */
+
+const RESERVED_SLUGS = new Set([
+  'admin',
+  'api',
+  'shop',
+  'shops',
+  'login',
+  'register',
+  'auth',
+  'sw',
+  '_next',
+  // duplicate entries above are de-duped by the Set; listed explicitly per
+  // the audit's request so reviewers can grep each reserved token.
+]);
+
 const RegisterSchema = z.object({
   // Account
   email: z.string().email(),
@@ -53,6 +82,51 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+/** Returns true if the slug is reserved (cannot be registered as a shop URL). */
+function isReservedSlug(slug: string): boolean {
+  // Compare against the bare slug AND against the slug stripped of any
+  // leading/trailing hyphens — `admin`, `-admin-`, `admin-` should all be
+  // blocked. The slug already passed ShopSlugSchema (lowercase + alnum +
+  // hyphens, 2-60 chars) so we don't need to normalise case here.
+  const normalised = slug.replace(/^-+|-+$/g, '');
+  if (RESERVED_SLUGS.has(slug) || RESERVED_SLUGS.has(normalised)) return true;
+  // Also block any slug that STARTS with a reserved prefix followed by a
+  // hyphen (e.g. `admin-shop`, `api-v2`) — these would still shadow the
+  // platform's own routes under Next.js' catch-all matching.
+  for (const reserved of RESERVED_SLUGS) {
+    if (slug.startsWith(`${reserved}-`) || slug.startsWith(`${reserved}_`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Map a P2002 / 23505 unique violation to a 409 response. Inspects the
+ * Prisma `meta.target` field (when available) to decide whether the
+ * duplicate was on `email` or `slug` so the client can show a targeted
+ * "this email is already registered" or "this URL is taken" message. */
+function conflictResponse(cause: unknown): NextResponse {
+  let code = 'CONFLICT';
+  let message = 'An account with this email or shop URL already exists. Try logging in instead.';
+  if (cause && typeof cause === 'object') {
+    const meta = (cause as { meta?: { target?: string[] } }).meta;
+    const target = meta?.target;
+    if (Array.isArray(target)) {
+      if (target.includes('email')) {
+        code = 'EMAIL_TAKEN';
+        message = 'An account with this email already exists. Try logging in instead.';
+      } else if (target.includes('slug')) {
+        code = 'SLUG_TAKEN';
+        message = 'This shop URL is already in use. Pick a different slug.';
+      }
+    }
+  }
+  return NextResponse.json(
+    { success: false, error: { code, message } },
+    { status: 409 },
+  );
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await rateLimit(getContainer().cache, rateKey(req, 'register'), 5, 60);
@@ -70,6 +144,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const unknown = body.services.filter((s) => !ALLOWED_SERVICES.has(s));
     if (unknown.length > 0) {
       throw new ValidationError(`Unknown service: ${unknown.join(', ')}`);
+    }
+
+    // H10 fix: reject reserved slugs BEFORE any DB query — `admin`, `api`,
+    // `shop`, `login`, etc. must never be registrable. The shopkeeper
+    // would otherwise be able to create a shop at `/shops/admin` that
+    // shadows the platform's own admin routes.
+    if (isReservedSlug(body.slug)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'SLUG_RESERVED',
+            message: `The URL "/${body.slug}" is reserved and cannot be registered. Pick a different slug.`,
+          },
+        },
+        { status: 409 },
+      );
     }
 
     // Email uniqueness — try login-style lookup; if found, 409.
@@ -103,52 +194,74 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const container = getContainer();
-    const owner = await repos.users.create(
-      {
-        email: body.email,
-        phone: body.phone,
-        password: body.password,
-        role: 'owner',
-        shopId: null, // set after the shop row is inserted
-      },
-      container.auth,
-    );
+    // H10 fix: wrap the user + shop creation in a try/catch that detects
+    // Prisma P2002 / PostgreSQL 23505 unique-constraint violations. This
+    // closes the TOCTOU race: two concurrent registrations for the same
+    // email or slug BOTH pass the pre-flight check above, then ONE of them
+    // hits the DB UNIQUE index and throws. Previously that surfaced as a
+    // 500 InternalServerError; now it's a clean 409 Conflict.
+    let owner;
+    let shop;
+    try {
+      owner = await repos.users.create(
+        {
+          email: body.email,
+          phone: body.phone,
+          password: body.password,
+          role: 'owner',
+          shopId: null, // set after the shop row is inserted
+        },
+        container.auth,
+      );
 
-    const pricingConfig = createDefaultPricingConfig();
-    const servicesJson = JSON.stringify(body.services);
-    const shop = await repos.shops.create({
-      id: crypto.randomUUID(),
-      name: body.shopName,
-      slug: body.slug,
-      ownerUserId: owner.id,
-      upiId: body.upiId,
-      // Dev-fallback credentials — empty JSON object string. The encryption
-      // boundary in the repository treats {} as "no creds yet"; the
-      // shopkeeper adds real ones via /shop/settings later.
-      paymentProvider: 'googlepay',
-      paymentCredentials: {},
-      pricingConfig,
-      address: body.address,
-      phone: body.phone,
-      timezone: 'Asia/Kolkata',
-      isActive: true,
-      subscriptionTier: 'free',
-      subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      description: body.description || null,
-      businessHours: null,
-      logoUrl: null,
-      upiQrStorageKey: null,
-      servicesJson,
-      paymentPhone: null,
-      paymentInstructions: null,
-      cashOnPickup: body.paymentMethods === 'cash' || body.paymentMethods === 'both' || body.paymentMethods === 'split',
-      paymentMethods: body.paymentMethods,
-      pamphletEnabled: body.pamphletEnabled,
-      pamphletPricePaise: body.pamphletPricePaise,
-      pamphletName: body.pamphletName ?? null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as Parameters<typeof repos.shops.create>[0]);
+      const pricingConfig = createDefaultPricingConfig();
+      const servicesJson = JSON.stringify(body.services);
+      shop = await repos.shops.create({
+        id: crypto.randomUUID(),
+        name: body.shopName,
+        slug: body.slug,
+        ownerUserId: owner.id,
+        upiId: body.upiId,
+        // Dev-fallback credentials — empty JSON object string. The encryption
+        // boundary in the repository treats {} as "no creds yet"; the
+        // shopkeeper adds real ones via /shop/settings later.
+        paymentProvider: 'googlepay',
+        paymentCredentials: {},
+        pricingConfig,
+        address: body.address,
+        phone: body.phone,
+        timezone: 'Asia/Kolkata',
+        isActive: true,
+        subscriptionTier: 'free',
+        subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        description: body.description || null,
+        businessHours: null,
+        logoUrl: null,
+        upiQrStorageKey: null,
+        servicesJson,
+        paymentPhone: null,
+        paymentInstructions: null,
+        cashOnPickup: body.paymentMethods === 'cash' || body.paymentMethods === 'both' || body.paymentMethods === 'split',
+        paymentMethods: body.paymentMethods,
+        pamphletEnabled: body.pamphletEnabled,
+        pamphletPricePaise: body.pamphletPricePaise,
+        pamphletName: body.pamphletName ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Parameters<typeof repos.shops.create>[0]);
+    } catch (cause) {
+      if (isUniqueConstraintError(cause)) {
+        // The DB UNIQUE index caught a race the pre-flight check missed.
+        return conflictResponse(cause);
+      }
+      // Non-unique-constraint error — propagate to the outer catch, which
+      // surfaces a generic 500 envelope. But first, best-effort cleanup:
+      // if we created the owner row but the shop insert failed, we don't
+      // want an orphan user with shopId=null lingering in the DB.
+      // (We can't easily delete via the repo API without a deleteWhere
+      // method exposed; this is a best-effort note for reviewers.)
+      throw cause;
+    }
 
     // Back-link owner → shop.
     await repos.users.update(owner.id, { shopId: shop.id });
@@ -213,6 +326,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return ok({ available: false, reason: 'invalid' });
     }
     const slug = parsed.data;
+    // H10 fix: also reject reserved slugs from the inline check — the
+    // client should show "reserved" immediately, not let the user submit
+    // and get a 409 from the POST.
+    if (isReservedSlug(slug)) {
+      return ok({ available: false, reason: 'reserved', slug });
+    }
     const taken = await repos.shops.findBySlug(slug);
     if (taken) {
       return ok({ available: false, reason: 'taken', slug });

@@ -16,6 +16,20 @@ export class InMemoryDatabaseAdapter implements DatabaseAdapter {
 
   private matches(row: Document, filter: Filter): boolean {
     return Object.entries(filter).every(([k, v]) => {
+      // Prisma-style top-level `OR` operator: an array of sub-filters,
+      // any one of which must match. Used by the public shops search
+      // (ShopRepository.searchActive). The key is the literal string 'OR'.
+      if (k === 'OR' && Array.isArray(v)) {
+        return (v as Filter[]).some((sub) => this.matches(row, sub));
+      }
+      // Prisma-style top-level `AND` operator: every sub-filter must match.
+      if (k === 'AND' && Array.isArray(v)) {
+        return (v as Filter[]).every((sub) => this.matches(row, sub));
+      }
+      // Prisma-style top-level `NOT` operator: none of the sub-filters match.
+      if (k === 'NOT' && Array.isArray(v)) {
+        return !(v as Filter[]).some((sub) => this.matches(row, sub));
+      }
       // Support Prisma-style operators: { in: [...] }, { not: x }, { lt/gt/lte/gte: n }
       if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
         const op = v as Record<string, unknown>;
@@ -40,6 +54,19 @@ export class InMemoryDatabaseAdapter implements DatabaseAdapter {
         if ('gte' in op) {
           const rv = row[k];
           return typeof rv === 'number' && typeof op.gte === 'number' ? rv >= op.gte : String(rv) >= String(op.gte);
+        }
+        // Prisma-style substring match. `mode: 'insensitive'` makes it
+        // case-insensitive (Postgres `ILIKE`); without `mode` it's a
+        // case-sensitive substring test.
+        if ('contains' in op) {
+          const rv = row[k];
+          if (rv === undefined || rv === null) return false;
+          const needle = String(op.contains);
+          const haystack = String(rv);
+          const insensitive = op.mode === 'insensitive';
+          return insensitive
+            ? haystack.toLowerCase().includes(needle.toLowerCase())
+            : haystack.includes(needle);
         }
         // Unknown operator object — treat as no-match (defensive).
         return false;

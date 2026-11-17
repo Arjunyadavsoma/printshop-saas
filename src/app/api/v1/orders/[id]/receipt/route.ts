@@ -3,7 +3,6 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { repos } from '@/lib/repositories';
 import { NotFoundError } from '@platform/core/errors';
 import { formatINRFromPaise } from '@platform/utils';
-import { priceFile, type PricingInput } from '@platform/core/pricing';
 import { withOrderAccess } from '@/lib/api/with-order-access';
 import { withRateLimit } from '@/lib/api/with-auth';
 
@@ -17,6 +16,18 @@ import { withRateLimit } from '@/lib/api/with-auth';
  * `?t=<token>`. withOrderAccess already reads the `?t=` fallback.
  *
  * Rate-limited (30/min) — FIND-027 fix: prevents brute-force token guessing.
+ *
+ * H8 fix: the receipt previously re-priced each file by calling
+ * `priceFile()` against the shop's CURRENT pricing config. This was wrong
+ * for two reasons:
+ *   1. If the shopkeeper changed their prices between order placement and
+ *      receipt download, the receipt showed different line totals than
+ *      what the customer was actually charged.
+ *   2. The receipt's per-file line total could disagree with the order's
+ *      `totalAmountPaise`, which is what the payment gateway captured.
+ * Now the receipt renders the persisted `file.pricePaise` (captured at
+ * order placement time). If `pricePaise` is null/0 on a placeholder /
+ * unpriced file, the line shows "Pending" instead of an amount.
  */
 export const GET = withRateLimit('receipt', 30, 60,
   withOrderAccess<{ id: string }>(async (_req, _ctx, order) => {
@@ -44,25 +55,22 @@ export const GET = withRateLimit('receipt', 30, 60,
     page.drawText('Line items', { x, y: cursor, size: 12, font: bold });
     cursor -= 18;
     for (const f of files) {
-      const pricingInput: PricingInput = {
-        pages: f.pageCount ?? 1,
-        copies: f.copies,
-        colorMode: f.colorMode,
-        paperSize: f.paperSize,
-        duplex: f.duplex,
-        shopPricingConfig: shop.pricingConfig,
-      };
-      const result = priceFile(pricingInput);
       const label = `${f.originalFilename} — ${f.copies}× (${f.colorMode}/${f.paperSize}${f.duplex ? '/duplex' : ''})`;
+      // H8 fix: render the PERSISTED price (captured at order placement),
+      // not a re-calculation against the shop's current pricing config.
+      // pricePaise === null/0 means the file is a placeholder / unpriced —
+      // show "Pending" instead of misleading the customer with Rs 0.00.
+      const hasPersistedPrice = typeof f.pricePaise === 'number' && f.pricePaise > 0;
+      const priceText = hasPersistedPrice
+        ? formatINRFromPaise(f.pricePaise)
+        : 'Pending';
       page.drawText(label, { x, y: cursor, size: 10, font });
-      page.drawText(formatINRFromPaise(result.totalPaise), { x: 420, y: cursor, size: 10, font });
+      page.drawText(priceText, { x: 420, y: cursor, size: 10, font });
       cursor -= 14;
-      for (const li of result.lineItems) {
-        const sign = li.subtotalPaise < 0 ? '-' : '';
-        page.drawText(`  ${li.label}`, { x: x + 8, y: cursor, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
-        page.drawText(`${sign}${formatINRFromPaise(Math.abs(li.subtotalPaise))}`, { x: 420, y: cursor, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
-        cursor -= 12;
-      }
+      // No sub-line-items — those were a breakdown from the pricing engine
+      // and would also need to be persisted to render authoritatively. The
+      // canonical line total is the persisted `pricePaise`; the order's
+      // `totalAmountPaise` is what was charged and matches the Total line.
       cursor -= 4;
     }
 
