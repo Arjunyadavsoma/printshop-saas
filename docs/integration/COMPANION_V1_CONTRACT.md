@@ -247,7 +247,9 @@ Only commands with `status = 'requested'` and `expiresAt > now` are returned. Ex
 }
 ```
 
-**Status values:** `delivered`, `accepted`, `executing`, `succeeded`, `failed`
+**Status values:** `delivered`, `accepted`, `executing`, `succeeded`, `failed`, `outcome_unknown`
+
+> `outcome_unknown` (Phase 3 addition): the companion reports this when a command was executing but the process crashed/restarted before confirming the side effect's result. This is a **terminal** state — the system must NEVER automatically re-execute or auto-fail these commands. The shopkeeper must manually resolve them (verify physical output, then mark succeeded or failed).
 
 **Response (200):**
 ```json

@@ -44,13 +44,19 @@ interface PendingCommandDto {
   expiresAt: string;
 }
 
-/** Terminal + intermediate statuses the companion may report. */
+/** Terminal + intermediate statuses the companion may report.
+ *
+ * Phase 3 addition: `outcome_unknown` — the companion reports this when a
+ * command was executing but the process crashed/restarted before confirming
+ * the side effect's result. The shopkeeper must manually resolve these —
+ * the system must NEVER automatically re-execute or auto-fail them. */
 const REPORTABLE_STATUSES = [
   'delivered',
   'accepted',
   'executing',
   'succeeded',
   'failed',
+  'outcome_unknown',
 ] as const;
 
 const ReportSchema = z.object({
@@ -133,10 +139,10 @@ export const POST = withDeviceAuth(async (req, _ctx, { agent }) => {
   }
 
   // The reported status is already validated by zod against the reportable
-  // set (delivered|accepted|executing|succeeded|failed) — 'requested' is the
-  // pre-delivery state and is rejected at the schema layer, so no extra guard
-  // is needed here.
-  const isTerminal = body.status === 'succeeded' || body.status === 'failed';
+  // set (delivered|accepted|executing|succeeded|failed|outcome_unknown).
+  // `outcome_unknown` is terminal — it means the companion crashed during
+  // execution and cannot confirm the result. It must NOT be auto-retried.
+  const isTerminal = body.status === 'succeeded' || body.status === 'failed' || body.status === 'outcome_unknown';
   const patch: Partial<DeviceCommandRow> = {
     status: body.status,
     result: body.result ? JSON.stringify(body.result) : row.result,
