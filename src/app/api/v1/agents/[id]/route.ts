@@ -38,22 +38,22 @@ export const DELETE = withAuth(async (req, ctx, principal) => {
   // Return any queued jobs assigned to this agent to the queue — set
   // agentId=null so another agent can claim them. Jobs in 'printing'
   // state are left alone (they may have already spooled to the printer).
-  const activeJobs = await container.db.findMany('PrintJob', {
+  const activeJobs = await container.db.findMany('printJob', {
     agentId: agent.id,
     status: 'queued',
   });
   for (const job of activeJobs) {
-    await container.db.update('PrintJob', { id: job.id }, {
+    await container.db.update('printJob', { id: job.id }, {
       agentId: null,
       updatedAt: new Date(),
     });
   }
 
   // Delete the agent row — this revokes the token (hash is gone)
-  await container.db.delete('PrintAgent', { id: agent.id, shopId: shop.id });
+  await container.db.delete('printAgent', { id: agent.id, shopId: shop.id });
 
   // Audit log
-  await container.db.insert('AuditLog', {
+  await container.db.insert('auditLog', {
     id: crypto.randomUUID(),
     shopId: shop.id,
     userId: principal.userId,

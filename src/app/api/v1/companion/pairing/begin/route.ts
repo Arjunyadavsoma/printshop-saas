@@ -3,6 +3,8 @@ import { withAuth, withRateLimit } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { getContainer } from '@/lib/container';
 import { ok } from '@/lib/api/envelope';
+import { isEntitled } from '@/lib/api/entitlements';
+import { ForbiddenError } from '@platform/core/errors';
 
 /**
  * POST /api/v1/companion/pairing/begin — shopkeeper-authed.
@@ -26,6 +28,19 @@ export const POST = withRateLimit(
   60,
   withAuth(async (req, _ctx, principal) => {
     const shop = await repos.shops.getByOwner(principal.userId);
+
+    // multi_device entitlement: a free-tier shop may pair exactly one Windows
+    // device. The FIRST device is always allowed (never lock a shop out of
+    // the product entirely); additional devices require the plan feature.
+    // Enforced here (ticket creation) so the error surfaces in the Add
+    // Device dialog, before any device-side action.
+    const shopDevices = await repos.printAgents.listByShop(shop.id);
+    const enabledDeviceCount = shopDevices.filter((d) => d.isEnabled !== false).length;
+    if (enabledDeviceCount >= 1 && !(await isEntitled(shop.id, 'multi_device'))) {
+      throw new ForbiddenError(
+        'ENTITLEMENT_REQUIRED: multi_device — your current plan supports one paired Windows device. Upgrade the subscription to connect more.',
+      );
+    }
 
     // 32 random bytes → 64-char hex string. Cryptographically random.
     const ticket = randomBytes(32).toString('hex');

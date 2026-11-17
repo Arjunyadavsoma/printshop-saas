@@ -7,6 +7,13 @@ export interface PrintAgent {
   shopId: string;
   name: string;
   tokenHash: string;
+  /** Hash of the credential that was valid immediately before tokenHash.
+   *  Set by POST /api/v1/companion/token/rotate; honoured for a short grace
+   *  window (see with-auth.ts) so an in-flight request is not dropped
+   *  mid-rotation. Optional: null for devices that never rotated. */
+  prevTokenHash?: string | null;
+  /** When the credential was last rotated. Drives the grace-window check. */
+  tokenRotatedAt?: Date | null;
   lastSeenAt: Date | null;
   printerName: string | null;
   isOnline: boolean;

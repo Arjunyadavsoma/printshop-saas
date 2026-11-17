@@ -84,7 +84,7 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
     const container = getContainer();
     let alreadyReceived = false;
     try {
-      const existing = await (container.db as any).findMany('PrintDeliveryAttempt', {
+      const existing = await (container.db as any).findMany('printDeliveryAttempt', {
         printJobId: jobId,
         status: 'received',
       });
@@ -129,7 +129,7 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
 
     // Audit log
     try {
-      await container.db.insert('AuditLog', {
+      await container.db.insert('auditLog', {
         id: crypto.randomUUID(),
         shopId,
         userId: null,

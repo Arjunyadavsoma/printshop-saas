@@ -101,7 +101,7 @@ export interface AgentPrincipal {
 
 /**
  * Wrap a route handler with device-token auth. The Bearer token is hashed
- * (SHA-256) and matched against printAgent.tokenHash. The agent's shopId is
+ * (HMAC-SHA256) and matched against printAgent.tokenHash. The agent's shopId is
  * the tenant scope. Heartbeats refresh lastSeenAt + isOnline so the dispatch
  * path knows an agent is reachable.
  *
@@ -111,17 +111,51 @@ export interface AgentPrincipal {
  * (which would lose audit history). Previously the disabled flag was a
  * no-op: a disabled device could still heartbeat, claim jobs, and receive
  * device commands as long as its token hash matched.
+ *
+ * Token rotation overlap: after POST /api/v1/companion/token/rotate the old
+ * token's hash is kept in `prevTokenHash` for a short grace window, so a
+ * device that persisted the new credential but still has a request in flight
+ * is not locked out. The window is deliberately short (10 minutes).
+ *
+ * opts.rateLimit: optional per-agent rate limit. Authenticated device routes
+ * were previously unthrottled (docs/API_CONTRACT.md §1.5); each device-facing
+ * route now declares a generous cap sized well above the client's polling
+ * cadence so legitimate devices are never slowed, but runaway/compromised
+ * devices are.
  */
+const DEVICE_TOKEN_OVERLAP_MS = 10 * 60 * 1000;
+
+/**
+ * Default per-agent cap when a route does not declare its own limit. Sized
+ * well above the companion's legitimate cadence (2s job poll + 3s command
+ * poll + 15s heartbeat ≈ 60 req/min worst case, all combined), so normal
+ * devices are never slowed — but runaway or compromised devices are throttled.
+ * Keyed per agent per path (devices behind a shop NAT share an IP, so IP
+ * keying would falsely group them).
+ */
+const DEFAULT_DEVICE_RATE_LIMIT = { limit: 150, windowSeconds: 60 };
+
+export interface DeviceAuthOptions {
+  rateLimit?: { limit: number; windowSeconds: number };
+}
+
 export function withDeviceAuth<P extends RouteParams = RouteParams>(
   handler: (req: NextRequest, ctx: RouteCtx<P>, agent: AgentPrincipal) => Promise<NextResponse>,
+  opts?: DeviceAuthOptions,
 ) {
   return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
+    const container = getContainer();
     try {
       const header = req.headers.get('authorization') ?? '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new UnauthorizedError('Missing device token');
       const tokenHash = createHmac('sha256', 'print-agent-salt').update(token).digest('hex');
-      const agent = await repos.printAgents.findByTokenHash(tokenHash);
+      let agent = await repos.printAgents.findByTokenHash(tokenHash);
+      if (!agent) {
+        // Rotation overlap: fall back to the previous token hash if it is
+        // still inside the grace window.
+        agent = await repos.printAgents.findByPreviousTokenHash(tokenHash, DEVICE_TOKEN_OVERLAP_MS);
+      }
       if (!agent) throw new UnauthorizedError('Unknown device token');
       // H2: a disabled device is a security revocation — reject every
       // authenticated call. The token is still recognised (so we don't leak
@@ -130,6 +164,15 @@ export function withDeviceAuth<P extends RouteParams = RouteParams>(
       if (agent.isEnabled === false) {
         throw new ForbiddenError(
           'DEVICE_DISABLED: This device has been disabled by the shopkeeper. Ask them to re-enable it from /shop/devices.',
+        );
+      }
+      if (opts?.rateLimit ?? true) {
+        const rl = opts?.rateLimit ?? DEFAULT_DEVICE_RATE_LIMIT;
+        await rateLimit(
+          container.cache,
+          `device:${agent.id}:${req.nextUrl.pathname}`,
+          rl.limit,
+          rl.windowSeconds,
         );
       }
       // Refresh presence on every authenticated call (cheap; the heartbeat
@@ -141,6 +184,7 @@ export function withDeviceAuth<P extends RouteParams = RouteParams>(
     }
   };
 }
+
 
 /** Wrap a public (unauthenticated) handler with a rate limit. */
 export function withRateLimit<P extends RouteParams = RouteParams>(

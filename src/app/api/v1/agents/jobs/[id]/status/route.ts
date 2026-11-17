@@ -8,17 +8,25 @@ import { NotFoundError } from '@platform/core/errors';
 import { shopChannel } from '@platform/core/interfaces';
 
 const StatusSchema = z.object({
-  status: z.enum(['printing', 'completed', 'failed']),
+  status: z.enum(['printing', 'completed', 'failed', 'needs_review']),
   lastError: z.string().max(500).optional(),
   printerName: z.string().max(200).optional(),
 });
 
 /**
  * POST /api/v1/agents/jobs/:id/status — device-token-authed. The agent reports
- * a status transition (queued→printing→completed|failed). Enforces the state
- * machine; updates the PrintJob + File; publishes realtime events so the
- * dashboard updates live. First-claim-wins: a transition that isn't allowed
+ * a status transition (queued→printing→completed|failed|needs_review). Enforces
+ * the state machine; updates the PrintJob + File; publishes realtime events so
+ * the dashboard updates live. First-claim-wins: a transition that isn't allowed
  * (e.g. an agent claiming a job another agent already claimed) returns 409.
+ *
+ * `needs_review` is reported by PrintEXE when a job was submitted to the
+ * Windows spooler but its physical outcome could not be established (spooler
+ * timeout, crash mid-print, ambiguous recovery). The job leaves the printable
+ * queue and waits for operator resolution on the website; the operator's
+ * decision is reported back as `completed` or `failed`. This keeps the
+ * dashboard honest: paper may or may not have come out — the backend never
+ * silently retries or claims success for an uncertain job.
  */
 export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, shopId }) => {
   try {
@@ -49,17 +57,54 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
     } else if (body.status === 'completed') {
       // Idempotent: conditional update WHERE id AND status='printing'.
       // If the job is already 'completed' (duplicate ack), this is a no-op.
-      const updated = await container.db.update(
+      let updated = await container.db.update(
         'printJob',
         { id, shopId, status: 'printing' },
         { status: 'completed', completedAt: now },
       );
       if (updated.length === 0) {
-        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — not in 'printing' state (duplicate ack or already completed)` });
+        // Operator resolution path: a job parked in needs_review (uncertain
+        // physical outcome) can be confirmed completed by the device after
+        // the operator marks it resolved locally.
+        updated = await container.db.update(
+          'printJob',
+          { id, shopId, status: 'needs_review' },
+          { status: 'completed', completedAt: now },
+        );
+      }
+      if (updated.length === 0) {
+        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — not in 'printing' or 'needs_review' state (duplicate ack or already completed)` });
       }
       await repos.files.update(job.fileId, { status: 'completed', printedAt: now });
       await publish(channel, 'job.completed', { jobId: id, fileId: job.fileId });
       await maybeMarkOrderReady(job.fileId, shopId, channel);
+    } else if (body.status === 'needs_review') {
+      // Uncertain physical outcome. Allowed from 'printing' (claimed but the
+      // spooler result could not be established) or from 'queued' (the device
+      // knows the paper state is unknown before a claim completes — e.g.
+      // crash recovery). Both transitions are conditional so a concurrent
+      // state change wins and we return skipped honestly.
+      let updated = await container.db.update(
+        'printJob',
+        { id, shopId, status: 'printing' },
+        { status: 'needs_review', lastError: body.lastError ?? null },
+      );
+      if (updated.length === 0) {
+        updated = await container.db.update(
+          'printJob',
+          { id, shopId, status: 'queued' },
+          { status: 'needs_review', lastError: body.lastError ?? null },
+        );
+      }
+      if (updated.length === 0) {
+        return ok({ jobId: id, skipped: true, reason: `job is '${job.status}' — needs_review only applies to 'printing' or 'queued' jobs` });
+      }
+      await repos.files.update(job.fileId, { status: 'needs_review' });
+      await publish(channel, 'job.needs_review', {
+        jobId: id,
+        fileId: job.fileId,
+        error: body.lastError,
+      });
     } else if (body.status === 'failed') {
       // Increment the attempts counter on failure so retry logic can
       // track how many times a job has been attempted.

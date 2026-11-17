@@ -189,6 +189,12 @@ model PrintAgent {
   shopId          String
   name            String
   tokenHash       String
+  // Token rotation: hash of the credential that was valid immediately
+  // before the current one, plus when the rotation happened. The previous
+  // token is honoured for a short grace window (10 minutes) so an in-flight
+  // request is not dropped mid-rotation, then stops working.
+  prevTokenHash   String?
+  tokenRotatedAt  DateTime?
   lastSeenAt      DateTime?
   printerName     String?
   isOnline        Boolean   @default(false)
@@ -238,7 +244,7 @@ model DeviceCommand {
   agent           PrintAgent @relation(fields: [agentId], references: [id])
   commandType     String    // refresh_printers|pause|resume|cancel_job|retry_job|test_print|diagnostics
   payload         String    // JSON string — validated per command type
-  status          String    @default("requested") // requested|delivered|accepted|executing|succeeded|failed|expired|cancelled
+  status          String    @default("requested") // requested|delivered|accepted|executing|succeeded|failed|outcome_unknown|expired|cancelled
   initiatedBy     String    // user ID who sent the command
   result          String?   // JSON string with execution result/error
   idempotencyKey  String    @unique
