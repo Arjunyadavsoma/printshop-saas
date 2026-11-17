@@ -35,7 +35,14 @@ const ALLOWED_COMMAND_TYPES = [
 
 const SendCommandSchema = z.object({
   commandType: z.enum(ALLOWED_COMMAND_TYPES),
-  payload: z.record(z.string(), z.unknown()).optional(),
+  payload: z
+    .record(z.string(), z.unknown())
+    .optional()
+    // Phase 2 §11 hardening: bound the serialized payload (commands are small
+    // control messages; the device stores them verbatim in its local queue).
+    .refine((v) => v === undefined || Buffer.byteLength(JSON.stringify(v)) <= 16384, {
+      message: 'Command payload must serialize to at most 16 KB.',
+    }),
   idempotencyKey: z.string().min(1).max(120).optional(),
 });
 

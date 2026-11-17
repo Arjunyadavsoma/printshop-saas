@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
@@ -33,7 +34,10 @@ export const POST = withAuth(async (req, ctx, principal) => {
     );
   }
 
-  const token = crypto.randomUUID() + '-' + crypto.randomUUID();
+  // 256-bit CSPRNG token (Phase 2 §5: >= 256 bits of cryptographically
+  // secure randomness). The old uuid-uuid format (~244 bits) remains valid
+  // for existing tokens because verification is hash-based, not format-based.
+  const token = randomBytes(32).toString('hex');
   const tokenHash = hashDeviceToken(token);
   const agent = await repos.printAgents.create({ shopId: shop.id, name: body.name, tokenHash });
   await repos.printAgents.update(agent.id, {

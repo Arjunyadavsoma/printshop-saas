@@ -556,6 +556,14 @@ server. Legacy verification can be retired once
 Pairing tickets store SHA-256 hashes. Token formats: `uuid-uuid` (legacy
 `agents/register`), 64-hex (`companion/pair` and `companion/token/rotate`).
 
+**Job listing + operator resolution (shopkeeper JWT):**
+- `GET /api/v1/shops/me/jobs?status=needs_review` — recent jobs (max 100)
+  with file names; the data source for the operator-resolution UI.
+- `POST /api/v1/shops/me/jobs/{jobId}/resolve` — body
+  `{outcome: 'completed'|'failed', note?}`; only `needs_review` jobs can be
+  resolved; actor, timestamp and note are audit-logged (`job.resolved`);
+  repeat calls get `409 JOB_NOT_IN_NEEDS_REVIEW`. Resolution never requeues.
+
 **Previous-credential policy during the 10-minute rotation overlap:** the
 old token is accepted only for rotation recovery, heartbeat, and read-only
 polling (jobs/pending, commands GET, sync pull/status). State-mutating

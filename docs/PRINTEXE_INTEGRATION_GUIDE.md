@@ -136,7 +136,7 @@ Authorization: Bearer <deviceToken>
 
 The server:
 1. Extracts the token after `Bearer `
-2. Hashes it: `HMAC-SHA256('print-agent-salt', token)` → hex string
+2. Hashes it with the versioned verifier scheme (docs/API_CONTRACT.md §13.6): `v2:HMAC-SHA256(DEVICE_TOKEN_PEPPER, token)` for new issuance; pre-Phase-2 devices store the legacy `HMAC-SHA256('print-agent-salt', token)` and migrate at their next authenticated rotation
 3. Looks up `PrintAgent` by `tokenHash` in the database
 4. If found → resolves `shopId` from the agent row (tenant isolation)
 5. Refreshes `isOnline=true`, `lastSeenAt=now`

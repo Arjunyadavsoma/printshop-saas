@@ -330,3 +330,55 @@ describe('Phase D — job state machine', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('Phase 2 §5 — rotation security failures', () => {
+  const hbRoute = async (token: string) => {
+    const { POST } = await import('@/app/api/v1/agents/heartbeat/route');
+    return POST(deviceReq('POST', '/api/v1/agents/heartbeat', token, {}), { params: Promise.resolve({}) });
+  };
+
+  it('20. revocation during rotation kills BOTH the old and the new credential', async () => {
+    const { POST: rotate } = await import('@/app/api/v1/companion/token/rotate/route');
+    const r1 = await rotate(deviceReq('POST', '/api/v1/companion/token/rotate', deviceToken, {}), { params: Promise.resolve({}) });
+    expect(r1.status).toBe(200);
+    const newToken = (await r1.json()).data.deviceToken as string;
+    // Shopkeeper revokes the device mid-flight (no grace for revoked credentials)
+    await getContainer().db.delete('printAgent', { id: agentId });
+    const hbOld = await hbRoute(deviceToken);
+    const hbNew = await hbRoute(newToken);
+    expect(hbOld.status).toBe(401);
+    expect(hbNew.status).toBe(401);
+  });
+
+  it('21. invalid verifier version (v9:) never authenticates', async () => {
+    await getContainer().db.update('printAgent', { id: agentId }, { tokenHash: 'v9:' + 'a'.repeat(64) });
+    const hb = await hbRoute(deviceToken);
+    expect(hb.status).toBe(401);
+  });
+
+  it('22. corrupted/foreign verifier format never authenticates', async () => {
+    await getContainer().db.update('printAgent', { id: agentId }, { tokenHash: 'not-a-verifier' });
+    const hb = await hbRoute(deviceToken);
+    expect(hb.status).toBe(401);
+  });
+
+  it('23. register mints a >=256-bit token (64 hex chars from 32 CSPRNG bytes)', async () => {
+    // The beforeEach seed already paired one device; the manual-registration
+    // path is a SECOND device on a free plan — remove the seed first.
+    await getContainer().db.delete('deviceCommand', { agentId });
+    await getContainer().db.delete('printAgent', { id: agentId });
+    const { POST } = await import('@/app/api/v1/agents/register/route');
+    const res = await new Promise<{ status: number; json: any }>(async (resolve) => {
+      const mod = await import('@/app/api/v1/agents/register/route');
+      const req = new NextRequest('http://localhost:3000/api/v1/agents/register', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json', 'x-forwarded-for': testIp },
+        body: JSON.stringify({ name: 'manual pc' }),
+      });
+      const r = await mod.POST(req as never, { params: Promise.resolve({}) } as never);
+      resolve({ status: r.status, json: await r.json() });
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data.deviceToken).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
