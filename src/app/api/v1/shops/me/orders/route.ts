@@ -21,4 +21,5 @@ export const GET = withAuth(
 
     return ok(orders, { pagination: { limit, offset, total } });
   },
+  ['owner', 'staff'],
 );

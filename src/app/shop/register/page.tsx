@@ -6,7 +6,6 @@ import { useApiClient } from '@/components/portal/use-api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
@@ -45,9 +44,18 @@ interface BusinessStep {
   description: string;
   upiId: string;
   address: string;
-  // Payment method selection during registration
+  // Payment method selection during registration.
+  // NOTE: 'split' (partial-UPI + partial-cash) was removed from the UI
+  // (audit H6) — it was collected but never honored by the pricing /
+  // checkout flow. The API zod enum still accepts 'split' for backward
+  // compat with already-stored rows, but the UI no longer offers it.
   paymentMethods: 'upi' | 'cash' | 'both' | 'split';
-  // Pamphlet / cover sheet
+  // Pamphlet / cover sheet — the fields stay on the type (and are sent
+  // to the API as defaults) so the registration payload remains
+  // compatible with the backend zod schema, but the UI no longer
+  // collects them (audit H6: the feature was never implemented in the
+  // pricing engine, so the collected values were dead). DB columns are
+  // retained for backward compat with existing shops.
   pamphletEnabled: boolean;
   pamphletPricePaise: number;
   pamphletName: string;
@@ -547,15 +555,18 @@ export default function ShopRegisterPage() {
                   disabled={submitting}
                 />
 
-                {/* Payment method selection */}
+                {/* Payment method selection — audit H6: 'split' option removed
+                    (was collected but never honored by the pricing/checkout
+                    flow). The three remaining options cover every supported
+                    payment path: 'upi' (online only), 'cash' (cash on pickup
+                    only), 'both' (customer chooses at checkout). */}
                 <div className="space-y-2">
                   <Label className="text-xs">Payment methods you accept</Label>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {[
                       { val: 'upi', label: 'UPI only', desc: 'Online payment via UPI app' },
                       { val: 'cash', label: 'Cash only', desc: 'Pay at pickup' },
                       { val: 'both', label: 'UPI + Cash', desc: 'Customer chooses' },
-                      { val: 'split', label: 'Split pay', desc: 'Partial UPI + partial cash' },
                     ].map((opt) => (
                       <button
                         key={opt.val}
@@ -571,46 +582,19 @@ export default function ShopRegisterPage() {
                   <p className="text-xs text-muted-foreground">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
                 </div>
 
-                {/* Pamphlet / cover sheet */}
-                <div className="space-y-2 rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-xs">Offer pamphlet / cover sheet</Label>
-                      <p className="text-xs text-muted-foreground">A folder/cover where printed pages are kept. Useful when customers print from home + pick up later.</p>
-                    </div>
-                    <Switch
-                      checked={state.business.pamphletEnabled}
-                      onCheckedChange={(checked) => setState((s) => ({ ...s, business: { ...s.business, pamphletEnabled: checked } }))}
-                    />
+                {/* Pamphlet / cover sheet — audit H6: the editable form was
+                    removed (the feature was never implemented in the pricing
+                    engine, so the collected price/name values were dead). The
+                    database columns + API schema are kept for backward compat
+                    with existing shops. The placeholder defaults are still
+                    sent in the registration payload so the backend zod schema
+                    doesn't reject the request. */}
+                <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Pamphlet / cover sheet</Label>
+                    <Badge variant="outline" className="bg-brand-soft text-[10px] text-muted-foreground">Coming soon</Badge>
                   </div>
-                  {state.business.pamphletEnabled && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs" htmlFor="pamphlet-name">Pamphlet name</Label>
-                        <Input
-                          id="pamphlet-name"
-                          value={state.business.pamphletName}
-                          onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletName: e.target.value } }))}
-                          placeholder="Cover Sheet"
-                          className="h-11 text-base"
-                          disabled={submitting}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs" htmlFor="pamphlet-price">Price (₹)</Label>
-                        <Input
-                          id="pamphlet-price"
-                          type="number"
-                          min={0}
-                          value={state.business.pamphletPricePaise / 100}
-                          onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, pamphletPricePaise: Math.round(parseFloat(e.target.value || '0') * 100) } }))}
-                          placeholder="10"
-                          className="h-11 text-base"
-                          disabled={submitting}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  <p className="text-xs text-muted-foreground">A folder/cover where printed pages are kept. This feature isn&apos;t available yet &mdash; your shop will be created without it, and you&apos;ll be able to add it later from Settings once it&apos;s ready.</p>
                 </div>
               </>
             )}

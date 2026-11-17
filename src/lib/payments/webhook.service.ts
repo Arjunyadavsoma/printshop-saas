@@ -69,6 +69,20 @@ export async function lookupPaymentSession(merchantOrderId: string): Promise<Sto
  * Extract the merchantOrderId reference from a webhook payload WITHOUT
  * trusting it — used to find the shop's credentials before verification.
  * Provider-specific.
+ *
+ * M16 fix: every parsing step is wrapped in try/catch so a malformed body
+ * returns `null` (→ the webhook is stored in WebhookInbox for retry by the
+ * reconciliation cron) instead of throwing a 500. Previously:
+ *   - `decodeURIComponent()` throws `URIError` on malformed percent-
+ *     escapes (`%` not followed by two hex digits). A Paytm-format body
+ *     with a stray `%` in any field would crash the webhook handler.
+ *   - `pair.split('=')` returned `[, value]` for a pair with NO key
+ *     (`=value`), and `[key]` for a pair with NO value (`key`). The
+ *     `.map(decodeURIComponent)` then tried to `decodeURIComponent('')`
+ *     on the missing half (harmless) but ALSO made the loop match `''`
+ *     against `'ORDERID'` (false negative — the ORDERID field was
+ *     missed). Using `URLSearchParams` parses form-encoded bodies
+ *     correctly, handles `=` inside values, and handles repeated keys.
  */
 export function extractReference(provider: PaymentProvider, rawBody: string): string | null {
   if (provider === 'phonepe') {
@@ -81,11 +95,27 @@ export function extractReference(provider: PaymentProvider, rawBody: string): st
     }
   }
   if (provider === 'paytm') {
-    for (const pair of rawBody.split('&')) {
-      const [k, v] = pair.split('=').map(decodeURIComponent);
-      if (k === 'ORDERID') return v ?? null;
+    // Paytm posts `application/x-www-form-urlencoded` bodies. Use
+    // URLSearchParams (the spec parser) instead of manual `split('&')` +
+    // `split('=')`:
+    //   - it handles `=` inside values (e.g. a base64 value that
+    //     contains `=` padding);
+    //   - it handles `+` as a space (form-encoding) which manual
+    //     `decodeURIComponent` does NOT (it would leave `+` as a literal
+    //     plus sign — breaking any value that contains a space, encoded
+    //     as `+` per the spec);
+    //   - it returns `null` for missing keys instead of `undefined`,
+    //     which our `?? null` normalises either way.
+    try {
+      const params = new URLSearchParams(rawBody);
+      const orderId = params.get('ORDERID');
+      return orderId ?? null;
+    } catch {
+      // URLSearchParams is very forgiving — it shouldn't throw on any
+      // input — but defensive: a non-string rawBody (e.g. null/undefined
+      // coerced by a broken upstream caller) would throw a TypeError.
+      return null;
     }
-    return null;
   }
   return null;
 }

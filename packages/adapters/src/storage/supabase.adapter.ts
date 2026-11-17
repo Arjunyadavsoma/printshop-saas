@@ -27,6 +27,12 @@ export class SupabaseStorageAdapter implements StorageAdapter {
   readonly provider = 'supabase';
   private readonly client: SupabaseClient;
   private readonly bucket: string;
+  /** The Supabase project URL — used to build the direct Storage REST path
+   *  for the head() method (the SDK doesn't expose a single-object HEAD). */
+  private readonly supabaseUrl: string;
+  /** The service role key — used to authorise the direct REST HEAD in
+   *  head(). NEVER logged or returned in error messages. */
+  private readonly serviceRoleKey: string;
 
   constructor(config: SupabaseStorageConfig) {
     if (!config.url) {
@@ -39,6 +45,8 @@ export class SupabaseStorageAdapter implements StorageAdapter {
       throw new Error('SupabaseStorageAdapter: bucket (SUPABASE_STORAGE_BUCKET) is required');
     }
     this.bucket = config.bucket;
+    this.supabaseUrl = config.url.replace(/\/+$/, '');
+    this.serviceRoleKey = config.serviceRoleKey;
     this.client = createClient(config.url, config.serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -98,32 +106,60 @@ export class SupabaseStorageAdapter implements StorageAdapter {
   }
 
   async head(key: string): Promise<{ size: number; contentType: string } | null> {
+    // H12 fix: previously this used `.list(folder, { limit: 1000, search })`
+    // and then filtered in memory. Two problems with that:
+    //   1. `search` does a SUBSTRING match (Supabase Storage list API),
+    //      not an exact-match — querying for `invoice.pdf` returns every
+    //      object in the folder whose name CONTAINS `invoice.pdf`
+    //      (e.g. `invoice.pdf`, `invoice.pdf.bak`, `old-invoice.pdf`).
+    //      The filter `item.name === filename` afterwards caught false
+    //      positives, but the WORK was still O(folder size) with a 1000-
+    //      entry cap (a folder with >1000 entries would miss the file
+    //      entirely even if it existed).
+    //   2. The list call returns object metadata for every match — a
+    //      payload proportional to the folder size, not the single object
+    //      we care about. For a shop with thousands of uploaded files,
+    //      every `head()` call (one per upload confirm, one per download)
+    //      was a full-folder scan.
+    //
+    // The fix: hit the Supabase Storage REST API directly with a HEAD
+    // request to the object's exact path. The API returns 200 + headers
+    // if the object exists, 404 if it doesn't. We read `Content-Length`
+    // + `Content-Type` from the response headers — no list, no scan,
+    // O(1) work on the storage side. The service role key authorises the
+    // request server-side (the public anon key would also work for a
+    // private bucket if the object had a public-read grant, but the
+    // service role key is what we already hold and works for every
+    // object in every bucket).
     try {
-      // Use list() with a filter to check if the object exists
-      const folder = key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : '';
-      const filename = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key;
-
-      const { data, error } = await this.client
-        .storage
-        .from(this.bucket)
-        .list(folder, {
-          limit: 1000,
-          search: filename,
-        });
-
-      if (error) {
-        throw new Error(`Supabase head failed: ${error.message}`);
+      // Supabase Storage REST API path for a single object:
+      //   ${SUPABASE_URL}/storage/v1/object/${bucket}/${key}
+      // A HEAD request returns 200 + Content-Length/Content-Type if the
+      // object exists, 404 if it doesn't. Each path segment is
+      // percent-encoded individually so `/` separators survive (a single
+      // encodeURIComponent over the whole key would encode `/` to `%2F`,
+      // which Supabase interprets as a literal slash inside a filename).
+      const encodedKey = key
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/');
+      const url = `${this.supabaseUrl}/storage/v1/object/${encodeURIComponent(this.bucket)}/${encodedKey}`;
+      const res = await fetch(url, {
+        method: 'HEAD',
+        headers: { Authorization: `Bearer ${this.serviceRoleKey}` },
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        // Any other non-OK status (403, 500, …) — rethrow so the caller
+        // sees the storage error (matches the previous behaviour on
+        // non-404 errors from the SDK).
+        throw new Error(`Supabase head failed: HTTP ${res.status}`);
       }
-
-      // Find the exact match (search does substring matching, we need exact)
-      const match = data?.find((item) => item.name === filename);
-      if (!match) {
-        return null;
-      }
-
+      const size = Number(res.headers.get('content-length') ?? '0');
+      const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
       return {
-        size: match.metadata?.size ?? match.metadata?.contentLength ?? 0,
-        contentType: match.metadata?.mimetype ?? 'application/octet-stream',
+        size: Number.isFinite(size) ? size : 0,
+        contentType,
       };
     } catch (e) {
       // If it's a "not found" type error, return null

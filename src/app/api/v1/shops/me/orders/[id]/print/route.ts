@@ -53,4 +53,4 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   });
 
   return ok({ orderId: order.id, status: 'printing', dispatched: jobs });
-});
+}, ['owner', 'staff']);

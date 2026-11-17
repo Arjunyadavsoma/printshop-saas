@@ -21,7 +21,7 @@ export const GET = withAuth<{ id: string }>(async (_req, ctx, principal) => {
   if (!order) throw new NotFoundError('Order not found');
   const files = await repos.files.findByOrder(order.id);
   return ok({ ...order, files });
-});
+}, ['owner', 'staff']);
 
 const PatchOrderSchema = z.object({
   notes: z.string().max(1000).optional(),
@@ -54,4 +54,4 @@ export const PATCH = withAuth<{ id: string }>(async (req, ctx, principal) => {
     ip: req.headers.get('x-forwarded-for') ?? null,
   });
   return ok(updated);
-});
+}, ['owner', 'staff']);

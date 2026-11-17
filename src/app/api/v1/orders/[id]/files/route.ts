@@ -18,6 +18,79 @@ const ConfirmFileSchema = z.object({
   size: z.number().int().positive(),
 });
 
+// ── SEC-C6: magic-byte sniffing helpers ──────────────────────────────────
+//
+// These are pure functions over the raw bytes — no I/O, no allocations
+// beyond a tiny header read. They run BEFORE parsePageCount so a malformed
+// or malicious upload is rejected before any expensive parser work.
+//
+// The detector returns a string family (`'pdf' | 'zip' | 'jpeg' | 'png' |
+// 'gif' | 'webp' | 'bmp' | 'tiff' | 'unknown'`). The matcher compares the
+// family against the declared MIME type — the OOXML formats (DOCX/PPTX/
+// XLSX) all share the ZIP family, so we accept any ZIP-family declaration
+// for those.
+
+type MagicFamily = 'pdf' | 'zip' | 'jpeg' | 'png' | 'gif' | 'webp' | 'bmp' | 'tiff' | 'unknown';
+
+/** Map a declared MIME type to the magic family it must have. */
+const MIME_TO_FAMILY: Record<string, MagicFamily> = {
+  'application/pdf': 'pdf',
+  // OOXML formats are ZIP containers.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'zip',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'zip',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'zip',
+  'application/zip': 'zip',
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tiff',
+};
+
+/** Sniff the magic-byte family from the first few bytes of a buffer. */
+export function detectMagicFamily(bytes: Uint8Array): MagicFamily {
+  if (bytes.length < 4) return 'unknown';
+  const b = bytes;
+  // PDF: `%PDF` (0x25 0x50 0x44 0x46)
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'pdf';
+  // ZIP / OOXML: `PK` (0x50 0x4B)
+  if (b[0] === 0x50 && b[1] === 0x4b) return 'zip';
+  // JPEG: 0xFF 0xD8 0xFF
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
+  // PNG: 0x89 0x50 0x4E 0x47
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
+  // GIF: `GIF8`
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'gif';
+  // BMP: `BM`
+  if (b[0] === 0x42 && b[1] === 0x4d) return 'bmp';
+  // TIFF: `II*\x00` (little-endian) or `MM\x00*` (big-endian)
+  const leTiff =
+    b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2a && b[3] === 0x00;
+  const beTiff =
+    b[0] === 0x4d && b[1] === 0x4d && b[2] === 0x00 && b[3] === 0x2a;
+  if (leTiff || beTiff) return 'tiff';
+  // WebP: `RIFF`....`WEBP` (bytes 0-3 = RIFF, bytes 8-11 = WEBP)
+  if (
+    bytes.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) return 'webp';
+  return 'unknown';
+}
+
+/** True if the declared MIME type is consistent with the sniffed bytes.
+ *  Unknown MIME types (not in MIME_TO_FAMILY) bypass the check — they're
+ *  either legacy formats (DOC, PPT, XLS) or text-like formats that have
+ *  no magic bytes, and parsePageCount will already mark them needs_review. */
+export function magicBytesMatchMime(bytes: Uint8Array, declaredMime: string): boolean {
+  const expected = MIME_TO_FAMILY[declaredMime];
+  if (!expected) return true; // unsupported/legacy MIME → let parser decide
+  const detected = detectMagicFamily(bytes);
+  if (detected === 'unknown') return false; // bytes don't look like anything we recognize
+  return detected === expected;
+}
+
 /** POST /api/v1/orders/:id/files — confirm an upload, parse + price.
  *
  * Flow:
@@ -96,6 +169,45 @@ export const POST = withRateLimit<{ id: string }>(
     const bytes = storage.getBytes
       ? (await storage.getBytes(body.storageKey))?.bytes ?? null
       : null;
+
+    // ── SEC-C6: magic-byte sniffing ─────────────────────────────────────
+    // The client sends a `mimeType` (from the browser's File.type) which is
+    // trivially spoofable — an attacker can rename `evil.exe` to `evil.pdf`
+    // and the browser will happily send `Content-Type: application/pdf`.
+    // Without a server-side content check, the renamed executable would be
+    // stored as a "PDF", and:
+    //   - the parsePageCount call would either crash (pdf-lib throws on
+    //     non-PDF input — caught, returns null → needs_review, harmless)
+    //     OR succeed silently (e.g. a file that happens to start with `%PDF`
+    //     but is otherwise malicious — extremely unlikely but possible).
+    //   - the file would be served to the shopkeeper's print agent / browser
+    //     download with `Content-Type: application/pdf`, potentially
+    //     triggering a different code path in the agent or browser.
+    //
+    // The fix: inspect the first few bytes (the "magic bytes") of the
+    // fetched content and confirm they match what the declared MIME type
+    // claims. If the declared type is `application/pdf` but the bytes
+    // don't start with `%PDF`, reject with a ValidationError BEFORE
+    // attempting to parse the page count. This blocks renamed-executable
+    // uploads at the confirm endpoint (storage is bytewise identical to
+    // what was uploaded via the presigned URL — we're checking the bytes
+    // that are actually in storage, not what the client claims to have
+    // sent).
+    //
+    // The `sniffMagic` helper returns the MIME family implied by the bytes
+    // (e.g. `pdf`, `zip`, `jpeg`, `png`, …). We compare it against the
+    // declared MIME: a ZIP family declared as DOCX/PPTX/XLSX is accepted
+    // (they're all ZIP containers); anything else must match exactly.
+    if (bytes && !magicBytesMatchMime(bytes, body.mimeType)) {
+      throw new ValidationError(
+        'File content does not match declared type — the uploaded bytes are not what the filename/MIME claim. Re-save the file from its source application and re-upload.',
+        {
+          declaredMime: body.mimeType,
+          detectedMagic: detectMagicFamily(bytes),
+          filename: body.filename,
+        },
+      );
+    }
 
     const parsedPageCount = await parsePageCount(body.mimeType, bytes);
 

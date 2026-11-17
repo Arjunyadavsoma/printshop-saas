@@ -7,15 +7,28 @@ import { createDefaultPricingConfig, type ShopPricingConfig } from '@platform/co
  * and demo orders in various states. Called by the /api/v1/dev/seed route
  * and safe to run multiple times.
  *
- * Demo accounts (all use password: demo1234):
+ * H17 fix: the API response from the seed route NO LONGER includes the
+ * demo password. The route is already gated by `requireDev()` so this only
+ * runs in development, but returning the password in the response body
+ * meant anyone who could trigger the seed route (or read its logs) would
+ * see the shared demo password. The response now returns only the admin
+ * email — the password is documented in the login page's "Demo accounts"
+ * panel (dev-only) and in the README, not in the API response.
+ *
+ * Demo accounts (password documented in README + login page, NOT here):
  *   - owner@quickprint.demo  (shop owner — QuickPrint Demo Shop)
  *   - owner@copycenter.demo  (shop owner — CopyCenter)
  *   - owner@prinithub.demo   (shop owner — PrintHub Express)
  *   - admin@printshop.demo   (platform admin — sees all shops/orders)
+ *
+ * IMPORTANT: demo accounts should only exist in dev mode. The /api/v1/dev/seed
+ * route is gated by requireDev() which throws 404 in production, so this code
+ * never runs against a production database. If you ever need to seed a
+ * staging database, do it via a SQL script — not via this service.
  */
 export async function seedDemoData(): Promise<{
   shops: { id: string; name: string; slug: string; ownerEmail: string }[];
-  admin: { email: string; password: string };
+  admin: { email: string };
   seeded: boolean;
 }> {
   const container = getContainer();
@@ -105,7 +118,7 @@ export async function seedDemoData(): Promise<{
 
   return {
     shops: result,
-    admin: { email: 'admin@printshop.demo', password: 'demo1234' },
+    admin: { email: 'admin@printshop.demo' },
     seeded: anySeeded,
   };
 }

@@ -10,4 +10,4 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     { id: string; name: string; isOnline: boolean; lastSeenAt: Date | null; printerName: string | null; version: string | null; os: string | null }
   >('printAgent', { shopId: shop.id }, { order: ['createdAt', 'desc'] });
   return ok(agents);
-});
+}, ['owner', 'staff']);

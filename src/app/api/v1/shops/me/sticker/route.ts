@@ -50,4 +50,4 @@ export const GET = withAuth(async (req, _ctx, principal) => {
   } catch (cause) {
     return fail(toAppError(cause));
   }
-});
+}, ['owner', 'staff']);

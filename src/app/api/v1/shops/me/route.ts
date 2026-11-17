@@ -79,7 +79,7 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     paymentInstructions: shop.paymentInstructions,
     cashOnPickup: shop.cashOnPickup,
   });
-});
+}, ['owner']);
 
 export const PATCH = withAuth(async (req, _ctx, principal) => {
   const body = PatchShopSchema.parse(await req.json());
@@ -111,4 +111,4 @@ export const PATCH = withAuth(async (req, _ctx, principal) => {
     paymentInstructions: updated.paymentInstructions,
     cashOnPickup: updated.cashOnPickup,
   });
-});
+}, ['owner']);

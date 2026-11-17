@@ -157,4 +157,4 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
     ip: req.headers.get('x-forwarded-for') ?? null,
   });
   return ok({ orderId: order.id, status: 'cancelled' });
-});
+}, ['owner']);

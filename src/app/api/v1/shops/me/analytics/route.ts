@@ -52,4 +52,4 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     peakHourUtc: peakHour >= 0 ? peakHour : null,
     hours,
   });
-});
+}, ['owner', 'staff']);

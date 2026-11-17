@@ -87,8 +87,15 @@ export default function ShopLoginPage() {
   };
 
   const fillDemo = (demo: { email: string }) => {
+    // H17 fix: do NOT autofill the password. The previous behaviour
+    // pre-filled `demo1234` into the password field — convenient for dev,
+    // but it meant the shared demo password was hardcoded in client-
+    // side source (visible in the JS bundle), AND any screenshot of the
+    // login page after a demo-account click would show the password in
+    // the (masked) field. The user must now type the demo password
+    // manually (it's documented in the README + the panel below).
     setEmail(demo.email);
-    setPassword('demo1234');
+    setPassword('');
     setError(null);
   };
 
@@ -213,7 +220,7 @@ export default function ShopLoginPage() {
                 Demo accounts (dev only)
               </CardTitle>
               <CardDescription className="text-xs">
-                Click any account to autofill the form (password: demo1234).
+                Click any account to autofill the email. The shared demo password is documented in the project README.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1.5 pt-0">

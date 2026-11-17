@@ -67,4 +67,5 @@ export const GET = withAuth<{ id: string; fileId: string }>(
       return fail(toAppError(cause));
     }
   },
+  ['owner', 'staff'],
 );

@@ -36,4 +36,4 @@ export const GET = withAuth<{ id: string }>(async (_req, ctx, principal) => {
       createdAt: e.createdAt,
     })),
   });
-});
+}, ['owner', 'staff']);

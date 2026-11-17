@@ -47,7 +47,6 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   if (!canTransitionOrder(order.status, 'collected')) {
     throw new ValidationError(`Order in status '${order.status}' cannot be marked collected`);
   }
-
   // STEP 1 — race-safe conditional flip FIRST. `order.status` is the
   // freshly-fetched status (a valid `from` state for 'collected' per
   // canTransitionOrder above). If a concurrent request changed the status
@@ -103,4 +102,4 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   }
 
   return ok({ orderId: order.id, status: 'collected', filesDeleted });
-});
+}, ['owner', 'staff']);

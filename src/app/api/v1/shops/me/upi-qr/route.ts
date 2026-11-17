@@ -143,7 +143,7 @@ export const POST = withAuth(async (req, _ctx, principal) => {
     mimeType,
     sizeBytes: bytes.byteLength,
   });
-});
+}, ['owner']);
 
 export const GET = withAuth(async (_req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
@@ -159,4 +159,4 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     downloadUrl,
     expiresIn: 900,
   });
-});
+}, ['owner']);

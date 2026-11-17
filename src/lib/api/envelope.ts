@@ -39,14 +39,53 @@ export function fail(err: AppError): NextResponse<ApiEnvelope> {
   );
 }
 
-/** Convert any thrown value to an AppError so the envelope is consistent. */
+/**
+ * Convert any thrown value to an AppError so the envelope is consistent.
+ *
+ * M8 fix: in PRODUCTION, non-`AppError` exceptions (i.e. NOT instances of
+ * ValidationError / NotFoundError / ForbiddenError / etc.) get a generic
+ * "Internal server error" message instead of the raw `cause.message`. The
+ * raw message is captured to Sentry / server logs via `captureSentry` for
+ * debugging — but it's NOT returned to the client, because:
+ *   - Prisma errors can leak the database connection string (`Operations.js`
+ *     throws with `error.message = "Can't reach database server at
+ *     postgresql://user:pass@host:5432/db"`).
+ *   - File-system errors can leak absolute paths (`ENOENT: no such file or
+ *     directory, open '/var/app/secrets/api-key.json'`).
+ *   - Internal stack traces can leak third-party SDK implementation details.
+ *
+ * `AppError` subclasses (ValidationError, NotFoundError, …) ALWAYS surface
+ * their own `.message` because those messages are constructed by our own
+ * code, are user-facing by design, and have been reviewed for leakage.
+ *
+ * In DEVELOPMENT (`NODE_ENV !== 'production'`), the raw `cause.message` is
+ * returned for all errors — preserves the previous behaviour so developers
+ * see the real error in the response body while debugging.
+ *
+ * The envelope's `code` field is always `INTERNAL_ERROR` (stable) and the
+ * HTTP status is always 500 — for non-AppError exceptions. AppError
+ * subclasses keep their own code + status.
+ */
 export function toAppError(cause: unknown): AppError {
   if (cause instanceof AppError) return cause;
   if (cause instanceof ZodError) {
     return new ValidationError('Invalid request', { issues: cause.issues });
   }
   if (cause instanceof Error) {
+    // Always capture the real error for Sentry / server-side observability.
     captureSentry(cause); // spec §11: error tracking
+    if (process.env.NODE_ENV === 'production') {
+      // M8: don't leak the raw error message to the client. The
+      // `requestId` header (set by `withAuth` / `timed` in with-auth.ts)
+      // gives the operator a correlation key to find the real error in
+      // logs / Sentry without exposing it to the caller.
+      return new AppError(
+        'Internal server error',
+        'INTERNAL_ERROR',
+        500,
+      );
+    }
+    // Development: show the real error so the developer can debug.
     return new AppError(cause.message, 'INTERNAL_ERROR', 500);
   }
   return new AppError('Unknown error', 'INTERNAL_ERROR', 500);

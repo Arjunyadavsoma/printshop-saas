@@ -52,4 +52,4 @@ export const GET = withAuth(async (req, _ctx, principal) => {
   const svgString = await QRCode.toString(customerUrl, { type: 'svg', margin: 2 });
   const pngDataUrl = await QRCode.toDataURL(customerUrl, { margin: 2, width: 512 });
   return ok({ svgString, pngDataUrl, customerUrl, slug: shop.slug, shopName: shop.name });
-});
+}, ['owner']);
