@@ -60,6 +60,12 @@ function getOrderToken(req: NextRequest): string | null {
  * Wrap a handler so it only runs if the caller proves they know the order's
  * `customerToken`. On success, the handler receives the fully-loaded Order
  * row as the third argument — no need to re-fetch or re-verify.
+ *
+ * @param paramKey - the name of the dynamic route segment that carries the
+ *   order id. Defaults to `'id'`. Pass `'orderId'` (or another name) when
+ *   wrapping a route whose path uses a different placeholder, e.g.
+ *   `/api/v1/payments/upi/verify/[orderId]` — otherwise the guard would
+ *   read `params.id` (undefined) and treat every call as "order not found".
  */
 export function withOrderAccess<TParams = { id: string }>(
   handler: (
@@ -67,10 +73,15 @@ export function withOrderAccess<TParams = { id: string }>(
     ctx: { params: Promise<TParams> },
     order: NonNullable<Awaited<ReturnType<typeof repos.orders.findById>>>,
   ) => Promise<NextResponse> | NextResponse,
+  paramKey: keyof TParams | string = 'id',
 ) {
   return async (req: NextRequest, ctx: { params: Promise<TParams> }): Promise<NextResponse> => {
     try {
-      const { id } = (await ctx.params) as unknown as { id: string };
+      const params = (await ctx.params) as Record<string, string>;
+      const id = params[paramKey as string];
+      if (!id) {
+        throw new NotFoundError('Order not found');
+      }
       const order = await repos.orders.findById(id);
       if (!order) {
         throw new NotFoundError('Order not found');

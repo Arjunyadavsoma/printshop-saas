@@ -95,6 +95,15 @@ model Order {
   paymentAttempts  PaymentAttempt[]
 
   @@unique([shopId, tokenNumber])
+  // H9 fix: customerToken is the per-order "credential" customers use to
+  // access their own order status / receipt / file downloads. Without a
+  // UNIQUE constraint on (shopId, customerToken), two orders in the same
+  // shop could be issued the same 6-char token — a collision that would
+  // silently let one customer see another's order via withOrderAccess
+  // (which constant-time-compares the token and grants access on match).
+  // The token generator uses random 6-char strings so collisions are rare,
+  // but the DB constraint is the backstop that guarantees correctness.
+  @@unique([shopId, customerToken])
   @@index([shopId, status])
   @@index([customerToken])
 }

@@ -5,7 +5,7 @@
  * Used by routes that generate customer-facing URLs (the shop QR code, the
  * sticker sheet, the print-agent download URLs). Hard-coding
  * `process.env.APP_BASE_URL` is brittle: if the env var isn't set on a new
- * deployment, the QR encodes `http://localhost:3000/<slug>` (unreachable
+ * deployment, the QR encodes `http://localhost:3000/shops/<slug>` (unreachable
  * from a customer's phone) — and if the deployment moves to a new domain,
  * previously-generated URLs break.
  *
@@ -44,7 +44,7 @@ export function getDeploymentOrigin(req?: NextRequest | Request | null): string 
 
 /**
  * Build the customer-facing URL for a shop (e.g.
- * `https://printshop-saas-three.vercel.app/quickprint`). This is what the
+ * `https://printshop-saas-three.vercel.app/shops/quickprint`). This is what the
  * shop QR code encodes — scanning it opens the shop's customer-facing page
  * on whatever deployment the shopkeeper is currently using.
  */
@@ -52,5 +52,5 @@ export function getShopCustomerUrl(
   shopSlug: string,
   req?: NextRequest | Request | null,
 ): string {
-  return `${getDeploymentOrigin(req)}/${shopSlug}`;
+  return `${getDeploymentOrigin(req)}/shops/${shopSlug}`;
 }

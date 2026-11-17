@@ -58,6 +58,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await rateLimit(getContainer().cache, rateKey(req, 'register'), 5, 60);
     const body = RegisterSchema.parse(await req.json());
 
+    // H-2 fix: normalise the email to lowercase before any lookup or
+    // insert. The user repository ALSO lowercases on create/findByEmail
+    // (defense-in-depth), but lowercasing here ensures the audit log,
+    // the response body, and the email-taken check all see the canonical
+    // form — so a user who registers as `User@Example.com` and later
+    // tries to log in as `user@example.com` succeeds.
+    body.email = body.email.toLowerCase();
+
     // Validate service keys against the allowlist.
     const unknown = body.services.filter((s) => !ALLOWED_SERVICES.has(s));
     if (unknown.length > 0) {

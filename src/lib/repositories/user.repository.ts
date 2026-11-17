@@ -28,8 +28,21 @@ function toDomain(row: UserRow): User {
 }
 
 export class UserRepository extends BaseRepository<UserRow> {
+  /**
+   * Find a user by email.
+   *
+   * H-2 fix: emails are NORMALISED TO LOWERCASE before lookup. Previously
+   * the lookup was case-sensitive (Postgres `=` on a text column is
+   * case-sensitive by default), so a user who registered as
+   * `User@Example.com` could NOT log in as `user@example.com` — the lookup
+   * returned null and `verifyCredentials` threw `Invalid email or password`.
+   * Registration now stores emails lowercased (see /api/v1/auth/register);
+   * this lookup also lowercases the input so legacy mixed-case rows are
+   * still found by their lowercased equivalent (which is the value users
+   * type in most of the time).
+   */
   async findByEmail(email: string): Promise<User | null> {
-    const row = await this.findOne({ email });
+    const row = await this.findOne({ email: email.toLowerCase() });
     return row ? toDomain(row) : null;
   }
 
@@ -48,7 +61,11 @@ export class UserRepository extends BaseRepository<UserRow> {
     const passwordHash = await auth.hashPassword(input.password);
     const row = await this.insertOne({
       id: crypto.randomUUID(),
-      email: input.email,
+      // H-2 fix: store emails lowercased so lookups are case-insensitive.
+      // A UNIQUE constraint on `email` would otherwise treat
+      // `User@Example.com` and `user@example.com` as two different rows,
+      // letting the same person register twice.
+      email: input.email.toLowerCase(),
       phone: input.phone,
       passwordHash,
       role: input.role,
@@ -59,7 +76,9 @@ export class UserRepository extends BaseRepository<UserRow> {
     return toDomain(row);
   }
 
-  /** Verify email+password and return the user, or throw Unauthorized. */
+  /** Verify email+password and return the user, or throw Unauthorized.
+   *
+   * H-2 fix: the email is lowercased before lookup (see {@link findByEmail}). */
   async verifyCredentials(email: string, password: string, auth: AuthAdapter): Promise<User> {
     const user = await this.findByEmail(email);
     if (!user) throw new UnauthorizedError('Invalid email or password');

@@ -59,6 +59,30 @@ export const POST = withAuth<{ id: string }>(
           `Order in status '${order.status}' cannot be manually verified as paid`,
         );
       }
+
+      // H-5 fix: do NOT allow payment verification when the order still has
+      // unpriced / unconfirmed files. A file in `needs_review` status or one
+      // whose pricePaise is 0 means we don't yet know what to charge the
+      // customer — verifying payment now would lock in a wrong total (the
+      // shopkeeper would mark the order 'paid' at the current totalAmountPaise
+      // which may be ₹0 or an under-counted value). The shopkeeper must
+      // first confirm the page count (or fix the parser error) on every
+      // file, after which the order total is recalculated and verification
+      // is safe.
+      const files = await repos.files.findByOrder(order.id);
+      const unpricedFiles = files.filter(
+        (f) => f.status === 'needs_review' || f.pricePaise === 0,
+      );
+      if (unpricedFiles.length > 0) {
+        const list = unpricedFiles
+          .map((f) => `"${f.originalFilename}" (status=${f.status}, price=${f.pricePaise}paise)`)
+          .join(', ');
+        throw new ValidationError(
+          `Cannot verify payment — ${unpricedFiles.length} file(s) are still unpriced or in needs_review: ${list}. ` +
+            'Confirm the page count on each file first so the order total is correct.',
+        );
+      }
+
       // DETERMINISTIC txnId — same order always gets the same txnId, so the
       // paymentTxnId UNIQUE constraint catches true duplicates (a second
       // verify attempt on an already-paid order would try to set the same

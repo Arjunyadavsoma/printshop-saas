@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api/with-auth';
 import { repos } from '@/lib/repositories';
 import { ok } from '@/lib/api/envelope';
@@ -9,38 +8,36 @@ import { getContainer } from '@/lib/container';
 /**
  * POST /api/v1/shops/me/orders/:id/complete — mark collected + delete files.
  *
- * ARCH-011 fix (race-safe + privacy-preserving):
+ * H15 fix (status flip BEFORE file deletion):
  *
- * PREVIOUS BUG: the order was flipped to 'collected' BEFORE
- * `storage.deleteMany` (which deletes the uploaded files). If deleteMany
- * threw (R2/S3 outage, network glitch), the route returned 500 but the
- * order was ALREADY 'collected' in the DB → the customer's files
- * persisted in the bucket with no metadata pointer (orphaned bytes —
- * privacy violation).
+ * PREVIOUS BUG: `storage.deleteMany()` ran BEFORE the conditional status
+ * transition. If the transition then failed (e.g. a concurrent /cancel had
+ * already flipped the order to 'cancelled' between our fetch and the
+ * `transitionStatus` call), the files were already gone — the shopkeeper
+ * saw a "files were already deleted" warning for an order that was now
+ * 'cancelled', with no way to undo. The customer's PDFs were destroyed
+ * even though the order was never marked 'collected'.
  *
- * FIX:
- *   1. Delete the files FIRST. `storage.deleteMany` is idempotent (a
- *      retry after a partial failure deletes the remaining keys + is a
- *      no-op for the already-deleted ones). If deleteMany throws, the
- *      order stays in its current state ('ready') and the shopkeeper
- *      can retry — no orphaned bytes, no premature 'collected' marker.
- *   2. Flip the order status with a race-safe conditional update
- *      (`transitionStatus` with `expectedCurrentStatus=order.status`).
- *      The `canTransitionOrder` check above already verified the order's
- *      current status is a valid `from` state for 'collected' (per the
- *      state machine at packages/core/src/domain/order.ts, currently
- *      only 'ready'). If a concurrent request (e.g. /cancel) flipped
- *      the status between our fetch + the update, the conditional
- *      update is a no-op (0 rows matched) → we throw a ValidationError
- *      so the shopkeeper re-fetches + retries. The files are already
- *      deleted (idempotent — a retry is safe; the second deleteMany is
- *      a no-op).
- *   3. Audit-log AFTER the successful flip (so the audit trail matches
- *      the actual state transition — no audit entry for a no-op flip).
+ * FIX: flip the order.
+ *   1. Conditional status transition FIRST (`transitionStatus` with
+ *      `expectedCurrentStatus=order.status`). If a concurrent request
+ *      changed the status between our fetch + the update, the conditional
+ *      WHERE clause doesn't match → returns null → we throw a ValidationError
+ *      and the files are NOT deleted. The shopkeeper re-fetches, sees the
+ *      new state, and retries only if appropriate.
+ *   2. Audit-log AFTER the successful flip (no audit entry for a no-op flip).
+ *   3. deleteMany LAST. If deleteMany throws (R2/S3 outage, network glitch),
+ *      the order is already 'collected' — the shopkeeper's dashboard is
+ *      correct and the customer sees the right state. The orphaned bytes
+ *      are recovered by the scheduled FileCleanupTask / cron cleanup —
+ *      they have no metadata pointer (the order is 'collected' so the file
+ *      rows are no longer user-reachable) so they're a storage cost, not a
+ *      privacy or correctness issue. deleteMany is idempotent so a retry
+ *      from the cron is safe.
  *
  * The 60-second print-agent window is the agent's responsibility; here
- * we delete the stored blobs immediately and leave the metadata for the
- * audit trail.
+ * we delete the stored blobs after the status flip and leave the metadata
+ * for the audit trail.
  */
 export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   const { id } = await ctx.params;
@@ -51,19 +48,14 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
     throw new ValidationError(`Order in status '${order.status}' cannot be marked collected`);
   }
 
-  // STEP 1 — delete the files FIRST (idempotent). If this throws, the
-  // order stays in 'ready' and the shopkeeper can retry — no orphaned
-  // bytes, no premature 'collected' marker.
-  const files = await repos.files.findByOrder(order.id);
-  const storage = getContainer().storage;
-  await storage.deleteMany(files.map((f) => f.storageKey));
-
-  // STEP 2 — race-safe conditional flip. `order.status` is the freshly-
-  // fetched status (a valid `from` state for 'collected' per
-  // canTransitionOrder above). If a concurrent request changed the
-  // status between our fetch + this update, the conditional WHERE
-  // clause doesn't match → returns null. We throw so the shopkeeper
-  // sees a clear error + re-fetches to see the current state.
+  // STEP 1 — race-safe conditional flip FIRST. `order.status` is the
+  // freshly-fetched status (a valid `from` state for 'collected' per
+  // canTransitionOrder above). If a concurrent request changed the status
+  // between our fetch + this update, the conditional WHERE clause doesn't
+  // match → returns null → we throw BEFORE touching the files. The
+  // shopkeeper sees a clear error and re-fetches; the customer's PDFs are
+  // still in storage and the order is in whatever state the concurrent
+  // request put it in (e.g. 'cancelled').
   const updated = await repos.orders.transitionStatus(
     order.id,
     shop.id,
@@ -72,11 +64,11 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   );
   if (!updated) {
     throw new ValidationError(
-      `Order status changed concurrently (was '${order.status}' at fetch) — refresh + retry. The files were already deleted (idempotent — a retry will not double-charge).`,
+      `Order status changed concurrently (was '${order.status}' at fetch) — refresh + retry. The files were NOT deleted.`,
     );
   }
 
-  // STEP 3 — audit-log AFTER the successful flip (no audit entry for a
+  // STEP 2 — audit-log AFTER the successful flip (no audit entry for a
   // no-op flip). Audit is best-effort (audit-log.repository swallows
   // errors) so it can never break the collection flow.
   await repos.audit.log({
@@ -88,5 +80,27 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
     ip: req.headers.get('x-forwarded-for') ?? null,
   });
 
-  return ok({ orderId: order.id, status: 'collected', filesDeleted: files.length });
+  // STEP 3 — delete the files LAST. The order is already 'collected', so a
+  // deleteMany failure here leaves orphaned bytes (no metadata pointer —
+  // the order is 'collected' so the file rows are no longer user-reachable)
+  // which the scheduled FileCleanupTask / cron cleanup will sweep. We log
+  // the failure but do NOT roll back the status — the shopkeeper's
+  // dashboard is correct, the customer sees 'collected', and the bytes
+  // will be reclaimed asynchronously.
+  const files = await repos.files.findByOrder(order.id);
+  let filesDeleted = files.length;
+  try {
+    const storage = getContainer().storage;
+    await storage.deleteMany(files.map((f) => f.storageKey));
+  } catch (err) {
+    filesDeleted = 0;
+    // Don't fail the request — the order is already 'collected'. Log so the
+    // ops team can investigate / the cron cleanup can reclaim the bytes.
+    console.error(
+      `[order.complete] storage.deleteMany failed for order ${order.id} (status already flipped to 'collected'). Orphaned bytes will be reclaimed by the cleanup cron.`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  return ok({ orderId: order.id, status: 'collected', filesDeleted });
 });

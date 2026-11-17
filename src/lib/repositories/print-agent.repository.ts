@@ -9,6 +9,7 @@ interface PrintAgentRow {
   lastSeenAt: Date | null;
   printerName: string | null;
   isOnline: boolean;
+  isEnabled: boolean;
   version: string | null;
   os: string | null;
   createdAt: Date;
@@ -24,6 +25,10 @@ function toDomain(row: PrintAgentRow): PrintAgent {
     lastSeenAt: row.lastSeenAt,
     printerName: row.printerName,
     isOnline: row.isOnline,
+    // isEnabled defaults to true for legacy rows that predate the column —
+    // the Prisma schema sets @default(true) on the column itself, but the
+    // in-memory adapter / dev seed path may not always set it explicitly.
+    isEnabled: row.isEnabled ?? true,
     version: row.version,
     os: row.os,
     createdAt: row.createdAt,
@@ -63,6 +68,7 @@ export class PrintAgentRepository extends BaseRepository<PrintAgentRow> {
       lastSeenAt: null,
       printerName: null,
       isOnline: false,
+      isEnabled: true,
       version: null,
       os: null,
       createdAt: now,

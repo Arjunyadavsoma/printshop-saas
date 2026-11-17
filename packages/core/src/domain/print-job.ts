@@ -10,6 +10,11 @@ export interface PrintAgent {
   lastSeenAt: Date | null;
   printerName: string | null;
   isOnline: boolean;
+  /** Whether the shopkeeper has enabled this device. A disabled device's
+   *  token is still recognised but every authenticated call is rejected
+   *  (DEVICE_DISABLED) — used to revoke access for a lost/stolen PC without
+   *  deleting the agent row (which would lose history). */
+  isEnabled: boolean;
   version: string | null;
   os: string | null;
   createdAt: Date;
@@ -24,6 +29,7 @@ export const PrintAgentSchema = z.object({
   lastSeenAt: z.date().nullable(),
   printerName: z.string().max(200).nullable(),
   isOnline: z.boolean(),
+  isEnabled: z.boolean().default(true),
   version: z.string().max(40).nullable(),
   os: z.string().max(40).nullable(),
   createdAt: z.date(),

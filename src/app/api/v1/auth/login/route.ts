@@ -28,6 +28,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = LoginSchema.parse(await req.json());
     const container = getContainer();
 
+    // H-2 fix: normalise the email to lowercase before lookup. Previously
+    // the lookup was case-sensitive (Postgres `=` on a text column is
+    // case-sensitive by default), so a user who registered as
+    // `User@Example.com` could NOT log in as `user@example.com`. The user
+    // repository ALSO lowercases on findByEmail/verifyCredentials
+    // (defense-in-depth), but lowercasing here keeps the admin-path
+    // comparison and the audit log consistent with the canonical form.
+    body.email = body.email.toLowerCase();
+
     // ── Env-var-based admin login ────────────────────────────────────
     // If ADMIN_EMAIL + ADMIN_PASSWORD env vars are set, and the submitted
     // email matches ADMIN_EMAIL, verify the password using a constant-time

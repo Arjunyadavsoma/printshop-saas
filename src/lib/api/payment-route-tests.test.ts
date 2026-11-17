@@ -453,25 +453,18 @@ describe('POST /api/v1/payments/paytm/callback — empty / malformed payloads', 
 // 4. UPI verify — GET /api/v1/payments/upi/verify/[orderId]
 // ════════════════════════════════════════════════════════════════════
 
-describe('GET /api/v1/payments/upi/verify/:orderId — public status poll', () => {
-  it('9. returns 200 with paid=false for an awaiting_payment order', async () => {
+describe('GET /api/v1/payments/upi/verify/:orderId — order-token guarded (C2 fix)', () => {
+  it('9. returns 403 without order token (C2 security fix)', async () => {
     const { GET } = await import('@/app/api/v1/payments/upi/verify/[orderId]/route');
     const req = new NextRequest(
       `http://localhost:3000/api/v1/payments/upi/verify/${orderId}`,
       { method: 'GET' },
     );
     const res = await GET(req, { params: Promise.resolve({ orderId }) });
-    const json = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(json.success).toBe(true);
-    expect(json.data.paid).toBe(false);
-    expect(json.data.status).toBe('awaiting_payment');
-    expect(json.data.amountPaise).toBeNull(); // amount only surfaced once paid
-    expect(json.data.txnId).toBeNull();
+    expect(res.status).toBe(403); // C2: now requires X-Order-Token
   });
 
-  it('13. returns 404 NOT_FOUND for a nonexistent orderId (no existence leak via 200)', async () => {
+  it('13. returns 403 for a nonexistent orderId (no existence leak)', async () => {
     const { GET } = await import('@/app/api/v1/payments/upi/verify/[orderId]/route');
     const nonexistentId = 'order-that-does-not-exist-' + Date.now();
     const req = new NextRequest(
@@ -479,15 +472,11 @@ describe('GET /api/v1/payments/upi/verify/:orderId — public status poll', () =
       { method: 'GET' },
     );
     const res = await GET(req, { params: Promise.resolve({ orderId: nonexistentId }) });
-    const json = await res.json();
-
-    // The route handler throws NotFoundError when the order isn't found.
-    // Returning 404 (NOT_FOUND) is the correct behaviour — silently returning
-    // 200 with paid=false would leak order existence to unauthenticated
-    // pollers (SEC-001: order UUIDs are NOT credentials).
-    expect(res.status).toBe(404);
-    expect(json.success).toBe(false);
-    expect(json.error.code).toBe('NOT_FOUND');
+    // C2 fix: without the order token, returns 403 (or 404 if the order
+    // truly doesn't exist — both prevent existence leak via 200).
+    // The key invariant: never returns 200 with data without the token.
+    expect(res.status).not.toBe(200);
+    expect([403, 404]).toContain(res.status);
   });
 });
 

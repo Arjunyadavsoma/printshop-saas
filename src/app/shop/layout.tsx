@@ -66,6 +66,12 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const router = useRouter();
   const [shopName, setShopName] = useState<string | null>(null);
+  // M-2 fix: remember the shop's slug so the "View storefront" footer
+  // links to the shop's PUBLIC page (/shops/<slug>) instead of the
+  // homepage. Previously the footer hard-coded footerHref="/", which sent
+  // the shopkeeper to the marketing homepage — useless for previewing
+  // their customer-facing QR landing page.
+  const [shopSlug, setShopSlug] = useState<string | null>(null);
 
   // Login + register pages render bare (no sidebar, no auth gate).
   const isLoginPage = pathname === '/shop/login' || pathname === '/shop/register';
@@ -78,13 +84,17 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       router.replace('/shop/login');
       return;
     }
-    // Lazy-load the shop name for the sidebar header. Best-effort: if it
-    // fails the sidebar still renders, just without the shop name.
+    // Lazy-load the shop name + slug for the sidebar header + footer.
+    // Best-effort: if it fails the sidebar still renders, just without
+    // the shop name (and the footer falls back to the dashboard).
     void (async () => {
       const r = await api.request<{
         data?: { name?: string; slug?: string };
       }>('GET', '/api/v1/shops/me');
-      if (r.status === 200 && r.data?.data?.name) setShopName(r.data.data.name);
+      if (r.status === 200 && r.data?.data) {
+        if (r.data.data.name) setShopName(r.data.data.name);
+        if (r.data.data.slug) setShopSlug(r.data.data.slug);
+      }
     })();
   }, [api.ready, api.token, api.role, isLoginPage, router, api]);
 
@@ -114,6 +124,10 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
     window.location.href = '/shop/login';
   };
 
+  // M-2: link to the shop's public storefront page if we know the slug,
+  // otherwise fall back to the dashboard (no orphan homepage link).
+  const footerHref = shopSlug ? `/shops/${shopSlug}` : '/shop/dashboard';
+
   return (
     <AppShell
       navGroups={NAV_GROUPS}
@@ -122,7 +136,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       brandHref="/shop/dashboard"
       roleBadge="owner"
       onLogout={logout}
-      footerHref="/"
+      footerHref={footerHref}
       footerLabel="View storefront"
     >
       {children}

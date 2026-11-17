@@ -86,6 +86,17 @@ export const POST = withRateLimit<{ id: string }>(
         );
         continue;
       }
+      // C5 fix: a customer-declared page count is NOT safe to bill against
+      // without shopkeeper confirmation. The customer could enter any number
+      // (e.g. claim a 200-page PDF is 1 page to pay less). Block checkout
+      // until the shopkeeper (or auto-extraction) confirms the count.
+      if (f.pageCountSource === 'customer_declared') {
+        pricingErrors.push(
+          `"${f.originalFilename}" has a customer-entered page count that hasn't been ` +
+          'confirmed by the shopkeeper yet. Ask the shop to verify the page count before checkout.',
+        );
+        continue;
+      }
       try {
         const priced = priceFileFromRecord(f, shop);
         if (priced.totalPaise !== f.pricePaise) {

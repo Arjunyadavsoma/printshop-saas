@@ -104,6 +104,13 @@ export interface AgentPrincipal {
  * (SHA-256) and matched against printAgent.tokenHash. The agent's shopId is
  * the tenant scope. Heartbeats refresh lastSeenAt + isOnline so the dispatch
  * path knows an agent is reachable.
+ *
+ * H2 fix: a recognised-but-DISABLED agent (`isEnabled === false`) is rejected
+ * with 403 DEVICE_DISABLED — the shopkeeper can disable a lost/stolen PC via
+ * PATCH /api/v1/shops/me/devices/:deviceId without deleting the agent row
+ * (which would lose audit history). Previously the disabled flag was a
+ * no-op: a disabled device could still heartbeat, claim jobs, and receive
+ * device commands as long as its token hash matched.
  */
 export function withDeviceAuth<P extends RouteParams = RouteParams>(
   handler: (req: NextRequest, ctx: RouteCtx<P>, agent: AgentPrincipal) => Promise<NextResponse>,
@@ -116,6 +123,15 @@ export function withDeviceAuth<P extends RouteParams = RouteParams>(
       const tokenHash = createHmac('sha256', 'print-agent-salt').update(token).digest('hex');
       const agent = await repos.printAgents.findByTokenHash(tokenHash);
       if (!agent) throw new UnauthorizedError('Unknown device token');
+      // H2: a disabled device is a security revocation — reject every
+      // authenticated call. The token is still recognised (so we don't leak
+      // whether the token exists to a brute-forcer), but the device can no
+      // longer mutate any state on the shop's behalf.
+      if (agent.isEnabled === false) {
+        throw new ForbiddenError(
+          'DEVICE_DISABLED: This device has been disabled by the shopkeeper. Ask them to re-enable it from /shop/devices.',
+        );
+      }
       // Refresh presence on every authenticated call (cheap; the heartbeat
       // also does it explicitly).
       await repos.printAgents.update(agent.id, { isOnline: true, lastSeenAt: new Date() });

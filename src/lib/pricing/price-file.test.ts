@@ -98,15 +98,14 @@ function makeFile(overrides: Partial<PrintFile> = {}): PrintFile {
 
 describe('priceFileFromRecord', () => {
   describe('happy path — auto-extracted page count', () => {
-    it('prices a 1-page bw/a4 PDF at the minimum order value (₹5 = 500 paise)', () => {
-      // 1 page × 200 paise = 200 paise gross. Below the ₹5 min order → rounded
-      // up to 500 paise. This proves the file was actually priced (the price
-      // is the min, not zero) and the min-order adjustment was applied.
+    it('prices a 1-page bw/a4 PDF at the raw per-page rate (H7: min-order is per-order)', () => {
+      // H7 fix: min-order is NOT applied per-file anymore. The raw price is
+      // 1 page × 200 paise = 200 paise. The min-order adjustment happens at
+      // the order level in recalcOrderTotal.
       const result = priceFileFromRecord(makeFile(), makeShop());
-      expect(result.totalPaise).toBe(500);
+      expect(result.totalPaise).toBe(200);
       expect(result.billablePages).toBe(1);
-      // A line item for the print must exist; a min-order adjustment line
-      // tops the subtotal up to the floor.
+      // A line item for the print must exist (no min-order adjustment at file level).
       expect(result.lineItems.length).toBeGreaterThanOrEqual(1);
       expect(result.lineItems.some((li) => /print/i.test(li.label))).toBe(true);
     });

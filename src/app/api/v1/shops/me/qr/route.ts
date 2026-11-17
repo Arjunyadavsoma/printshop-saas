@@ -23,7 +23,7 @@ import { getShopCustomerUrl } from '@/lib/api/origin';
  * the site moves to a new domain, the next QR generation (or refresh of
  * the settings page) uses the new domain automatically. Previously this
  * used process.env.APP_BASE_URL, which broke when the env var wasn't set
- * on a new deployment (the QR encoded http://localhost:3000/<slug> —
+ * on a new deployment (the QR encoded http://localhost:3000/shops/<slug> —
  * unreachable from a customer's phone).
  */
 export const GET = withAuth(async (req, _ctx, principal) => {

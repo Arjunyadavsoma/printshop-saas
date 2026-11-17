@@ -86,11 +86,27 @@ export const POST = withAuth<{ id: string }>(async (req, ctx, principal) => {
   // status between our fetch + this update, the conditional WHERE
   // clause doesn't match → returns null → we throw so the shopkeeper
   // sees a clear error + re-fetches to see the current state.
+  //
+  // M-5 fix: if the order was previously paid (`paidAt !== null`), clear
+  // `paidAt` so the dashboard's payment badge stops showing "Paid" for a
+  // cancelled order. The money itself is NOT refunded here — that's a
+  // separate refund flow (and may already have been initiated by the
+  // shopkeeper via the payment provider). This just makes the dashboard
+  // consistent with the new state: a cancelled order shouldn't display a
+  // green "Paid" checkmark that contradicts the "Cancelled" status badge.
+  // The `paymentTxnId` is preserved so a future reconcile can still
+  // trace the original transaction.
+  const cancelPatch: { status: 'cancelled'; paidAt: null } = {
+    status: 'cancelled',
+    paidAt: null,
+  };
+  // Only set paidAt=null if the order was actually paid — otherwise the
+  // no-op update on `paidAt: null` is wasted (the column is already null).
   const updated = await repos.orders.transitionStatus(
     order.id,
     shop.id,
     order.status,
-    { status: 'cancelled' },
+    order.paidAt !== null ? cancelPatch : { status: 'cancelled' },
   );
   if (!updated) {
     throw new ValidationError(
