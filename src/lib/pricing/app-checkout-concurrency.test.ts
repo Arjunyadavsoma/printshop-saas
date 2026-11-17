@@ -92,7 +92,7 @@ async function seedCheckoutFixture(): Promise<{
   // API calls, returns a upi:// URI synchronously).
   await pool.query(
     `INSERT INTO "Shop" (id, name, slug, "ownerUserId", "upiId", "paymentProvider", "paymentCredentials", "pricingConfig", address, phone, "timezone", "isActive", "subscriptionTier", "createdAt", "updatedAt")
-     VALUES ($1, 'Phase 6.9 CC Shop', 'phase69-cc-shop', 'user-p69-cc', 'p69cc@okaxis', 'googlepay', '{}', '{}', 'addr', '555', 'Asia/Kolkata', true, 'free', NOW(), NOW())`,
+     VALUES ($1, 'Phase 6.9 CC Shop', 'phase69-cc-shop', 'user-p69-cc', 'p69cc@okaxis', 'googlepay', '{}', '{"bw_a4_per_page": 10000}', 'addr', '555', 'Asia/Kolkata', true, 'free', NOW(), NOW())`,
     [shopId],
   );
   await pool.query(
@@ -103,8 +103,11 @@ async function seedCheckoutFixture(): Promise<{
   // PrintFile with a non-zero pricePaise (so the checkout route's
   // "unpaid files" guard passes).
   await pool.query(
-    `INSERT INTO "PrintFile" (id, "orderId", "originalFilename", "storageKey", "mimeType", "sizeBytes", "pageCount", copies, "colorMode", "paperSize", duplex, "pricePaise", status, "createdAt", "updatedAt")
-     VALUES ($1, $2, 'test.pdf', 'shops/${shopId}/orders/${orderId}/${fileId}', 'application/pdf', 1024, 5, 1, 'bw', 'a4', false, $3, 'pending', NOW(), NOW())`,
+    // Phase 3 fixture fix: the checkout guard rejects placeholder /
+    // customer_declared page counts (fail-closed pricing) — the fixture must
+    // carry a shopkeeper-confirmed count to represent a billable file.
+    `INSERT INTO "PrintFile" (id, "orderId", "originalFilename", "storageKey", "mimeType", "sizeBytes", "pageCount", "pageCountSource", copies, "colorMode", "paperSize", duplex, "pricePaise", status, "createdAt", "updatedAt")
+     VALUES ($1, $2, 'test.pdf', 'shops/${shopId}/orders/${orderId}/${fileId}', 'application/pdf', 1024, 5, 'shopkeeper_confirmed', 1, 'bw', 'a4', false, $3, 'pending', NOW(), NOW())`,
     [fileId, orderId, AMOUNT],
   );
 
