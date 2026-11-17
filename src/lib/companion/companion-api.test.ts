@@ -16,8 +16,13 @@ import { createDefaultPricingConfig, type Shop } from '@platform/core/domain';
 
 let shopId: string;
 let ownerToken: string;
+// Unique IP per test to avoid IP-based rate limiting (each test gets its
+// own rate limit bucket via x-forwarded-for). This tests the REAL rate
+// limiter without disabling it.
+let testIp: string;
 
 beforeEach(async () => {
+  testIp = `10.0.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
   const container = getContainer();
   const auth = container.auth;
   const owner = await repos.users.create(
@@ -41,10 +46,24 @@ beforeEach(async () => {
 });
 
 function authedReq(method: string, path: string, opts?: { body?: unknown }) {
-  const headers: Record<string, string> = { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${ownerToken}`,
+    'Content-Type': 'application/json',
+    'x-forwarded-for': testIp,
+  };
    
   const init: any = { method, headers };
   if (opts?.body) init.body = JSON.stringify(opts.body);
+  return new NextRequest(`http://localhost:3000${path}`, init);
+}
+
+function unauthedReq(method: string, path: string, body: unknown) {
+   
+  const init: any = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': testIp },
+    body: JSON.stringify(body),
+  };
   return new NextRequest(`http://localhost:3000${path}`, init);
 }
 
@@ -61,7 +80,9 @@ describe('Companion API — Pairing', () => {
 
   it('2. rejects pairing creation without auth', async () => {
     const { POST } = await import('@/app/api/v1/companion/pairing/begin/route');
-    const req = new NextRequest('http://localhost:3000/api/v1/companion/pairing/begin', { method: 'POST' });
+    const req = new NextRequest('http://localhost:3000/api/v1/companion/pairing/begin', {
+      method: 'POST', headers: { 'x-forwarded-for': testIp },
+    });
     const res = await POST(req, { params: Promise.resolve({}) });
     expect(res.status).toBe(401);
   });
@@ -70,10 +91,7 @@ describe('Companion API — Pairing', () => {
     const { POST: beginPost } = await import('@/app/api/v1/companion/pairing/begin/route');
     const ticket = (await (await beginPost(authedReq('POST', '/api/v1/companion/pairing/begin'), { params: Promise.resolve({}) })).json()).data.ticket;
     const { POST: pairPost } = await import('@/app/api/v1/companion/pair/route');
-    const pairReq = new NextRequest('http://localhost:3000/api/v1/companion/pair', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket, deviceName: 'Test-PC', version: '1.0.0', os: 'Windows 11' }),
-    });
+    const pairReq = unauthedReq('POST', '/api/v1/companion/pair', { ticket, deviceName: 'Test-PC', version: '1.0.0', os: 'Windows 11' });
     const pairRes = await pairPost(pairReq, { params: Promise.resolve({}) });
     const pairJson = await pairRes.json();
     expect(pairRes.status).toBe(200);
@@ -85,10 +103,7 @@ describe('Companion API — Pairing', () => {
 
   it('4. rejects invalid ticket', async () => {
     const { POST } = await import('@/app/api/v1/companion/pair/route');
-    const req = new NextRequest('http://localhost:3000/api/v1/companion/pair', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket: '0'.repeat(64), deviceName: 'PC' }),
-    });
+    const req = unauthedReq('POST', '/api/v1/companion/pair', { ticket: '0'.repeat(64), deviceName: 'PC' });
     const res = await POST(req, { params: Promise.resolve({}) });
     expect(res.status).toBe(401);
   });
@@ -97,9 +112,8 @@ describe('Companion API — Pairing', () => {
     const { POST: beginPost } = await import('@/app/api/v1/companion/pairing/begin/route');
     const ticket = (await (await beginPost(authedReq('POST', '/api/v1/companion/pairing/begin'), { params: Promise.resolve({}) })).json()).data.ticket;
     const { POST: pairPost } = await import('@/app/api/v1/companion/pair/route');
-    const pairBody = JSON.stringify({ ticket, deviceName: 'PC1' });
-    await pairPost(new NextRequest('http://localhost:3000/api/v1/companion/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: pairBody }), { params: Promise.resolve({}) });
-    const reuseRes = await pairPost(new NextRequest('http://localhost:3000/api/v1/companion/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: pairBody }), { params: Promise.resolve({}) });
+    await pairPost(unauthedReq('POST', '/api/v1/companion/pair', { ticket, deviceName: 'PC1' }), { params: Promise.resolve({}) });
+    const reuseRes = await pairPost(unauthedReq('POST', '/api/v1/companion/pair', { ticket, deviceName: 'PC1' }), { params: Promise.resolve({}) });
     expect(reuseRes.status).toBe(409);
   });
 });
@@ -115,10 +129,7 @@ describe('Companion API — Devices & Commands', () => {
     if (beginRes.status !== 200) return; // rate limited — skip setup
     const ticket = (await beginRes.json()).data.ticket;
     const { POST: pairPost } = await import('@/app/api/v1/companion/pair/route');
-    const pairRes = await pairPost(new NextRequest('http://localhost:3000/api/v1/companion/pair', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket, deviceName: 'Shared-PC', version: '1.0' }),
-    }), { params: Promise.resolve({}) });
+    const pairRes = await pairPost(unauthedReq('POST', '/api/v1/companion/pair', { ticket, deviceName: 'Shared-PC', version: '1.0' }), { params: Promise.resolve({}) });
     if (pairRes.status === 200) {
       pairedDeviceId = (await pairRes.json()).data.agentId;
     }
