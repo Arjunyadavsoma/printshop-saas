@@ -174,6 +174,54 @@ describe('Phase 3 §4 (P2-1) — /agents/jobs/pending storage failure handling',
     expect(body.data.failedJobs[0].code).toBe('JOB_INVALID');
   });
 
+  it('7. storage provider TIMEOUT (ETIMEDOUT-shaped failure) → same safe classification', async () => {
+    const { jobId } = await seedOrderFileJob({});
+    const container = getContainer();
+    (container as { storage: unknown }).storage = {
+      getPresignedDownloadUrl: async () => {
+        const err = new Error('connect ETIMEDOUT 1.2.3.4:443');
+        (err as { code?: string }).code = 'ETIMEDOUT';
+        throw err;
+      },
+    };
+    const { GET } = await import('@/app/api/v1/agents/jobs/pending/route');
+    const res = await GET(deviceReq('GET', '/api/v1/agents/jobs/pending', deviceToken), { params: Promise.resolve({}) } as never);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error.code).toBe('STORAGE_UNAVAILABLE');
+    expect(body.error.details.failedJobs[0].jobId).toBe(jobId);
+    expect(JSON.stringify(body)).not.toContain('ETIMEDOUT');
+    expect(JSON.stringify(body)).not.toContain('1.2.3.4');
+    const job = await container.db.findOne<{ status: string }>('printJob', { id: jobId });
+    expect(job?.status).toBe('queued');
+  });
+
+  it('8. RECOVERY after temporary storage failure → next poll delivers the same job (not discarded)', async () => {
+    const { jobId } = await seedOrderFileJob({});
+    const container = getContainer();
+    let healthy = false;
+    (container as { storage: unknown }).storage = {
+      getPresignedDownloadUrl: async () => {
+        if (!healthy) throw new Error('temporary provider outage');
+        return '/api/v1/storage/get?recovered=1';
+      },
+    };
+    const { GET } = await import('@/app/api/v1/agents/jobs/pending/route');
+    const req = () => GET(deviceReq('GET', '/api/v1/agents/jobs/pending', deviceToken), { params: Promise.resolve({}) } as never);
+    // First poll: outage → 503, job stays queued.
+    const r1 = await req();
+    expect(r1.status).toBe(503);
+    let job = await container.db.findOne<{ status: string }>('printJob', { id: jobId });
+    expect(job?.status).toBe('queued');
+    // Storage recovers; next poll delivers the SAME job.
+    healthy = true;
+    const r2 = await req();
+    expect(r2.status).toBe(200);
+    const body = await r2.json();
+    expect(body.data.jobs.map((j: { jobId: string }) => j.jobId)).toContain(jobId);
+    expect(body.data.failedJobs).toHaveLength(0);
+  });
+
   it('6. genuinely empty queue → 200 with empty jobs (real empty, not masked failure)', async () => {
     const container = getContainer();
     (container as { storage: unknown }).storage = {
