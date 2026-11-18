@@ -17,6 +17,7 @@ import { PaymentAdapterRegistry } from '@/lib/payments/registry';
 import { setContainerForTesting } from '@/lib/container';
 import type { Container } from '@/lib/container';
 import { repos } from '@/lib/repositories';
+import { hashDeviceToken } from '@/lib/api/device-token';
 import { createDefaultPricingConfig } from '@platform/core/domain';
 import { createHmac } from 'node:crypto';
 
@@ -100,7 +101,7 @@ beforeEach(async () => {
 
   // Create agent A
   agentAToken = crypto.randomUUID() + '-' + crypto.randomUUID();
-  const tokenHashA = createHmac('sha256', 'print-agent-salt').update(agentAToken).digest('hex');
+  const tokenHashA = hashDeviceToken(agentAToken);
   const agentA = await repos.printAgents.create({ shopId: shopAId, name: 'Agent A', tokenHash: tokenHashA });
   agentAId = agentA.id;
 
@@ -133,7 +134,7 @@ beforeEach(async () => {
 
   // Create agent B
   agentBToken = crypto.randomUUID() + '-' + crypto.randomUUID();
-  const tokenHashB = createHmac('sha256', 'print-agent-salt').update(agentBToken).digest('hex');
+  const tokenHashB = hashDeviceToken(agentBToken);
   const agentB = await repos.printAgents.create({ shopId: shopBId, name: 'Agent B', tokenHash: tokenHashB });
   agentBId = agentB.id;
 });

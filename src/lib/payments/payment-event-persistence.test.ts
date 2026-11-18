@@ -799,7 +799,19 @@ describe('Part B — PAY-002 webhook persistence (PGlite-backed)', () => {
     expect(order?.status).toBe('paid');
   });
 
-  it('B4. concurrent duplicate delivery produces ONE financial effect', async () => {
+  // PHASE 3 (P2-2): PGlite is a SINGLE-SESSION database — two "concurrent"
+  // $transaction calls interleave on the one WASM session (the second BEGIN
+  // joins the first transaction), so this environment structurally cannot
+  // represent concurrent transactions and is NOT a valid concurrency oracle.
+  // The authoritative concurrency evidence lives in
+  //   - src/lib/payments/payment-webhook-concurrency-phase3.test.ts (real
+  //     PostgreSQL, independent connections — 16 scenarios incl. 2 and 10
+  //     concurrent duplicates), and
+  //   - src/lib/pricing/app-webhook-integration.test.ts (real app code path
+  //     against real PostgreSQL).
+  // Root cause fixed in lifecycle.service.ts: SERIALIZABLE → ReadCommitted
+  // (SSI aborted BOTH deliveries with 40001 → zero financial effects).
+  it.skip('B4. concurrent duplicate delivery produces ONE financial effect — MOVED to real PostgreSQL (payment-webhook-concurrency-phase3.test.ts scenarios 3-5): PGlite is single-session and cannot model concurrent transactions', async () => {
     const moid = 'moid-b4-' + Date.now();
     await shim.paymentAttempt.create({
       data: {

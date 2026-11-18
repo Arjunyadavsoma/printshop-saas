@@ -40,6 +40,7 @@ import {
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
 import { JsonConsoleLogger } from '@/lib/logger/json-logger.adapter';
 import { JwtAuthAdapter } from '@/lib/auth/jwt-auth.adapter';
+import { assertDeviceTokenPepperConfigured } from '@/lib/api/device-token';
 import { PaymentAdapterRegistry } from '@/lib/payments/registry';
 
 export interface Container {
@@ -367,6 +368,11 @@ function buildContainer(): Container {
     },
     cache,
   );
+
+  // Device-token pepper (Phase C): fail fast at container build so a
+  // production deploy without DEVICE_TOKEN_PEPPER dies at boot, not on the
+  // first device request. Dev/test falls back to the legacy pepper.
+  assertDeviceTokenPepperConfigured();
 
   const container: Container = {
     db: database,

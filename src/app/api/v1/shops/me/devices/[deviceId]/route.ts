@@ -205,6 +205,14 @@ export const DELETE = withAuth(async (req, ctx, principal) => {
     });
   }
 
+  // Delete the agent's remote commands first: DeviceCommand.agentId is
+  // RESTRICT (schema-aligned FK, migration 20251118000003), so the agent
+  // row cannot be deleted while commands reference it. Commands addressed
+  // to a revoked device are dead by definition — history is preserved in
+  // the audit log. (The previous CASCADE FK silently deleted them; the
+  // audit entry below still records the revocation itself.)
+  await container.db.delete('deviceCommand', { agentId: device.id });
+
   // Delete the agent row — this revokes the token (hash is gone).
   await container.db.delete('printAgent', { id: device.id, shopId });
 

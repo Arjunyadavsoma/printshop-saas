@@ -12,6 +12,28 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Phase 5 fix: the five real-PostgreSQL integration suites
+    # (checkout-real-postgres, app-webhook-integration, app-checkout-concurrency,
+    # webhook-postgres-fk, migration-integrity) connect to 127.0.0.1:5433 and
+    # previously failed with ECONNREFUSED because no database was provisioned.
+    # Provision PostgreSQL 16 as a service container and migrate before tests.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: printshop_ci
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/printshop_ci
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/printshop_ci?schema=public
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +55,9 @@ jobs:
 
       - name: ESLint
         run: bun run lint
+
+      - name: Apply database migrations (integration test database)
+        run: bunx prisma migrate deploy
 
       - name: Unit tests
         run: bunx vitest run

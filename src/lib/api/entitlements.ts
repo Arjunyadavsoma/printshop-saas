@@ -90,7 +90,7 @@ export async function requireEntitlement(shopId: string, feature: Feature): Prom
     // Audit log the denial
     try {
       const container = getContainer();
-      await container.db.insert('AuditLog', {
+      await container.db.insert('auditLog', {
         id: crypto.randomUUID(),
         shopId,
         userId: null,

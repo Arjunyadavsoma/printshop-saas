@@ -5,9 +5,26 @@
 > documented with method, path, auth, request shape, response shape,
 > and error codes.
 
-**Status:** v1.0 — 2025-11-07. Derived from actual route implementations
-in `/home/z/my-project/src/app/api/v1/`. Every endpoint listed here
-exists and is callable.
+**Status:** v1.1 — 2026-11-17. §10 (sync) and §12 (agent adaptation table)
+of the v1.0 text are corrected below; the §13 **Device & companion domain**
+documents the pairing / device-management / command surface that v1.0
+omitted. Device integration endpoints additionally follow
+`docs/PRINTEXE_INTEGRATION_GUIDE.md` (the most current integration doc).
+
+> **v1.0 errata (all verified against source, fixed in v1.1):**
+> - §10 claimed `/api/v1/sync/*` "do not exist yet" — they exist and are
+>   live (`pull`, `push`, `status`).
+> - §6/§12 told PrintEXE there is no unauthenticated `/pair` route —
+>   `POST /api/v1/companion/pair` (pairing-ticket flow) and
+>   `POST /api/v1/companion/pairing/begin` now exist (see §13).
+> - §12 listed `DELETE /api/v1/agents/{agentId}` as "doesn't exist" — it
+>   exists and works (model-name bug fixed 2026-11-17).
+> - Device-authed routes are now rate-limited per agent (v1.0 §1.5 said
+>   they were not).
+> - Device tokens can now be rotated (`POST /api/v1/companion/token/rotate`,
+>   §13.5) — v1.0 had no rotation path.
+> - Print jobs accept `needs_review` in addition to `printing | completed |
+>   failed` (uncertain physical outcome — §13.6).
 
 **Base URL:** `https://printshop-saas-three.vercel.app` (production) or `http://localhost:3000` (dev)
 **API prefix:** `/api/v1`
@@ -468,4 +485,113 @@ PrintEXE's `HttpPrintShopBackend.cs` must be rewritten to use this contract:
 | Socket.IO `DeliverJob`/`AckJob`/`ReportStatus` on `/companion-hub` | `job.dispatch`/`auth`/`auth-ok` on `/` (port 3003) | Rewrite `SocketIoRealtimeClient.cs` |
 | No token→JWT exchange | `POST /api/v1/agents/token` before socket connect | Add this call |
 
-See `docs/DESKTOP_INTEGRATION.md` for the full migration path.
+**All seven actions above are DONE in PrintEXE `main`** (verified against
+`docs/PHASE3_CONTRACT_MATRIX.md`); the pairing route referenced in row 2
+is the pairing-ticket flow in §13 below. This table is retained for
+historical reference only.
+
+---
+
+## 13. Device & companion domain (added v1.1)
+
+The device-facing surface used by PrintEXE (and future Android clients).
+See `docs/PRINTEXE_INTEGRATION_GUIDE.md` for the client-side walkthrough.
+
+### 13.1 Pairing (website → Windows)
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /api/v1/companion/pairing/begin` | Shopkeeper JWT (`owner`,`staff`), 5/min | Mint a single-use 64-hex pairing ticket (5-min TTL). Returns `{ticket, pairingUrl: "printshop://pair?ticket=…&shop=…", expiresAt, shopId}`. Stores only the SHA-256 hash. Enforces the `multi_device` entitlement beyond the first paired device (403 `ENTITLEMENT_REQUIRED`). |
+| `POST /api/v1/companion/pair` | None (the ticket IS the auth), 10/min | Body `{ticket (64-hex), deviceName (≤120), version?, os?, printerName?}` → atomically consumes the ticket, creates the `PrintAgent`, returns `{agentId, deviceToken (64-hex, shown ONCE), shopId, shopName, protocolVersion: 1}`. Error codes: `VALIDATION_ERROR`, `UNAUTHORIZED` (unknown or expired ticket), `PAIRING_TICKET_CONSUMED` (409), `PAIRING_TICKET_UNAVAILABLE` (409), `NOT_FOUND`, `RATE_LIMITED`. |
+
+### 13.2 Device lifecycle
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/v1/shops/me/devices` | Shopkeeper JWT | List devices (id, name, isOnline, isEnabled, lastSeenAt, printerName, version, os). |
+| `GET/PATCH/DELETE /api/v1/shops/me/devices/[deviceId]` | JWT (PATCH/DELETE: `owner` only) | Inspect / rename + enable/disable / revoke (deletes the agent row → token hash gone → credential invalid immediately; queued jobs are requeued; realtime `device.revoked` published). |
+| `POST /api/v1/shops/me/devices/[deviceId]/commands` | JWT (`owner`,`staff`) | Issue a command: `refresh_printers`, `pause`, `resume`, `cancel_job`, `retry_job`, `test_print`, `diagnostics` (strict allowlist). 5-min TTL, idempotency key dedupe, realtime `device.command.issued`. |
+| `DELETE /api/v1/agents/[id]` | JWT (`owner`) | Legacy revoke route (kept for compatibility). Realtime `agent.revoked`. |
+
+### 13.3 Device-to-cloud (device token auth)
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/agents/heartbeat` | POST | Presence refresh. Body `{printerName?, version?, os?}` → `{agentId, online, ts}`. Also refreshes presence on EVERY authenticated device call. |
+| `/api/v1/agents/jobs/pending` | GET | Up to 10 queued jobs with 15-min presigned download URLs. |
+| `/api/v1/agents/jobs/[id]/status` | POST | Atomic claim (`{"status":"printing"}` — first device wins) then `completed` / `failed` / `needs_review`. `needs_review` (from `printing` or `queued`) parks the job for operator resolution — the honest state for "submitted to the spooler but the physical outcome could not be established". Operator resolution reports `completed` (allowed from `needs_review`) or `failed`. |
+| `/api/v1/agents/jobs/[id]/received` | POST | Durable receipt `{checksum (64-hex), fileSize, receivedAt, deliveryAttemptId?}` → schedules cloud cleanup (15-min grace). |
+| `/api/v1/agents/token` | POST | Exchange the device token for a 15-min Socket.IO JWT (`sub: "agent:<id>"`, role `staff`). |
+| `/api/v1/companion/commands` | GET / POST | Fetch pending commands (`requested` + unexpired; flips to `delivered` on read) / report `{commandId, status: delivered\|accepted\|executing\|succeeded\|failed\|outcome_unknown, result?: object}` → `{commandId, status, updatedAt}`. |
+| `/api/v1/sync/pull`, `/sync/push`, `/sync/status` | GET / POST / GET | Cursor-based entity sync (see v1.0 §10). |
+
+### 13.4 Rate limiting (device routes)
+
+Every `withDeviceAuth` route is now rate-limited **per agent per path**
+(default 150 req/min — the companion's legitimate worst-case cadence is
+~60 req/min; `companion/token/rotate` is capped at 5/min, public pairing
+at 5–10/min). Keyed by agent id, not IP, so devices behind a shop NAT are
+not grouped.
+
+### 13.5 Token rotation
+
+`POST /api/v1/companion/token/rotate` (device token auth, 5/min): mints a
+new 256-bit token, stores only its HMAC verifier, retains the previous
+hash in `prevTokenHash` for a **10-minute overlap** so an in-flight request
+is not dropped mid-rotation, then rejects the old token. The raw token is
+returned ONCE. Audit event `device.token_rotated`; realtime
+`device.token_rotated`.
+
+### 13.6 Credential hashing
+
+Device tokens and pairing tickets are never stored in plaintext. Device
+tokens use a versioned verifier (Phase C): new credentials store
+`v2:<HMAC-SHA256(key = DEVICE_TOKEN_PEPPER, token)>`; pre-Phase-C verifiers
+(bare `HMAC-SHA256('print-agent-salt', token)`) keep verifying until each
+device rotates its token through `POST /api/v1/companion/token/rotate`
+— the only path that migrates a verifier to v2. `DEVICE_TOKEN_PEPPER` is
+required in production (validated at startup) and never exposed outside the
+server. Legacy verification can be retired once
+`SELECT count(*) FROM "PrintAgent" WHERE "tokenHash" NOT LIKE 'v2:%'` is 0.
+Pairing tickets store SHA-256 hashes. Token formats: 64-hex (32 CSPRNG bytes
+— all new issuance since Phase 2, including `agents/register`); `uuid-uuid`
+(pre-Phase-2 manual registrations only; still verify until rotated).
+
+**Job listing + operator resolution (shopkeeper JWT):**
+- `GET /api/v1/shops/me/jobs?status=needs_review` — recent jobs (max 100)
+  with file names; the data source for the operator-resolution UI.
+- `POST /api/v1/shops/me/jobs/{jobId}/resolve` — body
+  `{outcome: 'completed'|'failed', note?}`; only `needs_review` jobs can be
+  resolved; actor, timestamp and note are audit-logged (`job.resolved`);
+  repeat calls get `409 JOB_NOT_IN_NEEDS_REVIEW`. Resolution never requeues.
+
+**Previous-credential policy during the 10-minute rotation overlap:** the
+old token is accepted only for rotation recovery, heartbeat, and read-only
+polling (jobs/pending, commands GET, sync pull/status). State-mutating
+calls (job status, delivery receipts, command reports, sync push) require
+the current token (`403 TOKEN_OVERLAP_READ_ONLY` otherwise).
+
+
+---
+
+## Phase 3 additions (branch phase3-critical-repairs)
+
+### Print jobs — operator surface
+- `GET /api/v1/shops/me/jobs?status=<status>` rows now also carry
+  `deviceName`, `devicePrinterName` and `queuedAt` (device + printer
+  evidence for the operator-resolution view). Shop-scoped by the JWT.
+- Website surface: `/shop/print-jobs` ("Print Jobs" in the shop portal nav).
+  Job-level uncertainty (`needs_review`) is displayed distinctly from
+  completed/failed; resolution calls the audited
+  `POST /shops/me/jobs/{jobId}/resolve` endpoint only.
+
+### Device job delivery — storage failures (P2-1)
+`GET /api/v1/agents/jobs/pending` never silently returns an empty list when
+queued jobs exist but cannot be prepared:
+- `200` `{jobs, failedJobs, agentId}` — healthy jobs returned; per-job
+  failures in `failedJobs[]` with `code` ∈ `DOCUMENT_MISSING` |
+  `JOB_INVALID` | `STORAGE_UNAVAILABLE` and a device-actionable message.
+- `503` `{error: {code: "STORAGE_UNAVAILABLE", details: {failedJobs,
+  retryable: true}}}` — every queued job failed for a storage reason.
+  Devices back off and retry; jobs stay queued and are offered again.
+  Provider error details are logged server-side only, never in responses.

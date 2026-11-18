@@ -51,6 +51,7 @@ describe('Container startup validation', () => {
     process.env.JWT_ACCESS_SECRET = 'strong-secret-123';
     process.env.JWT_REFRESH_SECRET = 'strong-refresh-456';
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
+    process.env.DEVICE_TOKEN_PEPPER = '0000000000000000000000000000000000000000000000000000000000000000';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString('base64');
     // Reset the container so the next getContainer() triggers buildContainer()
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
@@ -66,6 +67,7 @@ describe('Container startup validation', () => {
     process.env.JWT_ACCESS_SECRET = 'strong-secret-123';
     process.env.JWT_REFRESH_SECRET = 'strong-refresh-456';
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
+    process.env.DEVICE_TOKEN_PEPPER = '0000000000000000000000000000000000000000000000000000000000000000';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString('base64');
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
     expect(() => { void getContainer(); }).toThrow('SQLite file');
@@ -80,6 +82,7 @@ describe('Container startup validation', () => {
     process.env.JWT_ACCESS_SECRET = 'strong-secret-123';
     process.env.JWT_REFRESH_SECRET = 'strong-refresh-456';
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
+    process.env.DEVICE_TOKEN_PEPPER = '0000000000000000000000000000000000000000000000000000000000000000';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString('base64');
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
     // Previously this threw FATAL. Now it warns + continues (the app should
@@ -99,6 +102,7 @@ describe('Container startup validation', () => {
     process.env.JWT_ACCESS_SECRET = 'strong-secret-123';
     process.env.JWT_REFRESH_SECRET = 'strong-refresh-456';
     process.env.REALTIME_EMIT_SECRET = 'strong-emit-789';
+    process.env.DEVICE_TOKEN_PEPPER = '0000000000000000000000000000000000000000000000000000000000000000';
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.alloc(16, 0x42).toString('base64');
     (globalThis as unknown as { __printshopContainer?: unknown }).__printshopContainer = undefined;
     // Should NOT throw — the app should boot with a warning.

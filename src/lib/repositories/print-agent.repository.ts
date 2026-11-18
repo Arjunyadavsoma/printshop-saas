@@ -6,6 +6,11 @@ interface PrintAgentRow {
   shopId: string;
   name: string;
   tokenHash: string;
+  // Token rotation (POST /api/v1/companion/token/rotate): the previous
+  // credential's hash is retained briefly so an in-flight request that
+  // authenticated with the old token is not locked out mid-rotation.
+  prevTokenHash: string | null;
+  tokenRotatedAt: Date | null;
   lastSeenAt: Date | null;
   printerName: string | null;
   isOnline: boolean;
@@ -22,6 +27,8 @@ function toDomain(row: PrintAgentRow): PrintAgent {
     shopId: row.shopId,
     name: row.name,
     tokenHash: row.tokenHash,
+    prevTokenHash: row.prevTokenHash ?? null,
+    tokenRotatedAt: row.tokenRotatedAt ?? null,
     lastSeenAt: row.lastSeenAt,
     printerName: row.printerName,
     isOnline: row.isOnline,
@@ -45,6 +52,18 @@ export class PrintAgentRepository extends BaseRepository<PrintAgentRow> {
   async findByTokenHash(tokenHash: string): Promise<PrintAgent | null> {
     const row = await this.findOne({ tokenHash });
     return row ? toDomain(row) : null;
+  }
+
+  /**
+   * Resolve an agent by its PREVIOUS token hash, only while the rotation
+   * grace window (overlapMs) is still open. Returns null once the window
+   * closes — replayed old credentials stop working.
+   */
+  async findByPreviousTokenHash(prevTokenHash: string, overlapMs: number): Promise<PrintAgent | null> {
+    const row = await this.findOne({ prevTokenHash });
+    if (!row || !row.tokenRotatedAt) return null;
+    if (Date.now() - new Date(row.tokenRotatedAt).getTime() > overlapMs) return null;
+    return toDomain(row);
   }
 
   async listByShop(shopId: string): Promise<PrintAgent[]> {

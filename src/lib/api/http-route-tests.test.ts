@@ -215,6 +215,32 @@ describe('REAL HTTP Route-Handler Tests', () => {
   });
 
   // ─── Agents list (authenticated) ───
+  // Phase 5 — /agents/register multi_device entitlement + post-insert
+  // reconciliation (parity with /companion/pair). On a free-tier shop the
+  // first device is allowed; a second registration is rejected 403 and the
+  // number of ENABLED agents never exceeds the single-device limit.
+  describe('POST /api/v1/agents/register — multi_device entitlement', () => {
+    it('registers the first device and rejects the second (free tier)', async () => {
+      const { POST } = await import('@/app/api/v1/agents/register/route');
+      const r1 = await POST(authedReq('POST', '/api/v1/agents/register', { body: { name: 'Dev One', os: 'win32', version: '0.4.7.0' } }), { params: Promise.resolve({}) });
+      expect([200, 201]).toContain(r1.status);
+      const first = await r1.json();
+      expect(first.data?.deviceToken ?? first.data?.token).toBeTruthy();
+
+      const r2 = await POST(authedReq('POST', '/api/v1/agents/register', { body: { name: 'Dev Two', os: 'win32' } }), { params: Promise.resolve({}) });
+      expect(r2.status).toBe(403);
+      const body = await r2.json();
+      expect(body.error?.code).toBe('ENTITLEMENT_REQUIRED');
+
+      // Invariant: no over-limit ENABLED device may exist after either path
+      // (pre-check rejection here; reconciliation backstop for the concurrent
+      // double-insert race — same shape as /companion/pair).
+      const { repos } = await import('@/lib/repositories');
+      const agents = await repos.printAgents.listByShop(shopId);
+      expect(agents.filter((d: { isEnabled?: boolean }) => d.isEnabled !== false).length).toBe(1);
+    });
+  });
+
   describe('GET /api/v1/shops/me/agents', () => {
     it('returns 200 with agent list (authenticated)', async () => {
       const { GET } = await import('@/app/api/v1/shops/me/agents/route');

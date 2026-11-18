@@ -18,7 +18,16 @@ export async function rateLimit(
 ): Promise<{ remaining: number }> {
   const count = await cache.incr(key);
   if (count === 1) {
-    await cache.expire(key, windowSeconds);
+    try {
+      await cache.expire(key, windowSeconds);
+    } catch {
+      // Phase 5 fix: if the expiry cannot be set, the counter would live
+      // forever and turn a transient limiter outage into a PERMANENT lockout
+      // for the key. Drop the counter instead — fail open on our own
+      // infrastructure error (consistent with this module's documented
+      // fail-open posture) rather than ban the client indefinitely.
+      await cache.del(key).catch(() => {});
+    }
   }
   if (count > limit) {
     throw new RateLimitError(`Rate limit exceeded (${limit}/${windowSeconds}s)`);
