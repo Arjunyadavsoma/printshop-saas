@@ -54,8 +54,12 @@ export function withAuth<P extends RouteParams = RouteParams>(
   allowedRoles?: UserRole[],
 ) {
   return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
-    const container = getContainer();
+    // Container build can THROW in production (fail-fast env validation —
+    // e.g. DEVICE_TOKEN_PEPPER). Acquire it inside the try so such failures
+    // return the standard JSON error envelope instead of a bare empty 500.
+    let container: ReturnType<typeof getContainer> | null = null;
     try {
+      container = getContainer();
       const header = req.headers.get('authorization') ?? '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new UnauthorizedError('Missing bearer token');
@@ -86,7 +90,11 @@ export function withAuth<P extends RouteParams = RouteParams>(
     } catch (cause) {
       const res = fail(toAppError(cause));
       const rid = requestId(req);
-      logRequest(container.logger, req.method, req.nextUrl.pathname, res.status, 0, rid);
+      // container may be null when the container build itself threw —
+      // still answer with the envelope, just without structured logging.
+      if (container) {
+        logRequest(container.logger, req.method, req.nextUrl.pathname, res.status, 0, rid);
+      }
       try { res.headers.set('x-request-id', rid); } catch {}
       return res;
     }
@@ -164,8 +172,10 @@ export function withDeviceAuth<P extends RouteParams = RouteParams>(
   opts?: DeviceAuthOptions,
 ) {
   return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
-    const container = getContainer();
     try {
+      // Inside the try: container-build failures (fail-fast env validation)
+      // must return the JSON error envelope, not a bare empty 500.
+      const container = getContainer();
       const header = req.headers.get('authorization') ?? '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new UnauthorizedError('Missing device token');
