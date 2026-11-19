@@ -52,7 +52,20 @@ function randomUnusedPassword(): string {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await rateLimit(getContainer().cache, rateKey(req, 'login'), 20, 60);
-    const body = LoginSchema.parse(await req.json());
+    // Malformed / missing JSON must be a 400 VALIDATION_ERROR, not a 500: a
+    // client that posts an empty body (or a proxy that strips it) previously
+    // crashed `req.json()` with an unhandled SyntaxError and surfaced as a
+    // server error, which looks like "login is broken" on the client side.
+    let raw: unknown;
+    try {
+      raw = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Request body must be valid JSON: { "email", "password" }.' } },
+        { status: 400 },
+      );
+    }
+    const body = LoginSchema.parse(raw);
     const container = getContainer();
 
     // H-2 fix: normalise the email to lowercase before lookup. Previously
