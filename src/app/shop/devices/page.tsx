@@ -64,6 +64,7 @@ import {
   Printer,
   Cpu,
   TerminalSquare,
+  History,
 } from 'lucide-react';
 
 /**
@@ -633,6 +634,7 @@ export default function ShopDevicesPage() {
             <DeviceCard
               key={device.id}
               device={device}
+              api={api}
               renameOpen={renameTargetId === device.id}
               onRenameStart={() => setRenameTargetId(device.id)}
               onRenameCancel={() => setRenameTargetId(null)}
@@ -757,6 +759,7 @@ function StatTile({
 
 interface DeviceCardProps {
   device: Device;
+  api: ReturnType<typeof useApiClient>;
   renameOpen: boolean;
   onRenameStart: () => void;
   onRenameCancel: () => void;
@@ -770,8 +773,166 @@ interface DeviceCardProps {
   sendingCommandKey: string | null;
 }
 
+/* ── Command history panel (plan M1 / gap G1) ────────────────────────────
+ * The shopkeeper sends a command but could never see whether it executed.
+ * The backend already persists the lifecycle (requested → delivered →
+ * executing → succeeded/failed/expired) with a JSON result on
+ * GET /shops/me/devices/{id}; this panel surfaces it: status pills, human
+ * result messages, and a 10 s refresh while expanded (visibility-guarded,
+ * same pattern as the device list poll). */
+
+interface DeviceCommandView {
+  id: string;
+  commandType: string;
+  status: string;
+  payload: unknown;
+  result: unknown;
+  initiatedBy: string;
+  createdAt: string;
+  deliveredAt: string | null;
+  executedAt: string | null;
+}
+
+const COMMAND_STATUS_META: Record<string, { label: string; cls: string }> = {
+  requested: { label: 'Requested', cls: 'bg-muted text-muted-foreground border-border' },
+  delivered: { label: 'Delivered', cls: 'bg-sky-100 text-sky-800 border-sky-300' },
+  accepted: { label: 'Accepted', cls: 'bg-sky-100 text-sky-800 border-sky-300' },
+  executing: { label: 'Executing', cls: 'bg-amber-100 text-amber-900 border-amber-300' },
+  succeeded: { label: 'Succeeded', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-800 border-rose-300' },
+  expired: { label: 'Expired', cls: 'bg-zinc-100 text-zinc-600 border-zinc-300' },
+  cancelled: { label: 'Cancelled', cls: 'bg-zinc-100 text-zinc-600 border-zinc-300' },
+};
+
+function CommandStatusBadge({ status }: { status: string }) {
+  const v = COMMAND_STATUS_META[status] ?? { label: status, cls: 'bg-zinc-100 text-zinc-700 border-zinc-300' };
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${v.cls}`}>
+      {v.label}
+    </span>
+  );
+}
+
+/** Human message out of the agent's JSON result: prefer explicit message
+ *  fields, else compact JSON, else the raw string. */
+function commandResultText(result: unknown): string | null {
+  if (result == null) return null;
+  if (typeof result === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(result);
+      if (parsed && typeof parsed === 'object') return commandResultText(parsed);
+      return (result as string).trim() || null;
+    } catch {
+      return (result as string).trim() || null;
+    }
+  }
+  if (typeof result === 'object') {
+    const obj = result as Record<string, unknown>;
+    for (const key of ['message', 'reason', 'error', 'detail', 'status']) {
+      const val = obj[key];
+      if (typeof val === 'string' && val.trim()) return val.trim();
+    }
+    try {
+      const json = JSON.stringify(obj);
+      return json.length > 140 ? json.slice(0, 137) + '…' : json;
+    } catch {
+      return null;
+    }
+  }
+  return String(result);
+}
+
+const COMMAND_TYPE_LABELS: Record<string, string> = {
+  refresh_printers: 'Refresh printers',
+  pause: 'Pause queue',
+  resume: 'Resume queue',
+  cancel_job: 'Cancel job',
+  retry_job: 'Reprint job',
+  test_print: 'Test print',
+  diagnostics: 'Diagnostics',
+};
+
+function CommandsPanel({ api, deviceId }: { api: ReturnType<typeof useApiClient>; deviceId: string }) {
+  const [commands, setCommands] = useState<DeviceCommandView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadCommands = useCallback(async () => {
+    try {
+      const r = await api.request<{
+        data?: { commands?: DeviceCommandView[] };
+        error?: { message?: string };
+      }>('GET', `/api/v1/shops/me/devices/${deviceId}`);
+      if (r.status === 200 && r.data?.data) {
+        setCommands(r.data.data.commands ?? []);
+        setError(null);
+      } else {
+        setError(r.data?.error?.message ?? 'Could not load command history.');
+      }
+    } catch {
+      setError('Could not load command history.');
+    }
+  }, [api, deviceId]);
+
+  // Load on mount + refresh every 10 s while the tab is visible.
+  useEffect(() => {
+    void loadCommands();
+    const id = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        void loadCommands();
+      }
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [loadCommands]);
+
+  if (error && commands === null) {
+    return <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{error}</p>;
+  }
+  if (commands === null) {
+    return <p className="px-3 py-2 text-xs text-muted-foreground">Loading command history…</p>;
+  }
+  if (commands.length === 0) {
+    return (
+      <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+        No commands sent to this device yet. Use the Command button above — every
+        command&apos;s outcome will appear here.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1.5" aria-label="Recent commands">
+      {commands.map((c) => {
+        const resultText = commandResultText(c.result);
+        return (
+          <li key={c.id} className="rounded-md border bg-background px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <span className="text-xs font-medium text-foreground">
+                {COMMAND_TYPE_LABELS[c.commandType] ?? c.commandType}
+              </span>
+              <CommandStatusBadge status={c.status} />
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              issued {timeAgo(c.createdAt)}
+              {c.executedAt ? ` · executed ${timeAgo(c.executedAt)}` : ''}
+            </div>
+            {resultText && (
+              <p
+                className={`mt-1 text-[11px] ${
+                  c.status === 'failed' ? 'text-rose-700' : c.status === 'succeeded' ? 'text-emerald-700' : 'text-muted-foreground'
+                }`}
+              >
+                {resultText}
+              </p>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function DeviceCard({
   device,
+  api,
   renameOpen,
   onRenameStart,
   onRenameCancel,
@@ -804,6 +965,9 @@ function DeviceCard({
   const activeCommandKey = sendingCommandKey;
   const commandDropdownBusy =
     activeCommandKey != null && activeCommandKey.endsWith(':' + device.id);
+
+  // Recent-commands panel visibility (plan M1).
+  const [showCommands, setShowCommands] = useState(false);
 
   return (
     <Card
@@ -1036,6 +1200,32 @@ function DeviceCard({
             until re-enabled.
           </p>
         )}
+
+        {/* Recent commands (plan M1): expandable panel showing the command
+            lifecycle and results, so remote actions have visible feedback. */}
+        <Separator />
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowCommands((v) => !v)}
+            aria-expanded={showCommands}
+            className="flex min-h-[44px] w-full items-center justify-between rounded-md px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <span className="flex items-center gap-1.5">
+              <History className="size-3.5" aria-hidden="true" />
+              Recent commands
+            </span>
+            <ChevronDown
+              className={`size-3.5 transition-transform ${showCommands ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {showCommands && (
+            <div className="mt-2">
+              <CommandsPanel api={api} deviceId={device.id} />
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

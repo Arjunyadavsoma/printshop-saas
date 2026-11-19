@@ -35,6 +35,7 @@ interface JobRow {
   completedAt: string | null;
   createdAt: string;
   queuedAt: string | null;
+  deviceId: string | null;
   deviceName: string | null;
   devicePrinterName: string | null;
 }
@@ -136,6 +137,51 @@ export default function PrintJobsPage() {
   }
 
   const needsReviewCount = (jobs ?? []).filter((j) => j.status === 'needs_review').length;
+
+  /**
+   * Remote per-job control (plan M2): issue retry_job / cancel_job to the
+   * OWNING device as an agent command. The command is idempotent-keyed by the
+   * backend; execution results appear on Devices → Recent commands. The agent
+   * is the safety boundary — it refuses unsafe cancels (already spooled /
+   * uncertain outcome) with a message that surfaces as a failed command.
+   */
+  async function issueJobCommand(job: JobRow, commandType: 'retry_job' | 'cancel_job') {
+    if (!job.deviceId) {
+      setNotice({ kind: 'err', text: 'This job has no device assigned (the device may have been removed), so it cannot be controlled remotely.' });
+      return;
+    }
+    const what = commandType === 'retry_job'
+      ? `REPRINT this job on device "${job.deviceName ?? job.deviceId}"?`
+      : `CANCEL this job on device "${job.deviceName ?? job.deviceId}"?`;
+    if (!window.confirm(`${what}\n\nDocument: ${job.fileName ?? job.fileId}\n\nThe command is queued in the cloud and executed when the shop PC is online. Check Devices → Recent commands for the execution result.`)) return;
+    setBusyJobId(job.jobId);
+    setNotice(null);
+    try {
+      const r = await api.request<{
+        data?: { commandId?: string; status?: string; idempotentReplay?: boolean };
+        error?: { code?: string; message?: string };
+      }>('POST', `/api/v1/shops/me/devices/${job.deviceId}/commands`, {
+        body: {
+          commandType,
+          payload: { jobId: job.jobId },
+          idempotencyKey: `${commandType}:${job.jobId}`,
+        },
+      });
+      const body = r.data;
+      if (r.error || body?.error) {
+        setNotice({ kind: 'err', text: body?.error?.message ?? r.error ?? 'Command rejected.' });
+      } else {
+        setNotice({
+          kind: 'ok',
+          text: `${commandType === 'retry_job' ? 'Reprint' : 'Cancel'} command sent to ${job.deviceName ?? 'the device'}${body?.data?.idempotentReplay ? ' (already queued — no duplicate created)' : ''}. Open Devices → Recent commands to watch it execute.`,
+        });
+      }
+    } catch {
+      setNotice({ kind: 'err', text: 'Could not send the command — check your connection.' });
+    } finally {
+      setBusyJobId(null);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 sm:px-6">
@@ -246,6 +292,36 @@ export default function PrintJobsPage() {
                     >
                       Mark failed
                     </Button>
+                  </div>
+                )}
+                {/* Remote control from any phone (plan M2): the shop PC agent
+                    executes these as guarded commands; results appear in
+                    Devices → Recent commands. */}
+                {(j.status === 'failed' || j.status === 'needs_review' || j.status === 'queued' || j.status === 'downloaded') && (
+                  <div className="flex flex-wrap gap-2 border-t pt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyJobId === j.jobId}
+                      onClick={() => void issueJobCommand(j, 'retry_job')}
+                    >
+                      {busyJobId === j.jobId ? 'Sending…' : 'Reprint on device'}
+                    </Button>
+                    {(j.status === 'queued' || j.status === 'downloaded') && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyJobId === j.jobId}
+                        onClick={() => void issueJobCommand(j, 'cancel_job')}
+                      >
+                        Cancel job
+                      </Button>
+                    )}
+                    {!j.deviceId && (
+                      <span className="text-xs text-muted-foreground self-center">
+                        No device assigned — remote actions unavailable.
+                      </span>
+                    )}
                   </div>
                 )}
               </CardContent>

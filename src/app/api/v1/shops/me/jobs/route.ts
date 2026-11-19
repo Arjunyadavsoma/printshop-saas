@@ -49,12 +49,15 @@ export const GET = withRateLimit('jobs-list', 60, 60, async (req): Promise<NextR
       jobId: string; fileId: string; fileName: string | null; status: string;
       attempts: number; lastError: string | null; startedAt: Date | null;
       completedAt: Date | null; createdAt: Date; queuedAt: Date | null;
+      deviceId: string | null;
       deviceName: string | null; devicePrinterName: string | null;
     }> = [];
     for (const j of sorted) {
       const file = await container.db.findOne<{ id: string; originalFilename: string }>('printFile', { id: j.fileId });
       // Device + selected-printer context for the operator-resolution view
       // (Phase 3 §3: the operator reviews printer/delivery evidence).
+      // deviceId is needed by the web dashboard to target per-job commands
+      // (retry_job / cancel_job) at the owning device.
       const agentId = (j as { agentId?: string }).agentId;
       const agent = agentId
         ? await container.db.findOne<{ id: string; name: string; printerName: string | null }>('printAgent', { id: agentId })
@@ -70,6 +73,7 @@ export const GET = withRateLimit('jobs-list', 60, 60, async (req): Promise<NextR
         completedAt: j.completedAt,
         createdAt: j.createdAt,
         queuedAt: (j as { queuedAt?: Date }).queuedAt ?? null,
+        deviceId: agentId ?? null,
         deviceName: agent?.name ?? null,
         devicePrinterName: agent?.printerName ?? null,
       });
