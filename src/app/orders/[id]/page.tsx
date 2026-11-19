@@ -188,6 +188,14 @@ export default function OrderFlowPage() {
   // refresh, not permanent) keyed by orderId so multiple orders in
   // different tabs don't conflict.
   const [orderToken, setOrderToken] = useState<string | null>(null);
+  // True once the token hydration below has run (whether or not a token
+  // was found). The initial load must wait for hydration to finish — but
+  // NOT for a token to exist: visiting without ?t= and without a stored
+  // token is a real state (invalid / incomplete link), and the status
+  // endpoint answers it with a fast 404/403 that loadOrder turns into a
+  // fatal error. Gating on orderToken instead left loading true
+  // forever and the page stuck on skeletons.
+  const [tokenHydrated, setTokenHydrated] = useState(false);
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
     setShopSlug(search.get('shop'));
@@ -211,6 +219,7 @@ export default function OrderFlowPage() {
         if (stored) setOrderToken(stored);
       } catch { /* ignore */ }
     }
+    setTokenHydrated(true);
   }, [orderId]);
   // Headers to attach to every /api/v1/orders/:id/* request. Empty when no
   // token is known (the routes will return 403 with a clear message).
@@ -259,7 +268,15 @@ export default function OrderFlowPage() {
       setLoading(true);
       setFatalError(null);
     }
-    const r = await api.request<{ data?: OrderStatusResponse; error?: { message?: string } }>('GET', `/api/v1/orders/${orderId}/status`, { headers: orderAuthHeaders });
+    let r: Awaited<ReturnType<typeof api.request<{ data?: OrderStatusResponse; error?: { message?: string } }>>>;
+    try {
+      r = await api.request<{ data?: OrderStatusResponse; error?: { message?: string } }>('GET', `/api/v1/orders/${orderId}/status`, { headers: orderAuthHeaders });
+    } catch {
+      // Network failure / fetch timeout: never leave the skeleton up.
+      if (!opts?.silent) setLoading(false);
+      setFatalError('Could not reach the server. Check your connection and try again.');
+      return;
+    }
     if (!opts?.silent) setLoading(false);
     if (r.status >= 400 || !r.data?.data) {
       setFatalError(r.data?.error?.message ?? 'Order not found.');
@@ -341,11 +358,11 @@ export default function OrderFlowPage() {
     // them before the token is known returns a 403 that would briefly
     // flash a "link incomplete" fatal error. loadShop doesn't need the
     // token but it's fine to wait — the token loads in milliseconds.
-    if (!api.ready || !orderId || !orderToken) return;
+    if (!api.ready || !orderId || !tokenHydrated) return;
     void (async () => {
       await Promise.all([loadOrder(), loadShop()]);
     })();
-  }, [api.ready, orderId, orderToken, loadOrder, loadShop]);
+  }, [api.ready, orderId, tokenHydrated, loadOrder, loadShop]);
 
   // ─── Client-side price estimate ───
   const clientEstimate = useCallback((f: LocalFile): number => {
