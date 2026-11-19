@@ -197,6 +197,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const doFetch = async (authToken: string | null): Promise<Response> => {
         return fetch(path, {
           method,
+          // 30s cap: without a timeout a stalled request leaves every
+          // caller on its skeleton/error-less state forever. Healthy API
+          // calls answer in ~1s; dashboard loads take 4-7s. File uploads
+          // use XHR, not this path, so they are unaffected.
+          signal: AbortSignal.timeout(30000),
           headers: {
             ...(opts?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
