@@ -122,49 +122,90 @@ export class SupabaseStorageAdapter implements StorageAdapter {
     //      every `head()` call (one per upload confirm, one per download)
     //      was a full-folder scan.
     //
-    // The fix: hit the Supabase Storage REST API directly with a HEAD
-    // request to the object's exact path. The API returns 200 + headers
-    // if the object exists, 404 if it doesn't. We read `Content-Length`
-    // + `Content-Type` from the response headers — no list, no scan,
-    // O(1) work on the storage side. The service role key authorises the
-    // request server-side (the public anon key would also work for a
-    // private bucket if the object had a public-read grant, but the
-    // service role key is what we already hold and works for every
-    // object in every bucket).
+    // The fix: hit the Supabase Storage REST API directly with a request
+    // to the object's exact path. We read `Content-Length` + `Content-Type`
+    // from the response headers — no list, no scan, O(1) work on the
+    // storage side. The service role key authorises the request
+    // server-side (the public anon key would also work for a private
+    // bucket if the object had a public-read grant, but the service role
+    // key is what we already hold and works for every object in every
+    // bucket).
+    //
+    // 2026-11-19 correction: Supabase Storage does NOT return HTTP 404
+    // for a missing object. It returns HTTP 400 with a JSON body
+    // {"statusCode":"404","code":"NoSuchKey","message":"Object not found"}
+    // (verified live against project duyharicyurufmsjyhgs, bucket
+    // printshop-uploads, with a valid secret key). The old code checked
+    // `res.status === 404`, so EVERY probe of a nonexistent key threw
+    // "Supabase head failed: HTTP 400" — which is why /api/v1/ready
+    // reported storage unhealthy permanently even with a valid key and
+    // an existing bucket. A missing BUCKET answers the same HTTP 400
+    // but with code "NoSuchBucket", so the two cases are told apart by
+    // the body, not the status. A HEAD response carries no body, so
+    // head() now issues a GET with `Range: bytes=0-0` (1 byte
+    // transferred) and reads the error body on 400: NoSuchKey means
+    // "not found" (return null); anything else throws.
     try {
       // Supabase Storage REST API path for a single object:
       //   ${SUPABASE_URL}/storage/v1/object/${bucket}/${key}
-      // A HEAD request returns 200 + Content-Length/Content-Type if the
-      // object exists, 404 if it doesn't. Each path segment is
-      // percent-encoded individually so `/` separators survive (a single
-      // encodeURIComponent over the whole key would encode `/` to `%2F`,
-      // which Supabase interprets as a literal slash inside a filename).
+      // Each path segment is percent-encoded individually so `/`
+      // separators survive (a single encodeURIComponent over the whole
+      // key would encode `/` to `%2F`, which Supabase interprets as a
+      // literal slash inside a filename).
       const encodedKey = key
         .split('/')
         .map(encodeURIComponent)
         .join('/');
       const url = `${this.supabaseUrl}/storage/v1/object/${encodeURIComponent(this.bucket)}/${encodedKey}`;
       const res = await fetch(url, {
-        method: 'HEAD',
-        headers: { Authorization: `Bearer ${this.serviceRoleKey}` },
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${this.serviceRoleKey}`,
+          Range: 'bytes=0-0',
+        },
       });
-      if (res.status === 404) return null;
-      if (!res.ok) {
-        // Any other non-OK status (403, 500, …) — rethrow so the caller
-        // sees the storage error (matches the previous behaviour on
-        // non-404 errors from the SDK).
-        throw new Error(`Supabase head failed: HTTP ${res.status}`);
+      if (res.status === 200 || res.status === 206) {
+        const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+        let size: number;
+        if (res.status === 206) {
+          // Content-Range: bytes 0-0/<total>
+          const m = /\/(\d+)\s*$/.exec(res.headers.get('content-range') ?? '');
+          size = m ? Number(m[1]) : Number(res.headers.get('content-length') ?? '0');
+          // Drain the 1-byte body so the connection can be reused.
+          await res.arrayBuffer().catch(() => undefined);
+        } else {
+          size = Number(res.headers.get('content-length') ?? '0');
+        }
+        return {
+          size: Number.isFinite(size) ? size : 0,
+          contentType,
+        };
       }
-      const size = Number(res.headers.get('content-length') ?? '0');
-      const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
-      return {
-        size: Number.isFinite(size) ? size : 0,
-        contentType,
-      };
+      if (res.status === 416) {
+        // Range not satisfiable — only happens for an existing 0-byte object.
+        const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+        return { size: 0, contentType };
+      }
+      if (res.status === 400) {
+        // Missing object (NoSuchKey) vs missing bucket (NoSuchBucket) vs
+        // anything else — the HTTP status is 400 for all of them.
+        let code = '';
+        try {
+          const body = (await res.json()) as { code?: unknown };
+          code = typeof body?.code === 'string' ? body.code : '';
+        } catch { /* non-JSON 400 — fall through to throw below */ }
+        if (code === 'NoSuchKey') return null;
+        throw new Error(`Supabase head failed: HTTP 400 (${code || 'unknown error'})`);
+      }
+      if (res.status === 404) return null;
+      // Any other non-OK status (403, 500, …) — rethrow so the caller
+      // sees the storage error (matches the previous behaviour on
+      // non-404 errors from the SDK).
+      throw new Error(`Supabase head failed: HTTP ${res.status}`);
     } catch (e) {
       // If it's a "not found" type error, return null
       const msg = e instanceof Error ? e.message : String(e);
-      if (/not found|does not exist|404/i.test(msg)) {
+      if (/not found|does not exist|404|NoSuchKey/i.test(msg)) {
         return null;
       }
       throw e;
