@@ -26,7 +26,7 @@ import type {
 import {
   UploadCloud, FileText, Trash2, Loader2, AlertCircle, ArrowLeft, ArrowRight,
   CheckCircle2, RefreshCw, CreditCard, QrCode, ShieldCheck, Info,
-  Home, Download, XCircle, Smartphone, Clock,
+  Home, Download, XCircle, Smartphone, Clock, Eye,
 } from 'lucide-react';
 
 // Also need Label + ToggleGroup already imported above
@@ -134,7 +134,7 @@ interface SimulateResponse {
 
 // ──────────────────────────── Local state shape ────────────────────────────
 
-type Step = 'upload' | 'configure' | 'checkout' | 'pay' | 'track';
+type Step = 'upload' | 'configure' | 'preview' | 'checkout' | 'pay' | 'track';
 
 interface LocalFile {
   fileId: string;
@@ -163,6 +163,7 @@ interface LocalFile {
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
   { key: 'upload', label: 'Upload' },
   { key: 'configure', label: 'Configure' },
+  { key: 'preview', label: 'Preview' },
   { key: 'checkout', label: 'Checkout' },
   { key: 'pay', label: 'Pay' },
   { key: 'track', label: 'Track' },
@@ -827,8 +828,28 @@ export default function OrderFlowPage() {
                   onCheckout={() => {
                     // Auto-select all pages for any file with no explicit
                     // selection (null or empty array). This ensures the
-                    // checkout step always has a valid page selection —
+                    // preview step always starts from a valid page selection —
                     // the user never ends up with "0 pages selected".
+                    setFiles((prev) => prev.map((f) => ({
+                      ...f,
+                      selectedPages: f.selectedPages && f.selectedPages.length > 0 ? f.selectedPages : null,
+                    })));
+                    setStep('preview');
+                  }}
+                />
+              )}
+
+              {step === 'preview' && (
+                <PreviewStep
+                  files={files}
+                  orderTotal={orderTotal}
+                  orderTotalPaise={orderTotalPaise}
+                  onUpdate={updateFile}
+                  onBack={() => setStep('configure')}
+                  onCheckout={() => {
+                    // Same normalization gate as configure → checkout: any
+                    // file whose selection was cleared in the preview falls
+                    // back to "all pages" rather than "0 pages selected".
                     setFiles((prev) => prev.map((f) => ({
                       ...f,
                       selectedPages: f.selectedPages && f.selectedPages.length > 0 ? f.selectedPages : null,
@@ -846,7 +867,7 @@ export default function OrderFlowPage() {
                   busy={busy}
                   error={checkoutError}
                   onCheckout={doCheckout}
-                  onBack={() => setStep('configure')}
+                  onBack={() => setStep('preview')}
                 />
               )}
 
@@ -1259,7 +1280,127 @@ function ConfigureStep(props: {
               <ArrowLeft className="h-4 w-4" /> Back
             </Button>
             <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout}>
-              Review &amp; checkout <ArrowRight className="h-4 w-4" />
+              Preview pages <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * PreviewStep — the dedicated page-by-page preview between Configure and
+ * Checkout. The PDF is divided into individual page previews (PDF.js, client
+ * side); every page is a checkbox seeded from the selection made in
+ * Configure (or all pages when none was made). Deselecting pages here is
+ * the primary selection surface: each change flows into selectedPages →
+ * pageRange, which the checkout converts and the print agent later honours —
+ * the agent prints ONLY the ticked pages.
+ */
+function PreviewStep(props: {
+  files: LocalFile[];
+  orderTotal: number;
+  orderTotalPaise: number;
+  onUpdate: (fileId: string, patch: Partial<LocalFile>) => void;
+  onBack: () => void;
+  onCheckout: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <Card className="bg-surface">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Eye className="h-5 w-5 text-brand" /> Preview · every page, one by one
+          </CardTitle>
+          <CardDescription>
+            Your document is split page by page below. Untick any page you don&apos;t want —
+            only the ticked pages are sent to the printer. Changes here update the price.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      {props.files.map((f) => {
+        const isPlaceholder = f.pageCountSource === 'placeholder';
+        const isPdf = f.filename.toLowerCase().endsWith('.pdf');
+        const selectionCount = f.selectedPages && f.selectedPages.length > 0
+          ? f.selectedPages.length
+          : f.pageCount > 0
+            ? f.pageCount
+            : null;
+        const printsSubset = selectionCount !== null && f.pageCount > 0 && selectionCount < f.pageCount;
+        return (
+          <Card key={f.fileId} className="bg-surface border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-5 w-5 shrink-0 text-brand" />
+                <span className="truncate">{f.filename}</span>
+                <Badge variant="secondary" className="ml-auto shrink-0 text-xs tabular-nums">
+                  {selectionCount !== null
+                    ? printsSubset
+                      ? `${selectionCount} of ${f.pageCount} pages will print`
+                      : `${f.pageCount} pages will print`
+                    : 'Page count required'}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {f.rawFile && !isPlaceholder ? (
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <PdfPreview
+                    file={f.rawFile}
+                    mimeType={isPdf ? 'application/pdf' : 'image/*'}
+                    pageCount={f.pageCount || null}
+                    initialSelectedPages={f.selectedPages ?? null}
+                    onSelectionChange={(pages) => {
+                      // Skip the patch when nothing semantically changed:
+                      // "all pages" IS the null default, and re-emitting it
+                      // on mount would mark the file dirty (price shows "—"
+                      // until the server recalculates) for no reason.
+                      const allSelected = f.pageCount > 0 && pages.length === f.pageCount;
+                      if (f.selectedPages == null && allSelected) return;
+                      const cur = f.selectedPages;
+                      if (cur && cur.length === pages.length && cur.every((p, i) => p === pages[i])) return;
+                      props.onUpdate(f.fileId, { selectedPages: pages, dirty: true });
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    {isPlaceholder
+                      ? 'Enter the page count in Configure first — the page-by-page preview appears here once the count is known.'
+                      : 'The page-by-page preview is available right after upload, in the same browser session. Your configured page selection still applies.'}
+                  </span>
+                </div>
+              )}
+              <p className="text-xs tabular-nums text-muted-foreground">
+                {selectionCount !== null
+                  ? `${f.copies} cop${f.copies === 1 ? 'y' : 'ies'} × ${printsSubset ? `${selectionCount} selected pages` : `${f.pageCount} pages`}`
+                  : 'Pending page count'}
+                {selectionCount !== null
+                  ? ` · ${f.colorMode === 'color' ? 'Colour' : 'B&W'} · ${f.paperSize.toUpperCase()} · ${f.duplex ? 'Double-sided' : 'Single-sided'}`
+                  : ''}
+              </p>
+            </CardContent>
+          </Card>
+        );
+      })}
+
+      {/* Sticky pricing summary */}
+      <Card className="bg-surface lg:sticky lg:bottom-6">
+        <CardContent className="flex flex-col items-stretch gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Total for selected pages</p>
+            <p className="text-lg font-semibold tabular-nums text-foreground">{formatINRFromPaise(props.orderTotal)}</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+            <Button variant="outline" size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onBack}>
+              <ArrowLeft className="h-4 w-4" /> Back to configure
+            </Button>
+            <Button size="sm" className="w-full min-h-[44px] sm:w-auto" onClick={props.onCheckout}>
+              Confirm &amp; checkout <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </CardContent>

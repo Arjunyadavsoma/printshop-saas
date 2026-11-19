@@ -15,6 +15,11 @@ interface PdfPreviewProps {
   fileUrl?: string | null;
   mimeType: string;
   pageCount: number | null;
+  /** Selection to start from (e.g. the range configured in the previous
+   * step). Null/empty = all pages. Read once per file load — later parent
+   * re-renders do NOT re-sync it (the component owns the selection state
+   * while mounted; the parent receives every change via onSelectionChange). */
+  initialSelectedPages?: number[] | null;
   /** Called when the user changes the selected pages. Returns array of page numbers (1-indexed). */
   onSelectionChange?: (selectedPages: number[]) => void;
   /** Called when all pages are loaded/rendered */
@@ -51,6 +56,7 @@ export function PdfPreview({
   fileUrl,
   mimeType,
   pageCount,
+  initialSelectedPages,
   onSelectionChange,
   onReady,
 }: PdfPreviewProps) {
@@ -75,6 +81,10 @@ export function PdfPreview({
   // rendering.
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onReadyRef = useRef(onReady);
+  // Same ref pattern for the initial selection: read ONCE per file load so a
+  // parent re-render (new array identity) can never restart the load effect.
+  const initialSelectedPagesRef = useRef(initialSelectedPages);
+  useEffect(() => { initialSelectedPagesRef.current = initialSelectedPages; }, [initialSelectedPages]);
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
 
@@ -136,11 +146,19 @@ export function PdfPreview({
         const numPages = pdf.numPages;
         setRenderedPageCount(numPages);
 
-        // Select all pages by default
+        // Start from the caller-provided selection when present (e.g. the
+        // range configured in the previous step), intersected with the real
+        // page count; otherwise select all pages. An empty intersection
+        // (e.g. a stale out-of-range selection) falls back to all pages.
         const allPages = new Set<number>();
         for (let i = 1; i <= numPages; i++) allPages.add(i);
-        setSelectedPages(allPages);
-        onSelectionChangeRef.current?.(Array.from(allPages).sort((a, b) => a - b));
+        const requested = initialSelectedPagesRef.current;
+        const startSet = requested && requested.length > 0
+          ? new Set(requested.filter((p) => Number.isInteger(p) && p >= 1 && p <= numPages))
+          : allPages;
+        const effective = startSet.size > 0 ? startSet : allPages;
+        setSelectedPages(effective);
+        onSelectionChangeRef.current?.(Array.from(effective).sort((a, b) => a - b));
 
         // Render each page to a canvas → data URL thumbnail
         const thumbs: string[] = [];
