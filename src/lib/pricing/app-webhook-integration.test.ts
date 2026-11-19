@@ -57,7 +57,7 @@
 // The Prisma client is constructed eagerly when `@/lib/db` is first loaded.
 // Setting these here ensures the dynamic `await import('@/lib/payments/lifecycle.service')`
 // in `beforeAll` finds the right values.
-process.env.DATABASE_URL = 'postgresql://z@127.0.0.1:5433/printshop_app_test';
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_app_test';
 process.env.DATABASE_PROVIDER = 'prisma';
 (process.env as { NODE_ENV?: string }).NODE_ENV = 'test';
 // In-memory realtime so the webhook handler's fire-and-forget realtime.publish
@@ -75,7 +75,7 @@ import { describe, expect, it, beforeAll, beforeEach, afterEach, afterAll } from
 import { Pool } from 'pg';
 import { createHash } from 'node:crypto';
 
-const DB_URL = 'postgresql://z@127.0.0.1:5433/printshop_app_test';
+const DB_URL = process.env.DATABASE_URL as string;
 const TIMEOUT = 30_000;
 
 // ── Lazy-loaded application services (loaded AFTER env vars are set) ───
