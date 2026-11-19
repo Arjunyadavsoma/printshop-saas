@@ -39,7 +39,7 @@
  */
 
 // ── Env vars MUST be set before any dynamic import of @/lib/* ──────────
-process.env.DATABASE_URL = 'postgresql://z@127.0.0.1:5433/printshop_app_test';
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_app_test';
 process.env.DATABASE_PROVIDER = 'prisma';
 (process.env as { NODE_ENV?: string }).NODE_ENV = 'test';
 process.env.REALTIME_PROVIDER = 'memory';
@@ -51,7 +51,7 @@ import { describe, expect, it, beforeAll, beforeEach, afterEach, afterAll } from
 import { Pool } from 'pg';
 import { NextRequest } from 'next/server';
 
-const DB_URL = 'postgresql://z@127.0.0.1:5433/printshop_app_test';
+const DB_URL = process.env.DATABASE_URL as string;
 const TIMEOUT = 30_000;
 
 // ── Lazy-loaded checkout route (loaded AFTER env vars are set) ─────────
