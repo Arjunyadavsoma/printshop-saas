@@ -1,4 +1,5 @@
 import { type NextRequest } from 'next/server';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
@@ -170,6 +171,16 @@ export const POST = withRateLimit<{ id: string }>(
       ? (await storage.getBytes(body.storageKey))?.bytes ?? null
       : null;
 
+    // ── B-010: server-side SHA-256 of the stored bytes ──
+    // Computed from the SAME bytes the parser reads, so the agent pending-jobs
+    // payload can hand it to the companion (pdfSha256) for pre-print content
+    // verification, and the receipt path can audit the agent's checksum
+    // against it. Null when the storage adapter can't expose bytes (hashing
+    // then falls back to trust-on-first-use on the agent's receipt).
+    const sha256 = bytes
+      ? createHash('sha256').update(bytes).digest('hex')
+      : null;
+
     // ── SEC-C6: magic-byte sniffing ─────────────────────────────────────
     // The client sends a `mimeType` (from the browser's File.type) which is
     // trivially spoofable — an attacker can rename `evil.exe` to `evil.pdf`
@@ -244,6 +255,7 @@ export const POST = withRateLimit<{ id: string }>(
       pageCountSource,
       status,
       processingError,
+      sha256,
     });
 
     // `finalFile` tracks the PERSISTED record after every update. The API

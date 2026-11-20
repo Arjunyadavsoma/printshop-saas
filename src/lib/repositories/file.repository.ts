@@ -19,6 +19,7 @@ interface PrintFileRow {
   pricePaise: number;
   status: string;
   processingError: string | null;
+  sha256: string | null;
   printedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +46,7 @@ function toDomain(row: PrintFileRow): PrintFile {
     pricePaise: row.pricePaise,
     status: row.status as FileStatus,
     processingError: row.processingError ?? null,
+    sha256: row.sha256 ?? null,
     printedAt: row.printedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -96,6 +98,8 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
     status?: FileStatus;
     pricePaise?: number;
     processingError?: string | null;
+    /** B-010: server-computed SHA-256 hex of the stored bytes (null when the storage adapter can't expose bytes). */
+    sha256?: string | null;
   }): Promise<PrintFile> {
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -117,6 +121,7 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
       pricePaise: input.pricePaise ?? 0,
       status: input.status ?? 'pending',
       processingError: input.processingError ?? null,
+      sha256: input.sha256 ?? null,
       printedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),

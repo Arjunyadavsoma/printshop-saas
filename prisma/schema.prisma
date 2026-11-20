@@ -155,6 +155,12 @@ model PrintFile {
   pricePaise       Int        @default(0)
   status           String     @default("pending")
   processingError  String?
+  // Phase 4 (B-010): SHA-256 hex of the stored file bytes, computed server-side
+  // at confirm time when the storage adapter exposes getBytes. Delivered to the
+  // companion in the agent pending-jobs payload (pdfSha256) so it can verify the
+  // downloaded bytes BEFORE printing; also verified against the agent's receipt
+  // checksum (trust-on-first-use if null — see the received-report route).
+  sha256           String?
   printedAt        DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt

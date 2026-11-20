@@ -102,12 +102,38 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
       });
     }
 
-    // Optional: validate checksum against server-side hash
-    // (the server doesn't currently compute SHA-256 on upload, so this
-    // is a future enhancement — for now we accept the agent's checksum)
+    // ── B-010: checksum audit against the server-side SHA-256 ──
+    // The confirm route stores PrintFile.sha256 when the storage adapter
+    // exposes bytes, and the pending payload delivers it to the companion
+    // for PRE-print verification (the companion refuses to print on
+    // mismatch). This block is the last-resort audit on the receipt:
+    //  (a) server hash known + agent checksum differs → record
+    //      errorCode='checksum-mismatch' on the delivery attempt (the print
+    //      already happened physically — this surfaces backend divergence);
+    //  (b) no server hash → trust-on-first-use: the agent's reported
+    //      checksum becomes the stored hash (documented in KNOWN_LIMITATIONS).
+    let checksumError: string | null = null;
     if (body.checksum) {
-      // Future: compare against server-computed hash
-      // For now: store it for audit purposes
+      try {
+        const file = await getContainer().db.findOne<{ id: string; sha256: string | null }>('printFile', { id: job.fileId });
+        if (file?.sha256 && file.sha256.toLowerCase() !== body.checksum.toLowerCase()) {
+          checksumError = 'checksum-mismatch';
+          getContainer().logger.error('agents/jobs/received: agent checksum does NOT match server-side sha256', {
+            jobId,
+            fileId: file.id,
+            serverSha256: file.sha256,
+            agentChecksum: body.checksum,
+          });
+        } else if (file && !file.sha256) {
+          await getContainer().db.update('printFile', { id: file.id }, { sha256: body.checksum.toLowerCase() });
+        }
+      } catch (auditErr) {
+        // Audit is best-effort — the receipt itself must not fail on it.
+        getContainer().logger.warn?.('agents/jobs/received: checksum audit skipped', {
+          jobId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
     }
 
     // Record the receipt + schedule cleanup
@@ -116,6 +142,7 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
       checksum: body.checksum,
       fileSize: body.fileSize,
       receivedAt: body.receivedAt,
+      errorCode: checksumError,
     });
 
     // Publish realtime event so the dashboard updates

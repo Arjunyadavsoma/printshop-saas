@@ -121,14 +121,19 @@ record("order paid (paidAt set)", bool(status.get("paidAt")), f"status={status.g
 
 # ── 3. device claims the job + posts received ────────────────────────────────
 job_id = None
+pending_sha = None
 for _ in range(10):
     st, pend = call("GET", "/agents/jobs/pending", None, dev)
     rows = (pend.get("data") or {}).get("jobs") or (pend.get("data") or [])
     if rows:
         job_id = rows[0].get("jobId") if isinstance(rows[0], dict) else rows[0]
+        pending_sha = rows[0].get("pdfSha256") if isinstance(rows[0], dict) else None
         break
     time.sleep(1)
 record("job appears in agent pending queue", bool(job_id), f"HTTP {st}, jobId={str(job_id)[:8]}…")
+record("B-010 pending payload carries server-side sha256",
+       pending_sha == "afa88fdf67e1fa353c3f5eff06901cfc2238cd72e933f12531af873935fe91b6",
+       f"pdfSha256={pending_sha}")
 
 st, cl = call("POST", f"/agents/jobs/{job_id}/status", {"status": "printing"}, dev)
 record("agent claims job (printing)", st == 200, f"HTTP {st}")
@@ -136,7 +141,12 @@ record("agent claims job (printing)", st == 200, f"HTTP {st}")
 checksum = hashlib.sha256(b"probe.pdf-bytes").hexdigest()
 st, rc = call("POST", f"/agents/jobs/{job_id}/received",
               {"checksum": checksum, "fileSize": 1200}, dev)
-record("agent posts /received", st == 200, f"HTTP {st}: {json.dumps(rc)[:120]}")
+# B-010: the server-side stored sha256 EQUALS this checksum (seed fixture),
+# so the receipt audit must NOT flag a checksum-mismatch.
+data_row = (rc.get("data") or {})
+record("agent posts /received (checksum audit pass)",
+       st == 200 and data_row.get("received") is True,
+       f"HTTP {st}, msg={str(data_row.get('message'))[:70]}")
 
 # ── 4. THE P2-8 PROOF: dashboard delivery history ────────────────────────────
 st, hist = call("GET", "/shops/me/deliveries?limit=50", None, auth)

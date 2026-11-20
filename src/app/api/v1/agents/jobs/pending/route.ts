@@ -16,6 +16,8 @@ interface PendingJob {
   duplex: boolean;
   paperSize: string;
   pageRange: string | null;
+  /** B-010: server-side SHA-256 hex for pre-print verification (null when unavailable). */
+  pdfSha256: string | null;
 }
 
 /** Machine-readable per-job failure record (Phase 3 §4 / P2-1). */
@@ -71,7 +73,7 @@ export const GET = withDeviceAuth(async (_req, _ctx, { agent, shopId }) => {
 
   for (const j of queued) {
     // The job is already shop-scoped via findQueuedByShop; look the file up by id.
-    const file = await container.db.findOne<{ id: string; orderId: string; originalFilename: string; storageKey: string; copies: number; colorMode: string; duplex: boolean; paperSize: string; pageRange: string | null }>('printFile', { id: j.fileId });
+    const file = await container.db.findOne<{ id: string; orderId: string; originalFilename: string; storageKey: string; copies: number; colorMode: string; duplex: boolean; paperSize: string; pageRange: string | null; sha256: string | null }>('printFile', { id: j.fileId });
     if (!file) {
       // The document row is gone; the job cannot ever be delivered in this
       // form. Report it (never silently skipped) — the shopkeeper sees the
@@ -109,6 +111,9 @@ export const GET = withDeviceAuth(async (_req, _ctx, { agent, shopId }) => {
         duplex: file.duplex,
         paperSize: file.paperSize,
         pageRange: file.pageRange,
+        // B-010: server-side SHA-256 (null when the storage adapter can't
+        // expose bytes) so the companion verifies the download BEFORE printing.
+        pdfSha256: file.sha256 ?? null,
       });
     } catch (cause) {
       // Presign failure: storage misconfiguration, expired/invalid provider

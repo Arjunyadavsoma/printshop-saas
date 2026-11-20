@@ -45,6 +45,10 @@ export interface PrintFile {
    * page-count extraction fails so the UI can explain why the file needs
    * review (e.g. "corrupted PDF", "encrypted document"). */
   processingError: string | null;
+  /** B-010: server-computed SHA-256 hex of the stored bytes — null when the
+   *  storage adapter cannot expose bytes; the agent pending-jobs payload
+   *  carries it to the companion for pre-print content verification. */
+  sha256: string | null;
   printedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -67,6 +71,7 @@ export const PrintFileSchema = z.object({
   pricePaise: z.number().int().nonnegative(),
   status: z.enum(FILE_STATUSES as [FileStatus, ...FileStatus[]]),
   processingError: z.string().nullable(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   printedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
