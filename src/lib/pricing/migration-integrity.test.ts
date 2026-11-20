@@ -45,18 +45,18 @@ import { Pool, Client } from 'pg';
  *   7. Concurrent INSERT (10 connections) → exactly 1 succeeds
  *
  * Environment:
- *   TEST_DATABASE_URL=postgresql://z@127.0.0.1:5433/printshop_clean
+ *   TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/printshop_clean
  *
  * The clean database is created by Task 3 of the Phase 6.8 procedure:
  *
  *   psql -c "DROP DATABASE IF EXISTS printshop_clean;"
  *   psql -c "CREATE DATABASE printshop_clean;"
- *   DATABASE_URL=postgresql://z@127.0.0.1:5433/printshop_clean \
+ *   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/printshop_clean \
  *     bunx prisma migrate deploy
  */
 
 const DB_URL =
-  process.env.TEST_DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_clean';
+  process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_clean';
 const TIMEOUT = 30_000;
 
 // ─── Fixture helpers ────────────────────────────────────────────────────

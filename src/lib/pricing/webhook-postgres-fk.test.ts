@@ -46,7 +46,7 @@ import { Pool } from 'pg';
  */
 
 const DB_URL =
-  process.env.TEST_DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_test';
+  process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_test';
 const TIMEOUT = 30_000;
 
 /** Insert a Shop, Order, and PaymentAttempt in one go — returns the IDs. */

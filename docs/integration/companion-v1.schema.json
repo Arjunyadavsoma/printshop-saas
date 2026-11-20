@@ -1,0 +1,1408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractVersion": "1.1",
+  "title": "PrintShop Companion API Contract v1",
+  "$comment": "GENERATED FILE — do not edit by hand. Source: src/lib/contracts/companion.ts (saas repo). Regenerate with `bun scripts/contracts/gen-schema.ts`, then copy byte-identical into the PrintEXE repo at docs/contracts/companion-v1.schema.json. Human contract: docs/integration/COMPANION_V1_CONTRACT.md.",
+  "definitions": {
+    "errorEnvelope": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {}
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "pairingBeginResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "ticket": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "pairingUrl": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            },
+            "shopId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ticket",
+            "pairingUrl",
+            "expiresAt",
+            "shopId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "pairRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "deviceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "os": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "printerName": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "ticket",
+        "deviceName"
+      ]
+    },
+    "pairResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "deviceToken": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "shopId": {
+              "type": "string"
+            },
+            "shopName": {
+              "type": "string"
+            },
+            "protocolVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "warning": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "deviceToken",
+            "shopId",
+            "shopName",
+            "protocolVersion"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "heartbeatRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "printerName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "os": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "heartbeatResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean",
+              "const": true
+            },
+            "ts": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            }
+          },
+          "required": [
+            "agentId",
+            "online",
+            "ts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "commandItem": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "commandType": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        }
+      },
+      "required": [
+        "commandId",
+        "commandType",
+        "payload",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "commandsPendingResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "commands": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "commandId": {
+                    "type": "string"
+                  },
+                  "commandType": {
+                    "type": "string"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "issuedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "commandId",
+                  "commandType",
+                  "payload",
+                  "issuedAt",
+                  "expiresAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "agentId",
+            "commands"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "commandAckRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "accepted",
+            "executing",
+            "succeeded",
+            "failed",
+            "outcome_unknown"
+          ]
+        },
+        "result": {}
+      },
+      "required": [
+        "commandId",
+        "status"
+      ]
+    },
+    "commandAckResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            }
+          },
+          "required": [
+            "commandId",
+            "status",
+            "updatedAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "commandIssueRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "commandType": {
+          "type": "string",
+          "enum": [
+            "refresh_printers",
+            "pause",
+            "resume",
+            "cancel_job",
+            "retry_job",
+            "test_print",
+            "diagnostics"
+          ]
+        },
+        "payload": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "commandType"
+      ]
+    },
+    "commandIssuedResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "requested"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            }
+          },
+          "required": [
+            "commandId",
+            "status",
+            "expiresAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "printJob": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "fileId": {
+          "type": "string"
+        },
+        "orderId": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "downloadUrl": {
+          "type": "string"
+        },
+        "copies": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "colorMode": {
+          "type": "string",
+          "enum": [
+            "bw",
+            "color"
+          ]
+        },
+        "duplex": {
+          "type": "boolean"
+        },
+        "paperSize": {
+          "type": "string"
+        },
+        "pageRange": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "fileId",
+        "orderId",
+        "filename",
+        "downloadUrl",
+        "copies",
+        "colorMode",
+        "duplex",
+        "paperSize",
+        "pageRange"
+      ],
+      "additionalProperties": false
+    },
+    "pendingJobsResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "fileId": {
+                    "type": "string"
+                  },
+                  "orderId": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "downloadUrl": {
+                    "type": "string"
+                  },
+                  "copies": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "bw",
+                      "color"
+                    ]
+                  },
+                  "duplex": {
+                    "type": "boolean"
+                  },
+                  "paperSize": {
+                    "type": "string"
+                  },
+                  "pageRange": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "fileId",
+                  "orderId",
+                  "filename",
+                  "downloadUrl",
+                  "copies",
+                  "colorMode",
+                  "duplex",
+                  "paperSize",
+                  "pageRange"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "failedJobs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "fileId": {
+                    "type": "string"
+                  },
+                  "orderId": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "downloadUrl": {
+                    "type": "string"
+                  },
+                  "copies": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "bw",
+                      "color"
+                    ]
+                  },
+                  "duplex": {
+                    "type": "boolean"
+                  },
+                  "paperSize": {
+                    "type": "string"
+                  },
+                  "pageRange": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "fileId",
+                  "orderId",
+                  "filename",
+                  "downloadUrl",
+                  "copies",
+                  "colorMode",
+                  "duplex",
+                  "paperSize",
+                  "pageRange"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "agentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "jobs",
+            "failedJobs",
+            "agentId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "jobStatusRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "printing",
+            "completed",
+            "failed",
+            "needs_review"
+          ]
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "printerName": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "jobStatusResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "applied": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "jobId",
+                "status",
+                "applied"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "success",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "const": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "skipped": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "skipped",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "success",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "jobReceivedRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "checksum": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "checksum"
+      ]
+    },
+    "jobReceivedResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "jobId": {
+              "type": "string"
+            },
+            "received": {
+              "type": "boolean",
+              "const": true
+            },
+            "cleanupScheduled": {
+              "type": "boolean"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "jobId",
+            "received",
+            "cleanupScheduled"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "agentTokenResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "accessToken": {
+              "type": "string"
+            },
+            "expiresIn": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "shopId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessToken",
+            "expiresIn",
+            "shopId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "tokenRotateResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "deviceToken": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "rotatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            },
+            "overlapExpiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            },
+            "warning": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "deviceToken",
+            "rotatedAt",
+            "overlapExpiresAt",
+            "warning"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "shopSnapshotResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "shop": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "timezone"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "orders": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "analytics": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "shop",
+            "orders",
+            "analytics"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "success",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/api/v1/companion/pairing/begin",
+      "auth": "jwt owner/staff",
+      "sourceFile": "src/app/api/v1/companion/pairing/begin/route.ts",
+      "responseSchema": "pairingBeginResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/companion/pair",
+      "auth": "none (ticket is the credential)",
+      "sourceFile": "src/app/api/v1/companion/pair/route.ts",
+      "requestSchema": "pairRequest",
+      "responseSchema": "pairResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/heartbeat",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/agents/heartbeat/route.ts",
+      "requestSchema": "heartbeatRequest",
+      "responseSchema": "heartbeatResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/companion/commands",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/companion/commands/route.ts",
+      "responseSchema": "commandsPendingResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/companion/commands",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/companion/commands/route.ts",
+      "requestSchema": "commandAckRequest",
+      "responseSchema": "commandAckResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/shops/me/devices/:deviceId/commands",
+      "auth": "jwt owner/staff",
+      "sourceFile": "src/app/api/v1/shops/me/devices/[deviceId]/commands/route.ts",
+      "requestSchema": "commandIssueRequest",
+      "responseSchema": "commandIssuedResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/jobs/pending",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/agents/jobs/pending/route.ts",
+      "responseSchema": "pendingJobsResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/jobs/:jobId/status",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/agents/jobs/[id]/status/route.ts",
+      "requestSchema": "jobStatusRequest",
+      "responseSchema": "jobStatusResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/jobs/:jobId/received",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/agents/jobs/[id]/received/route.ts",
+      "requestSchema": "jobReceivedRequest",
+      "responseSchema": "jobReceivedResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/token",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/agents/token/route.ts",
+      "responseSchema": "agentTokenResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/companion/token/rotate",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/companion/token/rotate/route.ts",
+      "responseSchema": "tokenRotateResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/companion/shop-snapshot",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/companion/shop-snapshot/route.ts",
+      "responseSchema": "shopSnapshotResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sync/push",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/sync/push/route.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sync/pull",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/sync/pull/route.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sync/status",
+      "auth": "device-token",
+      "sourceFile": "src/app/api/v1/sync/status/route.ts"
+    }
+  ],
+  "socketEvents": {
+    "server": [
+      "job.dispatch",
+      "job.printing",
+      "job.completed",
+      "job.failed",
+      "job.needs_review",
+      "order.paid",
+      "order.ready",
+      "agent.heartbeat",
+      "agent.revoked",
+      "delivery.received",
+      "device.command.issued",
+      "device.revoked",
+      "device.token_rotated",
+      "sync.pushed"
+    ],
+    "client": [
+      "auth"
+    ]
+  },
+  "examples": {
+    "errorEnvelope": [
+      {
+        "success": false,
+        "error": {
+          "code": "PAIRING_TICKET_CONSUMED",
+          "message": "Pairing ticket was just consumed by another request."
+        }
+      },
+      {
+        "success": false,
+        "error": {
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid request",
+          "details": {
+            "issues": []
+          }
+        }
+      }
+    ],
+    "pairingBeginResponse": [
+      {
+        "success": true,
+        "data": {
+          "ticket": "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
+          "pairingUrl": "printshop://pair?ticket=a1b2c3d4e5f6&shop=8476e148-37f9-4787-9845-dd0f0ec815a0",
+          "expiresAt": "2026-11-20T13:05:00.000Z",
+          "shopId": "8476e148-37f9-4787-9845-dd0f0ec815a0"
+        }
+      }
+    ],
+    "pairRequest": [
+      {
+        "ticket": "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
+        "deviceName": "Shop-Front-PC",
+        "version": "1.0.0",
+        "os": "Windows 11",
+        "printerName": "HP LaserJet Pro"
+      }
+    ],
+    "pairResponse": [
+      {
+        "success": true,
+        "data": {
+          "agentId": "0f0e6d0a-1111-4222-8333-444455556666",
+          "deviceToken": "e7f8a9b0c1d2e7f8a9b0c1d2e7f8a9b0c1d2e7f8a9b0c1d2e7f8a9b0c1d2e7f8",
+          "shopId": "8476e148-37f9-4787-9845-dd0f0ec815a0",
+          "shopName": "QuickPrint Demo Shop",
+          "protocolVersion": 1
+        }
+      }
+    ],
+    "heartbeatRequest": [
+      {
+        "printerName": "HP LaserJet Pro",
+        "version": "1.0.0",
+        "os": "Windows 11"
+      },
+      {}
+    ],
+    "heartbeatResponse": [
+      {
+        "success": true,
+        "data": {
+          "agentId": "0f0e6d0a-1111-4222-8333-444455556666",
+          "online": true,
+          "ts": "2026-11-20T13:00:00.000Z"
+        }
+      }
+    ],
+    "commandItem": [
+      {
+        "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+        "commandType": "refresh_printers",
+        "payload": {},
+        "issuedAt": "2026-11-20T12:30:00.000Z",
+        "expiresAt": "2026-11-20T12:35:00.000Z"
+      }
+    ],
+    "commandsPendingResponse": [
+      {
+        "success": true,
+        "data": {
+          "agentId": "0f0e6d0a-1111-4222-8333-444455556666",
+          "commands": [
+            {
+              "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+              "commandType": "refresh_printers",
+              "payload": {},
+              "issuedAt": "2026-11-20T12:30:00.000Z",
+              "expiresAt": "2026-11-20T12:35:00.000Z"
+            }
+          ]
+        }
+      }
+    ],
+    "commandAckRequest": [
+      {
+        "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+        "status": "succeeded",
+        "result": {
+          "printers": [
+            "HP LaserJet"
+          ]
+        }
+      },
+      {
+        "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+        "status": "outcome_unknown"
+      }
+    ],
+    "commandAckResponse": [
+      {
+        "success": true,
+        "data": {
+          "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+          "status": "succeeded",
+          "updatedAt": "2026-11-20T12:31:00.000Z"
+        }
+      }
+    ],
+    "commandIssueRequest": [
+      {
+        "commandType": "refresh_printers",
+        "payload": {}
+      },
+      {
+        "commandType": "cancel_job",
+        "payload": {
+          "jobId": "0a0b0c0d-1111-4222-8333-444455556666"
+        },
+        "idempotencyKey": "dash-2026-11-20-0007"
+      }
+    ],
+    "commandIssuedResponse": [
+      {
+        "success": true,
+        "data": {
+          "commandId": "c1d2e3f4-1111-4222-8333-444455556666",
+          "status": "requested",
+          "expiresAt": "2026-11-20T12:35:00.000Z"
+        }
+      }
+    ],
+    "printJob": [
+      {
+        "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+        "fileId": "1b2c3d4e-1111-4222-8333-444455556666",
+        "orderId": "2c3d4e5f-1111-4222-8333-444455556666",
+        "filename": "document.pdf",
+        "downloadUrl": "https://storage.example.com/signed/object?sig=…",
+        "copies": 1,
+        "colorMode": "bw",
+        "duplex": false,
+        "paperSize": "a4",
+        "pageRange": null
+      }
+    ],
+    "pendingJobsResponse": [
+      {
+        "success": true,
+        "data": {
+          "jobs": [
+            {
+              "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+              "fileId": "1b2c3d4e-1111-4222-8333-444455556666",
+              "orderId": "2c3d4e5f-1111-4222-8333-444455556666",
+              "filename": "document.pdf",
+              "downloadUrl": "https://storage.example.com/signed/object?sig=…",
+              "copies": 1,
+              "colorMode": "bw",
+              "duplex": false,
+              "paperSize": "a4",
+              "pageRange": null
+            }
+          ],
+          "failedJobs": [],
+          "agentId": "0f0e6d0a-1111-4222-8333-444455556666"
+        }
+      }
+    ],
+    "jobStatusRequest": [
+      {
+        "status": "printing",
+        "printerName": "HP LaserJet Pro"
+      },
+      {
+        "status": "failed",
+        "lastError": "Printer offline"
+      },
+      {
+        "status": "needs_review"
+      }
+    ],
+    "jobStatusResponse": [
+      {
+        "success": true,
+        "data": {
+          "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+          "status": "printing",
+          "applied": true
+        }
+      },
+      {
+        "success": true,
+        "data": {
+          "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+          "skipped": true,
+          "reason": "job is 'printing' — not in 'queued' state"
+        }
+      }
+    ],
+    "jobReceivedRequest": [
+      {
+        "checksum": "sha256-abc123def456"
+      }
+    ],
+    "jobReceivedResponse": [
+      {
+        "success": true,
+        "data": {
+          "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+          "received": true,
+          "cleanupScheduled": true,
+          "message": "Receipt recorded."
+        }
+      },
+      {
+        "success": true,
+        "data": {
+          "jobId": "0a0b0c0d-1111-4222-8333-444455556666",
+          "received": true,
+          "cleanupScheduled": false
+        }
+      }
+    ],
+    "agentTokenResponse": [
+      {
+        "success": true,
+        "data": {
+          "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZ2VudDo…",
+          "expiresIn": 900,
+          "shopId": "8476e148-37f9-4787-9845-dd0f0ec815a0"
+        }
+      }
+    ],
+    "tokenRotateResponse": [
+      {
+        "success": true,
+        "data": {
+          "agentId": "0f0e6d0a-1111-4222-8333-444455556666",
+          "deviceToken": "9a8b7c6d5e4f9a8b7c6d5e4f9a8b7c6d5e4f9a8b7c6d5e4f9a8b7c6d5e4f9a8b",
+          "rotatedAt": "2026-11-20T13:00:00.000Z",
+          "overlapExpiresAt": "2026-11-20T13:10:00.000Z",
+          "warning": "Store this token now (DPAPI on Windows). The previous token is accepted for 10 more minutes only, and only for heartbeat, read-only polling, and rotation recovery."
+        }
+      }
+    ],
+    "shopSnapshotResponse": [
+      {
+        "success": true,
+        "data": {
+          "shop": {
+            "id": "8476e148-37f9-4787-9845-dd0f0ec815a0",
+            "name": "QuickPrint Demo Shop",
+            "slug": "quickprint-demo",
+            "timezone": "Asia/Kolkata"
+          },
+          "orders": [],
+          "analytics": null
+        }
+      }
+    ]
+  }
+}

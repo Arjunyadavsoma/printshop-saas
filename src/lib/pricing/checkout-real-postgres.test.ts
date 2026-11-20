@@ -15,7 +15,7 @@ import { Pool, Client } from 'pg';
  * concurrency.
  */
 
-const DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_test';
+const DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_test';
 const TIMEOUT = 30_000;
 
 async function cleanAndSeed(pool: Pool): Promise<void> {
