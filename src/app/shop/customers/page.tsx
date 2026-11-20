@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/loading-skeleton';
@@ -137,13 +138,13 @@ export default function ShopCustomersPage() {
     [api],
   );
 
+  // P2-5: was a bare setInterval that kept polling while the tab was hidden.
+  // Refresh every 30s — customers are derived from orders, so the same
+  // staleness budget as the orders page applies.
   useEffect(() => {
     void load();
-    // Refresh every 30s — customers are derived from orders, so the same
-    // staleness budget as the orders page applies.
-    const id = setInterval(() => void load(true), 30_000);
-    return () => clearInterval(id);
   }, [load]);
+  usePoll(() => load(true), 30_000, { deps: [load], immediate: false });
 
   const customers = useMemo(() => aggregateCustomers(orders), [orders]);
 

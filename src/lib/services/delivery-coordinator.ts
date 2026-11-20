@@ -233,6 +233,59 @@ export async function markDeliveryReceived(
         message: 'Receipt acknowledged. File storage key not found for cleanup.',
       };
     }
+
+    // Phase-3 fix (P2-7/P2-8 root cause): attempts were only ever CREATED by
+    // the realtime-push dispatch path (dispatchToAgents). The companion's
+    // actual pull-mode flow — GET /agents/jobs/pending → claim → /received —
+    // never created a row, so markDeliveryReceived fell through to the
+    // silent "table not available" success below and the delivery history /
+    // customer delivery status stayed empty forever. Now the receipt
+    // CREATES the durable attempt row it just as honestly reports.
+    const priorAttempts = await (db as any).printDeliveryAttempt.count({
+      where: { printJobId, shopId },
+    });
+    await (db as any).printDeliveryAttempt.create({
+      data: {
+        id: crypto.randomUUID(),
+        printJobId,
+        agentId,
+        shopId,
+        attemptId: priorAttempts + 1,
+        deliveryMode: 'cloud',
+        status: 'received',
+        checksum: receipt.checksum ?? null,
+        fileSize: receipt.fileSize ?? null,
+        startedAt: now,
+        completedAt: receipt.receivedAt ? new Date(receipt.receivedAt) : now,
+      },
+    });
+
+    // Same cleanup scheduling as the update path (best-effort).
+    try {
+      const file = await getContainer().db.findOne<{ storageKey: string }>('printFile', {
+        id: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId,
+      });
+      if (file?.storageKey) {
+        await (db as any).fileCleanupTask.create({
+          data: {
+            id: crypto.randomUUID(),
+            printFileId: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId ?? '',
+            shopId,
+            storageKey: file.storageKey,
+            cleanupType: 'after_receipt',
+            scheduledAt: cleanupScheduledAt,
+            status: 'pending',
+          },
+        });
+        return { success: true, cleanupScheduled: true, message: 'Receipt acknowledged. Cloud cleanup scheduled.' };
+      }
+    } catch { /* cleanup table may not exist — receipt is still recorded */ }
+
+    return {
+      success: true,
+      cleanupScheduled: false,
+      message: 'Receipt acknowledged (created delivery attempt row).',
+    };
   } catch {
     // Tables don't exist — graceful degradation
   }

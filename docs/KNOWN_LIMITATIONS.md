@@ -53,6 +53,7 @@
 ## P2 — Medium (reliability + usability)
 
 ### P2-1: PaymentAttempt + PaymentEvent models not wired
+> **✅ FIXED (verified Phase 2):** the described cache→DB fallback + transactional idempotent persistence was ALREADY implemented on main (`webhook.service.ts:32-66`, `lifecycle.service.ts`); proven live by the 17/17 money-path probe (`docs/audit/phase2/10-payment-e2e.log`). The section is kept for history.
 - **What:** The models exist in schema + DB but the webhook pipeline still uses cache-only session lookup (10-min TTL).
 - **Impact:** Delayed webhooks (>10 min) or Vercel cold starts may lose the merchantOrderId→orderId mapping.
 - **Fix:** Replace `lookupPaymentSession` (cache) with `PaymentAttempt.findOne({merchantOrderId})` (DB).
@@ -73,21 +74,25 @@
 - **Fix:** Delete the file or rewrite for v4.
 
 ### P2-5: Polling doesn't pause on tab hidden
+> **✅ FIXED (Phase 3):** shared visibility-aware hook `src/lib/hooks/use-poll.ts`; all six bare `setInterval` loops (dashboard 15s, orders 20s, order detail 5s, payments 20s, shop customers 30s, customer tracking 30s) now poll only while the tab is visible and refresh immediately on re-visible. `/shop/devices` was already fixed earlier.
 - **What:** 6 polling intervals (dashboard 15s, orders 20s, order detail 5s, customer 30s) continue even when the browser tab is hidden.
 - **Impact:** Battery drain on mobile. Unnecessary API calls.
 - **Fix:** Add `if (document.hidden) return;` at the top of each polling callback.
 
 ### P2-6: No route-level loading/error files
+> **✅ MOSTLY FIXED (Phase 3):** the root `loading.tsx` / `error.tsx` / `not-found.tsx` already existed (the claim was stale); the MISSING segments got theirs now — `src/app/shop/loading.tsx`, `src/app/shop/error.tsx`, `src/app/orders/[id]/loading.tsx`.
 - **What:** No `loading.tsx`, `error.tsx`, `not-found.tsx` files in `src/app/`.
 - **Impact:** No graceful degradation if a route fails to load.
 - **Fix:** Add these files to the root + key route segments.
 
 ### P2-7: Customer-facing delivery tracking not implemented
+> **✅ FIXED (Phase 3):** `GET /orders/:id/status` now returns `delivery[]` (joined file + device names, best-effort); the customer TrackStep renders per-file delivery chips (Queued → Sent to device → Received / Failed). **Root cause found on the way:** PrintDeliveryAttempt rows were only created by realtime-push dispatch — the companion's pull-mode receipt (`/agents/jobs/received`) silently no-opped; `markDeliveryReceived` now creates the durable attempt row when none exists. Proven live 13/13 (`docs/audit/phase3/10-delivery.log`).
 - **What:** The customer order page (`/orders/[id]`) shows order status but not delivery status (dispatched, received, etc.).
 - **Impact:** Customer can't see if their document was received by the shop's device.
 - **Fix:** Add delivery status indicators to the TrackStep component (requires the PrintDeliveryAttempt table which now exists).
 
 ### P2-8: Dashboard delivery history not implemented
+> **✅ FIXED (Phase 3):** new `GET /shops/me/deliveries` (owner/staff, limit≤200) + a "Delivery history" Card on the dashboard (file, device, status chip, mode, time; empty state included). Same root-cause fix as P2-7. Proven live 13/13.
 - **What:** The dashboard shows device status but not delivery attempt history.
 - **Impact:** Shopkeeper can't see which devices received which files.
 - **Fix:** Add a delivery history section to the dashboard (queries PrintDeliveryAttempt).

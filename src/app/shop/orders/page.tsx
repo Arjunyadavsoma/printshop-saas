@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
   Card,
@@ -207,11 +208,11 @@ export default function ShopOrdersPage() {
     }
   }, [api]);
 
+  // P2-5: was a bare setInterval that kept polling while the tab was hidden.
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(true), 20_000);
-    return () => clearInterval(id);
   }, [load]);
+  usePoll(() => load(true), 20_000, { deps: [load], immediate: false });
 
   // Client-side filter + search + date filter.
   const filtered = useMemo(() => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/loading-skeleton';
@@ -137,13 +138,13 @@ export default function ShopPaymentsPage() {
     [api],
   );
 
+  // Refresh every 20s — same budget as the orders page. New payments /
+  // verifications should appear without a manual refresh.
+  // P2-5: was a bare setInterval that kept polling while the tab was hidden.
   useEffect(() => {
     void load();
-    // Refresh every 20s — same budget as the orders page. New payments /
-    // verifications should appear without a manual refresh.
-    const id = setInterval(() => void load(true), 20_000);
-    return () => clearInterval(id);
   }, [load]);
+  usePoll(() => load(true), 20_000, { deps: [load], immediate: false });
 
   // ── Summary metrics ──
   // All derived client-side from the orders list (no analytics endpoint

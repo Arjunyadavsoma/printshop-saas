@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
@@ -290,11 +291,8 @@ export default function ShopOrderDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Poll every 5s for status updates.
-  useEffect(() => {
-    const id = setInterval(() => { void load(true); }, 5000);
-    return () => clearInterval(id);
-  }, [load]);
+  // Poll every 5s for status updates (P2-5: pauses while the tab is hidden).
+  usePoll(() => { void load(true); }, 5000, { deps: [load], immediate: false });
 
   const allowedNext = useMemo<OrderStatus[]>(() => {
     if (!order) return [];
