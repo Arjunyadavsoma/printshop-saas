@@ -6,6 +6,22 @@ interface PrintJobRow {
   shopId: string;
   fileId: string;
   agentId: string | null;
+  // ── Product build Phase 1: task-level columns (docs/DATA-MODEL.md) ──
+  printerId?: string | null;
+  kind?: string | null;
+  sourcePages?: number[] | null;
+  taskPdfStorageKey?: string | null;
+  sheetCount?: number | null;
+  colorMode?: string | null;
+  paperSize?: string | null;
+  duplex?: boolean | null;
+  pagesPerSheet?: number;
+  orientation?: string | null;
+  scale?: string | null;
+  setLabel?: string | null;
+  idempotencyKey?: string;
+  dispatchedAt?: Date | null;
+  printedAt?: Date | null;
   status: string;
   attempts: number;
   lastError: string | null;
@@ -30,23 +46,77 @@ function toDomain(row: PrintJobRow): PrintJob {
     completedAt: row.completedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    printerId: row.printerId ?? null,
+    kind: (row.kind as PrintJob['kind']) ?? null,
+    sourcePages: row.sourcePages ?? null,
+    taskPdfStorageKey: row.taskPdfStorageKey ?? null,
+    sheetCount: row.sheetCount ?? null,
+    colorMode: (row.colorMode as PrintJob['colorMode']) ?? null,
+    paperSize: row.paperSize ?? null,
+    duplex: row.duplex ?? null,
+    pagesPerSheet: row.pagesPerSheet ?? 1,
+    orientation: row.orientation ?? null,
+    scale: row.scale ?? null,
+    setLabel: row.setLabel ?? null,
+    idempotencyKey: row.idempotencyKey,
+    dispatchedAt: row.dispatchedAt ?? null,
+    printedAt: row.printedAt ?? null,
   };
 }
 
+export type CreatePrintJobInput = {
+  shopId: string;
+  fileId: string;
+  printerId?: string | null;
+  kind?: string | null;
+  sourcePages?: number[] | null;
+  taskPdfStorageKey?: string | null;
+  sheetCount?: number | null;
+  colorMode?: string | null;
+  paperSize?: string | null;
+  duplex?: boolean | null;
+  pagesPerSheet?: number;
+  orientation?: string | null;
+  scale?: string | null;
+  setLabel?: string | null;
+  /** Required for task-level jobs; the planner emits
+   *  {orderId}:{fileId}:{kind}:{attempt}. Legacy flows get a generated key. */
+  idempotencyKey?: string;
+  status?: string;
+  attempts?: number;
+  lastError?: string | null;
+  queuedAt?: Date;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+};
+
 export class PrintJobRepository extends BaseRepository<PrintJobRow> {
-  async create(input: { shopId: string; fileId: string }): Promise<PrintJob> {
+  async create(input: CreatePrintJobInput): Promise<PrintJob> {
     const now = new Date();
     const row = await this.insertOne({
       id: crypto.randomUUID(),
       shopId: input.shopId,
       fileId: input.fileId,
       agentId: null,
-      status: 'queued',
-      attempts: 0,
-      lastError: null,
-      queuedAt: now,
-      startedAt: null,
-      completedAt: null,
+      printerId: input.printerId ?? null,
+      kind: input.kind ?? null,
+      sourcePages: input.sourcePages ?? null,
+      taskPdfStorageKey: input.taskPdfStorageKey ?? null,
+      sheetCount: input.sheetCount ?? null,
+      colorMode: input.colorMode ?? null,
+      paperSize: input.paperSize ?? null,
+      duplex: input.duplex ?? null,
+      pagesPerSheet: input.pagesPerSheet ?? 1,
+      orientation: input.orientation ?? null,
+      scale: input.scale ?? null,
+      setLabel: input.setLabel ?? null,
+      idempotencyKey: input.idempotencyKey ?? crypto.randomUUID(),
+      status: input.status ?? 'queued',
+      attempts: input.attempts ?? 0,
+      lastError: input.lastError ?? null,
+      queuedAt: input.queuedAt ?? now,
+      startedAt: input.startedAt ?? null,
+      completedAt: input.completedAt ?? null,
       createdAt: now,
       updatedAt: now,
     } as PrintJobRow);
@@ -70,21 +140,24 @@ export class PrintJobRepository extends BaseRepository<PrintJobRow> {
     return rows.map(toDomain);
   }
 
+  /** All tasks of one order, for the order-detail task table. */
+  async findByFile(fileId: string): Promise<PrintJob[]> {
+    const rows = await this.findMany({ fileId }, { order: ['queuedAt', 'asc'] });
+    return rows.map(toDomain);
+  }
+
   /**
-   * Find any ACTIVE (queued or printing) PrintJob for a file. Used by
-   * enqueuePaidOrderPrint to ensure idempotent job creation — a retry after
-   * a process crash must NOT create a duplicate PrintJob for a file that
-   * already has one queued or printing.
-   *
-   * 'completed' and 'needs_review' jobs are excluded: a file that was
-   * previously printed and is being re-queued (e.g., shopkeeper manually
-   * reprints) SHOULD get a new PrintJob.
+   * Legacy idempotency helper: find any ACTIVE (queued or printing) task for
+   * a file of the SAME kind. The product planner calls it per (file, kind)
+   * — a crash-retry must not duplicate the COLOR_SET while the BW_SET of the
+   * same file may legitimately be queued at the same time.
    */
-  async findActiveByFile(fileId: string): Promise<PrintJob | null> {
-    const queued = await this.findOne({ fileId, status: 'queued' });
-    if (queued) return toDomain(queued);
-    const printing = await this.findOne({ fileId, status: 'printing' });
-    return printing ? toDomain(printing) : null;
+  async findActiveByFile(fileId: string, kind?: string | null): Promise<PrintJob | null> {
+    const filter: Record<string, unknown> = { fileId };
+    if (kind !== undefined) filter.kind = kind;
+    const rows = await this.findMany(filter, { limit: 20 });
+    const active = rows.filter(r => r.status === 'queued' || r.status === 'printing');
+    return active[0] ? toDomain(active[0]) : null;
   }
 
   async update(id: string, patch: Partial<PrintJob>): Promise<void> {

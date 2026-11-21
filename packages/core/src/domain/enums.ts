@@ -7,8 +7,8 @@
  */
 
 /** Roles a user account may hold. */
-export type UserRole = 'owner' | 'staff' | 'admin';
-export const USER_ROLES: readonly UserRole[] = ['owner', 'staff', 'admin'] as const;
+export type UserRole = 'owner' | 'operator' | 'staff' | 'admin';
+export const USER_ROLES: readonly UserRole[] = ['owner', 'operator', 'staff', 'admin'] as const;
 
 /** Subscription tier a shop can be on. */
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
@@ -91,14 +91,36 @@ export const PAGE_COUNT_SOURCES: readonly PageCountSource[] = [
   'placeholder',
 ] as const;
 
-/** Print job lifecycle (agent-facing). */
-export type PrintJobStatus = 'queued' | 'assigned' | 'printing' | 'completed' | 'failed' | 'needs_review';
+/** Print job lifecycle (agent-facing).
+ *  Product build (Phase 1): extends the legacy lifecycle with the task-level
+ *  states the brief's dispatcher needs. 'completed' (legacy) and 'printed'
+ *  (new) both mean physical print confirmed by the spooler; 'uncertain'
+ *  means the spooler never confirmed — NEVER auto-retried. */
+export type PrintJobStatus =
+  | 'queued'
+  | 'assigned'
+  | 'dispatched'
+  | 'received'
+  | 'printing'
+  | 'spooled'
+  | 'completed'
+  | 'printed'
+  | 'uncertain'
+  | 'failed'
+  | 'cancelled'
+  | 'needs_review';
 export const PRINT_JOB_STATUSES: readonly PrintJobStatus[] = [
   'queued',
   'assigned',
+  'dispatched',
+  'received',
   'printing',
+  'spooled',
   'completed',
+  'printed',
+  'uncertain',
   'failed',
+  'cancelled',
   'needs_review',
 ] as const;
 

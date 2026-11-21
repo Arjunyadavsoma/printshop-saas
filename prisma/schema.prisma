@@ -41,6 +41,27 @@ model Shop {
   pamphletEnabled       Boolean          @default(false)
   pamphletPricePaise    Int              @default(0)
   pamphletName          String?
+  // ── Product build Phase 1: operations + billing mode (additive) ──
+  upiPayeeName          String?
+  isOpen                Boolean          @default(true)
+  acceptingOrders       Boolean          @default(true)
+  openingHours          Json?
+  languages             Json             @default("[\"en\"]")
+  retentionHours        Int              @default(24)
+  // UPI_THEN_PRINT | PRINT_THEN_PAY | BOTH (legacy paymentMethods untouched)
+  paymentMode           String           @default("UPI_THEN_PRINT")
+  autoConfirmCounterPayment Boolean      @default(false)
+  // PER_PAGE_ACTUAL | SHEET_AS_COLOR
+  colorSheetBilling     String           @default("PER_PAGE_ACTUAL")
+  orderExpiryMinutes    Int              @default(30)
+  urgencySurchargePaise Int              @default(0)
+  scheduledOrders       Boolean          @default(false)
+  minutesPerPageBw      Int              @default(1)
+  minutesPerPageColor   Int              @default(2)
+  printers              Printer[]
+  priceRules            PriceRule[]
+  addons                Addon[]
+  notifications         Notification[]
   // NOTE: revision + deletedAt removed from existing models to avoid
   // breaking production (DB migration not yet run). See docs/MIGRATION_PLAN.md.
   // These will be re-added when `bun run db:push` is executed.
@@ -64,7 +85,9 @@ model User {
   email        String     @unique
   phone        String
   passwordHash String
-  role         String     @default("owner")
+  role         String     @default("owner") // owner | operator
+  name         String?
+  lastLoginAt  DateTime?
   shopId       String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -115,14 +138,33 @@ model Order {
   paymentTxnId     String?          @unique
   paymentUtr       String?
   paidAt           DateTime?
+  customerName     String?
   customerPhone    String?
   notes            String?
+  // ── Product build Phase 1: pickup + pricing snapshot (additive) ──
+  orderNumber      String?
+  pickupCode       String?
+  subtotalPaise    Int              @default(0)
+  addonsPaise      Int              @default(0)
+  priceSnapshot    Json?
+  placedAt         DateTime?
+  readyAt          DateTime?
+  collectedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  urgent           Boolean          @default(false)
+  expiresAt        DateTime?
+  paymentModeAtOrder String?
+  scheduledFor     DateTime?
   tokenNumber      String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   shop             Shop             @relation(fields: [shopId], references: [id])
   files            PrintFile[]
   paymentAttempts  PaymentAttempt[]
+  payments         Payment[]
+  events           OrderEvent[]
+  notifications    Notification[]
 
   @@unique([shopId, tokenNumber])
   // H9 fix: customerToken is the per-order "credential" customers use to
@@ -160,6 +202,14 @@ model PrintFile {
   // companion in the agent pending-jobs payload (pdfSha256) so it can verify the
   // downloaded bytes BEFORE printing; also verified against the agent's receipt
   // checksum (trust-on-first-use if null — see the received-report route).
+  // ── Product build Phase 2: normalized PDF + geometry + suggestion ──
+  pdfStorageKey    String?
+  pageWidthPt      Float?
+  pageHeightPt     Float?
+  failReason       String?
+  checksum         String?
+  colorSuggestion  Json?
+  spec             PrintSpec?
   sha256           String?
   printedAt        DateTime?
   createdAt        DateTime   @default(now())
@@ -175,6 +225,25 @@ model PrintJob {
   shopId      String
   fileId      String
   agentId     String?
+  // ── Product build Phase 1: PrintTask columns (additive; device contract
+  // routes keep their shape — older companions ignore unknown fields) ──
+  printerId   String?
+  // color_set | bw_set | full
+  kind        String?
+  // int[] — original page numbers inside this task, in order
+  sourcePages Json?
+  taskPdfStorageKey String?
+  sheetCount  Int?
+  colorMode   String?
+  paperSize   String?
+  duplex      Boolean?
+  pagesPerSheet Int     @default(1)
+  orientation String?
+  scale       String?
+  setLabel    String?
+  idempotencyKey String @unique
+  dispatchedAt DateTime?
+  printedAt   DateTime?
   status      String    @default("queued")
   attempts    Int       @default(0)
   lastError   String?
@@ -185,9 +254,11 @@ model PrintJob {
   updatedAt   DateTime  @updatedAt
   file        PrintFile @relation(fields: [fileId], references: [id])
   shop        Shop      @relation(fields: [shopId], references: [id])
+  printer     Printer?  @relation(fields: [printerId], references: [id])
 
   @@index([shopId, status])
   @@index([agentId])
+  @@index([printerId])
 }
 
 model PrintAgent {
@@ -473,4 +544,137 @@ model FileCleanupTask {
   @@index([shopId, status])
   @@index([scheduledAt])
   @@index([printFileId])
+}
+
+// ─── Product build Phase 1: printers, specs, pricing, direct payments ───
+
+model Printer {
+  id             String    @id @default(uuid())
+  shopId         String
+  agentId        String?
+  systemName     String // Windows queue name the agent prints through
+  displayName    String
+  supportsColor  Boolean   @default(false)
+  supportsDuplex Boolean   @default(false)
+  paperSizes     Json      @default("[\"A4\"]")
+  isDefaultColor Boolean   @default(false)
+  isDefaultBw    Boolean   @default(false)
+  status         String    @default("OFFLINE") // ONLINE | OFFLINE | PAUSED | ERROR
+  statusDetail   String?
+  speedPpm       Int       @default(20)
+  pagesPrintedToday Int    @default(0)
+  counterDate    DateTime?
+  lastSeenAt     DateTime?
+  enabled        Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  shop           Shop      @relation(fields: [shopId], references: [id])
+  jobs           PrintJob[]
+
+  @@unique([shopId, systemName])
+  @@index([shopId, enabled])
+}
+
+model PrintSpec {
+  id            String   @id @default(uuid())
+  orderFileId   String   @unique
+  copies        Int      @default(1)
+  paperSize     String   @default("A4")
+  paperType     String   @default("PLAIN")
+  orientation   String   @default("AUTO")
+  sides         String   @default("SINGLE")
+  duplexEdge    String   @default("long")
+  pagesPerSheet Int      @default(1)
+  scale         String   @default("FIT")
+  collate       Boolean  @default(true)
+  pageRangeText String?
+  // source of truth for per-page modes: [{page, mode: "color"|"bw"|"skip"}]
+  pageModes     Json     @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orderFile     PrintFile @relation(fields: [orderFileId], references: [id])
+}
+
+model PriceRule {
+  id            String   @id @default(uuid())
+  shopId        String
+  paperSize     String
+  paperType     String   @default("PLAIN")
+  colorMode     String // BW | COLOR
+  sides         String   @default("SINGLE")
+  slabs         Json // [{minPages, perPagePaise}]
+  active        Boolean  @default(true)
+  effectiveFrom DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  shop          Shop     @relation(fields: [shopId], references: [id])
+
+  @@index([shopId, active])
+}
+
+model Addon {
+  id          String  @id @default(uuid())
+  shopId      String
+  kind        String // staple | spiral_bind | laminate | urgent | home_delivery_note
+  label       String
+  pricePaise  Int
+  pricingUnit String  @default("PER_ORDER") // PER_ORDER | PER_COPY | PER_SHEET
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shop        Shop     @relation(fields: [shopId], references: [id])
+
+  @@index([shopId, active])
+}
+
+// Direct-UPI + counter payment flow (PaymentAttempt/PaymentEvent stay for
+// the PhonePe gateway flow — two different mechanisms, both kept).
+model Payment {
+  id                  String    @id @default(uuid())
+  orderId             String
+  method              String // upi | counter_cash | counter_upi
+  status              String    @default("PENDING") // PENDING | SUBMITTED | CONFIRMED | REJECTED | REFUNDED_NOTE
+  amountPaise         Int
+  upiIntentUrl        String?
+  utr                 String?
+  screenshotStorageKey String?
+  confirmedBy         String?
+  confirmedAt         DateTime?
+  rejectReason        String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  order               Order     @relation(fields: [orderId], references: [id])
+
+  @@index([orderId, status])
+}
+
+// Append-only timeline powering the tracking UI and the dispute log.
+model OrderEvent {
+  id        String   @id @default(uuid())
+  orderId   String
+  type      String
+  actorType String // customer | shop | system | agent
+  actorId   String?
+  data      Json?
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  @@index([orderId, createdAt])
+}
+
+// In-app notifications for the shopkeeper (MessageChannel adapters add
+// WhatsApp/SMS later; console impl in dev).
+model Notification {
+  id        String    @id @default(uuid())
+  shopId    String
+  kind      String // new_order | payment_submitted | task_failed | low_supplies | ...
+  orderId   String?
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  shop      Shop      @relation(fields: [shopId], references: [id])
+  order     Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([shopId, readAt, createdAt])
 }
