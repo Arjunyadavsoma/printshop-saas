@@ -1921,6 +1921,10 @@ function FileStatusBadge({ status }: { status: FileStatus }) {
     completed: { label: 'Completed', variant: 'success' },
     failed: { label: 'Failed', variant: 'danger' },
     needs_review: { label: 'Needs review', variant: 'warning' },
+    // upload-pipeline statuses (product build Phase 2)
+    uploaded: { label: 'Uploaded', variant: 'neutral' },
+    converting: { label: 'Converting', variant: 'brand' },
+    ready: { label: 'Ready', variant: 'success' },
   };
   const m = map[status];
   return <StatusIndicator variant={m.variant} label={m.label} />;

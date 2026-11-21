@@ -19,6 +19,13 @@ interface PrintFileRow {
   pricePaise: number;
   status: string;
   processingError: string | null;
+  // ── Product build Phase 2 (docs/DATA-MODEL.md) ──
+  pdfStorageKey: string | null;
+  pageWidthPt: number | null;
+  pageHeightPt: number | null;
+  failReason: string | null;
+  checksum: string | null;
+  colorSuggestion: Array<{ page: number; isColor: boolean; confidence: number }> | null;
   sha256: string | null;
   printedAt: Date | null;
   createdAt: Date;
@@ -46,6 +53,12 @@ function toDomain(row: PrintFileRow): PrintFile {
     pricePaise: row.pricePaise,
     status: row.status as FileStatus,
     processingError: row.processingError ?? null,
+    pdfStorageKey: row.pdfStorageKey ?? null,
+    pageWidthPt: row.pageWidthPt ?? null,
+    pageHeightPt: row.pageHeightPt ?? null,
+    failReason: row.failReason ?? null,
+    checksum: row.checksum ?? null,
+    colorSuggestion: row.colorSuggestion ?? null,
     sha256: row.sha256 ?? null,
     printedAt: row.printedAt,
     createdAt: row.createdAt,
@@ -100,6 +113,14 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
     processingError?: string | null;
     /** B-010: server-computed SHA-256 hex of the stored bytes (null when the storage adapter can't expose bytes). */
     sha256?: string | null;
+    // ── Product build Phase 2 ──
+    originalFilenameBase?: string;
+    pdfStorageKey?: string | null;
+    pageWidthPt?: number | null;
+    pageHeightPt?: number | null;
+    failReason?: string | null;
+    checksum?: string | null;
+    customerName?: string;
   }): Promise<PrintFile> {
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -122,11 +143,23 @@ export class FileRepository extends BaseRepository<PrintFileRow> {
       status: input.status ?? 'pending',
       processingError: input.processingError ?? null,
       sha256: input.sha256 ?? null,
+      pdfStorageKey: input.pdfStorageKey ?? null,
+      pageWidthPt: input.pageWidthPt ?? null,
+      pageHeightPt: input.pageHeightPt ?? null,
+      failReason: input.failReason ?? null,
+      checksum: input.checksum ?? null,
       printedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as PrintFileRow);
     return toDomain(row);
+  }
+
+  /** File by id — used by the upload pipeline + file-status polling routes.
+   *  Access control stays with the caller (order token / shop session). */
+  async findById(id: string): Promise<PrintFile | null> {
+    const row = await this.findOne({ id });
+    return row ? toDomain(row) : null;
   }
 
   async update(id: string, patch: Partial<PrintFile>): Promise<PrintFile> {

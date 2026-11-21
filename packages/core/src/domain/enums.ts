@@ -50,12 +50,17 @@ export const ORDER_STATUSES: readonly OrderStatus[] = [
 
 /** Per-file print lifecycle. */
 export type FileStatus =
+  // legacy lifecycle
   | 'pending'
   | 'queued'
   | 'printing'
   | 'completed'
   | 'failed'
-  | 'needs_review';
+  | 'needs_review'
+  // product-build upload pipeline (docs/ARCHITECTURE.md §5.1)
+  | 'uploaded'
+  | 'converting'
+  | 'ready';
 export const FILE_STATUSES: readonly FileStatus[] = [
   'pending',
   'queued',
@@ -63,6 +68,9 @@ export const FILE_STATUSES: readonly FileStatus[] = [
   'completed',
   'failed',
   'needs_review',
+  'uploaded',
+  'converting',
+  'ready',
 ] as const;
 
 /**

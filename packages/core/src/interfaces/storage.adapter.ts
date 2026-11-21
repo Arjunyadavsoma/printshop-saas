@@ -55,4 +55,13 @@ export interface StorageAdapter {
    * file's page count is marked as `placeholder` and requires manual entry.
    */
   getBytes?(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null>;
+
+  /**
+   * Server-side write (document pipeline: normalized PDFs, page thumbnails,
+   * task PDFs, assembly slips). Optional — the presigned-PUT flow covers the
+   * customer upload path; the pipeline only needs this when it writes derived
+   * artifacts. Adapters that don't support direct writes can omit it; the
+   * pipeline then marks files FAILED with an honest reason.
+   */
+  put?(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 }
