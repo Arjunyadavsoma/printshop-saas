@@ -39,7 +39,7 @@
  */
 
 // ── Env vars MUST be set before any dynamic import of @/lib/* ──────────
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://z@127.0.0.1:5433/printshop_app_test';
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_app_test';
 process.env.DATABASE_PROVIDER = 'prisma';
 (process.env as { NODE_ENV?: string }).NODE_ENV = 'test';
 process.env.REALTIME_PROVIDER = 'memory';

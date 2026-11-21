@@ -7,8 +7,8 @@
  */
 
 /** Roles a user account may hold. */
-export type UserRole = 'owner' | 'staff' | 'admin';
-export const USER_ROLES: readonly UserRole[] = ['owner', 'staff', 'admin'] as const;
+export type UserRole = 'owner' | 'operator' | 'staff' | 'admin';
+export const USER_ROLES: readonly UserRole[] = ['owner', 'operator', 'staff', 'admin'] as const;
 
 /** Subscription tier a shop can be on. */
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
@@ -50,12 +50,17 @@ export const ORDER_STATUSES: readonly OrderStatus[] = [
 
 /** Per-file print lifecycle. */
 export type FileStatus =
+  // legacy lifecycle
   | 'pending'
   | 'queued'
   | 'printing'
   | 'completed'
   | 'failed'
-  | 'needs_review';
+  | 'needs_review'
+  // product-build upload pipeline (docs/ARCHITECTURE.md §5.1)
+  | 'uploaded'
+  | 'converting'
+  | 'ready';
 export const FILE_STATUSES: readonly FileStatus[] = [
   'pending',
   'queued',
@@ -63,6 +68,9 @@ export const FILE_STATUSES: readonly FileStatus[] = [
   'completed',
   'failed',
   'needs_review',
+  'uploaded',
+  'converting',
+  'ready',
 ] as const;
 
 /**
@@ -91,14 +99,36 @@ export const PAGE_COUNT_SOURCES: readonly PageCountSource[] = [
   'placeholder',
 ] as const;
 
-/** Print job lifecycle (agent-facing). */
-export type PrintJobStatus = 'queued' | 'assigned' | 'printing' | 'completed' | 'failed' | 'needs_review';
+/** Print job lifecycle (agent-facing).
+ *  Product build (Phase 1): extends the legacy lifecycle with the task-level
+ *  states the brief's dispatcher needs. 'completed' (legacy) and 'printed'
+ *  (new) both mean physical print confirmed by the spooler; 'uncertain'
+ *  means the spooler never confirmed — NEVER auto-retried. */
+export type PrintJobStatus =
+  | 'queued'
+  | 'assigned'
+  | 'dispatched'
+  | 'received'
+  | 'printing'
+  | 'spooled'
+  | 'completed'
+  | 'printed'
+  | 'uncertain'
+  | 'failed'
+  | 'cancelled'
+  | 'needs_review';
 export const PRINT_JOB_STATUSES: readonly PrintJobStatus[] = [
   'queued',
   'assigned',
+  'dispatched',
+  'received',
   'printing',
+  'spooled',
   'completed',
+  'printed',
+  'uncertain',
   'failed',
+  'cancelled',
   'needs_review',
 ] as const;
 

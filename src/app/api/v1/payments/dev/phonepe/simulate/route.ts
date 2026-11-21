@@ -15,8 +15,13 @@ const SimulateSchema = z.object({
    * Optional: the merchantOrderId returned by /checkout. PhonePe echoes this
    * back as merchantTransactionId in the webhook. If omitted, the simulate
    * route falls back to orderId (legacy dev behaviour).
+   *
+   * Phase-2 fix: checkout mints merchantOrderIds in the format
+   * `checkout-<uuid>-<timestamp>` (see the checkout route), which is NOT a
+   * UUID — the old z.string().uuid() rejected every real checkout
+   * merchantOrderId, making the route unusable for its documented purpose.
    */
-  merchantOrderId: z.string().uuid().optional(),
+  merchantOrderId: z.string().min(1).max(200).optional(),
 });
 
 /** hex(sha256(s)) via Web Crypto. */
@@ -50,7 +55,13 @@ export const POST = withRateLimit('phonepe-simulate', 20, 60, async (req, _ctx) 
     }
 
     const txnId = 'T' + Date.now().toString(36).toUpperCase();
+    const paid = body.outcome === 'paid';
     const payload = {
+      // UPIPay's verifyWebhook maps status from the TOP-LEVEL `code` field
+      // (mapStatus(parsedPayload.code)) — a callback without it verifies as
+      // FAILED. Phase-2 fix: the old shape (responseCode nested in data) was
+      // never accepted by the pipeline it feeds.
+      code: paid ? 'PAYMENT_SUCCESS' : 'PAYMENT_ERROR',
       data: {
         merchantId: creds.merchantId ?? 'DEMO',
         // merchantTransactionId MUST match the merchantOrderId stored at
@@ -59,14 +70,16 @@ export const POST = withRateLimit('phonepe-simulate', 20, 60, async (req, _ctx) 
         merchantTransactionId: body.merchantOrderId ?? order.id,
         transactionId: txnId,
         amount: order.totalAmountPaise,
-        state: body.outcome === 'paid' ? 'COMPLETED' : 'FAILED',
+        state: paid ? 'COMPLETED' : 'FAILED',
         paymentInstrument: { type: 'UPI', utr: txnId },
-        responseCode: body.outcome === 'paid' ? 'PAYMENT_SUCCESS' : 'PAYMENT_ERROR',
+        responseCode: paid ? 'PAYMENT_SUCCESS' : 'PAYMENT_ERROR',
       },
     };
     const base64Body = btoa(JSON.stringify(payload));
-    const verifyPath = '/pg/v1/status';
-    const xVerify = (await sha256Hex(base64Body + verifyPath + creds.saltKey)) + '###' + creds.saltIndex;
+    // Phase-2 fix: the adapter verifies sha256(base64Body + saltKey) — the
+    // STATUS-API path ('/pg/v1/status') was never part of the CALLBACK
+    // checksum, so the old signature never verified.
+    const xVerify = (await sha256Hex(base64Body + creds.saltKey)) + '###' + creds.saltIndex;
 
     // Feed the signed payload through the REAL webhook pipeline.
     const result = await processWebhook({

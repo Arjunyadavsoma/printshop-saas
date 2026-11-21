@@ -1,5 +1,16 @@
 # PrintShop — API Contract
 
+> **⚠ SUPERSEDED (2026-11-20, Phase 1+2).** The device/companion contract now
+> has ONE single source of truth: **`docs/integration/COMPANION_V1_CONTRACT.md`
+> (v1.1) + the machine-readable artifact `companion-v1.schema.json`**
+> (generated from `src/lib/contracts/companion.ts`, enforced by drift tests in
+> BOTH repos — `companion.contract.test.ts` here, `CompanionContractTests`
+> in PrintEXE). Where THIS document disagrees with the SSOT — e.g. it still
+> documents pairing-ticket error codes that don't exist (`TICKET_EXPIRED`) or
+> omits `needs_review`, token rotation, and the shop-snapshot route — the SSOT
+> wins. This file remains as historical context for the WEB-ONLY endpoints
+> (§1–§5) that the companion contract deliberately does not duplicate.
+
 > The stable, versioned API contract that both the web SaaS and the
 > PrintEXE Windows desktop client operate against. Every endpoint is
 > documented with method, path, auth, request shape, response shape,

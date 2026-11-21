@@ -3,6 +3,7 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { withOrderAccess } from '@/lib/api/with-order-access';
+import { getOrderDeliveryAttempts } from '@/lib/services/delivery-view.service';
 import { formatINRFromPaise } from '@platform/utils';
 
 /** GET /api/v1/orders/:id/status — poll payment + print status.
@@ -26,6 +27,19 @@ export const GET = withRateLimit<{ id: string }>(
   withOrderAccess<{ id: string }>(async (_req, _ctx, order) => {
     try {
       const files = await repos.files.findByOrder(order.id);
+      // P2-7 fix: include the order's delivery attempts (per print job —
+      // which device received which file). Best-effort: a delivery-read
+      // failure must never break the payment/status polling path, so it
+      // degrades to an empty list instead of a 500.
+      let delivery: Awaited<ReturnType<typeof getOrderDeliveryAttempts>> = [];
+      try {
+        delivery = await getOrderDeliveryAttempts(order.shopId, order.id);
+      } catch (deliveryErr) {
+        console.error('[order-status] delivery read failed (degrading to empty):', {
+          orderId: order.id,
+          error: deliveryErr instanceof Error ? deliveryErr.message : String(deliveryErr),
+        });
+      }
       // `tokenNumber` is the per-shop sequential token (e.g. "A001") — the SAME
       // token the shopkeeper sees in their dashboard. Including it here lets the
       // customer tracking page show the SAME token as the shopkeeper, so both
@@ -55,6 +69,7 @@ export const GET = withRateLimit<{ id: string }>(
           pricePaise: f.pricePaise,
           printedAt: f.printedAt,
         })),
+        delivery,
         updatedAt: order.updatedAt,
       });
     } catch (cause) {

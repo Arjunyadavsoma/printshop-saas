@@ -89,6 +89,7 @@ function makeFile(overrides: Partial<PrintFile> = {}): PrintFile {
     pricePaise: 0,
     status: 'pending',
     processingError: null,
+    sha256: null,
     printedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),

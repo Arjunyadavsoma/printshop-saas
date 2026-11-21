@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageSkeleton } from '@/components/shared/loading-skeleton';
 import { OrderStatusBadge, StatusIndicator, type StatusVariant } from '@/components/shared/status-indicator';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { formatINRFromPaise } from '@platform/utils';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
 import type {
@@ -75,7 +76,23 @@ interface OrderStatusResponse {
   paymentTxnId: string | null;
   paymentUtr: string | null;
   files: StatusFile[];
+  /** P2-7: per-file delivery attempts (which device received which file). */
+  delivery?: DeliveryView[];
   updatedAt: string;
+}
+
+/** Mirrors the server's DeliveryViewRow (delivery-view.service.ts). */
+interface DeliveryView {
+  id: string;
+  printJobId: string;
+  fileName: string | null;
+  deviceName: string | null;
+  deliveryMode: string;
+  status: string;
+  attemptNumber: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorCode: string | null;
 }
 
 interface UploadUrlResponse {
@@ -170,6 +187,9 @@ const STEP_LABELS: Array<{ key: Step; label: string }> = [
 ];
 
 const STATUS_AFTER_PAYMENT: OrderStatus[] = ['paid', 'printing', 'ready', 'collected', 'cancelled', 'refunded'];
+
+/** Terminal states — tracking auto-poll stops once the order reaches one. */
+const TERMINAL_ORDER_STATUSES: OrderStatus[] = ['collected', 'cancelled', 'refunded'];
 
 // ──────────────────────────── Page ────────────────────────────
 
@@ -703,14 +723,13 @@ export default function OrderFlowPage() {
     await loadOrder({ silent: true });
   }, [loadOrder]);
 
-  // Auto-poll while on the track step until terminal.
-  useEffect(() => {
-    if (step !== 'track') return;
-    const terminal: OrderStatus[] = ['collected', 'cancelled', 'refunded'];
-    if (order && terminal.includes(order.status)) return;
-    const id = setInterval(() => { void loadOrder({ silent: true }); }, 30_000); // 30s — optimized for 500 shops on free tier
-    return () => clearInterval(id);
-  }, [step, order, loadOrder]);
+  // Auto-poll while on the track step until terminal (P2-5: pauses while the
+  // tab is hidden; 30s — optimized for 500 shops on free tier).
+  usePoll(
+    () => { void loadOrder({ silent: true }); },
+    30_000,
+    { deps: [step, loadOrder], immediate: false, enabled: step === 'track' && !(order && TERMINAL_ORDER_STATUSES.includes(order.status)) },
+  );
 
   // ─── Receipt download ───
   const downloadReceipt = useCallback(async () => {
@@ -1779,6 +1798,12 @@ function TrackStep(props: {
             ) : null}
           </div>
 
+          {/* P2-7: delivery status — the customer can now see whether their
+              document actually reached the shop's printing device. */}
+          {props.order.paidAt && !cancelled && (props.order.delivery?.length ?? 0) > 0 && (
+            <DeliveryList attempts={props.order.delivery ?? []} />
+          )}
+
           {/* Order ID + amount */}
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-lg bg-muted/60 p-3">
@@ -1849,6 +1874,45 @@ function TrackStep(props: {
   );
 }
 
+/** P2-7: per-file delivery progress — the customer-facing view of the
+ *  PrintDeliveryAttempt lifecycle (created → dispatched → received, or
+ *  failed/expired). Only rendered after payment, so a free browser
+ *  never sees internal delivery mechanics before it matters. */
+function DeliveryList({ attempts }: { attempts: DeliveryView[] }) {
+  const chip = (status: string) => {
+    switch (status) {
+      case 'received': return { label: 'Received by device', cls: 'bg-success-soft text-success ring-success-border' };
+      case 'dispatched': return { label: 'Sent to device', cls: 'bg-brand-soft text-brand ring-brand-border' };
+      case 'failed': return { label: 'Delivery failed', cls: 'bg-danger-soft text-danger ring-danger-border' };
+      case 'expired': return { label: 'Delivery expired', cls: 'bg-danger-soft text-danger ring-danger-border' };
+      default: return { label: 'Queued for delivery', cls: 'bg-muted text-muted-foreground ring-border' };
+    }
+  };
+  return (
+    <div className="rounded-lg bg-muted/60 p-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Delivery to shop printer</p>
+      <ul className="mt-2 space-y-2">
+        {attempts.map((a) => {
+          const c = chip(a.status);
+          return (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={a.fileName ?? undefined}>
+                {a.fileName ?? 'Document'}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${c.cls}`}>{c.label}</span>
+              <span className="w-full text-xs text-muted-foreground sm:w-auto">
+                {a.deviceName ? `device: ${a.deviceName}` : ''}
+                {a.errorCode ? ` · ${a.errorCode}` : ''}
+                {a.completedAt ? ` · ${new Date(a.completedAt).toLocaleTimeString('en-IN')}` : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function FileStatusBadge({ status }: { status: FileStatus }) {
   const map: Record<FileStatus, { label: string; variant: StatusVariant }> = {
     pending: { label: 'Pending', variant: 'neutral' },
@@ -1857,6 +1921,10 @@ function FileStatusBadge({ status }: { status: FileStatus }) {
     completed: { label: 'Completed', variant: 'success' },
     failed: { label: 'Failed', variant: 'danger' },
     needs_review: { label: 'Needs review', variant: 'warning' },
+    // upload-pipeline statuses (product build Phase 2)
+    uploaded: { label: 'Uploaded', variant: 'neutral' },
+    converting: { label: 'Converting', variant: 'brand' },
+    ready: { label: 'Ready', variant: 'success' },
   };
   const m = map[status];
   return <StatusIndicator variant={m.variant} label={m.label} />;

@@ -27,8 +27,11 @@ import { Pool } from 'pg';
  *   6. UPDATE PaymentEvent SET "processingStatus"='processed'
  */
 
+// Requires a MIGRATED database (this suite TRUNCATES the payment tables).
+// CI and the local battery set TEST_DATABASE_URL; the fallback matches the
+// CI service container convention (postgres:postgres — see ci.yml).
 const DB_URL =
-  process.env.TEST_DATABASE_URL || 'postgresql://postgres@127.0.0.1:5433/phb_p3';
+  process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_ci';
 const TIMEOUT = 30_000;
 
 type LifecycleResult = { applied: boolean; duplicate: boolean; skipped: string | null };

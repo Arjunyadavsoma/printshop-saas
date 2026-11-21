@@ -1,6 +1,5 @@
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { db } from '@/lib/db';
 import { shopChannel } from '@platform/core/interfaces';
 
 /**
@@ -85,32 +84,32 @@ export async function dispatchDelivery(
 
   // Look up the orderId from the PrintFile so the job.dispatch event
   // includes it — the companion needs orderId for its local queue.
+  // (Phase 4: via the container adapter, not the raw Prisma client —
+  // tests register an in-memory container and must observe these writes.)
   let orderId: string | undefined;
   try {
-    const file = await (db as any).printFile.findUnique({ where: { id: fileId }, select: { orderId: true } });
+    const file = await container.db.findOne<{ orderId: string }>('printFile', { id: fileId });
     orderId = file?.orderId;
   } catch { /* graceful degradation */ }
 
   // Create a delivery attempt record (in the PrintDeliveryAttempt table)
-  // Wrapped in try/catch — the table may not exist until db:push is run
+  // Wrapped in try/catch — the table may not exist until migrations have run
   let attemptId = crypto.randomUUID();
   try {
-    const attempt = await (db as any).printDeliveryAttempt.create({
-      data: {
-        id: attemptId,
-        printJobId,
-        agentId: targetAgent?.id ?? 'unassigned',
-        shopId,
-        attemptId: 1,
-        deliveryMode: 'cloud', // current mode
-        status: targetAgent ? 'dispatched' : 'created',
-        startedAt: new Date(),
-      },
+    const attempt = await container.db.insert<{ id: string }>('printDeliveryAttempt', {
+      id: attemptId,
+      printJobId,
+      agentId: targetAgent?.id ?? 'unassigned',
+      shopId,
+      attemptId: 1,
+      deliveryMode: 'cloud', // current mode
+      status: targetAgent ? 'dispatched' : 'created',
+      startedAt: new Date(),
     });
     attemptId = attempt.id;
   } catch {
     // Table doesn't exist yet — continue without persistence (graceful degradation)
-    try { getContainer().logger.warn('delivery-coordinator: PrintDeliveryAttempt table not available', { printJobId }); } catch { /* noop */ }
+    try { container.logger.warn('delivery-coordinator: PrintDeliveryAttempt table not available', { printJobId }); } catch { /* noop */ }
   }
 
   // Publish job.dispatch via Socket.IO — this reaches ALL connected agents
@@ -156,6 +155,8 @@ export async function markDeliveryReceived(
     checksum?: string;
     fileSize?: number;
     receivedAt?: string;
+    /** B-010: set when the agent's checksum disagrees with the server-side hash. */
+    errorCode?: string | null;
   },
 ): Promise<{ success: boolean; cleanupScheduled: boolean; message: string }> {
   const now = new Date();
@@ -164,12 +165,15 @@ export async function markDeliveryReceived(
 
   // Update the delivery attempt
   try {
-    // Find the latest attempt for this job
-    const attempts = await (db as any).printDeliveryAttempt.findMany({
-      where: { printJobId, shopId },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-    });
+    const cdb = getContainer().db;
+    // Find the latest attempt for this job (Phase 4: via the container
+    // adapter — the raw Prisma client bypassed test containers entirely,
+    // which is why the cleanup tests could silently read the REAL database).
+    const attempts = await cdb.findMany<{ id: string; status: string; errorCode: string | null }>(
+      'printDeliveryAttempt',
+      { printJobId, shopId },
+      { order: ['createdAt', 'desc'], limit: 1 },
+    );
 
     if (attempts.length > 0) {
       const attempt = attempts[0];
@@ -182,15 +186,13 @@ export async function markDeliveryReceived(
         };
       }
 
-      await (db as any).printDeliveryAttempt.update({
-        where: { id: attempt.id },
-        data: {
-          status: 'received',
-          agentId, // update to the actual receiving agent
-          checksum: receipt.checksum ?? null,
-          fileSize: receipt.fileSize ?? null,
-          completedAt: receipt.receivedAt ? new Date(receipt.receivedAt) : now,
-        },
+      await cdb.update('printDeliveryAttempt', { id: attempt.id }, {
+        status: 'received',
+        agentId, // update to the actual receiving agent
+        checksum: receipt.checksum ?? null,
+        fileSize: receipt.fileSize ?? null,
+        errorCode: receipt.errorCode ?? attempt.errorCode ?? null,
+        completedAt: receipt.receivedAt ? new Date(receipt.receivedAt) : now,
       });
 
       // Schedule cloud cleanup — find the file's storage key
@@ -200,16 +202,14 @@ export async function markDeliveryReceived(
 
       if (file?.storageKey) {
         try {
-          await (db as any).fileCleanupTask.create({
-            data: {
-              id: crypto.randomUUID(),
-              printFileId: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId ?? '',
-              shopId,
-              storageKey: file.storageKey,
-              cleanupType: 'after_receipt',
-              scheduledAt: cleanupScheduledAt,
-              status: 'pending',
-            },
+          await cdb.insert('fileCleanupTask', {
+            id: crypto.randomUUID(),
+            printFileId: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId ?? '',
+            shopId,
+            storageKey: file.storageKey,
+            cleanupType: 'after_receipt',
+            scheduledAt: cleanupScheduledAt,
+            status: 'pending',
           });
           try { getContainer().logger.info('delivery-coordinator: cloud cleanup scheduled', { printJobId, scheduledAt: cleanupScheduledAt.toISOString() }); } catch { /* noop */ }
           return {
@@ -233,6 +233,54 @@ export async function markDeliveryReceived(
         message: 'Receipt acknowledged. File storage key not found for cleanup.',
       };
     }
+
+    // Phase-3 fix (P2-7/P2-8 root cause): attempts were only ever CREATED by
+    // the realtime-push dispatch path (dispatchToAgents). The companion's
+    // actual pull-mode flow — GET /agents/jobs/pending → claim → /received —
+    // never created a row, so markDeliveryReceived fell through to the
+    // silent "table not available" success below and the delivery history /
+    // customer delivery status stayed empty forever. Now the receipt
+    // CREATES the durable attempt row it just as honestly reports.
+    const priorAttempts = (await cdb.findMany<unknown>('printDeliveryAttempt', { printJobId, shopId })).length;
+    await cdb.insert('printDeliveryAttempt', {
+      id: crypto.randomUUID(),
+      printJobId,
+      agentId,
+      shopId,
+      attemptId: priorAttempts + 1,
+      deliveryMode: 'cloud',
+      status: 'received',
+      checksum: receipt.checksum ?? null,
+      fileSize: receipt.fileSize ?? null,
+      errorCode: receipt.errorCode ?? null,
+      startedAt: now,
+      completedAt: receipt.receivedAt ? new Date(receipt.receivedAt) : now,
+    });
+
+    // Same cleanup scheduling as the update path (best-effort).
+    try {
+      const file = await getContainer().db.findOne<{ storageKey: string }>('printFile', {
+        id: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId,
+      });
+      if (file?.storageKey) {
+        await cdb.insert('fileCleanupTask', {
+          id: crypto.randomUUID(),
+          printFileId: (await getContainer().db.findOne<{ fileId: string }>('printJob', { id: printJobId }))?.fileId ?? '',
+          shopId,
+          storageKey: file.storageKey,
+          cleanupType: 'after_receipt',
+          scheduledAt: cleanupScheduledAt,
+          status: 'pending',
+        });
+        return { success: true, cleanupScheduled: true, message: 'Receipt acknowledged. Cloud cleanup scheduled.' };
+      }
+    } catch { /* cleanup table may not exist — receipt is still recorded */ }
+
+    return {
+      success: true,
+      cleanupScheduled: false,
+      message: 'Receipt acknowledged (created delivery attempt row).',
+    };
   } catch {
     // Tables don't exist — graceful degradation
   }
@@ -265,14 +313,16 @@ export async function processCleanupTasks(maxTasks = 10): Promise<{
   let skipped = 0;
 
   try {
-    const tasks = await (db as any).fileCleanupTask.findMany({
-      where: {
-        status: 'pending',
-        scheduledAt: { lte: now },
-      },
-      orderBy: { scheduledAt: 'asc' },
-      take: maxTasks,
-    });
+    // Phase 4: container adapter (raw client bypassed test containers and
+    // silently read the shared dev DB — the cleanup tests passed only while
+    // that DB had no pending tasks). The adapter's filter is strict-equality,
+    // so the due-time comparison happens in JS.
+    const pending = await getContainer().db.findMany<{ id: string; storageKey: string; attempts: number; maxAttempts: number; scheduledAt: Date }>(
+      'fileCleanupTask',
+      { status: 'pending' },
+      { order: ['scheduledAt', 'asc'], limit: maxTasks * 4 },
+    );
+    const tasks = pending.filter((t) => new Date(t.scheduledAt).getTime() <= now.getTime()).slice(0, maxTasks);
 
     for (const task of tasks) {
       try {
@@ -280,10 +330,7 @@ export async function processCleanupTasks(maxTasks = 10): Promise<{
         const exists = await container.storage.head(task.storageKey);
         if (!exists) {
           // Already deleted — mark as completed
-          await (db as any).fileCleanupTask.update({
-            where: { id: task.id },
-            data: { status: 'completed', completedAt: now, attempts: task.attempts + 1 },
-          });
+          await getContainer().db.update('fileCleanupTask', { id: task.id }, { status: 'completed', completedAt: now, attempts: task.attempts + 1 });
           completed++;
           continue;
         }
@@ -291,22 +338,16 @@ export async function processCleanupTasks(maxTasks = 10): Promise<{
         // Delete the object
         await container.storage.deleteMany([task.storageKey]);
 
-        await (db as any).fileCleanupTask.update({
-          where: { id: task.id },
-          data: { status: 'completed', completedAt: now, attempts: task.attempts + 1 },
-        });
+        await getContainer().db.update('fileCleanupTask', { id: task.id }, { status: 'completed', completedAt: now, attempts: task.attempts + 1 });
         completed++;
         try { container.logger.info('cleanup: file deleted', { storageKey: task.storageKey, taskId: task.id }); } catch { /* noop */ }
       } catch (err) {
         failed++;
         const errorMsg = err instanceof Error ? err.message : String(err);
-        await (db as any).fileCleanupTask.update({
-          where: { id: task.id },
-          data: {
-            attempts: task.attempts + 1,
-            lastError: errorMsg,
-            status: task.attempts + 1 >= task.maxAttempts ? 'failed' : 'pending',
-          },
+        await getContainer().db.update('fileCleanupTask', { id: task.id }, {
+          attempts: task.attempts + 1,
+          lastError: errorMsg,
+          status: task.attempts + 1 >= task.maxAttempts ? 'failed' : 'pending',
         });
         try { container.logger.error('cleanup: deletion failed', { taskId: task.id, error: errorMsg }); } catch { /* noop */ }
       }

@@ -1,262 +1,174 @@
-# PrintShop Unified Platform — Architecture
+# PrintShop — Architecture (v2, product build)
 
-> The single source of truth for the PrintShop platform architecture: one
-> business platform, two clients (web SaaS + Windows desktop), one shared
-> backend, one canonical data model.
+> Scope of this revision: the QR-based print ordering product (customer flow,
+> shopkeeper operations, document pipeline, print planner, dispatcher +
+> simulator). It supersedes the v1.0 audit-era architecture document; the
+> device/companion contract and existing models are preserved unchanged.
 
-**Status:** v1.0 — 2025-11-07. Based on a complete audit of both repositories:
-- PrintShop SaaS: `/home/z/my-project` (Next.js 16, commit `c933548`)
-- PrintEXE Windows client: `github.com/Arjunyadvsoma/PrintEXE` (.NET 10 / WPF)
-
----
-
-## 1. Platform identity
-
-PrintShop is **one business platform** with two client surfaces:
-
-| Client | Tech | Repo | Role |
-|---|---|---|---|
-| **PrintShop SaaS** (web) | Next.js 16 + React 19 + Prisma + Supabase Postgres | `Arjunyadvsoma/printshop-saas` | The reference implementation. Hosts the shared backend, customer portal, shopkeeper dashboard, admin portal. |
-| **PrintEXE** (Windows desktop) | .NET 10 / WPF | `Arjunyadvsoma/PrintEXE` | A first-class API client of the SaaS backend. Handles local printing, offline job queue, shopkeeper operations on Windows. |
-
-**The web app is the authoritative backend. The desktop app is a client.**
-The desktop never owns business data — it syncs with the backend.
+**Status:** v2.0 — 2026-11-21 (Phase 0 of the product build).
 
 ---
 
-## 2. Current state (honest assessment)
-
-### 2.1 What exists and works (PrintShop SaaS)
-
-- ✅ Multi-tenant SaaS with 10 Prisma models (Shop, User, Order, PrintFile, PrintJob, PrintAgent, Subscription, AuditLog, PaymentAttempt, PaymentEvent)
-- ✅ 60 API routes across 10 domains (auth, shops, orders, payments, agents, admin, storage, dev, health, downloads)
-- ✅ Custom JWT auth (HS256, PBKDF2 passwords, 15-min access + 30-day refresh tokens)
-- ✅ Three auth guards: `withAuth` (JWT), `withDeviceAuth` (print-agent HMAC token), `withOrderAccess` (customer per-order token)
-- ✅ Payment pipeline: PhonePe v1+v2, Paytm, UPI deep-link fallback — webhook signature verification, idempotency, race-safe state transitions
-- ✅ Print agent infrastructure: REST polling + socket.io push, atomic job claiming, stale recovery
-- ✅ Realtime via socket.io mini-service (port 3003) + HTTP /emit relay (port 3004)
-- ✅ File storage: R2 / S3 / Supabase / in-memory (adapter-selected)
-- ✅ 234 unit/integration tests, Playwright smoke test
-- ✅ Design system: semantic OKLCH tokens, 49 shadcn components, all 21 pages migrated
-
-### 2.2 What exists but is vestigial (not wired)
-
-- ⚠️ `Subscription` model (schema exists, zero code references — tier read from `Shop.subscriptionTier` instead)
-- ⚠️ `PaymentAttempt` + `PaymentEvent` models (schema exists, webhook pipeline still uses cache-only session lookup)
-- ⚠️ `next-auth` package (installed but unused — auth is custom JWT)
-- ⚠️ Entitlements enforcement (absent — no feature gating anywhere)
-
-### 2.3 What's missing (for unified platform)
-
-- ❌ Bidirectional sync endpoints (`/api/v1/sync/*`)
-- ❌ Device registration with sync cursor state
-- ❌ Revision/version fields on models (for conflict detection)
-- ❌ Desktop-specific API contract (PrintEXE uses incompatible protocol)
-
-### 2.4 PrintEXE current state
-
-- ✅ .NET 10 / WPF app with 6-project solution
-- ✅ SQLite durable job queue with crash-replay, exponential backoff, corrupt-DB recovery
-- ✅ DPAPI-encrypted device token storage
-- ✅ SumatraPDF + raw GDI printer rendering
-- ✅ Socket.IO client + HTTP polling fallback
-- ❌ **Wire protocol is INCOMPATIBLE with the real SaaS backend** (see §4)
-- ❌ Has never been compiled or tested on Windows hardware
-- ❌ Magic-link pairing flow doesn't exist server-side
-- ❌ The SaaS repo has zero references to PrintEXE
-
----
-
-## 3. Target architecture
+## 1. System map
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SHARED BACKEND                                │
-│  PrintShop SaaS (Next.js 16) — the authoritative data source         │
-│                                                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐  ┌───────────┐ │
-│  │ Customer    │  │ Shopkeeper   │  │ Admin       │  │ API       │ │
-│  │ Portal      │  │ Dashboard    │  │ Portal      │  │ Routes    │ │
-│  │ (web)       │  │ (web)        │  │ (web)       │  │ /api/v1/* │ │
-│  └─────────────┘  └──────────────┘  └─────────────┘  └───────────┘ │
-│                                                       ║             │
-│  ┌─────────────────────────────────────────────────────╫──────────┐ │
-│  │ Business Logic (packages/core)                       ║          │ │
-│  │  • Pricing engine  • Order state machine             ║          │ │
-│  │  • Payment verification  • Tenant isolation          ║          │ │
-│  │  NEVER imports concrete adapters (interface-only)    ║          │ │
-│  └─────────────────────────────────────────────────────╫──────────┘ │
-│                                                       ║             │
-│  ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ║ ┌────────┐ │
-│  │ Database   │ │ Storage  │ │ Payment  │ │Realtime │ ║ │ Sync   │ │
-│  │ Adapter    │ │ Adapter  │ │ Adapter  │ │Adapter  │ ║ │Engine  │ │
-│  └─────┬──────┘ └────┬─────┘ └────┬─────┘ └────┬────┘ ║ └───┬────┘ │
-│        │              │            │            │       ║     │      │
-│   Supabase PG     R2/S3       PhonePe/Paytm   Socket.IO ║  Delta   │
-│   (shared DB)     (shared)     (webhooks)      (port 3003)║ queries │
-└─────────────────────────────────────────────────────────╫──────────┘
-                                                          ║
-                    ┌─────────────────────────────────────╫──────┐
-                    │        SHARED API CONTRACT          ║      │
-                    │  /api/v1/* (versioned, documented)  ║      │
-                    │  Auth: JWT + device token + order   ║      │
-                    └────────┬───────────────────────────╫──────┘
-                             │                            ║
-              ┌──────────────┼───────────────────────────╫──────┐
-              │              │                           ║      │
-              ▼              ▼                           ▼      ▼
-        ┌──────────┐  ┌──────────────┐          ┌────────────────────┐
-        │ Customer │  │ Shopkeeper   │          │ PrintEXE           │
-        │ (browser)│  │ (browser)    │          │ (Windows desktop)  │
-        │          │  │              │          │                    │
-        │ Upload,  │  │ Dashboard,   │          │ Local printing,    │
-        │ pay UPI, │  │ orders,      │          │ offline queue,     │
-        │ track    │  │ settings     │          │ sync, operations   │
-        └──────────┘  └──────────────┘          └────────────────────┘
-              │              │                           │
-              │ WebSocket    │ WebSocket                 │ REST + WebSocket
-              │ (socket.io)  │ (socket.io)               │ + SQLite cache
-              ▼              ▼                           ▼
-        ┌─────────────────────────────────────────────────────────────┐
-        │              REALTIME LAYER (socket.io :3003)                │
-        │  Events: order.paid, job.dispatch, job.printing,             │
-        │  job.completed, order.ready, sync.* (future)                 │
-        └─────────────────────────────────────────────────────────────┘
+                    ┌─────────────────────────────────────────────────┐
+                    │                printshop-saas (Next.js)         │
+   customer phone   │  /s/[shopSlug]  /o/[token]        route handlers│
+  ─────────────────▶│  upload → pipeline → planner → quote → order    │
+                    │        │                                        │
+   shopkeeper PC    │  /shop/*  board · order detail · payments ·     │
+  ─────────────────▶│  printers · pricing · settings · reports        │
+                    │        │                ┌──────────────────┐    │
+                    │  /api/v1/* ─────────────▶│ realtime service │    │
+                    │  (customer/shop/device)  │ (Socket.IO, rooms│    │
+                    │        │                │  shop:{id},      │    │
+                    │  /api/v1/agents/*       │  order:{token})  │    │
+                    │        │                └────────┬─────────┘    │
+                    │  document pipeline worker               │      │
+                    │  (normalize → thumbnails → inkcov)      │      │
+                    └────────┼─────────────────────────────────┼──────┘
+                             │                 job.dispatch    │
+                             ▼                                 ▼
+                    ┌────────────────┐                ┌──────────────────┐
+                    │ PostgreSQL     │                │ PrintEXE agents  │
+                    │ (Prisma)       │                │ (Windows, real)  │
+                    └────────────────┘                └──────────────────┘
+                             ▲                                 ▼
+                    ┌────────────────┐                ┌──────────────────┐
+                    │ StorageProvider│◀───────────────│ SimulatorAgent   │
+                    │ (local disk /  │  signed URLs   │ (this repo, dev) │
+                    │  S3/R2/Supabase│                │ /tmp/simulated-  │
+                    └────────────────┘                │ output           │
+                                                      └──────────────────┘
 ```
 
-### Key principles
+The web app stays the authoritative backend (as in v1). The realtime
+mini-service is unchanged (`mini-services/realtime-service`, port 3001,
+shared `JWT_ACCESS_SECRET`). The document pipeline worker is a library run
+in-process by route handlers plus a cron entry — no new service process is
+required for dev; a Dockerfile for the worker with LibreOffice/Ghostscript
+documents the production packaging.
 
-1. **One backend, one database.** The SaaS Postgres is the single source of truth. The desktop never owns business data.
-2. **Adapter pattern invariant.** Business logic (`packages/core`) imports interfaces only — never concrete adapters. Swapping Supabase → self-hosted Postgres is a one-line config change.
-3. **Server-authoritative financial calculations.** Pricing, taxes, invoice totals, payment verification all happen server-side. The desktop displays results, never computes them independently.
-4. **Strict tenant isolation.** Every query filters by `shopId` from the JWT principal. The desktop's device token resolves to a `shopId` — same isolation.
-5. **The desktop is a sync client, not a standalone app.** It can operate offline (local SQLite job queue) but must sync changes to the backend. The backend is authoritative for conflicts.
+## 2. Module boundaries (src/lib)
 
----
-
-## 4. The PrintEXE incompatibility (must be resolved)
-
-The audit found that PrintEXE's wire protocol is **incompatible** with the real SaaS backend:
-
-| Concern | PrintEXE expects | SaaS backend provides | Status |
-|---|---|---|---|
-| Auth header | `X-PrintShop-Device-Token` + `X-PrintShop-Device-Id` | `Authorization: Bearer <deviceToken>` | ❌ Incompatible |
-| Pairing | Magic-link URL `printshopcompanion://pair?token=…` | Copy-paste plaintext token from `/api/v1/agents/register` | ❌ Incompatible |
-| Register | `POST /pair` with pairing ticket | `POST /api/v1/agents/register` (owner JWT auth) | ❌ Incompatible |
-| Heartbeat | `POST /heartbeat` | `POST /api/v1/agents/heartbeat` | ⚠️ Path mismatch |
-| Jobs pending | `GET /agents/jobs/pending` | `GET /api/v1/agents/jobs/pending` | ⚠️ Path mismatch |
-| Job ack | `POST /jobs/{jobId}/ack` | (no ack route — status report IS the claim) | ❌ Incompatible |
-| Status report | `{printedAt, failedAt, errorMessage}` | `{status: 'printing'|'completed'|'failed', lastError, printerName}` | ❌ Incompatible DTO |
-| Revoke | `POST /device/revoke` | (no revoke route — delete PrintAgent row) | ❌ Missing |
-| Socket.IO events | `DeliverJob`, `AckJob`, `ReportStatus` | `job.dispatch`, `auth`, `auth-ok` | ❌ Incompatible |
-| Socket.IO path | `/companion-hub` | `/` (port 3003) | ❌ Incompatible |
-| Token → JWT exchange | (not implemented) | `POST /api/v1/agents/token` | ❌ Missing in PrintEXE |
-
-### Resolution path
-
-**Option A (recommended): Adapt PrintEXE to the SaaS contract.**
-PrintEXE's `HttpPrintShopBackend.cs` + `SocketIoRealtimeClient.cs` + `CompanionProtocol.cs` must be rewritten to use the real SaaS protocol. This is a PrintEXE-side change — the SaaS backend doesn't change.
-
-**Option B: Add a compatibility layer to the SaaS backend.**
-Add `/api/v1/companion/*` routes that translate PrintEXE's protocol to the real internal calls. This adds maintenance burden and a second protocol to support.
-
-**This document recommends Option A.** The SaaS backend is the reference; PrintEXE adapts.
-
----
-
-## 5. Adapter architecture (preserved from existing SaaS)
-
-The existing adapter pattern is the load-bearing wall of the platform. See `ARCHITECTURE.md` (the original) for the full deep-dive. Summary:
-
-```
-packages/core      ← interfaces (no concrete deps)
-packages/adapters  ← concretes (depend on core interfaces)
-src/app/*          ← compose a concrete at boot, inject it
-```
-
-| Adapter | Interface | Concrete options | Selected by |
-|---|---|---|---|
-| Database | `DatabaseAdapter` | Prisma (Supabase PG), in-memory | `DATABASE_PROVIDER` |
-| Storage | `StorageAdapter` | R2, S3, Supabase, in-memory, disabled | `STORAGE_PROVIDER` |
-| Payment | `PaymentAdapter` | PhonePe v1/v2, Paytm, UPI deep-link | `Shop.paymentProvider` |
-| Realtime | `RealtimeAdapter` | Socket.io relay, in-memory | `REALTIME_PROVIDER` |
-| Cache | `CacheAdapter` | Upstash Redis, in-memory | `CACHE_PROVIDER` |
-| Queue | `QueueAdapter` | In-memory (PrintJob table is the durable queue) | (always in-memory) |
-| Auth | `AuthAdapter` | JWT (HS256 + PBKDF2) | (always JWT) |
-| Logger | `LoggerAdapter` | JSON console, stub | `LOGGER_PROVIDER` |
-
-**The desktop client does NOT get its own adapters.** It talks to the SaaS backend's API. The only local persistence is the print-job queue (SQLite, transit-only).
-
----
-
-## 6. Multi-tenancy
-
-Every model that belongs to a shop has a `shopId` column:
-- `Shop` (is the tenant root)
-- `User` (nullable `shopId` — admin = null)
-- `Order`, `PrintJob`, `PrintAgent`, `Subscription`, `PaymentAttempt` (all have `shopId`)
-- `PrintFile` inherits via `order.shopId`
-- `AuditLog` (nullable `shopId` — platform events)
-
-**Tenant isolation is enforced at the repository layer** (`src/lib/repositories/*`). Every query filters by `shopId` from the JWT principal or device token. No raw SQL in route handlers.
-
-The desktop client's device token resolves to a `shopId` via `withDeviceAuth` → `PrintAgent.shopId`. Same isolation as web.
-
----
-
-## 7. Money
-
-All currency is **integer paise** (1 INR = 100 paise) in `Int` columns. The pricing engine (`packages/core/src/pricing/`) operates entirely in paise with half-up rounding. No `float` money anywhere in business logic.
-
-The desktop client must display amounts using `formatINRFromPaise()` — the same formatter the web uses. It must NEVER compute prices locally; it fetches priced orders from the backend.
-
----
-
-## 8. Realtime
-
-| Component | Location | Role |
+| Module | Role | Notes |
 |---|---|---|
-| socket.io server | `mini-services/realtime-service/index.ts` (:3003) | Fan-out to browser dashboards + print agents |
-| HTTP /emit relay | `mini-services/realtime-service/index.ts` (:3004) | Server-to-server push (Next.js → socket.io) |
-| Browser client | `src/components/phase5/use-realtime.ts` | Dashboard live updates |
-| Print agent client | `mini-services/print-agent/src/agent.ts` | Job dispatch listener |
-| PrintEXE client | `PrintEXE/src/.../SocketIoRealtimeClient.cs` | (must be adapted to real protocol) |
+| `lib/printing/planner.ts` | **PrintPlanner** — pure function: spec + shop rules + printers → PrintPlan (tasks, pricing breakdown, collation guide, warnings). No IO. | 100% unit tested (§5.3 matrix). |
+| `lib/pricing/price-engine.ts` | Price computation from PriceRule slabs + add-ons + urgent. Integer paise only. Server-only. | Extends the existing price-file engine; PriceRule-table backed with legacy `pricingConfig` fallback. |
+| `lib/pipeline/normalize.ts` | PDF validation; images→PDF (sharp); DOCX/PPTX/XLSX→PDF (LibreOffice `soffice --headless` — REAL in this environment). | Ghostscript `gs` + `pdfinfo` present — real conversion, real ink coverage. |
+| `lib/pipeline/color-suggest.ts` | Per-page color suggestion via Ghostscript `inkcov` (real CMYK coverage per page). Fallback: content-stream heuristic. | Suggestion only; customer decides. |
+| `lib/pipeline/thumbnails.ts` | Page PNGs via pdftoppm (poppler) — real render. | Stored via StorageProvider. |
+| `lib/pipeline/task-pdf.ts` | Builds per-task PDFs with pdf-lib (N-up imposition, blank-page duplex padding, assembly slip, receipt). | Pure where possible; file IO behind StorageProvider. |
+| `lib/orders/state-machine.ts` | Order + task status machine. Illegal transitions rejected server-side. | Append-only OrderEvent timeline written on every transition. |
+| `lib/payments/upi.ts` | `upi://pay?...` intent builder (VPA validation), UTR validation, PaymentVerifier adapter interface (MANUAL default). | Never claims verification. |
+| `lib/dispatch/dispatcher.ts` | PrintDispatcher interface: CompanionDispatcher (existing socket contract) + SimulatorDispatcher (fake agent). | One (taskId, attempt) dispatch; UNCERTAIN never auto-retried. |
+| `lib/i18n` | next-intl catalogs en/hi/te. | All customer+shopkeeper strings through the catalog. |
 
-**Event vocabulary** (published via `container.realtime.publish(shopChannel(shopId), event, payload)`):
+Existing modules preserved unchanged: auth (pbkdf2 + JWT + roles),
+payments (PhonePe PSP flow — coexists with the new direct-UPI flow),
+storage adapters, delivery-coordinator, device contract routes.
 
-| Event | Payload | Consumers |
+## 3. Contracts
+
+### 3.1 Device contract (UNCHANGED, extended backward-compatibly)
+pair / heartbeat / jobs pending / claim / received / commands — all existing
+routes keep their shapes. Extensions (additive only):
+- `GET /agents/jobs/pending` payload rows gain `taskId` (= PrintJob id),
+  `taskPdfSha256`, `sheetCount`, `duplex`, `colorMode`, `paperSize`,
+  `orientation`, `scale`, `setLabel`, `orderShortId`, `attempt`.
+  Unknown fields are ignored by older companions.
+- New socket event `job.dispatch` payload = same task DTO (event already
+  exists in the contract; the payload fields are additive).
+- `POST /agents/jobs/:id/status` accepts `uncertain` and `spooled` with
+  `jobId`; idempotent on (taskId, attempt); never marks PRINTED without
+  spooler confirmation → UNCERTAIN surfaces to the shopkeeper.
+
+### 3.2 Customer contract (new)
+- `POST /api/v1/orders/quote` — spec + pageModes → itemized paise breakdown.
+- `POST /api/v1/orders` — create order (server recomputes price; client
+  total must match or "prices changed" is returned).
+- `POST /api/v1/orders/:token/payment` — submit UTR (+ screenshot).
+- `GET /api/v1/orders/:token` — tracking timeline (no login).
+- `POST /api/v1/orders/:token/cancel` — only before PRINTING.
+- Upload: `POST /api/v1/s/{slug}/uploads/init|chunk|complete` (resumable,
+  chunked), `GET /api/v1/s/{slug}/files/:id` (status).
+
+### 3.3 Shopkeeper contract (new, session-auth)
+`/api/v1/shops/me/...` — orders (list/detail/transition actions), payments
+(confirm/reject/bulk), printers CRUD + commands, price-rules, add-ons,
+settings, reports, customers, audit. OPERATOR role cannot mutate pricing,
+UPI, staff, or delete data.
+
+## 4. State machines (enforced server-side)
+
+### Order
+```
+DRAFT → AWAITING_PAYMENT → PAYMENT_SUBMITTED → PAID → QUEUED → PRINTING
+      → PARTIALLY_PRINTED → READY → COLLECTED
+side exits: CANCELLED (before PRINTING) · FAILED (attention needed)
+            · EXPIRED (unpaid 30 min)
+PRINT_THEN_PAY shops: DRAFT → QUEUED → PRINTING → READY → PAID_ON_PICKUP
+            → COLLECTED
+```
+READY requires ALL tasks PRINTED. Every transition writes an OrderEvent.
+
+### PrintTask (= PrintJob row, device contract)
+```
+PENDING → DISPATCHED → RECEIVED → PRINTING → SPOOLED → PRINTED
+        → UNCERTAIN (no spooler confirmation before timeout)
+        → FAILED (retry ⇒ attempt+1 only on safe failure or shop approval)
+        → CANCELLED
+```
+
+## 5. Storage key layout (StorageProvider, signed URLs, HMAC + expiry)
+
+```
+shops/{shopId}/orders/{orderId}/orig/{fileId}.{ext}      original upload
+shops/{shopId}/orders/{orderId}/pdf/{fileId}.pdf         normalized PDF
+shops/{shopId}/orders/{orderId}/tasks/{taskId}.pdf       per-task PDF
+shops/{shopId}/orders/{orderId}/thumbs/{fileId}/{n}.png  page thumbnails
+shops/{shopId}/orders/{orderId}/pay/{fileId}.png         payment screenshot
+shops/{shopId}/posters/{slug}-{lang}.pdf                 QR posters
+```
+Retention: default 24 h after collection (shop-configurable, max 7 days)
+via the existing FileCleanupTask + cron route; originals deleted at
+conversion completion.
+
+## 6. Security invariants
+- Every shop-scoped query filters by shopId (tenant isolation tests).
+- Files only via short-lived signed URLs; magic-byte + MIME checks;
+  filename sanitization; 50 MB/file, 200 MB/order.
+- Rate limits on upload/quote/order/payment endpoints.
+- httpOnly session cookies; CSRF on mutations; strict CSP; no secrets in
+  logs (device-token redactor already wired).
+- Money: integer paise end-to-end; server-side computation only.
+
+## 7. Simulators & honest labels
+| Simulator | Where | Label |
 |---|---|---|
-| `order.paid` | `{orderId, amountPaise}` | dashboard, (future: desktop) |
-| `order.ready` | `{orderId}` | dashboard |
-| `order.cancelled` | `{orderId, reason}` | dashboard (⚠️ not currently subscribed) |
-| `job.dispatch` | `{jobId, fileId, orderId, ...}` | print agent, (future: desktop) |
-| `job.printing` | `{jobId, fileId}` | dashboard |
-| `job.completed` | `{jobId, fileId}` | dashboard |
-| `sync.*` | (future) | (future: desktop sync notifications) |
+| SimulatorAgent (fake device: accepts tasks, random delays, fail/offline/latency controls, writes PDFs to /tmp/simulated-output) | `mini-services/simulator-agent` + `/dev/simulator` panel (dev-only) | SIMULATED DEVICE |
+| Console OTP | `lib/notifications` adapters | DEV OTP |
+| Real printers | none — needs Windows + PrintEXE (MANUAL-TESTING.md) | NOT SIMULATED HERE |
+| UPI payment verification | shopkeeper confirmation only (PaymentVerifier MANUAL) | VERIFICATION IS MANUAL |
 
----
+## 8. Run commands (dev)
+```bash
+docker compose up -d postgres           # or the existing dev DB on :5433
+bun install
+bun run db:migrate && bun run db:seed
+bun run dev                             # Next on :3000
+bun run realtime                        # Socket.IO on :3001
+bun run sim                             # simulator agent on :3999
+bun run test && bun run typecheck && bun run lint
+```
 
-## 9. Deployment topology
-
-| Component | Platform | Current | Target |
-|---|---|---|---|
-| Web app + API | Vercel (Hobby, Mumbai) | ✅ Live | Keep |
-| Realtime service | Render / Vercel | ✅ Live | Keep (or move to Vercel function) |
-| Database | Supabase Postgres (pooler :6543) | ✅ Live | Keep |
-| Storage | Supabase Storage / R2 | ✅ Live | Keep |
-| PrintEXE | Windows desktop | ❌ Not deployed | Per-shop MSI install |
-
-The web app is the deployment hub. The desktop is distributed per-shop via MSI installer.
-
----
-
-## 10. References
-
-- `docs/DATABASE_SCHEMA.md` — canonical data model
-- `docs/API_CONTRACT.md` — versioned API for both clients
-- `docs/DESKTOP_INTEGRATION.md` — PrintEXE integration path
-- `docs/SYNC_PROTOCOL.md` — bidirectional sync design
-- `docs/DESIGN_SYSTEM.md` — visual identity for both clients
-- `docs/FEATURE_PARITY.md` — module matrix
-- `ARCHITECTURE.md` (original) — adapter pattern deep-dive
-- `docs/REDESIGN_AUDIT.md` — file:line audit of the SaaS repo
+## 9. Testing matrix
+- Unit: planner, price engine, range parser, state machine, UPI builder,
+  signed URL, tenant isolation.
+- Integration: upload→convert→quote→order→pay→confirm→dispatch→printed→
+  ready→collected (test DB).
+- E2E: Playwright mobile+desktop full journey; payment rejected→resubmit;
+  printer fail→reroute; shop closed; Hindi smoke; axe a11y checks.
+- Load sanity: 50 concurrent quotes on a 200-page PDF.
+- CI: typecheck + lint + tests.

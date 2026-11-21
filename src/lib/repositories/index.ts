@@ -7,6 +7,26 @@ export { AuditLogRepository } from './audit-log.repository';
 export { PrintJobRepository } from './print-job.repository';
 export { PrintAgentRepository } from './print-agent.repository';
 
+// Product build (docs/DATA-MODEL.md): printers, pricing, direct payments,
+// timeline events, notifications.
+export {
+  PrinterRepository,
+  PriceRuleRepository,
+  AddonRepository,
+  PaymentRepository,
+  OrderEventRepository,
+  NotificationRepository,
+  productRepos,
+} from './product.repository';
+export type {
+  PrinterRow,
+  PriceRuleRow,
+  AddonRow,
+  PaymentRow,
+  OrderEventRow,
+  NotificationRow,
+} from './product.repository';
+
 import { ShopRepository } from './shop.repository';
 import { UserRepository } from './user.repository';
 import { OrderRepository } from './order.repository';
@@ -14,6 +34,7 @@ import { FileRepository } from './file.repository';
 import { AuditLogRepository } from './audit-log.repository';
 import { PrintJobRepository } from './print-job.repository';
 import { PrintAgentRepository } from './print-agent.repository';
+import { productRepos } from './product.repository';
 
 /** Lazy singleton repos — one per table. Routes import these. The adapter is
  *  resolved lazily from the container on each call, so setContainerForTesting
@@ -26,4 +47,5 @@ export const repos = {
   audit: new AuditLogRepository('auditLog'),
   printJobs: new PrintJobRepository('printJob'),
   printAgents: new PrintAgentRepository('printAgent'),
+  ...productRepos,
 };

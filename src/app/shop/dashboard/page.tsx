@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { usePoll } from '@/lib/hooks/use-poll';
 import { PrintEXEOverview } from '@/components/portal/prinexe-overview';
 import {
   Card,
@@ -127,6 +128,23 @@ interface Analytics {
   byStatus: Record<string, number>;
 }
 
+/** One PrintDeliveryAttempt, joined with file + device names (P2-8). */
+interface DeliveryRow {
+  id: string;
+  printJobId: string;
+  orderId: string | null;
+  fileName: string | null;
+  deviceName: string | null;
+  deliveryMode: string;
+  status: string;
+  attemptNumber: number;
+  fileSize: number | null;
+  checksum: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorCode: string | null;
+}
+
 function isToday(iso: string): boolean {
   try {
     const d = new Date(iso);
@@ -146,6 +164,8 @@ export default function ShopDashboardPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
+  // P2-8: delivery-attempt history (which device received which file).
+  const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +181,7 @@ export default function ShopDashboardPage() {
     if (silent) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      const [shopR, ordersR, analyticsR, agentsR] = await Promise.all([
+      const [shopR, ordersR, analyticsR, agentsR, deliveriesR] = await Promise.all([
         api.request<{ data?: ShopInfo }>('GET', '/api/v1/shops/me'),
         // H-1 / Live H-1 fix: fetch up to 200 orders (same window as the
         // Payments page) so the dashboard's all-time sales summary can be
@@ -173,11 +193,13 @@ export default function ShopDashboardPage() {
         api.request<{ data?: OrderRow[] }>('GET', '/api/v1/shops/me/orders?limit=200'),
         api.request<{ data?: Analytics }>('GET', '/api/v1/shops/me/analytics'),
         api.request<{ data?: AgentRow[] }>('GET', '/api/v1/shops/me/agents'),
+        api.request<{ data?: DeliveryRow[] }>('GET', '/api/v1/shops/me/deliveries?limit=50'),
       ]);
       if (shopR.status === 200 && shopR.data?.data) setShop(shopR.data.data);
       if (ordersR.status === 200 && ordersR.data?.data) setOrders(ordersR.data.data);
       if (analyticsR.status === 200 && analyticsR.data?.data) setAnalytics(analyticsR.data.data);
       if (agentsR.status === 200 && agentsR.data?.data) setAgents(agentsR.data.data);
+      if (deliveriesR.status === 200 && deliveriesR.data?.data) setDeliveries(deliveriesR.data.data);
       if (shopR.status === 401) {
         setError('Your session has expired. Please log in again.');
       } else if (shopR.status >= 500) {
@@ -190,11 +212,12 @@ export default function ShopDashboardPage() {
     }
   };
 
+  // P2-5: was a bare setInterval that kept polling while the tab was hidden.
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(true), 15_000);
-    return () => clearInterval(id);
+    return undefined;
   }, []);
+  usePoll(() => load(true), 15_000, { immediate: false });
 
   // Check the printer-engine status once on mount — surfaces the
   // "Choose your print engine" callout if the shopkeeper hasn't set up
@@ -879,6 +902,54 @@ export default function ShopDashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Delivery history (P2-8): which device received which file, newest first */}
+      <Card className="border-border">
+        <CardHeader>
+          <CardTitle className="text-base">Delivery history</CardTitle>
+          <CardDescription className="text-xs">
+            Every print-delivery attempt to your companion devices — newest first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {deliveries.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No deliveries yet. When a paired device receives a print job, it shows up here.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>File</TableHead>
+                    <TableHead>Device</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>When</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deliveries.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="max-w-48 truncate font-medium" title={d.fileName ?? undefined}>
+                        {d.fileName ?? '(file removed)'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{d.deviceName ?? '—'}</TableCell>
+                      <TableCell>
+                        <DeliveryStatusBadge status={d.status} errorCode={d.errorCode} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{d.deliveryMode}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {d.startedAt ? new Date(d.startedAt).toLocaleString() : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* All-time summary */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border">
@@ -964,6 +1035,25 @@ export default function ShopDashboardPage() {
 
 function Separator() {
   return <span className="hidden h-8 w-px bg-border sm:inline-block" aria-hidden />;
+}
+
+/** Delivery-attempt status chip (P2-8). Maps the PrintDeliveryAttempt
+ *  lifecycle (created|dispatched|received|failed|expired) to a colored badge. */
+function DeliveryStatusBadge({ status, errorCode }: { status: string; errorCode: string | null }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    created: { label: 'Queued', cls: 'bg-muted text-muted-foreground' },
+    dispatched: { label: 'Sent to device', cls: 'bg-brand-soft text-brand' },
+    received: { label: 'Received', cls: 'bg-success-soft text-success' },
+    failed: { label: 'Failed', cls: 'bg-danger-soft text-danger' },
+    expired: { label: 'Expired', cls: 'bg-danger-soft text-danger' },
+  };
+  const m = map[status] ?? { label: status, cls: 'bg-muted text-muted-foreground' };
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span>
+      {errorCode ? <span className="font-mono text-xs text-danger">{errorCode}</span> : null}
+    </span>
+  );
 }
 
 function PaymentMiniBadge({ status, paidAt }: { status: string; paidAt: string | null }) {

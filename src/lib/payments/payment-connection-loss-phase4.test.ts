@@ -16,7 +16,10 @@ import { Pool } from 'pg';
  * applyPaymentTransition (unique-arbitrated INSERT + conditional updates).
  */
 
-const DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres@127.0.0.1:5433/phb_p4';
+// Requires a MIGRATED database (this suite TRUNCATES the payment tables).
+// CI and the local battery set TEST_DATABASE_URL; the fallback matches the
+// CI service container convention (postgres:postgres — see ci.yml).
+const DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/printshop_ci';
 const TIMEOUT = 30_000;
 
 async function seed(pool: Pool, moid: string, orderId: string) {

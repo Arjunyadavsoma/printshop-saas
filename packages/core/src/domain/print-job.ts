@@ -43,7 +43,11 @@ export const PrintAgentSchema = z.object({
   updatedAt: z.date(),
 });
 
-/** A unit of work dispatched to an agent (one per file per print attempt). */
+/** A unit of work dispatched to an agent.
+ *  Product build (Phase 1, docs/DATA-MODEL.md): a file may be split into
+ *  MULTIPLE concurrent tasks (COLOR_SET -> color printer, BW_SET -> B&W
+ *  printer); the task-level fields below are additive and optional so the
+ *  legacy 1:1 flow keeps compiling. */
 export interface PrintJob {
   id: string;
   shopId: string;
@@ -57,6 +61,23 @@ export interface PrintJob {
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  // ── task-level (PrintTask) fields — optional for legacy flows ──
+  printerId?: string | null;
+  kind?: 'color_set' | 'bw_set' | 'full' | null;
+  sourcePages?: number[] | null;
+  taskPdfStorageKey?: string | null;
+  sheetCount?: number | null;
+  copies?: number | null;
+  colorMode?: 'BW' | 'COLOR' | null;
+  paperSize?: string | null;
+  duplex?: boolean | null;
+  pagesPerSheet?: number;
+  orientation?: string | null;
+  scale?: string | null;
+  setLabel?: string | null;
+  idempotencyKey?: string;
+  dispatchedAt?: Date | null;
+  printedAt?: Date | null;
 }
 
 export const PrintJobSchema = z.object({
