@@ -12,6 +12,7 @@ interface PrintJobRow {
   sourcePages?: number[] | null;
   taskPdfStorageKey?: string | null;
   sheetCount?: number | null;
+  copies?: number | null;
   colorMode?: string | null;
   paperSize?: string | null;
   duplex?: boolean | null;
@@ -51,6 +52,7 @@ function toDomain(row: PrintJobRow): PrintJob {
     sourcePages: row.sourcePages ?? null,
     taskPdfStorageKey: row.taskPdfStorageKey ?? null,
     sheetCount: row.sheetCount ?? null,
+    copies: row.copies ?? null,
     colorMode: (row.colorMode as PrintJob['colorMode']) ?? null,
     paperSize: row.paperSize ?? null,
     duplex: row.duplex ?? null,
@@ -72,6 +74,7 @@ export type CreatePrintJobInput = {
   sourcePages?: number[] | null;
   taskPdfStorageKey?: string | null;
   sheetCount?: number | null;
+  copies?: number | null;
   colorMode?: string | null;
   paperSize?: string | null;
   duplex?: boolean | null;
@@ -103,6 +106,7 @@ export class PrintJobRepository extends BaseRepository<PrintJobRow> {
       sourcePages: input.sourcePages ?? null,
       taskPdfStorageKey: input.taskPdfStorageKey ?? null,
       sheetCount: input.sheetCount ?? null,
+      copies: input.copies ?? null,
       colorMode: input.colorMode ?? null,
       paperSize: input.paperSize ?? null,
       duplex: input.duplex ?? null,

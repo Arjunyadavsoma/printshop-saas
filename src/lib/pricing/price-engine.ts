@@ -9,6 +9,7 @@
  * once, which for integers is exact.
  */
 import type { PriceLine, PricingBreakdown } from '@/lib/printing/planner';
+export type { PriceLine, PricingBreakdown };
 
 export type Slab = { minPages: number; perPagePaise: number };
 

@@ -67,6 +67,7 @@ export interface PrintJob {
   sourcePages?: number[] | null;
   taskPdfStorageKey?: string | null;
   sheetCount?: number | null;
+  copies?: number | null;
   colorMode?: 'BW' | 'COLOR' | null;
   paperSize?: string | null;
   duplex?: boolean | null;

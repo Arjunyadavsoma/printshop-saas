@@ -30,9 +30,11 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   // goes through awaiting_payment first.
   draft: ['awaiting_payment', 'queued', 'cancelled'],
   awaiting_payment: ['payment_submitted', 'paid', 'cancelled', 'expired'],
-  payment_submitted: ['paid', 'cancelled', 'expired', 'payment_submitted' /* UTR resubmit */],
+  payment_submitted: ['paid', 'awaiting_payment' /* UTR rejected → resubmit */, 'cancelled', 'expired', 'payment_submitted' /* UTR resubmit */],
   paid: ['queued', 'cancelled'],
-  queued: ['printing', 'cancelled'],
+  // queued → ready is legal: with a fast agent the server may only observe
+  // the terminal task state; the PRINTING step is written when observed.
+  queued: ['printing', 'ready', 'cancelled'],
   printing: ['partially_printed', 'ready', 'failed'],
   partially_printed: ['ready', 'failed'],
   ready: ['collected', 'paid_on_pickup'],

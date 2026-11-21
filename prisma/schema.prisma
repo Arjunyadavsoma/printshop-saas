@@ -234,6 +234,7 @@ model PrintJob {
   sourcePages Json?
   taskPdfStorageKey String?
   sheetCount  Int?
+  copies      Int?
   colorMode   String?
   paperSize   String?
   duplex      Boolean?

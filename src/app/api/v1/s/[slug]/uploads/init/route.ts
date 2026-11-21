@@ -47,7 +47,18 @@ export const POST = withRateLimit('uploads-init', 30, 60, async (req: NextReques
       orderId = order.id;
       orderToken = order.customerToken;
     } else {
-      const order = await repos.orders.createWithUniqueToken(shop.id, { customerPhone: null, notes: null }, (c, a) => String(900 + c + a));
+      // customerToken MUST be unguessable (it IS the credential) — 128-bit hex
+      // (brief §Auth: "each order has an unguessable order token (128-bit)").
+      const order = await repos.orders.createWithUniqueToken(
+        shop.id,
+        {
+          customerPhone: null,
+          notes: null,
+          regenerateCustomerToken: () =>
+            crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, ''),
+        },
+        (c, a) => String(900 + c + a),
+      );
       orderId = order.id;
       orderToken = order.customerToken;
       await getContainer().db.update('order', { id: orderId }, { status: 'draft' });
