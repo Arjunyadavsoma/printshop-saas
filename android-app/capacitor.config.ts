@@ -20,11 +20,11 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * remote page.
  *
  * Set `PRINTSHOP_WEB_URL` env var to override the server URL at build time:
- *   PRINTSHOP_WEB_URL=https://printshop-saas.vercel.app npm run release
+ *   PRINTSHOP_WEB_URL=https://printshop-saas-arjunyadav35763-gmailcoms-projects.vercel.app npm run release
  * If unset, defaults to the placeholder below (you MUST change it before
  * building a distributable APK).
  */
-const WEB_URL = process.env.PRINTSHOP_WEB_URL ?? 'https://printshop-saas.vercel.app';
+const WEB_URL = process.env.PRINTSHOP_WEB_URL ?? 'https://printshop-saas-arjunyadav35763-gmailcoms-projects.vercel.app';
 
 const config: CapacitorConfig = {
   appId: 'app.printshop.companion',

@@ -65,7 +65,7 @@ jobs:
         env:
           # Point the WebView at the deployed web app. Override this in the
           # repo's Actions secrets if you have a custom domain.
-          PRINTSHOP_WEB_URL: ${{ vars.PRINTSHOP_WEB_URL || 'https://printshop-saas.vercel.app' }}
+          PRINTSHOP_WEB_URL: ${{ vars.PRINTSHOP_WEB_URL || 'https://printshop-saas-arjunyadav35763-gmailcoms-projects.vercel.app' }}
         run: npm run sync
 
       - name: Generate signing keystore (if not provided as a secret)
