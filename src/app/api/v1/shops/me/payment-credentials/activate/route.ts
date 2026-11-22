@@ -22,7 +22,7 @@ import { ValidationError } from '@platform/core/errors';
  */
 
 const ActivateSchema = z.object({
-  provider: z.enum(['phonepe', 'paytm']),
+  provider: z.enum(['phonepe', 'paytm', 'razorpay']),
 });
 
 export const POST = withRateLimit('pay-creds-activate', 10, 60, withAuth(async (req, _ctx, principal) => {

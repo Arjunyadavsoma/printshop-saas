@@ -107,7 +107,7 @@ export function AppSidebar({
           </div>
           {!collapsed && (
             <div className="flex min-w-0 flex-col leading-tight">
-              <span className="truncate text-sm font-semibold text-foreground">{brandName}</span>
+              <span className="truncate font-display text-sm font-semibold text-foreground">{brandName}</span>
               {brandSubtitle && (
                 <span className="truncate text-xs text-muted-foreground">{brandSubtitle}</span>
               )}

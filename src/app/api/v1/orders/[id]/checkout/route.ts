@@ -252,6 +252,19 @@ export const POST = withRateLimit<{ id: string }>(
       merchantOrderId, // ← pre-computed, already persisted
     });
 
+    // Persist the gateway-side order id (Razorpay order_…) on the attempt —
+    // webhooks / re-verification resolve the provider transaction through it.
+    if (intent.gatewayOrderId) {
+      try {
+        await (db as any).paymentAttempt.update({
+          where: { merchantOrderId },
+          data: { providerTransactionId: intent.gatewayOrderId },
+        });
+      } catch {
+        /* best-effort — reconciliation can still recover it */
+      }
+    }
+
     // FALLBACK: if the provider adapter didn't return a upiUri, generate
     // a UPI deep-link from the shop's UPI ID.
     if (!intent.upiUri && shop.upiId) {
@@ -301,6 +314,10 @@ export const POST = withRateLimit<{ id: string }>(
       checkoutUrl: intent.checkoutUrl,
       upiUri: intent.upiUri,
       qrPayload: intent.qrPayload,
+      // Razorpay Checkout.js needs these client-side (additive, null for
+      // other providers)
+      gatewayOrderId: intent.gatewayOrderId ?? null,
+      publishableKey: intent.publishableKey ?? null,
       expiresAt: intent.expiresAt,
     });
     } catch (cause) {

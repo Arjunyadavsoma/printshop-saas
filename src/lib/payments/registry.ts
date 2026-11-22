@@ -1,6 +1,6 @@
 import type { PaymentAdapter } from '@platform/core/interfaces';
 import type { PaymentProvider } from '@platform/core/domain';
-import { PhonePePaymentAdapter, PaytmPaymentAdapter, UpiDeepLinkPaymentAdapter } from '@platform/adapters';
+import { PhonePePaymentAdapter, PaytmPaymentAdapter, UpiDeepLinkPaymentAdapter, RazorpayPaymentAdapter } from '@platform/adapters';
 import { AdapterError } from '@platform/core/errors';
 
 /**
@@ -15,6 +15,7 @@ export class PaymentAdapterRegistry {
     this.register(new PhonePePaymentAdapter());
     this.register(new PaytmPaymentAdapter());
     this.register(new UpiDeepLinkPaymentAdapter());
+    this.register(new RazorpayPaymentAdapter());
   }
 
   register(adapter: PaymentAdapter): void {

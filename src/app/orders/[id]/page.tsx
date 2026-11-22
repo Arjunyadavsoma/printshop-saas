@@ -140,6 +140,9 @@ interface CheckoutResponse {
   checkoutUrl: string | null;
   upiUri: string | null;
   qrPayload: string | null;
+  /** Razorpay: gateway order + publishable key for Checkout.js (null otherwise). */
+  gatewayOrderId: string | null;
+  publishableKey: string | null;
   expiresAt: string | null;
 }
 
@@ -901,6 +904,7 @@ export default function OrderFlowPage() {
                   error={paymentError}
                   simulated={simulated}
                   onPay={doPay}
+                  onPaidOnline={() => setStep('track')}
                   onBack={() => setStep('checkout')}
                 />
               )}
@@ -1025,7 +1029,7 @@ function UploadStep(props: {
     <div className="space-y-4">
       <Card className="bg-surface">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
             <UploadCloud className="h-5 w-5 text-brand" /> Step 1 · Upload your files
           </CardTitle>
           <CardDescription>PDF, images, Word, Excel, PowerPoint, and more — up to 25MB each.</CardDescription>
@@ -1453,7 +1457,7 @@ function CheckoutStep(props: {
     <div className="space-y-4">
       <Card className="bg-surface">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
             <CreditCard className="h-5 w-5 text-brand" /> Step 3 · Review &amp; checkout
           </CardTitle>
           <CardDescription>The server recalculates the final price at checkout. We never trust the client&apos;s number.</CardDescription>
@@ -1562,6 +1566,23 @@ function CheckoutStep(props: {
   );
 }
 
+/** Minimal Razorpay Checkout.js surface (loaded lazily from their CDN). */
+interface RazorpayCheckoutOptions {
+  key: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description?: string;
+  prefill?: { contact?: string; method?: string };
+  theme?: { color?: string };
+  handler: (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => void;
+  modal?: { ondismiss?: () => void };
+}
+interface RazorpayCheckoutInstance {
+  open: () => void;
+}
+
 function PayStep(props: {
   checkout: CheckoutResponse | null;
   qrDataUrl: string | null;
@@ -1572,23 +1593,84 @@ function PayStep(props: {
   error: string | null;
   simulated: boolean;
   onPay: () => void;
+  onPaidOnline: () => void;
   onBack: () => void;
 }) {
   const amount = props.checkout ? formatINRFromPaise(props.checkout.amountPaise) : '—';
   const upiUri = props.checkout?.upiUri ?? null;
   const desktopQr = props.shopkeeperQrUrl ?? props.qrDataUrl;
   const isShopkeeperQr = !!props.shopkeeperQrUrl;
+  const rzpReady = props.checkout?.provider === 'razorpay'
+    && !!props.checkout.gatewayOrderId && !!props.checkout.publishableKey;
 
   const launchUpi = () => {
     if (!upiUri) return;
     window.location.href = upiUri;
   };
 
+  // Razorpay Checkout.js: load the script once, open the modal, verify the
+  // signature server-side, then move to tracking.
+  const [rzpBusy, setRzpBusy] = useState(false);
+  const launchRazorpay = async () => {
+    if (!props.checkout?.gatewayOrderId || !props.checkout.publishableKey) return;
+    setRzpBusy(true);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        if ((window as unknown as { Razorpay?: new (o: RazorpayCheckoutOptions) => RazorpayCheckoutInstance }).Razorpay) {
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Could not load Razorpay Checkout'));
+        document.body.appendChild(script);
+      });
+      const Rzp = (window as unknown as { Razorpay: new (o: RazorpayCheckoutOptions) => RazorpayCheckoutInstance }).Razorpay;
+      const rzp = new Rzp({
+        key: props.checkout.publishableKey,
+        order_id: props.checkout.gatewayOrderId,
+        amount: props.checkout.amountPaise,
+        currency: props.checkout.currency,
+        name: props.shopName ?? 'Print shop',
+        description: 'Print order payment',
+        prefill: { method: 'upi' },
+        theme: { color: '#3157D5' },
+        handler: async (response) => {
+          try {
+            const r = await fetch('/api/v1/payments/razorpay/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                merchantOrderId: props.checkout?.merchantOrderId ?? null,
+              }),
+            });
+            const json = (await r.json()) as { data?: { paid?: boolean } };
+            if (json.data?.paid) {
+              props.onPaidOnline();
+            } else {
+              props.onPay(); // fall back to the polling step — server re-verifies
+            }
+          } catch {
+            props.onPay();
+          }
+        },
+        modal: { ondismiss: () => setRzpBusy(false) },
+      });
+      rzp.open();
+    } catch {
+      setRzpBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card className="border-brand-border bg-surface">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
             <QrCode className="h-5 w-5 text-brand" /> Step 4 · Pay {props.shopName ?? 'the shopkeeper'}
           </CardTitle>
           <CardDescription>Pay directly to the shopkeeper&apos;s UPI — 0% commission.</CardDescription>
@@ -1603,6 +1685,29 @@ function PayStep(props: {
 
           {/* Payment method cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Option 0: Razorpay Checkout (cards / UPI / netbanking) */}
+            {rzpReady && (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-brand-border bg-brand-soft p-5 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-brand-soft text-brand">
+                  <CreditCard className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Pay online</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Cards · UPI · net-banking · wallets — instant confirmation.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void launchRazorpay()}
+                  disabled={rzpBusy || props.busy}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-3.5 text-sm font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover disabled:opacity-50 min-h-[44px]"
+                  aria-label={`Pay ${amount} online`}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  {rzpBusy ? 'Opening…' : <>Pay <span className="tabular-nums">{amount}</span> online</>}
+                </button>
+              </div>
+            )}
+
             {/* Option 1: Pay by UPI App (GPay / PhonePe / Paytm) */}
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-success-border bg-success-soft p-5 text-center">
               <div className="flex size-10 items-center justify-center rounded-full bg-success-soft text-success">
@@ -1716,7 +1821,7 @@ function TrackStep(props: {
     <div className="space-y-4">
       <Card className="bg-surface">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2 font-display text-lg">
             {done ? <CheckCircle2 className="h-5 w-5 text-success" /> : cancelled ? <XCircle className="h-5 w-5 text-danger" /> : <Loader2 className="h-5 w-5 animate-spin text-brand" />}
             Step 5 · Track your order
           </CardTitle>

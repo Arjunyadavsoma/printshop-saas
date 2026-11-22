@@ -32,6 +32,10 @@ export interface PaymentIntent {
   upiUri?: string;
   /** NPCI-compliant QR payload string (render as QR on desktop). */
   qrPayload?: string;
+  /** Gateway-side order id (e.g. Razorpay `order_xxx`) for Checkout.js. */
+  gatewayOrderId?: string;
+  /** Gateway publishable key (e.g. Razorpay key_id) for Checkout.js. */
+  publishableKey?: string;
   provider: PaymentProvider;
   /** ISO datetime when this intent expires. */
   expiresAt: Date;
@@ -131,6 +135,9 @@ export interface PaymentAdapter {
   verifyPayment(input: {
     merchantOrderId: string;
     shopCredentials: Record<string, unknown>;
+    /** Gateway-side order id (e.g. Razorpay order_…) when the caller has
+     *  already resolved it from the PaymentAttempt — additive, optional. */
+    gatewayOrderId?: string;
   }): Promise<PaymentVerification>;
 
   /**

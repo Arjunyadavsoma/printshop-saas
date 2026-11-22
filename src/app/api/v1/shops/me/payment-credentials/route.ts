@@ -57,12 +57,27 @@ const PaytmSchema = z.object({
   env: z.enum(['sandbox', 'prod']).default('sandbox'),
 });
 
-// Discriminate on 'authVersion' (unique: v2, v1, standard) — NOT 'provider'
-// (which has duplicate 'phonepe' for both v1 + v2).
+const RazorpaySchema = z.object({
+  provider: z.literal('razorpay'),
+  authVersion: z.literal('razorpay'),
+  /** Publishable key id (rzp_test_… / rzp_live_…). */
+  keyId: z.string().min(6).max(120).regex(/^rzp_(test|live)_/, 'Razorpay key ids look like rzp_test_… or rzp_live_…'),
+  /** Secret key — encrypted at rest, never returned by GET. */
+  keySecret: z.string().min(8).max(500),
+  /** Webhook secret (optional until the webhook endpoint is configured). */
+  webhookSecret: z.string().max(200).optional(),
+  /** Contact number shown with the Razorpay account (reconciliation help). */
+  contactPhone: z.string().regex(/^\+?[0-9]{10,14}$/, 'Enter a valid phone number').optional(),
+  env: z.enum(['test', 'live']).default('test'),
+});
+
+// Discriminate on 'authVersion' (unique: v2, v1, standard, razorpay) — NOT
+// 'provider' (which has duplicate 'phonepe' for both v1 + v2).
 const SaveCredentialsSchema = z.discriminatedUnion('authVersion', [
   PhonePeV2Schema,
   PhonePeV1Schema,
   PaytmSchema,
+  RazorpaySchema,
 ]);
 
 const ActivateSchema = z.object({
@@ -111,6 +126,22 @@ function buildStatus(shop: {
     providers.phonepe = { connected: false };
   }
 
+  // Razorpay
+  const razorpay = creds.razorpay as Record<string, unknown> | undefined;
+  if (razorpay) {
+    providers.razorpay = {
+      connected: true,
+      authVersion: 'razorpay',
+      env: razorpay.env ?? 'test',
+      keyId: maskId(razorpay.keyId as string | undefined),
+      webhookConfigured: Boolean(razorpay.webhookSecret),
+      contactPhone: (razorpay.contactPhone as string | undefined) ?? null,
+      // NEVER return keySecret — masked status only.
+    };
+  } else {
+    providers.razorpay = { connected: false };
+  }
+
   // Paytm
   const paytm = creds.paytm as Record<string, unknown> | undefined;
   if (paytm) {
@@ -133,6 +164,7 @@ function buildStatus(shop: {
     webhookUrls: {
       phonepe: '/api/v1/payments/phonepe/webhook',
       paytm: '/api/v1/payments/paytm/callback',
+      razorpay: '/api/v1/payments/razorpay/webhook',
     },
   };
 }
@@ -175,7 +207,7 @@ export const PUT = withRateLimit('pay-creds-save', 10, 60, withAuth(async (req, 
         env: body.env,
       };
     }
-  } else {
+  } else if (body.provider === 'paytm') {
     // paytm
     providerCreds = {
       merchantId: body.merchantId,
@@ -183,6 +215,15 @@ export const PUT = withRateLimit('pay-creds-save', 10, 60, withAuth(async (req, 
       website: body.website,
       industryType: body.industryType,
       channelId: body.channelId,
+      env: body.env,
+    };
+  } else {
+    // razorpay
+    providerCreds = {
+      keyId: body.keyId,
+      keySecret: body.keySecret,
+      ...(body.webhookSecret ? { webhookSecret: body.webhookSecret } : {}),
+      ...(body.contactPhone ? { contactPhone: body.contactPhone } : {}),
       env: body.env,
     };
   }

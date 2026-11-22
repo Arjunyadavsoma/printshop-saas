@@ -75,9 +75,9 @@ import { toast } from 'sonner';
 
 // ─── Types mirroring the API contract ────────────────────────────────
 
-type Provider = 'phonepe' | 'paytm';
-type AuthVersion = 'v1' | 'v2' | 'standard';
-type Env = 'sandbox' | 'prod';
+type Provider = 'phonepe' | 'paytm' | 'razorpay';
+type AuthVersion = 'v1' | 'v2' | 'standard' | 'razorpay';
+type Env = 'sandbox' | 'prod' | 'test' | 'live';
 
 interface ProviderStatus {
   connected: boolean;
@@ -87,6 +87,9 @@ interface ProviderStatus {
   clientId?: string | null;
   saltKey?: string | null;
   website?: string | null;
+  keyId?: string | null;
+  webhookConfigured?: boolean | null;
+  contactPhone?: string | null;
 }
 
 interface PaymentStatus {
@@ -94,6 +97,7 @@ interface PaymentStatus {
   providers: {
     phonepe?: ProviderStatus;
     paytm?: ProviderStatus;
+    razorpay?: ProviderStatus;
   };
   webhookUrls: {
     phonepe: string;
@@ -122,6 +126,22 @@ interface PhonePeV1Form {
   saltIndex: string;
   env: Env;
 }
+interface RazorpayForm {
+  keyId: string;
+  keySecret: string;
+  webhookSecret: string;
+  contactPhone: string;
+  env: 'test' | 'live';
+}
+
+const emptyRazorpay: RazorpayForm = {
+  keyId: '',
+  keySecret: '',
+  webhookSecret: '',
+  contactPhone: '',
+  env: 'test',
+};
+
 interface PaytmForm {
   merchantId: string;
   merchantKey: string;
@@ -168,6 +188,7 @@ export function PaymentProviderSettings() {
   const [v2Form, setV2Form] = useState<PhonePeV2Form>(emptyV2);
   const [v1Form, setV1Form] = useState<PhonePeV1Form>(emptyV1);
   const [paytmForm, setPaytmForm] = useState<PaytmForm>(emptyPaytm);
+  const [razorpayForm, setRazorpayForm] = useState<RazorpayForm>(emptyRazorpay);
 
   // Show/hide secret fields.
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -298,6 +319,23 @@ export function PaymentProviderSettings() {
             env: v1Form.env,
           };
         }
+      } else if (provider === 'razorpay') {
+        if (!razorpayForm.keyId || !razorpayForm.keySecret) {
+          toast.error('Missing fields', {
+            description: 'Key ID and Key Secret are required.',
+          });
+          setSaving(false);
+          return;
+        }
+        body = {
+          provider: 'razorpay',
+          authVersion: 'razorpay',
+          keyId: razorpayForm.keyId.trim(),
+          keySecret: razorpayForm.keySecret,
+          ...(razorpayForm.webhookSecret ? { webhookSecret: razorpayForm.webhookSecret } : {}),
+          ...(razorpayForm.contactPhone ? { contactPhone: razorpayForm.contactPhone.trim() } : {}),
+          env: razorpayForm.env,
+        };
       } else {
         if (!paytmForm.merchantId || !paytmForm.merchantKey || !paytmForm.website) {
           toast.error('Missing fields', {
@@ -506,6 +544,7 @@ export function PaymentProviderSettings() {
 
   const phonepe = status?.providers.phonepe ?? { connected: false };
   const paytm = status?.providers.paytm ?? { connected: false };
+  const razorpay = status?.providers.razorpay ?? { connected: false };
   const activeProvider = status?.activeProvider ?? 'googlepay';
 
   return (
@@ -612,6 +651,51 @@ export function PaymentProviderSettings() {
                 testResult && testResult.provider === 'paytm' ? testResult : null
               }
               hasActive={paytm.connected}
+            />
+          )}
+
+
+          <Separator />
+
+          {/* Provider card: Razorpay */}
+          <ProviderCard
+            provider="razorpay"
+            title="Razorpay"
+            description="Accept cards, UPI, net-banking and wallets via Razorpay Checkout. Easiest KYC — keys from dashboard.razorpay.com land directly in your account."
+            connected={razorpay.connected}
+            isActive={activeProvider === 'razorpay'}
+            authVersion={razorpay.authVersion ?? 'razorpay'}
+            env={razorpay.env}
+            maskedFields={[
+              { label: 'Key ID', value: razorpay.keyId ?? null },
+              { label: 'Contact number', value: razorpay.contactPhone ?? null },
+            ]}
+            expanded={expanded === 'razorpay'}
+            onToggle={() => openProvider('razorpay')}
+            onActivate={() => void activateProvider('razorpay')}
+            onDisconnect={() => setDisconnectingProvider('razorpay')}
+            busy={saving || testing || activating}
+          />
+
+          {/* Razorpay form (expandable) */}
+          {expanded === 'razorpay' && (
+            <RazorpayFormPanel
+              form={razorpayForm}
+              setForm={setRazorpayForm}
+              showSecrets={showSecrets}
+              toggleSecret={toggleSecret}
+              connected={razorpay.connected}
+              onTest={() => void testConnection('razorpay')}
+              onSave={(activate) => void saveCredentials('razorpay', activate)}
+              onActivate={() => void activateProvider('razorpay')}
+              onDisconnect={() => setDisconnectingProvider('razorpay')}
+              saving={saving}
+              testing={testing}
+              activating={activating}
+              testResult={
+                testResult && testResult.provider === 'razorpay' ? testResult : null
+              }
+              hasActive={razorpay.connected}
             />
           )}
         </CardContent>
@@ -723,10 +807,12 @@ export function PaymentProviderSettings() {
 // ─── Sub-components ──────────────────────────────────────────────────
 
 function labelFor(p: Provider): string {
-  return p === 'phonepe' ? 'PhonePe Business' : 'Paytm Business';
+  return p === 'phonepe' ? 'PhonePe Business' : p === 'razorpay' ? 'Razorpay' : 'Paytm Business';
 }
 
 function envLabel(env?: Env): string {
+  if (env === 'live') return 'Live';
+  if (env === 'test') return 'Test';
   if (env === 'prod') return 'Production';
   if (env === 'sandbox') return 'Sandbox';
   return '—';
@@ -1114,6 +1200,112 @@ function PaytmFormPanel(props: PaytmFormPanelProps) {
         />
 
         <PaytmOnboardingGuide />
+      </div>
+    </div>
+  );
+}
+
+function RazorpayFormPanel(props: Omit<PaytmFormPanelProps, 'form' | 'setForm'> & {
+  form: RazorpayForm;
+  setForm: (f: RazorpayForm) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4">
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SecretField
+            id="razorpay-key-id"
+            label="Key ID"
+            placeholder="rzp_test_xxxxxxxxxx"
+            value={props.form.keyId}
+            onChange={(v) => props.setForm({ ...props.form, keyId: v })}
+            show={props.showSecrets['razorpay-key-id'] ?? false}
+            onToggle={() => props.toggleSecret('razorpay-key-id')}
+            required
+          />
+          <SecretField
+            id="razorpay-key-secret"
+            label="Key Secret"
+            placeholder="••••••••••••"
+            value={props.form.keySecret}
+            onChange={(v) => props.setForm({ ...props.form, keySecret: v })}
+            show={props.showSecrets['razorpay-key-secret'] ?? false}
+            onToggle={() => props.toggleSecret('razorpay-key-secret')}
+            required
+          />
+          <div className="space-y-1.5">
+            <Label htmlFor="razorpay-contact-phone" className="text-xs font-medium">
+              Contact number <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="razorpay-contact-phone"
+              inputMode="tel"
+              value={props.form.contactPhone}
+              onChange={(e) => props.setForm({ ...props.form, contactPhone: e.target.value })}
+              placeholder="+91 98765 43210"
+              className="h-11 sm:h-9"
+            />
+            <p className="text-xs text-muted-foreground">
+              The shopkeeper number Razorpay payments reconcile against.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="razorpay-webhook-secret" className="text-xs font-medium">
+              Webhook secret <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <SecretField
+              id="razorpay-webhook-secret-input"
+              label=""
+              placeholder="••••••••••••"
+              value={props.form.webhookSecret}
+              onChange={(v) => props.setForm({ ...props.form, webhookSecret: v })}
+              show={props.showSecrets['razorpay-webhook-secret-input'] ?? false}
+              onToggle={() => props.toggleSecret('razorpay-webhook-secret-input')}
+            />
+            <p className="text-xs text-muted-foreground">
+              Set the same secret in the Razorpay dashboard against{' '}
+              <code className="text-[10px]">/api/v1/payments/razorpay/webhook</code>.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="razorpay-env" className="text-xs font-medium">
+              Environment
+            </Label>
+            <select
+              id="razorpay-env"
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9"
+              value={props.form.env}
+              onChange={(e) => props.setForm({ ...props.form, env: e.target.value as 'test' | 'live' })}
+            >
+              <option value="test">Test keys (rzp_test_…)</option>
+              <option value="live">Live keys (rzp_live_…)</option>
+            </select>
+          </div>
+        </div>
+
+        {props.testResult && (
+          <TestResultBanner ok={props.testResult.ok} latencyMs={props.testResult.latencyMs} error={props.testResult.error} />
+        )}
+
+        <FormActions
+          connected={props.connected}
+          saving={props.saving}
+          testing={props.testing}
+          activating={props.activating}
+          onTest={props.onTest}
+          onSave={() => props.onSave(false)}
+          onSaveAndActivate={() => props.onSave(true)}
+        />
+
+        <div className="rounded-md bg-brand-soft/60 p-3 text-xs leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground">How to get the keys</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+            <li>Sign up / log in at <code>dashboard.razorpay.com</code> (KYC goes to your bank — zero commission for us).</li>
+            <li>Settings → API Keys → Generate test (then live) keys.</li>
+            <li>Paste the Key ID + Key Secret here. Enter your contact number for reconciliation.</li>
+            <li>Optional: add the webhook URL above in Settings → Webhooks with the same secret for automatic confirmation.</li>
+          </ol>
+        </div>
       </div>
     </div>
   );
