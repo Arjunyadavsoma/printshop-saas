@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import { Space_Grotesk, Plus_Jakarta_Sans, Geist_Mono, Anek_Latin, Anek_Devanagari, Anek_Telugu } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -22,6 +22,31 @@ const bodyFont = Plus_Jakarta_Sans({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// ── Customer redesign fonts: Anek by Ek Type ──────────────────────────
+// One family covering Latin, Devanagari (Hindi), and Telugu — designed
+// for Indian multilingual use. Subsetted per script via next/font.
+// Used by the customer flow (scoped via --font-customer in globals.css).
+const anekLatin = Anek_Latin({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-anek-latin",
+  display: "swap",
+});
+
+const anekDevanagari = Anek_Devanagari({
+  subsets: ["devanagari"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-anek-devanagari",
+  display: "swap",
+});
+
+const anekTelugu = Anek_Telugu({
+  subsets: ["telugu"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-anek-telugu",
+  display: "swap",
 });
 
 /**
@@ -135,7 +160,7 @@ export default function RootLayout({
         // hydration errors are not code defects). See:
         // https://nextjs.org/docs/messages/react-hydration-error
         suppressHydrationWarning
-        className={`${displayFont.variable} ${bodyFont.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${displayFont.variable} ${bodyFont.variable} ${geistMono.variable} ${anekLatin.variable} ${anekDevanagari.variable} ${anekTelugu.variable} antialiased bg-background text-foreground`}
       >
         <AuthProvider>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>{children}</ThemeProvider>

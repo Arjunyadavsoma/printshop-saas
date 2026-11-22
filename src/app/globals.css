@@ -78,6 +78,151 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ════════════════════════════════════════════════════════════════
+     CUSTOMER REDESIGN TOKENS (Phase 2)
+     Grounded in CMYK process inks — the four plates a printing press
+     uses. B&W = K channel (black ink). Colour = full CMYK process.
+     See docs/redesign/DESIGN-PLAN.md for the full system.
+     These coexist with the existing portal tokens above — customer
+     routes use these via the .customer-flow scope + component classes.
+     ════════════════════════════════════════════════════════════════ */
+
+  /* Core palette — CMYK process colours */
+  --color-paper: #F7F8FA;        /* App background — recycled printer paper */
+  --color-surface: #FFFFFF;       /* Cards, sheets — fresh A4 */
+  --color-ink: #0F1B2D;           /* Primary text, borders — printer toner */
+  --color-muted: #5B6675;         /* Secondary text — pencil-mark grey */
+  --color-cyan-ink: #006FA6;      /* Primary action — the C in CMYK */
+  --color-magenta-ink: #C2185B;   /* Colour-page indicator — the M in CMYK */
+  --color-yellow-ink: #FFD60A;    /* Decorative only — the Y in CMYK */
+
+  /* Semantic colours */
+  --color-success: #0B7A4B;       /* Paid, Ready, Collected */
+  --color-warning: #F59E0B;       /* Slow, needs attention (always dark text) */
+  --color-error: #B3261E;         /* Failed, Rejected, Cancelled */
+
+  /* Derived borders (Ink at low opacity) */
+  --color-border-ink: #0F1B2D1A;  /* 10% Ink — default card/input border */
+  --color-border-ink-strong: #0F1B2D33; /* 20% Ink — focused/active border */
+
+  /* Radius scale — three values for different roles */
+  --radius-tight: 4px;   /* Chips, page tiles — cut paper corner */
+  --radius-default: 8px; /* Cards, inputs, buttons — rounded paper corner */
+  --radius-soft: 16px;   /* Bottom sheets, sticky bars — curled paper edge */
+
+  /* Elevation — borders encode structure, shadows only for floating elements */
+  --shadow-sheet: 0 -4px 16px rgb(15 27 45 / 0.12);
+  --shadow-bar: 0 1px 2px rgb(15 27 45 / 0.06);
+  --shadow-slip: 0 8px 32px rgb(15 27 45 / 0.16);
+
+  /* Customer flow font — Anek (Ek Type, Indian multilingual family) */
+  --font-customer: var(--font-anek-latin), var(--font-anek-devanagari), var(--font-anek-telugu), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CUSTOMER FLOW STYLES
+   Scoped to .customer-flow so they don't affect the shopkeeper/admin
+   portal. Applied as a wrapper class on customer route layouts.
+   ════════════════════════════════════════════════════════════════ */
+
+.customer-flow {
+  font-family: var(--font-customer);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  min-height: 100dvh;
+}
+
+/* Indic scripts need more line-height for matras */
+.customer-flow :lang(hi),
+.customer-flow :lang(te) {
+  line-height: 1.6;
+}
+
+/* Tabular numerals for prices, page counts, UTR */
+.customer-flow .tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Halftone textures (the signature visual element) ── */
+/* B&W page thumbnail — black halftone dots on white */
+.halftone-bw {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(circle, rgb(15 27 45 / 0.2) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+}
+
+/* Colour page thumbnail — magenta fill with cyan rosette overlay */
+.halftone-colour {
+  background-color: var(--color-magenta-ink);
+  background-image:
+    radial-gradient(circle, rgb(0 111 166 / 0.33) 1px, transparent 1.5px),
+    radial-gradient(circle, rgb(255 214 10 / 0.2) 1px, transparent 1.5px);
+  background-size: 6px 6px, 8px 8px;
+  background-position: 0 0, 3px 3px;
+}
+
+/* Skipped page — greyed out with dashed border */
+.halftone-skip {
+  background-color: rgb(91 102 117 / 0.1);
+  border: 1px dashed rgb(91 102 117 / 0.4);
+}
+
+/* ── Perforated edge (token slip) ── */
+.perforated-top {
+  border-top: 2px dashed rgb(15 27 45 / 0.2);
+  position: relative;
+}
+.perforated-top::before,
+.perforated-top::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--color-paper);
+}
+.perforated-top::before { left: -8px; }
+.perforated-top::after { right: -8px; }
+
+.perforated-bottom {
+  border-bottom: 2px dashed rgb(15 27 45 / 0.2);
+}
+
+/* ── Touch target minimum (WCAG 2.5.5) ── */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* ── Safe area insets ── */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-bottom-bar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+/* ── Focus ring (visible keyboard focus) ── */
+.customer-flow *:focus-visible {
+  outline: 2px solid var(--color-cyan-ink);
+  outline-offset: 2px;
+}
+
+/* ── Page flip animation (reduced-motion respected) ── */
+@keyframes page-flip {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+.page-flip {
+  animation: page-flip 200ms ease-out;
+  transform-style: preserve-3d;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-flip {
+    animation: none;
+    transition: opacity 100ms ease-out;
+  }
 }
 
 :root {
