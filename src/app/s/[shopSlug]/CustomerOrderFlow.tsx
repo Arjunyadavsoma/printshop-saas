@@ -194,7 +194,7 @@ export default function CustomerOrderFlow({ shopSlug, paymentMode }: { shopSlug:
       }
     }, 400);
     return () => { if (quoteTimer.current) clearTimeout(quoteTimer.current); };
-  }, [readyFiles.map(f => `${f.fileId}:${f.copies}:${f.sides}:${f.pagesPerSheet}:${f.paperSize}:${[...f.pageModes.entries()].sort((a, b) => a[0] - b[0]).map(([p, m]) => `${p}${m}`).join(',')}`).join('|'), urgent, shopSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [readyFiles.map(f => `${f.fileId}:${f.copies}:${f.sides}:${f.pagesPerSheet}:${f.paperSize}:${[...f.pageModes.entries()].sort((a, b) => a[0] - b[0]).map(([p, m]) => `${p}${m}`).join(',')}`).join('|'), urgent, shopSlug]);
 
   // ── actions ─────────────────────────────────────────────────────────────
   const toggleMode = (fileId: string, page: number) => {
@@ -210,7 +210,12 @@ export default function CustomerOrderFlow({ shopSlug, paymentMode }: { shopSlug:
       ...f, pageModes: new Map(Array.from({ length: f.pageCount ?? 0 }, (_, i) => [i + 1, mode] as const)),
     }));
   };
-  const useSuggestion = (fileId: string) => {
+  // NOTE: this function was originally named `useSuggestion` — renamed to
+  // `applySuggestion` because the `use` prefix falsely triggers the
+  // `react-hooks/rules-of-hooks` lint rule (which assumes any function
+  // starting with `use` is a Hook). This is NOT a Hook — it's a plain
+  // event handler that calls the `setFiles` state setter.
+  const applySuggestion = (fileId: string) => {
     setFiles(fs => fs.map(f => {
       if (f.fileId !== fileId || !f.suggestion) return f;
       return { ...f, pageModes: new Map(f.suggestion.map(s => [s.page, s.isColor ? 'color' : 'bw' as PageMode])) };
@@ -427,7 +432,7 @@ export default function CustomerOrderFlow({ shopSlug, paymentMode }: { shopSlug:
             <button onClick={() => setAllModes(active.fileId, 'bw')} className="min-h-9 rounded-md border border-ink/25 bg-white px-2.5 text-xs font-medium">All B&W</button>
             <button onClick={() => setAllModes(active.fileId, 'color')} className="min-h-9 rounded-md border border-ink/25 bg-white px-2.5 text-xs font-medium">All color</button>
             {active.suggestion && (
-              <button onClick={() => useSuggestion(active.fileId)} className="min-h-9 rounded-md border border-ink/25 bg-white px-2.5 text-xs font-medium">Use suggestion</button>
+              <button onClick={() => applySuggestion(active.fileId)} className="min-h-9 rounded-md border border-ink/25 bg-white px-2.5 text-xs font-medium">Use suggestion</button>
             )}
           </div>
           <div className="mt-2 flex items-center gap-1.5">
