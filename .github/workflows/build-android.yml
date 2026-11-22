@@ -61,6 +61,38 @@ jobs:
           PRINTSHOP_WEB_URL: ${{ vars.PRINTSHOP_WEB_URL || 'https://printshop-saas.vercel.app' }}
         run: npm run sync
 
+      - name: Generate signing keystore (if not provided as a secret)
+        # The keystore is gitignored (signing keys shouldn't be committed).
+        # If the PRINTSHOP_KEYSTORE_BASE64 secret is set, decode it (that's
+        # the production signing key — stable across builds, enables APK
+        # upgrades). Otherwise, generate a fresh one for this build (each
+        # build gets a different key — APKs can't upgrade each other, but
+        # they're installable as fresh installs for sideloading).
+        working-directory: android-app
+        env:
+          PRINTSHOP_KEYSTORE_BASE64: ${{ secrets.PRINTSHOP_KEYSTORE_BASE64 }}
+          PRINTSHOP_KEYSTORE_PASSWORD: ${{ secrets.PRINTSHOP_KEYSTORE_PASSWORD || 'printshop-companion-2026' }}
+          PRINTSHOP_KEY_PASSWORD: ${{ secrets.PRINTSHOP_KEY_PASSWORD || 'printshop-companion-2026' }}
+        run: |
+          mkdir -p scripts/keystore
+          if [ -n "$PRINTSHOP_KEYSTORE_BASE64" ]; then
+            echo "Decoding keystore from PRINTSHOP_KEYSTORE_BASE64 secret..."
+            echo "$PRINTSHOP_KEYSTORE_BASE64" | base64 --decode > scripts/keystore/printshop-release.keystore
+          else
+            echo "Generating a fresh keystore (no PRINTSHOP_KEYSTORE_BASE64 secret set)..."
+            keytool -genkeypair \
+              -alias printshop-release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -keystore scripts/keystore/printshop-release.keystore \
+              -storepass "$PRINTSHOP_KEYSTORE_PASSWORD" \
+              -keypass "$PRINTSHOP_KEY_PASSWORD" \
+              -dname "CN=PrintShop Companion, O=PrintShop SaaS, C=IN" \
+              -storetype PKCS12
+          fi
+          echo "Keystore ready: $(ls -la scripts/keystore/printshop-release.keystore)"
+
       - name: Build + sign release APK
         working-directory: android-app/android
         env:
