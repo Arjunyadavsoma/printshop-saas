@@ -1,11 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Clock, FileText } from 'lucide-react';
+import { ChevronRight, Clock, FileText, RotateCcw } from 'lucide-react';
 import { Stepper } from '@/components/customer/stepper';
 import { UploadDropzone } from '@/components/customer/upload-dropzone';
 import { FileCard, type FileCardStatus } from '@/components/customer/file-card';
 import { PageStrip, type PageStripPage } from '@/components/customer/page-strip';
+import { ColorSuggestionPrompt } from '@/lib/customer/color-suggestion';
+import { track, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
+import {
+  saveLastChoices,
+  loadLastChoices,
+} from '@/lib/customer/last-choices';
+import { useDraftRecovery } from '@/lib/hooks/use-draft-recovery';
+import type { DraftData } from '@/lib/customer/draft-storage';
 import { Chip, ChipGroup } from '@/components/customer/chip';
 import { NumberStepper } from '@/components/customer/number-stepper';
 import { SegmentedControl } from '@/components/customer/segmented-control';
@@ -113,6 +121,22 @@ const QUOTE_DEBOUNCE_MS = 400;
 const FILE_POLL_MS = 1200;
 const PLACED_SESSION_KEY = 'printshop:placed-order';
 const DRAFT_LOCAL_KEY = 'printshop:customer-draft';
+
+/**
+ * Bucket the order total (in paise) into a coarse range string for analytics.
+ * The customer's exact amount is personal-ish data; the bucket preserves
+ * the funnel-shape insight without leaking it. See analytics.ts privacy notes.
+ */
+function amountPaiseRange(paise: number | null | undefined): string {
+  if (paise == null) return 'unknown';
+  const rupees = paise / 100;
+  if (rupees < 10) return '0-10';
+  if (rupees < 50) return '10-50';
+  if (rupees < 100) return '50-100';
+  if (rupees < 500) return '100-500';
+  if (rupees < 1000) return '500-1000';
+  return '1000+';
+}
 
 const STEPS = ['Files', 'Options', 'Pay'];
 
@@ -248,12 +272,83 @@ export function CustomerOrderFlowV2({
   const [error, setError] = useState<string | null>(null);
   const [pricesChanged, setPricesChanged] = useState<number | null>(null);
   const [rateCard, setRateCard] = useState<{ bwPerPagePaise: number; colorPerPagePaise: number } | null>(null);
+  /** fileIds whose color-suggestion prompt the customer has dismissed. */
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(() => new Set());
+  /** Whether we've already applied the saved last-choices preset to a new file. */
+  const lastChoicesAppliedRef = useRef(false);
 
   const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const payTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const restoredRef = useRef(false);
+  /** Tracks the last quote total we fired `quote_viewed` for, so we only fire once per fresh price. */
+  const lastQuoteViewedRef = useRef<number | null>(null);
 
   const active = files[activeIdx];
+
+  /* ── IndexedDB draft recovery ──────────────────────────────────────── */
+
+  // Build a DraftData snapshot from the current state. Recomputed whenever
+  // any of the inputs changes — the use-draft-recovery hook debounces the
+  // actual IndexedDB write by 500ms so rapid edits don't thrash the DB.
+  const draftData = useMemo<DraftData | null>(() => {
+    if (!draft) return null;
+    const activeFile = files[activeIdx] ?? files[0];
+    return {
+      shopSlug,
+      orderId: draft.orderId,
+      orderToken: draft.orderToken,
+      files: files.map((f) => ({
+        fileId: f.fileId,
+        filename: f.name,
+        pageCount: f.pageCount ?? 0,
+        status: f.status,
+      })),
+      pageModes: Object.fromEntries(
+        files.map((f) => [
+          f.fileId,
+          Array.from(f.pageModes.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([page, mode]) => ({ page, mode })),
+        ]),
+      ),
+      options: activeFile
+        ? {
+            preset: activeFile.preset ?? undefined,
+            copies: activeFile.copies,
+            paperSize: activeFile.paperSize,
+            sides: activeFile.sides,
+            pagesPerSheet: activeFile.pagesPerSheet,
+          }
+        : { copies: 1, paperSize: 'A4', sides: 'SINGLE', pagesPerSheet: 1 },
+      customer: { name: customerName, phone: customerPhone, note },
+      updatedAt: Date.now(),
+    };
+  }, [draft, files, activeIdx, customerName, customerPhone, note, shopSlug]);
+
+  const draftRecovery = useDraftRecovery(shopSlug, draftData);
+
+  /* ── Analytics: shop_landed (fires once on mount) ──────────────────── */
+
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.shopLanded, { shop_slug: shopSlug });
+    // We intentionally do NOT also fire `reorder_clicked` here — that event
+    // is reserved for the "Print again" tap on /orders and the tracking
+    // page. A plain landing is `shop_landed`.
+  }, [shopSlug]);
+
+  /* ── Analytics: quote_viewed (fires once when a fresh price appears) ── */
+
+  useEffect(() => {
+    const total = quote?.totalPaise ?? null;
+    if (total == null) return;
+    if (lastQuoteViewedRef.current === total) return;
+    lastQuoteViewedRef.current = total;
+    track(ANALYTICS_EVENTS.quoteViewed, {
+      shop_slug: shopSlug,
+      amount_paise_range: amountPaiseRange(total),
+    });
+  }, [quote, shopSlug]);
+
 
   /* ── Draft persistence (localStorage) ──────────────────────────────── */
 
@@ -472,6 +567,17 @@ export function CustomerOrderFlowV2({
     async (picked: File[]) => {
       if (picked.length === 0) return;
       setError(null);
+      // Analytics: upload_started — file_count + total size bucket (no file names).
+      const totalBytes = picked.reduce((s, f) => s + f.size, 0);
+      const sizeBucket =
+        totalBytes < 512 * 1024 ? '<512KB' :
+        totalBytes < 2 * 1024 * 1024 ? '512KB-2MB' :
+        totalBytes < 10 * 1024 * 1024 ? '2MB-10MB' : '10MB+';
+      track(ANALYTICS_EVENTS.uploadStarted, {
+        shop_slug: shopSlug,
+        file_count: picked.length,
+        size_bucket: sizeBucket,
+      });
       try {
         let current = draft;
         if (!current) {
@@ -496,6 +602,18 @@ export function CustomerOrderFlowV2({
           for (const f of picked) await uploadOne(f, current.orderId, current.orderToken);
         }
       } catch (e) {
+        // Analytics: upload_failed — bucket the reason (no raw error text —
+        // it may include a filename or path from the server).
+        const reason =
+          e instanceof Error && /network|fetch|failed to fetch/i.test(e.message) ? 'network' :
+          e instanceof Error && /size|too large|quota/i.test(e.message) ? 'size' :
+          e instanceof Error && /mime|type|unsupported/i.test(e.message) ? 'mime' :
+          'server';
+        track(ANALYTICS_EVENTS.uploadFailed, {
+          shop_slug: shopSlug,
+          reason,
+          file_count: picked.length,
+        });
         setError(e instanceof Error ? e.message : 'Upload failed');
       }
     },
@@ -522,6 +640,18 @@ export function CustomerOrderFlowV2({
             };
           };
           if (!d.data) continue;
+          // Analytics: file_ready — fires once per file when the pipeline
+          // completes. `f.status` was 'converting' (we only polled those),
+          // so a 'ready' response is a transition.
+          if (d.data.status === 'ready') {
+            const colorPages = d.data.colorSuggestion?.filter((s) => s.isColor).length ?? 0;
+            track(ANALYTICS_EVENTS.fileReady, {
+              shop_slug: shopSlug,
+              page_count: d.data.pageCount ?? 0,
+              has_color_suggestion: colorPages > 0,
+              color_page_count: colorPages,
+            });
+          }
           setFiles((fs) =>
             fs.map((x) => {
               if (x.fileId !== f.fileId) return x;
@@ -636,35 +766,58 @@ export function CustomerOrderFlowV2({
         const current = m.get(page) ?? 'bw';
         const next: PageMode = current === 'bw' ? 'colour' : current === 'colour' ? 'skip' : 'bw';
         m.set(page, next);
+        // Analytics: colour_pages_changed — fire after the state update with
+        // the new count so the funnel reflects the customer's actual choice.
+        const newColourCount = [...m.values()].filter((v) => v === 'colour').length;
+        track(ANALYTICS_EVENTS.colourPagesChanged, {
+          shop_slug: shopSlug,
+          colour_page_count: newColourCount,
+          source: 'toggle',
+        });
         return { ...f, pageModes: m };
       }),
     );
-  }, []);
+  }, [shopSlug]);
 
   const setAllModes = useCallback((fileId: string, mode: PageMode) => {
     setFiles((fs) =>
       fs.map((f) => {
         if (f.fileId !== fileId) return f;
         const pageCount = f.pageCount ?? 0;
-        return {
-          ...f,
-          pageModes: new Map(Array.from({ length: pageCount }, (_, i) => [i + 1, mode] as const)),
-        };
+        const newModes = new Map(Array.from({ length: pageCount }, (_, i) => [i + 1, mode] as const));
+        if (mode === 'colour') {
+          track(ANALYTICS_EVENTS.colourPagesChanged, {
+            shop_slug: shopSlug,
+            colour_page_count: pageCount,
+            source: 'bulk',
+          });
+        } else if (mode === 'bw') {
+          track(ANALYTICS_EVENTS.colourPagesChanged, {
+            shop_slug: shopSlug,
+            colour_page_count: 0,
+            source: 'bulk',
+          });
+        }
+        return { ...f, pageModes: newModes };
       }),
     );
-  }, []);
+  }, [shopSlug]);
 
   const applySuggestion = useCallback((fileId: string) => {
     setFiles((fs) =>
       fs.map((f) => {
         if (f.fileId !== fileId || !f.suggestion) return f;
-        return {
-          ...f,
-          pageModes: new Map(f.suggestion.map((s) => [s.page, (s.isColor ? 'colour' : 'bw') as PageMode])),
-        };
+        const newModes = new Map(f.suggestion.map((s) => [s.page, (s.isColor ? 'colour' : 'bw') as PageMode]));
+        const newColourCount = f.suggestion.filter((s) => s.isColor).length;
+        track(ANALYTICS_EVENTS.colourPagesChanged, {
+          shop_slug: shopSlug,
+          colour_page_count: newColourCount,
+          source: 'suggestion_accepted',
+        });
+        return { ...f, pageModes: newModes };
       }),
     );
-  }, []);
+  }, [shopSlug]);
 
   const pickPreset = useCallback(
     (fileId: string, preset: PresetId) => {
@@ -676,9 +829,58 @@ export function CustomerOrderFlowV2({
           return { ...f, pageModes, sides, copies, preset };
         }),
       );
+      // Analytics: preset_chosen — which preset the customer picked.
+      track(ANALYTICS_EVENTS.presetChosen, {
+        shop_slug: shopSlug,
+        preset_name: preset,
+      });
+      // Analytics: page_picker_opened — only when Mix is chosen (the page
+      // strip renders, opening the manual page picker).
+      if (preset === 'mix') {
+        track(ANALYTICS_EVENTS.pagePickerOpened, { shop_slug: shopSlug });
+      }
+      // Remember last choices — only for non-Mix presets (Mix is file-specific).
+      // The active file's options are captured so the next visit can restore them.
+      const file = files.find((f) => f.fileId === fileId);
+      if (file && preset !== 'mix') {
+        saveLastChoices(shopSlug, {
+          preset,
+          copies: file.copies,
+          paperSize: file.paperSize,
+          sides: file.sides,
+          pagesPerSheet: file.pagesPerSheet,
+        });
+      }
     },
-    [],
+    [shopSlug, files],
   );
+
+  /* ── Smart defaults: pre-select the customer's last preset ─────────── */
+
+  // When the first file becomes READY and we haven't yet applied the saved
+  // last-choices preset, apply it now. This gives returning customers their
+  // usual preset without re-clicking. "Mix" is normalised to "Notes BW" by
+  // loadLastChoices — so this never auto-opens the page strip.
+  useEffect(() => {
+    if (lastChoicesAppliedRef.current) return;
+    const firstReady = files.find((f) => f.status === 'ready' && (f.pageCount ?? 0) > 0);
+    if (!firstReady) return;
+    if (firstReady.preset !== null) return; // the customer (or restored draft) already chose
+    const last = loadLastChoices(shopSlug);
+    if (!last) {
+      lastChoicesAppliedRef.current = true;
+      return;
+    }
+    lastChoicesAppliedRef.current = true;
+    pickPreset(firstReady.fileId, last.preset as PresetId);
+    // Apply the saved copies + paperSize + sides + pagesPerSheet too.
+    patchFile(firstReady.fileId, {
+      copies: last.copies,
+      paperSize: last.paperSize,
+      sides: last.sides as 'SINGLE' | 'DOUBLE',
+      pagesPerSheet: last.pagesPerSheet as 1 | 2 | 4 | 6 | 9,
+    });
+  }, [files, shopSlug, pickPreset, patchFile]);
 
   /* ── Place the order ───────────────────────────────────────────────── */
 
@@ -686,6 +888,12 @@ export function CustomerOrderFlowV2({
     if (!draft || placing) return;
     setPlacing(true);
     setError(null);
+    // Analytics: checkout_started — the customer tapped "Pay" / "Place order".
+    track(ANALYTICS_EVENTS.checkoutStarted, {
+      shop_slug: shopSlug,
+      file_count: readyFiles.length,
+      amount_paise_range: amountPaiseRange(quote?.totalPaise ?? null),
+    });
     try {
       // Sync specs to the server for every ready file (placeOrder requires
       // a PrintSpec row to exist for each file).
@@ -781,24 +989,49 @@ export function CustomerOrderFlowV2({
       } catch {
         // localStorage may be unavailable — the order still works without it.
       }
-      // The draft is now consumed — clear it so a future visit starts fresh.
+      // Remember the active file's options as the customer's last choices so
+      // the next visit gets smart defaults. Only for non-Mix presets.
+      const activeFile = files[activeIdx] ?? files[0];
+      if (activeFile && activeFile.preset && activeFile.preset !== 'mix') {
+        saveLastChoices(shopSlug, {
+          preset: activeFile.preset,
+          copies: activeFile.copies,
+          paperSize: activeFile.paperSize,
+          sides: activeFile.sides,
+          pagesPerSheet: activeFile.pagesPerSheet,
+        });
+      }
+      // The draft is now consumed — clear both localStorage AND IndexedDB
+      // so a future visit starts fresh.
       try {
         localStorage.removeItem(DRAFT_LOCAL_KEY);
       } catch {
         // ignore
       }
+      void draftRecovery.clearDraft();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not place the order');
     } finally {
       setPlacing(false);
     }
-  }, [draft, placing, readyFiles, shopSlug, shopName, customerName, customerPhone, note, quote]);
+  }, [draft, placing, readyFiles, shopSlug, shopName, customerName, customerPhone, note, quote, files, activeIdx, draftRecovery]);
 
   /* ── Payment: UTR submission + counter ─────────────────────────────── */
 
   const submitUtr = useCallback(async () => {
     if (!placed) return;
     setError(null);
+    // Analytics: paid_clicked + utr_submitted — the customer tapped "I've paid"
+    // (the submit button) and a 12-digit UTR is being submitted.
+    track(ANALYTICS_EVENTS.paidClicked, {
+      shop_slug: shopSlug,
+      method: 'upi',
+    });
+    track(ANALYTICS_EVENTS.utrSubmitted, {
+      shop_slug: shopSlug,
+      // No UTR value — just the fact of submission + length bucket.
+      utr_length_bucket: '12',
+    });
     try {
       const res = await fetch(`/api/v1/o/${placed.token}/payment`, {
         method: 'POST',
@@ -815,11 +1048,16 @@ export function CustomerOrderFlowV2({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not submit the payment');
     }
-  }, [placed, utr]);
+  }, [placed, utr, shopSlug]);
 
   const counterPayment = useCallback(async () => {
     if (!placed) return;
     setError(null);
+    // Analytics: paid_clicked — counter-cash variant.
+    track(ANALYTICS_EVENTS.paidClicked, {
+      shop_slug: shopSlug,
+      method: 'counter_cash',
+    });
     try {
       const res = await fetch(`/api/v1/o/${placed.token}/payment`, {
         method: 'POST',
@@ -835,7 +1073,7 @@ export function CustomerOrderFlowV2({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch to counter payment');
     }
-  }, [placed]);
+  }, [placed, shopSlug]);
 
   /* ── Elapsed timer for the "Waiting for shop" screen ───────────────── */
 
@@ -903,6 +1141,30 @@ export function CustomerOrderFlowV2({
         </div>
       )}
 
+      {/* ── Restore offer (from IndexedDB draft recovery) ── */}
+      {draftRecovery.restoreOffer && files.length === 0 && !placed && (
+        <DraftRestoreCard
+          savedAt={draftRecovery.restoreOffer.updatedAt}
+          fileCount={draftRecovery.restoreOffer.files.length}
+          onAccept={() => {
+            // The existing localStorage draft restoration handles the actual
+            // restore (it loads files + draft + customer details). The
+            // IndexedDB offer is just the prompt. Decline = dismiss.
+            // If IndexedDB has a draft but localStorage doesn't (e.g. cleared),
+            // we accept by re-using the orderToken from the IndexedDB draft.
+            const offer = draftRecovery.restoreOffer;
+            if (offer?.orderId && offer?.orderToken) {
+              setDraft({ orderId: offer.orderId, orderToken: offer.orderToken });
+              setCustomerName(offer.customer.name ?? '');
+              setCustomerPhone(offer.customer.phone ?? '');
+              setNote(offer.customer.note ?? '');
+            }
+            draftRecovery.dismissRestore();
+          }}
+          onDecline={() => draftRecovery.dismissRestore()}
+        />
+      )}
+
       {/* ── Step 1: Files ── */}
       {step === 0 && (
         <div className="flex flex-col gap-4">
@@ -932,6 +1194,37 @@ export function CustomerOrderFlowV2({
 
           {active?.status === 'ready' && (active.pageCount ?? 0) > 0 && (
             <>
+              {/* Color-suggestion prompt — shown ABOVE the preset cards when
+                  the server detected colour pages AND the customer hasn't
+                  dismissed it for this file. Accepting applies the suggestion
+                  (colour pages → 'colour', rest → 'bw'); Customize opens the
+                  Mix page strip for manual selection. */}
+              {active.suggestion &&
+                active.suggestion.some((s) => s.isColor) &&
+                !dismissedSuggestions.has(active.fileId) &&
+                active.preset !== 'mix' && (
+                  <ColorSuggestionPrompt
+                    suggestion={active.suggestion}
+                    filename={active.name}
+                    onAccept={() => {
+                      applySuggestion(active.fileId);
+                      // Apply the suggestion without opening the Mix page strip.
+                      // Track the accept path separately from the page-strip accept.
+                      track(ANALYTICS_EVENTS.colourPagesChanged, {
+                        shop_slug: shopSlug,
+                        colour_page_count: active.suggestion?.filter((s) => s.isColor).length ?? 0,
+                        source: 'suggestion_prompt_accepted',
+                      });
+                      setDismissedSuggestions((prev) => new Set(prev).add(active.fileId));
+                    }}
+                    onCustomize={() => {
+                      // Dismiss the prompt + open the Mix page strip.
+                      setDismissedSuggestions((prev) => new Set(prev).add(active.fileId));
+                      pickPreset(active.fileId, 'mix');
+                    }}
+                  />
+                )}
+
               <p className="text-sm font-medium text-[var(--color-ink)]">Choose a preset:</p>
               <div className="grid grid-cols-2 gap-3">
                 {PRESETS.map((preset) => {
@@ -955,12 +1248,38 @@ export function CustomerOrderFlowV2({
               {/* "More options" — one row, opens a BottomSheet. */}
               <button
                 type="button"
-                onClick={() => setMoreOptionsOpen(true)}
+                onClick={() => {
+                  setMoreOptionsOpen(true);
+                  track(ANALYTICS_EVENTS.moreOptionsOpened, { shop_slug: shopSlug });
+                }}
                 className="touch-target flex items-center justify-between w-full min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] text-sm font-medium text-[var(--color-ink)] hover:bg-[var(--color-paper)] active:bg-[var(--color-paper)] transition-colors"
               >
                 <span>More options</span>
                 <ChevronRight className="size-4 text-[var(--color-muted)]" aria-hidden="true" />
               </button>
+
+              {/* Color-suggestion prompt (in-Mix variant) — shown ABOVE the
+                  page strip when Mix is selected and the customer hasn't
+                  dismissed the suggestion for this file. This is the same
+                  prompt as above, but rendered in the Mix context so the
+                  Customize action collapses to just dismissing (the page
+                  strip is already open). */}
+              {active.preset === 'mix' &&
+                active.suggestion &&
+                active.suggestion.some((s) => s.isColor) &&
+                !dismissedSuggestions.has(active.fileId) && (
+                  <ColorSuggestionPrompt
+                    suggestion={active.suggestion}
+                    filename={active.name}
+                    onAccept={() => {
+                      applySuggestion(active.fileId);
+                      setDismissedSuggestions((prev) => new Set(prev).add(active.fileId));
+                    }}
+                    onCustomize={() => {
+                      setDismissedSuggestions((prev) => new Set(prev).add(active.fileId));
+                    }}
+                  />
+                )}
 
               {/* Page strip — only when "Mix" is selected. */}
               {active.preset === 'mix' && (
@@ -1200,6 +1519,72 @@ function ActiveFileSummary({
   );
 }
 
+/**
+ * DraftRestoreCard — the "Restore your previous order?" prompt shown when
+ * useDraftRecovery surfaces a draft < 2h old from IndexedDB. Accept
+ * re-uses the orderToken + customer details; Decline dismisses the prompt
+ * (the draft remains in IndexedDB and will be overwritten on the next
+ * save).
+ *
+ * The card is intentionally compact: one heading line, one sub-line with
+ * the file count + relative save time, two buttons. The customer should
+ * be able to decide in under a second.
+ */
+function DraftRestoreCard({
+  savedAt,
+  fileCount,
+  onAccept,
+  onDecline,
+}: {
+  savedAt: number;
+  fileCount: number;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  // Relative-time label: "saved 3 min ago" / "saved just now".
+  const elapsedMs = Date.now() - savedAt;
+  const mins = Math.floor(elapsedMs / 60_000);
+  const rel =
+    mins < 1 ? 'just now' :
+    mins < 60 ? `${mins} min ago` :
+    `${Math.floor(mins / 60)} hr ago`;
+  return (
+    <section
+      className="rounded-[var(--radius-default)] border border-[var(--color-cyan-ink)]/40 bg-[var(--color-cyan-ink)]/5 p-4"
+      aria-labelledby="draft-restore-heading"
+      role="note"
+    >
+      <div className="flex items-start gap-3">
+        <RotateCcw className="size-5 shrink-0 mt-0.5 text-[var(--color-cyan-ink)]" aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <p id="draft-restore-heading" className="text-sm font-medium text-[var(--color-ink)]">
+            Resume your previous order?
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+            {fileCount} {fileCount === 1 ? 'file' : 'files'} · saved {rel}
+          </p>
+          <div className="mt-3 flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={onAccept}
+              className="touch-target inline-flex items-center justify-center gap-2 min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-cyan-ink)] text-white font-medium text-sm hover:bg-[var(--color-cyan-ink)]/90 active:bg-[var(--color-cyan-ink)]/80 transition-colors"
+            >
+              Resume
+            </button>
+            <button
+              type="button"
+              onClick={onDecline}
+              className="touch-target inline-flex items-center justify-center gap-2 min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-border-ink)] font-medium text-sm hover:bg-[var(--color-paper)] active:bg-[var(--color-paper)] transition-colors"
+            >
+              Start fresh
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** One preset card — name + description + estimated price. */
 function PresetCard({
   name,
@@ -1385,12 +1770,18 @@ function PaymentWaitingScreen({
 
   const launchUpiApp = useCallback(() => {
     if (!upiUri) return;
+    // Analytics: payment_app_tapped — the customer tapped the primary
+    // "Pay by UPI" button (which launches the OS UPI app chooser).
+    track(ANALYTICS_EVENTS.paymentAppTapped, {
+      app_id: 'upi_intent',
+      amount_paise_range: amountPaiseRange(placed.totalPaise),
+    });
     // Trigger the platform UPI intent picker. On Android this opens the
     // OS UPI app chooser; on desktop it falls through silently.
     window.location.href = upiUri;
     // After the customer returns, open the UTR sheet so they can paste.
     setTimeout(() => setPaymentSheetOpen(true), 1500);
-  }, [upiUri, setPaymentSheetOpen]);
+  }, [upiUri, setPaymentSheetOpen, placed.totalPaise]);
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="waiting-heading">
@@ -1473,7 +1864,12 @@ function PaymentWaitingScreen({
               // route through the OS picker. We launch the same URI for every
               // app button — the OS handles the routing. The brand dot is
               // decorative only; the app NAME is the accessible label.
-              void appId;
+              // Analytics: payment_app_tapped — which UPI app brand the
+              // customer tapped in the sheet.
+              track(ANALYTICS_EVENTS.paymentAppTapped, {
+                app_id: appId,
+                amount_paise_range: amountPaiseRange(placed.totalPaise),
+              });
               window.location.href = upiUri;
               setTimeout(() => setPaymentSheetOpen(false), 800);
             }}

@@ -16,6 +16,7 @@ import {
   readRecentOrders, forgetOrder, type RecentOrderSummary,
 } from '@/lib/customer/recent-orders';
 import { mapToPill, statusLabel } from '@/lib/customer/order-status-mapping';
+import { track, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
 
 /**
  * /orders — "My orders": the customer's recent orders on THIS device.
@@ -194,6 +195,12 @@ function OrderCard({ order, onForget }: { order: RecentOrderSummary; onForget: (
         {order.shopSlug ? (
           <Link
             href={`/s/${order.shopSlug}`}
+            onClick={() => {
+              track(ANALYTICS_EVENTS.reorderClicked, {
+                shop_slug: order.shopSlug ?? '',
+                source: 'orders_list',
+              });
+            }}
             className="touch-target inline-flex items-center justify-center gap-2 rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-4 text-sm font-medium text-[var(--color-ink)] min-h-[48px]"
           >
             <RefreshCw className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />
@@ -201,7 +208,13 @@ function OrderCard({ order, onForget }: { order: RecentOrderSummary; onForget: (
           </Link>
         ) : (
           <TextButton
-            onClick={() => { window.location.href = '/'; }}
+            onClick={() => {
+              track(ANALYTICS_EVENTS.reorderClicked, {
+                shop_slug: '',
+                source: 'orders_list_no_slug',
+              });
+              window.location.href = '/';
+            }}
             className="inline-flex items-center justify-center gap-2"
           >
             <RefreshCw className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />

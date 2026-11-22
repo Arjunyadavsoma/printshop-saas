@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Phone, MapPin, Share2, XCircle, AlertTriangle, Loader2, CheckCircle2,
@@ -25,6 +25,7 @@ import {
   isCancelledStatus, canCancel,
 } from '@/lib/customer/order-status-mapping';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
+import { track as trackEvent, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
 
 /**
  * /o/[token] — live order tracking (brief §4.7, DESIGN-PLAN screen 6).
@@ -133,6 +134,44 @@ export default function TrackOrderPage() {
       placedAt: data.order.placedAt ?? new Date().toISOString(),
     });
   }, [data, token]);
+
+  // ── Analytics: fire `order_ready_seen` / `payment_confirmed` /
+  //    `payment_rejected` once each, on the relevant transition. We use
+  //    refs so re-renders (poll ticks) don't double-fire.
+  const firedReadyRef = useRef(false);
+  const firedConfirmedRef = useRef(false);
+  const firedRejectedRef = useRef(false);
+  useEffect(() => {
+    if (!data) return;
+    // order_ready_seen — the customer is looking at the order while it's
+    // ready for pickup (the polling just surfaced a 'ready' or
+    // 'paid_on_pickup' status).
+    if (
+      !firedReadyRef.current &&
+      (data.order.status === 'ready' || data.order.status === 'paid_on_pickup')
+    ) {
+      firedReadyRef.current = true;
+      trackEvent(ANALYTICS_EVENTS.orderReadySeen, {});
+    }
+    // payment_confirmed — the shop confirmed the payment.
+    if (
+      !firedConfirmedRef.current &&
+      data.payment &&
+      data.payment.status === 'CONFIRMED'
+    ) {
+      firedConfirmedRef.current = true;
+      trackEvent(ANALYTICS_EVENTS.paymentConfirmed, {});
+    }
+    // payment_rejected — the shop rejected the payment reference.
+    if (
+      !firedRejectedRef.current &&
+      data.payment &&
+      data.payment.status === 'REJECTED'
+    ) {
+      firedRejectedRef.current = true;
+      trackEvent(ANALYTICS_EVENTS.paymentRejected, {});
+    }
+  }, [data]);
 
   // Toast state — surfaces share / cancel / payment outcomes.
   const [toast, setToast] = useState<{ variant: 'success' | 'error' | 'info'; message: string }>({ variant: 'info', message: '' });
