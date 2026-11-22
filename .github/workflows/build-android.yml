@@ -29,6 +29,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The default GITHUB_TOKEN has read-only permissions. Grant
+    # `contents: write` so the `softprops/action-gh-release` step can
+    # create a GitHub Release (required for the /download-app page to
+    # fetch the latest release via the GitHub API). `packages: write` is
+    # not needed — we're not pushing to GHCR.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
