@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive launcher icon (round variant for Android 8.0+ / API 26+).
+    Same fix as ic_launcher.xml — reference @drawable/ic_launcher_foreground
+    (not @mipmap/ic_launcher_foreground which doesn't exist).
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
-    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
 </adaptive-icon>

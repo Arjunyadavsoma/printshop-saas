@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive launcher icon (Android 8.0+ / API 26+).
+    Background = a color resource (ic_launcher_background in values/).
+    Foreground = the vector drawable in drawable-v24/.
+
+    NOTE: the original Capacitor template referenced @mipmap/ic_launcher_foreground
+    which was WRONG — the foreground drawable lives in drawable-v24/, not mipmap/.
+    Fixed to @drawable/ic_launcher_foreground (the correct resource path).
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
-    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
 </adaptive-icon>
