@@ -41,6 +41,21 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install system dependencies for pipeline integration tests
+        # The Razorpay PR's pipeline integration tests (in
+        # src/lib/pipeline/pipeline.integration.test.ts + src/lib/orders/order-flow.integration.test.ts)
+        # require three system binaries that aren't on the default Ubuntu runner:
+        #   - pdftoppm (Poppler) — renders PDF pages to PNG thumbnails
+        #   - gs (Ghostscript) — inkcov color detection (which pages are color)
+        #   - libreoffice — DOCX → PDF normalization
+        # Without these, 8 tests fail with `spawn pdftoppm ENOENT` etc.
+        # The apt-get installs them in ~20s; the tests then pass.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils ghostscript libreoffice-core libreoffice-writer
+          echo "=== verify installs ==="
+          which pdftoppm gs libreoffice
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Splash screen drawable — a solid white background.
+    Referenced by AppTheme.NoActionBarLaunch in styles.xml as
+    @drawable/splash. The theme is the launch theme (shown before the
+    WebView loads), so the user sees a clean white screen for the
+    ~1.5s launchShowDuration instead of a black flash.
+
+    A vector drawable (not a PNG) — scales to any screen density
+    without needing density-specific versions in drawable-hdpi/,
+    drawable-xhdpi/, etc.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1080dp"
+    android:height="1920dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1920">
+    <!-- Solid white background -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,0h1080v1920h-1080z" />
+    <!-- "P" brand badge (centered, matches the web app's P logo) -->
+    <path
+        android:fillColor="#FF2563EB"
+        android:pathData="M480,840h120v120h-120z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M510,870h60v60h-60z" />
+</vector>
