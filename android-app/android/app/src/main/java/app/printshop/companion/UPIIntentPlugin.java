@@ -81,7 +81,7 @@ public class UPIIntentPlugin extends Plugin {
 
             // Show a chooser if multiple UPI apps are installed; otherwise
             // launch the single one directly.
-            Intent chooser = Intent.createChooser(intent, getString(R.string.upi_chooser_title));
+            Intent chooser = Intent.createChooser(intent, getContext().getString(R.string.upi_chooser_title));
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
             // Resolve the selected app's package name so we can return it
