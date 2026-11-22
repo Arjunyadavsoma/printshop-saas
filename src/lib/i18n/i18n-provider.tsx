@@ -33,7 +33,7 @@ function detectBrowserLocale(): Locale {
 function translate(locale: Locale, key: MessageKey, vars?: Record<string, string | number>): string {
   const entry = messages[key];
   if (!entry) return key;
-  let str = entry[locale] ?? entry.en;
+  let str: string = entry[locale] ?? entry.en;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));

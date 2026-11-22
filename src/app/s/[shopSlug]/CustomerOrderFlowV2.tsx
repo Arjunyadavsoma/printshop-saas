@@ -278,6 +278,13 @@ export function CustomerOrderFlowV2({
   const lastChoicesAppliedRef = useRef(false);
 
   const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * AbortController for the in-flight quote request. When a new quote cycle
+   * starts (because the customer toggled another page or changed a spec),
+   * we abort the previous request so its stale response can't race the
+   * freshest one + overwrite the live total with an out-of-date price.
+   */
+  const quoteAbortRef = useRef<AbortController | null>(null);
   const payTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const restoredRef = useRef(false);
   /** Tracks the last quote total we fired `quote_viewed` for, so we only fire once per fresh price. */
@@ -714,7 +721,18 @@ export function CustomerOrderFlowV2({
       return;
     }
     if (quoteTimer.current) clearTimeout(quoteTimer.current);
+    // Abort the previous in-flight quote so its stale response can't race
+    // the fresh one (e.g. the customer toggled two pages in quick
+    // succession — only the latest toggle's price should land).
+    if (quoteAbortRef.current) {
+      quoteAbortRef.current.abort();
+      quoteAbortRef.current = null;
+    }
     setQuoting(true);
+    // A fresh controller per cycle. Stored on a ref so the cleanup fn + the
+    // next cycle can both reach it.
+    const controller = new AbortController();
+    quoteAbortRef.current = controller;
     quoteTimer.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/v1/s/${shopSlug}/quote`, {
@@ -739,16 +757,36 @@ export function CustomerOrderFlowV2({
             addonIds: [],
             urgent: false,
           }),
+          signal: controller.signal,
         });
         const d = (await res.json()) as { data?: Quote; error?: { message?: string } };
         if (res.ok && d.data) setQuote(d.data);
         else setError(d?.error?.message ?? 'Could not price the order');
+      } catch (e) {
+        // AbortError is expected when a fresher quote cycle supersedes this
+        // one — silence it so it doesn't surface as a customer-facing error.
+        if (!(e instanceof DOMException && e.name === 'AbortError')) {
+          setError(e instanceof Error ? e.message : 'Could not price the order');
+        }
       } finally {
-        setQuoting(false);
+        // Only clear the quoting flag if this is still the active request.
+        // If a newer cycle has already started (and set quoting=true again),
+        // clearing it here would briefly hide the spinner.
+        if (quoteAbortRef.current === controller) {
+          setQuoting(false);
+          quoteAbortRef.current = null;
+        }
       }
     }, QUOTE_DEBOUNCE_MS);
     return () => {
       if (quoteTimer.current) clearTimeout(quoteTimer.current);
+      // If the effect is re-running (or unmounting), abort the in-flight
+      // request so we never leave a dangling fetch that could resolve after
+      // the customer has navigated away.
+      if (quoteAbortRef.current) {
+        quoteAbortRef.current.abort();
+        quoteAbortRef.current = null;
+      }
     };
   }, [quoteKey, shopSlug]);
 

@@ -31,7 +31,29 @@ export function StickyActionBar({ total, children }: StickyActionBarProps) {
         {total && (
           <div className="flex-1 min-w-0">
             <p className="text-xs text-[var(--color-muted)] leading-tight">Total</p>
-            <p className="text-xl font-semibold text-[var(--color-ink)] tnum leading-tight">{total}</p>
+            {/*
+              `aria-live="polite"` announces the new total to screen-reader
+              users as the customer toggles page modes (the value is the
+              polite priority so it doesn't interrupt whatever is being
+              spoken). `aria-atomic="true"` ensures the region announces the
+              WHOLE value each time (e.g. "Total ₹124") rather than just the
+              diff ("24"), which would be meaningless without the currency
+              symbol.
+
+              `min-w-[80px]` reserves space for the price so the digit width
+              doesn't change (₹48 → ₹124) and cause a horizontal layout
+              shift in the action bar — the CTA on the right would otherwise
+              jump left/right as the price widens. The 80px is sized for up
+              to four characters of tabular-numerals at text-xl + the
+              rupee glyph + the "Updating…" state.
+            */}
+            <p
+              className="text-xl font-semibold text-[var(--color-ink)] tnum leading-tight min-w-[80px]"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {total}
+            </p>
           </div>
         )}
         <div className={total ? 'shrink-0' : 'flex-1'}>

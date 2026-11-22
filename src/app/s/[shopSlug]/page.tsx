@@ -1,10 +1,31 @@
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Phone, MapPin } from 'lucide-react';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { AppBar } from '@/components/customer/app-bar';
-import { CustomerOrderFlowV2 } from './CustomerOrderFlowV2';
+import { CustomerFlowSkeleton } from './CustomerFlowSkeleton';
+
+/**
+ * CustomerOrderFlowV2 is a large client component (~80 KB — the upload,
+ * page-strip, options, payment + draft-recovery flow). We split it out of
+ * the shop landing's initial JS bundle so the SSR HTML for /s/[shopSlug]
+ * stays light: the customer lands, sees the AppBar + rate board + live
+ * "printers online" line instantly (all server-rendered), and the heavy
+ * flow chunk downloads + hydrates in parallel with a skeleton placeholder.
+ *
+ * `ssr: false` because the flow uses IndexedDB, File APIs, and other
+ * client-only state that can't be meaningfully server-rendered; rendering
+ * a placeholder skeleton on the server is faster + correct.
+ */
+const CustomerOrderFlowV2 = dynamic(
+  () => import('./CustomerOrderFlowV2').then((m) => m.CustomerOrderFlowV2),
+  {
+    loading: () => <CustomerFlowSkeleton />,
+    ssr: false,
+  },
+);
 
 /**
  * /s/[shopSlug] — the QR landing. Server Component.

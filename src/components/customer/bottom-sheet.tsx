@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
@@ -54,6 +54,10 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   // Remember the element that had focus before the sheet opened so we
   // can restore it on close — this is the WAI-ARIA dialog pattern.
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Stable React-generated id for the <h2> title so the dialog can point
+  // `aria-labelledby` at it. useId() is hydration-safe (server + client
+  // agree on the same value), so the label association survives SSR.
+  const titleId = useId();
 
   // Body scroll lock + Escape listener + focus management.
   useEffect(() => {
@@ -157,7 +161,12 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        // When a title is provided, point aria-labelledby at the <h2> so
+        // screen readers announce the same heading the sighted customer
+        // sees. When there's no title, fall back to aria-label so the
+        // dialog still has an accessible name (WAI-ARIA dialog pattern).
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : 'Dialog'}
         onKeyDown={onKeyDown}
         onClick={(e) => e.stopPropagation()}
         className={[
@@ -177,10 +186,15 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
           />
         </div>
 
-        {/* Optional header with title + close affordance. */}
+        {/* Optional header with title + close affordance. The <h2> id
+            matches the dialog's aria-labelledby so screen readers announce
+            the heading when the sheet opens. */}
         {title && (
           <div className="flex items-center justify-between gap-2 px-4 pb-2">
-            <h2 className="text-base font-semibold text-[var(--color-ink)] truncate">
+            <h2
+              id={titleId}
+              className="text-base font-semibold text-[var(--color-ink)] truncate"
+            >
               {title}
             </h2>
             <button
