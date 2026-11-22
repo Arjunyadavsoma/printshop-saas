@@ -76,21 +76,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Read persisted auth from localStorage on mount.
+  // Read persisted auth on mount.
+  // Inside the PrintShop Companion Android app, tokens are stored via the
+  // native storage bridge (window.NativeApp.storage — Capacitor Preferences,
+  // app-sandboxed). In a regular browser, localStorage is used. The bridge
+  // is async, so the read is async when it's present.
   useEffect(() => {
-    try {
-      const t = localStorage.getItem(TOKEN_KEY);
-      const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
-      const r = localStorage.getItem(ROLE_KEY);
-      const e = localStorage.getItem(EMAIL_KEY);
-      if (t) setTokenState(t);
-      if (rt) setRefreshToken(rt);
-      if (r) setRole(r);
-      if (e) setEmail(e);
-    } catch {
-      /* SSR — ignore */
-    }
-    setReady(true);
+    void (async () => {
+      try {
+        const native = typeof window !== 'undefined' ? window.NativeApp?.storage : undefined;
+        if (native) {
+          // Companion app — use native secure storage (async).
+          const [t, rt, r, e] = await Promise.all([
+            native.get(TOKEN_KEY),
+            native.get(REFRESH_TOKEN_KEY),
+            native.get(ROLE_KEY),
+            native.get(EMAIL_KEY),
+          ]);
+          if (t) setTokenState(t);
+          if (rt) setRefreshToken(rt);
+          if (r) setRole(r);
+          if (e) setEmail(e);
+        } else {
+          // Regular browser — localStorage (sync).
+          const t = localStorage.getItem(TOKEN_KEY);
+          const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+          const r = localStorage.getItem(ROLE_KEY);
+          const e = localStorage.getItem(EMAIL_KEY);
+          if (t) setTokenState(t);
+          if (rt) setRefreshToken(rt);
+          if (r) setRole(r);
+          if (e) setEmail(e);
+        }
+      } catch {
+        /* SSR or storage failure — ignore */
+      }
+      setReady(true);
+    })();
   }, []);
 
   const setAuth = useCallback((t: string, rt: string, r: string, e: string) => {
@@ -98,11 +120,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRefreshToken(rt);
     setRole(r);
     setEmail(e);
+    // Persist to the active storage backend (native bridge inside the
+    // companion app, localStorage in a regular browser). The native calls
+    // are async + best-effort — the React state is already set, so a
+    // storage failure doesn't block the user.
     try {
-      localStorage.setItem(TOKEN_KEY, t);
-      localStorage.setItem(REFRESH_TOKEN_KEY, rt);
-      localStorage.setItem(ROLE_KEY, r);
-      localStorage.setItem(EMAIL_KEY, e);
+      const native = typeof window !== 'undefined' ? window.NativeApp?.storage : undefined;
+      if (native) {
+        void native.set(TOKEN_KEY, t).catch(() => {});
+        void native.set(REFRESH_TOKEN_KEY, rt).catch(() => {});
+        void native.set(ROLE_KEY, r).catch(() => {});
+        void native.set(EMAIL_KEY, e).catch(() => {});
+      } else {
+        localStorage.setItem(TOKEN_KEY, t);
+        localStorage.setItem(REFRESH_TOKEN_KEY, rt);
+        localStorage.setItem(ROLE_KEY, r);
+        localStorage.setItem(EMAIL_KEY, e);
+      }
     } catch {
       /* ignore */
     }
@@ -114,10 +148,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(null);
     setEmail(null);
     try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-      localStorage.removeItem(ROLE_KEY);
-      localStorage.removeItem(EMAIL_KEY);
+      const native = typeof window !== 'undefined' ? window.NativeApp?.storage : undefined;
+      if (native) {
+        void native.remove(TOKEN_KEY).catch(() => {});
+        void native.remove(REFRESH_TOKEN_KEY).catch(() => {});
+        void native.remove(ROLE_KEY).catch(() => {});
+        void native.remove(EMAIL_KEY).catch(() => {});
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        localStorage.removeItem(ROLE_KEY);
+        localStorage.removeItem(EMAIL_KEY);
+      }
     } catch {
       /* ignore */
     }

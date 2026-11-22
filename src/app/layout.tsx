@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/portal/auth-context";
@@ -113,6 +114,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Native bridges for the PrintShop Companion Android app.
+            Loaded `beforeInteractive` so window.NativeApp is available
+            before React hydration. The script self-initializes ONLY when
+            window.Capacitor exists (set by the Capacitor Android runtime);
+            in a regular browser it's a no-op (no Capacitor → no bridges
+            attached → ~3KB of inert JS). */}
+        <Script
+          src="/native-bridges.js"
+          strategy="beforeInteractive"
+        />
+      </head>
       <body
         // suppressHydrationWarning — browser extensions (e.g. Monica,
         // Grammarly, LastPass) inject attributes (monica-id, monica-version,

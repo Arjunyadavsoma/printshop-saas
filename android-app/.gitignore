@@ -1,0 +1,20 @@
+# Android app — files NOT committed to git
+# The keystore is generated locally by scripts/sign-apk.sh (via keytool).
+# It's intentionally excluded from git — committing a signing key would let
+# anyone forge APKs signed with the same identity. The keystore password
+# defaults to `printshop-companion-2026` (in app/build.gradle) but can be
+# overridden via the PRINTSHOP_KEYSTORE_PASSWORD env var.
+scripts/keystore/*.keystore
+!scripts/keystore/.gitkeep
+
+# Build output
+dist/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/captures/
+android/.idea/
+
+# Node
+node_modules/

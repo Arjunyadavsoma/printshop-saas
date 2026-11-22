@@ -1,0 +1,30 @@
+{
+  "name": "printshop-companion",
+  "version": "1.0.0",
+  "description": "PrintShop Companion — Android app that integrates the web consumer app with native camera, UPI intent, secure storage, and local notifications.",
+  "private": true,
+  "scripts": {
+    "build": "tsc && node scripts/inject-bridges.js",
+    "sync": "npm run build && cap sync android",
+    "build:apk": "npm run sync && cd android && ./gradlew assembleRelease",
+    "sign:apk": "bash scripts/sign-apk.sh",
+    "release": "npm run build:apk && npm run sign:apk",
+    "clean": "rm -rf dist && cd android && ./gradlew clean || true"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/camera": "^6.1.0",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/local-notifications": "^6.1.0",
+    "@capacitor/network": "^6.0.2",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

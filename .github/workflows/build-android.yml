@@ -1,0 +1,113 @@
+# Build the PrintShop Companion Android APK on every push to main.
+#
+# This workflow runs on a GitHub Actions Ubuntu runner (4 cores, 16GB RAM)
+# which has enough CPU to complete the Gradle build (the AGP configuration
+# phase is CPU-heavy + doesn't complete within 10 minutes on a 2-core
+# sandbox).
+#
+# Output: a signed release APK uploaded as a workflow artifact + a GitHub
+# Release on the latest commit. The /download-app page on the web app
+# links to the GitHub release download URL.
+#
+# The APK is signed with the keystore committed at
+# android-app/scripts/keystore/printshop-release.keystore (passwords via
+# the PRINTSHOP_KEYSTORE_PASSWORD + PRINTSHOP_KEY_PASSWORD repo secrets, or
+# the defaults in app/build.gradle if unset).
+
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-app/**'
+      - 'public/native-bridges.js'
+      - '.github/workflows/build-android.yml'
+  workflow_dispatch:  # manual trigger from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-33 build-tools;33.0.2'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Capacitor dependencies
+        working-directory: android-app
+        run: npm install
+
+      - name: Build TypeScript bridges + sync to Android
+        working-directory: android-app
+        env:
+          # Point the WebView at the deployed web app. Override this in the
+          # repo's Actions secrets if you have a custom domain.
+          PRINTSHOP_WEB_URL: ${{ vars.PRINTSHOP_WEB_URL || 'https://printshop-saas.vercel.app' }}
+        run: npm run sync
+
+      - name: Build + sign release APK
+        working-directory: android-app/android
+        env:
+          PRINTSHOP_KEYSTORE_PASSWORD: ${{ secrets.PRINTSHOP_KEYSTORE_PASSWORD || 'printshop-companion-2026' }}
+          PRINTSHOP_KEY_PASSWORD: ${{ secrets.PRINTSHOP_KEY_PASSWORD || 'printshop-companion-2026' }}
+        run: ./gradlew assembleRelease -x lint -x test --no-daemon --console=plain
+
+      - name: Verify + rename APK
+        id: apk
+        run: |
+          APK=$(find android-app/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "Found APK: $APK"
+          cp "$APK" printshop-companion.apk
+          SHA256=$(sha256sum printshop-companion.apk | awk '{print $1}')
+          SIZE=$(du -h printshop-companion.apk | cut -f1)
+          echo "APK_SIZE=$SIZE" >> $GITHUB_OUTPUT
+          echo "APK_SHA256=$SHA256" >> $GITHUB_OUTPUT
+          echo "### APK built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA-256:** \`$SHA256\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Download:** available as a workflow artifact below" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: printshop-companion-apk
+          path: printshop-companion.apk
+          retention-days: 90
+
+      - name: Create GitHub Release (on main only)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: companion-v${{ github.run_number }}
+          name: PrintShop Companion v1.0 (build ${{ github.run_number }})
+          body: |
+            ## PrintShop Companion Android APK
+
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            **Size:** ${{ steps.apk.outputs.APK_SIZE }}
+            **SHA-256:** `${{ steps.apk.outputs.APK_SHA256 }}`
+
+            ### Install
+            1. Download `printshop-companion.apk` below
+            2. On your Android phone: enable "Install unknown apps" for your browser
+            3. Tap the downloaded file to install
+            4. Open "PrintShop Companion" from your app drawer
+          files: printshop-companion.apk
+          prerelease: false

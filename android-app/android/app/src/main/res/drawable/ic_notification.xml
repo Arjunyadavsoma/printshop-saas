@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification small icon — MUST be white-on-transparent for Android 5+
+    (Lollipop+). The system applies a color tint from the notification channel;
+    colored icons render as a white square in the status bar.
+
+    This is a simple "printer" glyph (a rounded rectangle with a paper sheet
+    emerging from the top) — recognizable at 24dp (the standard notification
+    icon size).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!-- Printer body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6,18V17H18V18H6M6,4H18V7H6V4M19,8H5A3,3 0 0,0 2,11V17H4V13H20V17H22V11A3,3 0 0,0 19,8Z" />
+</vector>

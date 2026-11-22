@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PrintShop Companion</string>
+    <string name="title_activity_main">PrintShop Companion</string>
+    <string name="package_name">app.printshop.companion</string>
+    <string name="custom_url_scheme">app.printshop.companion</string>
+    <!-- Camera permission rationale (shown when the user first taps "Upload" in-app) -->
+    <string name="camera_permission_rationale">PrintShop Companion needs camera access to scan physical documents for printing.</string>
+    <!-- File picker rationale -->
+    <string name="storage_permission_rationale">PrintShop Companion needs storage access to pick existing documents for printing.</string>
+    <!-- UPI chooser title (shown when the user taps "Pay") -->
+    <string name="upi_chooser_title">Pay with</string>
+    <!-- Notification channel name (shown in Android Settings → App → Notifications) -->
+    <string name="notification_channel_name">Order updates</string>
+    <string name="notification_channel_description">Notifies you when your print order is ready for pickup.</string>
+</resources>

@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Smartphone, UploadCloud, FileText, CreditCard, Receipt, Loader2, CheckCircle2,
-  Plus, Trash2, ArrowRight, QrCode, RefreshCw,
+  Plus, Trash2, ArrowRight, QrCode, RefreshCw, Camera,
 } from 'lucide-react';
 import { useApiClient } from '@/components/phase2/use-api-client';
 import { priceFile, type PricingInput } from '@platform/core/pricing';
@@ -100,6 +100,47 @@ export function CustomerApp() {
     const fake = new File([new Blob([VALID_PDF])], `document-${files.length + 1}.pdf`, { type: 'application/pdf' });
     void handleFiles({ length: 1, 0: fake } as unknown as FileList);
   };
+
+  // Native camera scan — used inside the PrintShop Companion Android app.
+  // Calls window.NativeApp.camera.scan() (Android CameraX via Capacitor)
+  // to capture a physical document, then uploads the JPEG via the same
+  // upload-url → PUT → confirm flow the web file input uses.
+  // In a regular browser, window.NativeApp is undefined → this handler is
+  // never called (the button that triggers it is conditionally rendered).
+  const handleNativeCameraScan = useCallback(async () => {
+    const native = typeof window !== 'undefined' ? window.NativeApp?.camera : undefined;
+    if (!native || !shop || !orderId) return;
+    setBusy(true);
+    try {
+      const captured = await native.scan();
+      if (!captured) return; // user cancelled or permission denied
+      // Convert base64 → Blob for upload.
+      const byteChars = atob(captured.base64);
+      const bytes = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([bytes], { type: captured.mimeType });
+      // Request an upload URL (same as the web file input path).
+      const uu = await api.request<{ data?: { uploadUrl?: string; storageKey?: string; fileId?: string } }>(
+        'POST', `/api/v1/orders/${orderId}/files/upload-url`,
+        { body: { filename: captured.filename, mimeType: captured.mimeType, size: blob.size } },
+      );
+      const u = uu.data?.data;
+      if (!u?.uploadUrl) return;
+      await fetch(u.uploadUrl, { method: 'PUT', body: blob });
+      const cf = await api.request<{ data?: { fileId?: string; pageCount?: number } }>(
+        'POST', `/api/v1/orders/${orderId}/files`,
+        { body: { fileId: u.fileId, storageKey: u.storageKey, filename: captured.filename, mimeType: captured.mimeType, size: blob.size } },
+      );
+      const fid = cf.data?.data?.fileId;
+      const pages = cf.data?.data?.pageCount ?? 1;
+      const f: UploadedFile = { fileId: fid ?? '', storageKey: u.storageKey ?? '', filename: captured.filename, pages, size: blob.size, copies: 1, colorMode: 'bw', duplex: false, paperSize: 'a4', pricePaise: 0, uploaded: !!fid };
+      f.pricePaise = recomputePrice(f, shop.pricingConfig);
+      setFiles((prev) => [...prev, f]);
+      if (fid) await api.request('PATCH', `/api/v1/orders/${orderId}/files/${fid}`, { body: { copies: f.copies, colorMode: f.colorMode, paperSize: f.paperSize, duplex: f.duplex } });
+    } finally {
+      setBusy(false);
+    }
+  }, [shop, orderId, api]);
 
   // Update one file's settings → live reprice + PATCH.
   const updateFile = async (idx: number, patch: Partial<UploadedFile>) => {
@@ -191,6 +232,7 @@ export function CustomerApp() {
                       onDrop={(e) => { e.preventDefault(); setDragOver(false); void handleFiles(e.dataTransfer.files); }}
                       onPick={(e) => { const fs = e.target.files; if (fs) void handleFiles(fs); }}
                       onAddDemo={addDemoFile}
+                      onScanCamera={handleNativeCameraScan}
                       onUpdate={updateFile}
                       onRemove={removeFile}
                       onCheckout={doCheckout}
@@ -264,9 +306,13 @@ function UploadStep(props: {
   files: UploadedFile[]; orderTotal: number; busy: boolean; dragOver: boolean;
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void;
   onPick: (e: React.ChangeEvent<HTMLInputElement>) => void; onAddDemo: () => void;
+  onScanCamera: () => void;
   onUpdate: (idx: number, patch: Partial<UploadedFile>) => void; onRemove: (idx: number) => void;
   onCheckout: () => void; disabled: boolean;
 }) {
+  // Feature-detect the native camera bridge — only render the "Scan with
+  // camera" button inside the PrintShop Companion Android app.
+  const nativeCamera = typeof window !== 'undefined' ? window.NativeApp?.camera : undefined;
   return (
     <div className="space-y-3">
       <div
@@ -275,10 +321,22 @@ function UploadStep(props: {
       >
         <UploadCloud className="mx-auto h-6 w-6 text-muted-foreground" />
         <p className="mt-1 text-xs text-muted-foreground">Drag PDFs here, or</p>
-        <Label className="mt-1 inline-flex cursor-pointer items-center justify-center rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700">
-          <Plus className="mr-1 h-3 w-3" /> Choose files
-          <Input type="file" accept=".pdf,application/pdf" multiple className="hidden" onChange={props.onPick} />
-        </Label>
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+          <Label className="inline-flex cursor-pointer items-center justify-center rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700">
+            <Plus className="mr-1 h-3 w-3" /> Choose files
+            <Input type="file" accept=".pdf,application/pdf" multiple className="hidden" onChange={props.onPick} />
+          </Label>
+          {nativeCamera && (
+            <Button
+              onClick={props.onScanCamera}
+              disabled={props.busy}
+              variant="outline"
+              className="inline-flex items-center rounded-md border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+            >
+              <Camera className="mr-1 h-3 w-3" /> Scan with camera
+            </Button>
+          )}
+        </div>
         <button onClick={props.onAddDemo} className="mt-1 block w-full text-[10px] text-muted-foreground underline">+ add a demo file</button>
       </div>
 
@@ -337,6 +395,27 @@ function UploadStep(props: {
 }
 
 function PayStep({ token, checkout, busy, onPaid }: { token: string | null; checkout: { upiUri?: string; amountPaise?: number; qrPng?: string } | null; busy: boolean; onPaid: () => void }) {
+  // Inside the PrintShop Companion Android app, `window.NativeApp.upi` fires
+  // a native Android Intent that shows a chooser of installed UPI apps
+  // (PhonePe, GPay, Paytm). In a regular browser, fall back to the `<a
+  // href={upiUri}>` deep-link (which works on mobile browsers with a UPI
+  // app installed).
+  const nativeUpi = typeof window !== 'undefined' ? window.NativeApp?.upi : undefined;
+  const handlePayClick = async () => {
+    if (!checkout?.upiUri) return;
+    if (nativeUpi) {
+      const result = await nativeUpi.pay(checkout.upiUri);
+      if (!result.success && result.error === 'no_upi_app') {
+        alert('No UPI app installed. Install PhonePe, Google Pay, or Paytm to pay.');
+      }
+      // The native intent returns immediately (the UPI app handles the
+      // actual payment). The server's webhook + status poll resolves the
+      // payment status — we don't need to do anything else here.
+    } else {
+      // Browser fallback — navigate to the UPI deep-link.
+      window.location.href = checkout.upiUri;
+    }
+  };
   return (
     <div className="space-y-4 text-center">
       <div>
@@ -353,7 +432,13 @@ function PayStep({ token, checkout, busy, onPaid }: { token: string | null; chec
         <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       )}
       {checkout?.upiUri && (
-        <a href={checkout.upiUri} className="inline-block rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">Open in UPI app</a>
+        nativeUpi ? (
+          <Button onClick={handlePayClick} className="inline-block rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">
+            Pay with UPI app
+          </Button>
+        ) : (
+          <a href={checkout.upiUri} className="inline-block rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">Open in UPI app</a>
+        )
       )}
       <div className="rounded-lg bg-amber-50 p-2.5 text-[10px] text-amber-800 ring-1 ring-amber-200">
         On mobile this opens GPay/PhonePe automatically. Here, simulate the paid webhook:
