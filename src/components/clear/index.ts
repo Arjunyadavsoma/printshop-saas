@@ -102,10 +102,36 @@ export { PriceBar, ClearPriceBar, type PriceBarProps } from './price-bar';
 export {
   PriceBreakdown,
   ClearPriceBreakdown,
+  formatRupees,
   formatRupees as clearFormatRupees,
   type PriceBreakdownProps,
   type PriceLine,
 } from './price-breakdown';
+// ── Print-flow domain components ──
+export { UploadDropzone, ClearUploadDropzone, type UploadDropzoneProps } from './upload-dropzone';
+export { PageStrip } from './page-strip';
+export { FileCard, ClearFileCard, type FileCardProps, type FileCardFile, type FileCardStatus } from './file-card';
+export { NumberStepper, ClearNumberStepper } from './number-stepper';
+export { PaymentSheet, ClearPaymentSheet } from './payment-sheet';
+export {
+  ColorSuggestionPrompt,
+  ClearColorSuggestionPrompt,
+  type ColorSuggestion,
+} from './color-suggestion';
+export { TokenSlip, ClearTokenSlip } from './token-slip';
+export {
+  StatusTimeline,
+  ClearStatusTimeline,
+  type TimelineStep,
+  type StepStatus,
+} from './status-timeline';
+
+// ── Shells ──
+export { CustomerShell } from './customer-shell';
+export { ShopShellMobile, type ShopShellMobileProps } from './shop-shell-mobile';
+export { ShopShellDesktop, type ShopShellDesktopProps } from './shop-shell-desktop';
+export { ShopShellTablet, type ShopShellTabletProps } from './shop-shell-tablet';
+
 export { EmptyState, ClearEmptyState, type EmptyStateProps } from './empty-state';
 export { ErrorState, ClearErrorState, type ErrorStateProps } from './error-state';
 export { Toast, ClearToast, type ToastProps } from './toast';

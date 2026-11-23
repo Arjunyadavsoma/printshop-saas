@@ -20,9 +20,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Group, StatusPill } from '@/components/clear';
 
 interface JobRow {
   jobId: string;
@@ -42,20 +40,19 @@ interface JobRow {
 
 const STATUS_FILTERS = ['needs_review', 'printing', 'queued', 'completed', 'failed'] as const;
 
-/** Distinct visual states per job status — uncertain is never conflated
- *  with completed or failed. */
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    queued: { label: 'Queued', cls: 'bg-slate-100 text-slate-700' },
-    downloaded: { label: 'Downloaded', cls: 'bg-sky-100 text-sky-800' },
-    printing: { label: 'Printing', cls: 'bg-blue-100 text-blue-800' },
-    completed: { label: 'Completed', cls: 'bg-emerald-100 text-emerald-800' },
-    failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-800' },
-    needs_review: { label: 'Needs review', cls: 'bg-amber-100 text-amber-900 ring-1 ring-amber-400' },
-    cancelled: { label: 'Cancelled', cls: 'bg-zinc-100 text-zinc-600' },
+/** Maps a job status to a Clear StatusPill lifecycle state. */
+function JobStatusPill({ status }: { status: string }) {
+  const map: Record<string, { s: 'pending' | 'printing' | 'ready' | 'collected' | 'error'; label: string }> = {
+    queued: { s: 'pending', label: 'Queued' },
+    downloaded: { s: 'pending', label: 'Downloaded' },
+    printing: { s: 'printing', label: 'Printing' },
+    completed: { s: 'collected', label: 'Completed' },
+    failed: { s: 'error', label: 'Failed' },
+    needs_review: { s: 'pending', label: 'Needs review' },
+    cancelled: { s: 'error', label: 'Cancelled' },
   };
-  const v = map[status] ?? { label: status, cls: 'bg-zinc-100 text-zinc-700' };
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${v.cls}`}>{v.label}</span>;
+  const v = map[status] ?? { s: 'pending' as const, label: status };
+  return <StatusPill status={v.s} label={v.label} />;
 }
 
 function fmtTime(iso: string | null): string {
@@ -184,10 +181,10 @@ export default function PrintJobsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 py-6 sm:px-6 lg:max-w-[920px] lg:space-y-6 lg:py-8">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold sm:text-2xl">Print jobs</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--label)]">Print jobs</h1>
+        <p className="text-sm text-[var(--label-2)]">
           Cloud-side state for every print job. Jobs that a device could not
           confidently complete are parked as <strong>Needs review</strong> —
           they are never retried or reprinted automatically; resolve them here
@@ -195,17 +192,21 @@ export default function PrintJobsPage() {
         </p>
       </header>
 
-      {/* Filters */}
+      {/* Filters — Clear chip-style */}
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Job status filter">
         {(['needs_review', 'all', 'printing', 'queued', 'completed', 'failed'] as const).map((f) => (
           <button
             key={f}
+            type="button"
             role="tab"
             aria-selected={filter === f}
             onClick={() => setFilter(f)}
-            className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
-              filter === f ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
-            }`}
+            className={[
+              'inline-flex min-h-[36px] items-center rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+              filter === f
+                ? 'bg-[var(--accent)] text-[var(--on-accent)]'
+                : 'bg-[var(--fill)] text-[var(--label-2)] hover:bg-[var(--track)]',
+            ].join(' ')}
           >
             {f === 'all' ? 'All' : (f === 'needs_review' ? 'Needs review' : f.charAt(0).toUpperCase() + f.slice(1))}
           </button>
@@ -213,124 +214,125 @@ export default function PrintJobsPage() {
       </div>
 
       {notice && (
-        <div
-          role="status"
-          className={`rounded-md border px-3 py-2 text-sm ${
-            notice.kind === 'ok' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-rose-300 bg-rose-50 text-rose-900'
-          }`}
-        >
-          {notice.text}
-        </div>
+        <Group padding="content" className={notice.kind === 'ok' ? 'bg-[var(--success-tint)]' : 'bg-[var(--danger-tint)]'}>
+          <p className={notice.kind === 'ok' ? 'text-sm text-[var(--success-text)]' : 'text-sm text-[var(--danger-text)]'}>
+            {notice.text}
+          </p>
+        </Group>
       )}
 
       {/* Loading / error / empty states */}
-      {loading && <p className="text-sm text-muted-foreground" aria-live="polite">Loading print jobs…</p>}
+      {loading && <p className="text-sm text-[var(--label-2)]" aria-live="polite">Loading print jobs…</p>}
       {!loading && loadError && (
-        <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900" role="alert">
-          {loadError}{' '}
-          <Button variant="outline" size="sm" onClick={() => void load()} className="ml-2">Retry</Button>
-        </div>
+        <Group padding="content" className="bg-[var(--danger-tint)]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-[var(--danger-text)]">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex min-h-[36px] items-center rounded-full bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--fill)]"
+            >
+              Retry
+            </button>
+          </div>
+        </Group>
       )}
       {!loading && !loadError && jobs && jobs.length === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        <Group padding="content">
+          <p className="py-8 text-center text-sm text-[var(--label-2)]">
             {filter === 'needs_review'
               ? 'No uncertain jobs — nothing needs your attention right now.'
               : 'No print jobs in this state.'}
-          </CardContent>
-        </Card>
+          </p>
+        </Group>
       )}
 
       {/* Job cards (responsive: 1 column on phones, 2 on large screens) */}
       {!loading && !loadError && jobs && jobs.length > 0 && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {jobs.map((j) => (
-            <Card key={j.jobId} className={j.status === 'needs_review' ? 'border-amber-400' : undefined}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium break-all">
-                  {j.fileName ?? <span className="text-muted-foreground">Document {j.fileId}</span>}
-                </CardTitle>
-                <StatusBadge status={j.status} />
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1">
-                  <dt className="text-muted-foreground">Job</dt>
-                  <dd className="font-mono text-xs break-all">{j.jobId}</dd>
-                  <dt className="text-muted-foreground">Device</dt>
-                  <dd>{j.deviceName ?? '—'}{j.devicePrinterName ? <span className="text-muted-foreground"> · printer: {j.devicePrinterName}</span> : null}</dd>
-                  <dt className="text-muted-foreground">Submitted</dt>
-                  <dd>{fmtTime(j.queuedAt ?? j.createdAt)}</dd>
-                  <dt className="text-muted-foreground">Started</dt>
-                  <dd>{fmtTime(j.startedAt)}</dd>
-                  <dt className="text-muted-foreground">Finished</dt>
-                  <dd>{fmtTime(j.completedAt)}</dd>
-                  <dt className="text-muted-foreground">Attempts</dt>
-                  <dd>{j.attempts}</dd>
-                </dl>
-                {j.status === 'needs_review' && (
-                  <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <strong>Uncertainty reason:</strong> {j.lastError ?? 'device reported an outcome it cannot verify'}
-                  </div>
-                )}
-                {j.status !== 'needs_review' && j.lastError && (
-                  <p className="text-xs text-muted-foreground">Last error: {j.lastError}</p>
-                )}
-                {j.status === 'needs_review' && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Button
-                      size="sm"
+            <Group key={j.jobId} padding="content" className={j.status === 'needs_review' ? 'ring-1 ring-[var(--warning)]' : ''}>
+              <div className="flex flex-row items-center justify-between gap-2 pb-2">
+                <h3 className="text-sm font-medium break-all text-[var(--label)]">
+                  {j.fileName ?? <span className="text-[var(--label-2)]">Document {j.fileId}</span>}
+                </h3>
+                <JobStatusPill status={j.status} />
+              </div>
+              <dl className="grid grid-cols-[7.5rem_1fr] gap-x-2 gap-y-1 text-sm">
+                <dt className="text-[var(--label-2)]">Job</dt>
+                <dd className="font-mono text-xs break-all text-[var(--label)]">{j.jobId}</dd>
+                <dt className="text-[var(--label-2)]">Device</dt>
+                <dd className="text-[var(--label)]">{j.deviceName ?? '—'}{j.devicePrinterName ? <span className="text-[var(--label-2)]"> · printer: {j.devicePrinterName}</span> : null}</dd>
+                <dt className="text-[var(--label-2)]">Submitted</dt>
+                <dd className="text-[var(--label)]">{fmtTime(j.queuedAt ?? j.createdAt)}</dd>
+                <dt className="text-[var(--label-2)]">Started</dt>
+                <dd className="text-[var(--label)]">{fmtTime(j.startedAt)}</dd>
+                <dt className="text-[var(--label-2)]">Finished</dt>
+                <dd className="text-[var(--label)]">{fmtTime(j.completedAt)}</dd>
+                <dt className="text-[var(--label-2)]">Attempts</dt>
+                <dd className="text-[var(--label)]">{j.attempts}</dd>
+              </dl>
+              {j.status === 'needs_review' && (
+                <div className="mt-2 rounded-[var(--radius-input)] border border-[var(--warning)]/30 bg-[var(--warning-tint)] px-3 py-2 text-xs text-[var(--warning-text)]">
+                  <strong>Uncertainty reason:</strong> {j.lastError ?? 'device reported an outcome it cannot verify'}
+                </div>
+              )}
+              {j.status !== 'needs_review' && j.lastError && (
+                <p className="mt-2 text-xs text-[var(--label-2)]">Last error: {j.lastError}</p>
+              )}
+              {j.status === 'needs_review' && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyJobId === j.jobId}
+                    onClick={() => void resolveJob(j, 'completed')}
+                    className="inline-flex min-h-[44px] items-center rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-press)] disabled:opacity-50"
+                  >
+                    {busyJobId === j.jobId ? 'Recording…' : 'Mark printed'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyJobId === j.jobId}
+                    onClick={() => void resolveJob(j, 'failed')}
+                    className="inline-flex min-h-[44px] items-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+                  >
+                    Mark failed
+                  </button>
+                </div>
+              )}
+              {(j.status === 'failed' || j.status === 'needs_review' || j.status === 'queued' || j.status === 'downloaded') && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-2">
+                  <button
+                    type="button"
+                    disabled={busyJobId === j.jobId}
+                    onClick={() => void issueJobCommand(j, 'retry_job')}
+                    className="inline-flex min-h-[44px] items-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--label)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+                  >
+                    {busyJobId === j.jobId ? 'Sending…' : 'Reprint on device'}
+                  </button>
+                  {(j.status === 'queued' || j.status === 'downloaded') && (
+                    <button
+                      type="button"
                       disabled={busyJobId === j.jobId}
-                      onClick={() => void resolveJob(j, 'completed')}
+                      onClick={() => void issueJobCommand(j, 'cancel_job')}
+                      className="inline-flex min-h-[44px] items-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
                     >
-                      {busyJobId === j.jobId ? 'Recording…' : 'Mark printed'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyJobId === j.jobId}
-                      onClick={() => void resolveJob(j, 'failed')}
-                    >
-                      Mark failed
-                    </Button>
-                  </div>
-                )}
-                {/* Remote control from any phone (plan M2): the shop PC agent
-                    executes these as guarded commands; results appear in
-                    Devices → Recent commands. */}
-                {(j.status === 'failed' || j.status === 'needs_review' || j.status === 'queued' || j.status === 'downloaded') && (
-                  <div className="flex flex-wrap gap-2 border-t pt-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyJobId === j.jobId}
-                      onClick={() => void issueJobCommand(j, 'retry_job')}
-                    >
-                      {busyJobId === j.jobId ? 'Sending…' : 'Reprint on device'}
-                    </Button>
-                    {(j.status === 'queued' || j.status === 'downloaded') && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busyJobId === j.jobId}
-                        onClick={() => void issueJobCommand(j, 'cancel_job')}
-                      >
-                        Cancel job
-                      </Button>
-                    )}
-                    {!j.deviceId && (
-                      <span className="text-xs text-muted-foreground self-center">
-                        No device assigned — remote actions unavailable.
-                      </span>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      Cancel job
+                    </button>
+                  )}
+                  {!j.deviceId && (
+                    <span className="text-xs text-[var(--label-2)] self-center">
+                      No device assigned — remote actions unavailable.
+                    </span>
+                  )}
+                </div>
+              )}
+            </Group>
           ))}
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-[var(--label-2)]">
         Resolutions are recorded with the operator identity and timestamp in
         the audit log. Resolved jobs are terminal — create a fresh print
         request if another physical attempt is needed.

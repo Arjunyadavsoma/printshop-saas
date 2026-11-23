@@ -20,17 +20,19 @@ import {
   Settings,
   ShieldCheck,
 } from 'lucide-react';
+import { ShopShellMobile } from '@/components/clear/shop-shell-mobile';
+import { ShopShellTablet } from '@/components/clear/shop-shell-tablet';
+import { ShopShellDesktop } from '@/components/clear/shop-shell-desktop';
 
 /**
- * Sidebar navigation for the shopkeeper portal.
+ * Sidebar navigation for the shopkeeper portal — kept for the AppShell
+ * fallback path (used when a page renders inside the legacy AppShell,
+ * e.g. a settings sub-page that hasn't migrated yet).
  *
  * Main group: Dashboard, Orders, Devices, Customers, Services & Pricing,
  * Payments, Reports & Analytics.
  * Settings group: Shop Profile, Business Hours, Payments & UPI, Shop QR,
  * Shop Settings.
- *
- * PrintLatch / printer setup has been removed from the main navigation —
- * it is not a core shopkeeper feature.
  */
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -63,30 +65,55 @@ const NAV_GROUPS: NavGroup[] = [
  * Shared layout for every page under /shop/*. The login + register pages
  * render bare (no sidebar, no auth gate) — every other page expects an
  * authenticated owner.
+ *
+ * The chrome is rendered by the new Clear shells:
+ *  - ShopShellMobile  for < 768px
+ *  - ShopShellTablet  for 768–1023px
+ *  - ShopShellDesktop for >= 1024px
+ *
+ * Breakpoint detection is pure CSS (the shells use Tailwind responsive
+ * visibility classes — `md:hidden`, `hidden md:flex lg:hidden`,
+ * `hidden lg:flex`). All three render in the tree but only one is
+ * visible at a time; the others are `display:none`.
+ *
+ * The legacy AppShell is retained as a fallback for any sub-route that
+ * hasn't migrated to the Clear chrome yet — pass `?legacy=1` to force it.
  */
+const OPEN_KEY = 'printshop:shop-open';
+const COUNTER_KEY = 'printshop:shop-counter-mode';
+
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   const api = useApiClient();
   const pathname = usePathname();
   const router = useRouter();
   const [shopName, setShopName] = useState<string | null>(null);
-  // M-2 fix: remember the shop's slug so the "View storefront" footer
-  // links to the shop's PUBLIC page (/shops/<slug>) instead of the
-  // homepage. Previously the footer hard-coded footerHref="/", which sent
-  // the shopkeeper to the marketing homepage — useless for previewing
-  // their customer-facing QR landing page.
   const [shopSlug, setShopSlug] = useState<string | null>(null);
 
-  // Login + register + password-reset pages render bare (no sidebar, no auth gate).
-  // H16: forgot-password and reset-password are unauthenticated flows — they
-  // run BEFORE the user has a valid session. The auth gate would otherwise
-  // redirect them to /shop/login before they could submit their reset token.
+  // "Open for orders" + "Counter mode" — presentation-only for now (the
+  // backend endpoint to toggle shop.isActive is a follow-up task).
+  // Persisted to localStorage so the choice survives a refresh and so
+  // the dashboard page (which also reads these keys) stays in sync.
+  const [shopOpen, setShopOpen] = useState(true);
+  const [counterMode, setCounterMode] = useState(false);
+
+  // Pending counts surfaced as badges on the Orders + Payments tabs /
+  // sidebar rows. Best-effort fetch from the shop's me/orders list.
+  const [pendingOrders, setPendingOrders] = useState(0);
+  const [pendingPayments, setPendingPayments] = useState(0);
+
+  // Login + register + password-reset pages render bare.
   const isLoginPage =
     pathname === '/shop/login' ||
     pathname === '/shop/register' ||
     pathname === '/shop/forgot-password' ||
     pathname === '/shop/reset-password';
 
-  // Auth gate: redirect to login unless we're already on it.
+  // Optional ?legacy=1 forces the legacy AppShell chrome for un-migrated pages.
+  const useLegacyShell =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('legacy') === '1';
+
+  // Auth gate + lazy-load the shop name + slug.
   useEffect(() => {
     if (!api.ready) return;
     if (isLoginPage) return;
@@ -94,27 +121,67 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       router.replace('/shop/login');
       return;
     }
-    // Lazy-load the shop name + slug for the sidebar header + footer.
-    // Best-effort: if it fails the sidebar still renders, just without
-    // the shop name (and the footer falls back to the dashboard).
     void (async () => {
       const r = await api.request<{
-        data?: { name?: string; slug?: string };
+        data?: { name?: string; slug?: string; isActive?: boolean };
       }>('GET', '/api/v1/shops/me');
       if (r.status === 200 && r.data?.data) {
         if (r.data.data.name) setShopName(r.data.data.name);
         if (r.data.data.slug) setShopSlug(r.data.data.slug);
+        // Seed the open toggle from the shop's isActive the first time.
+        if (r.data.data.isActive != null) {
+          const stored = window.localStorage.getItem(OPEN_KEY);
+          if (stored === null) setShopOpen(Boolean(r.data.data.isActive));
+        }
       }
     })();
   }, [api.ready, api.token, api.role, isLoginPage, router, api]);
+
+  // Restore the open + counter-mode flags from localStorage on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedOpen = window.localStorage.getItem(OPEN_KEY);
+    if (storedOpen !== null) setShopOpen(storedOpen === '1');
+    const storedCounter = window.localStorage.getItem(COUNTER_KEY);
+    if (storedCounter !== null) setCounterMode(storedCounter === '1');
+  }, []);
+
+  // Persist open + counter-mode flags.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(OPEN_KEY, shopOpen ? '1' : '0');
+  }, [shopOpen]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(COUNTER_KEY, counterMode ? '1' : '0');
+  }, [counterMode]);
+
+  // Best-effort: fetch the pending orders + payments counts for the
+  // sidebar badges. Refresh on route change so a fresh tab load after
+  // acting on an order doesn't show a stale count.
+  useEffect(() => {
+    if (!api.ready || !api.token || api.role !== 'owner' || isLoginPage) return;
+    void (async () => {
+      try {
+        const r = await api.request<{
+          data?: { pendingCount?: number; paymentPendingCount?: number };
+        }>('GET', '/api/v1/shops/me/orders?status=awaiting_payment,paid');
+        if (r.status === 200 && r.data?.data) {
+          setPendingOrders(r.data.data.pendingCount ?? 0);
+          setPendingPayments(r.data.data.paymentPendingCount ?? 0);
+        }
+      } catch {
+        // Counts are decoration — silent on failure.
+      }
+    })();
+  }, [api, api.ready, api.token, api.role, isLoginPage, pathname]);
 
   // Login + register pages render bare — no sidebar, no auth check.
   if (isLoginPage) {
     return <div className="min-h-screen bg-page">{children}</div>;
   }
 
-  // While we wait for the auth state to settle, show a minimal spinner — this
-  // avoids a one-frame flash of the dashboard before the redirect fires.
+  // While we wait for the auth state to settle, show a minimal spinner.
   if (!api.ready || !api.token || api.role !== 'owner') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-page">
@@ -127,32 +194,67 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   }
 
   const logout = async () => {
-    // H16: revoke the refresh-token jti server-side BEFORE clearing client
-    // state. The logout() helper fires POST /api/v1/auth/logout (best-effort,
-    // keepalive=true so it survives the navigation below) then clearAuth().
-    // Hard navigation — avoids any RSC transition race. The auth state is
-    // cleared in the shared context + localStorage; a full page load
-    // guarantees the login page mounts fresh with no stale token.
     await api.logout();
     window.location.href = '/shop/login';
   };
 
-  // M-2: link to the shop's public storefront page if we know the slug,
-  // otherwise fall back to the dashboard (no orphan homepage link).
   const footerHref = shopSlug ? `/shops/${shopSlug}` : '/shop/dashboard';
 
+  // Legacy fallback (for un-migrated sub-pages that opt in via ?legacy=1).
+  if (useLegacyShell) {
+    return (
+      <AppShell
+        navGroups={NAV_GROUPS}
+        brandName={shopName ?? 'Shop Portal'}
+        brandSubtitle="Shopkeeper Portal"
+        brandHref="/shop/dashboard"
+        roleBadge="owner"
+        onLogout={logout}
+        footerHref={footerHref}
+        footerLabel="View storefront"
+      >
+        {children}
+      </AppShell>
+    );
+  }
+
+  // Clear shells — all three render, CSS shows only one at a time.
+  // The visible chrome depends on the viewport; children render once
+  // per shell (acceptable for the shop portal's mostly-server-component
+  // children).
   return (
-    <AppShell
-      navGroups={NAV_GROUPS}
-      brandName={shopName ?? 'Shop Portal'}
-      brandSubtitle="Shopkeeper Portal"
-      brandHref="/shop/dashboard"
-      roleBadge="owner"
-      onLogout={logout}
-      footerHref={footerHref}
-      footerLabel="View storefront"
-    >
-      {children}
-    </AppShell>
+    <>
+      <ShopShellMobile
+        shopName={shopName ?? 'Shop Portal'}
+        open={shopOpen}
+        onToggleOpen={setShopOpen}
+        pendingOrdersCount={pendingOrders}
+        pendingPaymentsCount={pendingPayments}
+      >
+        {children}
+      </ShopShellMobile>
+      <ShopShellTablet
+        shopName={shopName ?? 'Shop Portal'}
+        open={shopOpen}
+        onToggleOpen={setShopOpen}
+        pendingOrdersCount={pendingOrders}
+        pendingPaymentsCount={pendingPayments}
+        counterMode={counterMode}
+        onToggleCounterMode={setCounterMode}
+        onLogout={logout}
+      >
+        {children}
+      </ShopShellTablet>
+      <ShopShellDesktop
+        shopName={shopName ?? 'Shop Portal'}
+        open={shopOpen}
+        onToggleOpen={setShopOpen}
+        pendingOrdersCount={pendingOrders}
+        pendingPaymentsCount={pendingPayments}
+        onLogout={logout}
+      >
+        {children}
+      </ShopShellDesktop>
+    </>
   );
 }

@@ -4,49 +4,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { usePoll } from '@/lib/hooks/use-poll';
-import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Progress } from '@/components/ui/progress';
-import { PageHeader } from '@/components/shared/page-header';
-import { OrderStatusBadge } from '@/components/shared/status-indicator';
-import { EmptyState } from '@/components/shared/empty-state';
-import { TableSkeleton } from '@/components/shared/loading-skeleton';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+  Group,
+  InsetList,
+  InsetRow,
+  ChevronRow,
+  ValueRow,
+  SwitchRow,
+  StatusPill,
+  Badge as ClearBadge,
+  Chip,
+  EmptyState as ClearEmptyState,
+  ErrorState as ClearErrorState,
+  Banner,
+  PrimaryButton,
+  TintedButton,
+  DestructiveButton,
+  TextButton,
+  SegmentedControl,
+  Sheet,
+  Input as ClearInput,
+  SkeletonBox,
+  SkeletonCard,
+  IconButton,
+} from '@/components/clear';
 import { formatINRFromPaise } from '@platform/utils';
 import { ORDER_STATUSES, type OrderStatus } from '@platform/core/domain';
 import {
@@ -74,6 +55,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Ban,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -570,313 +552,347 @@ export default function ShopOrdersPage() {
     }
   };
 
+
+  // ── Mobile segmented control state ──
+  // Maps the four spec segments to underlying status filters.
+  // "To confirm" → awaiting_payment (payment pending)
+  // "Printing" → paid | printing (queued + actively printing)
+  // "Ready" → ready
+  // "Done" → collected | cancelled | refunded
+  type Segment = 'confirm' | 'printing' | 'ready' | 'done';
+  const [segment, setSegment] = useState<Segment>('confirm');
+  const segmentOptions = [
+    { value: 'confirm', label: 'To confirm' },
+    { value: 'printing', label: 'Printing' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'done', label: 'Done' },
+  ];
+
+  const segmentStatuses: Record<Segment, OrderStatus[]> = {
+    confirm: ['awaiting_payment'],
+    printing: ['paid', 'printing'],
+    ready: ['ready'],
+    done: ['collected', 'cancelled', 'refunded'],
+  };
+
+  // When the user picks a mobile segment, snap the status filter to match
+  // (so the existing `filtered` memo, which respects statusFilter, returns
+  // the right slice). The desktop sidebar filters remain independent — the
+  // shopkeeper can still pick "All statuses" on desktop.
+  const onSegmentChange = (next: string) => {
+    const s = next as Segment;
+    setSegment(s);
+    setStatusFilter('all');
+    setPaymentFilter('all');
+    setDateFilter('all');
+    // Apply the segment's status set as a custom filter via a derived list
+    // (we don't extend StatusFilter; we filter inline in the mobile view).
+  };
+
+  // Mobile-only filtered list — uses the active segment's status set.
+  const mobileFiltered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let out = orders.filter((o) => segmentStatuses[segment].includes(o.status));
+    if (q) {
+      out = out.filter(
+        (o) =>
+          o.id.toLowerCase().includes(q) ||
+          o.customerToken.toLowerCase().includes(q) ||
+          (o.tokenNumber ?? '').toLowerCase().includes(q) ||
+          (o.customerPhone ?? '').toLowerCase().includes(q),
+      );
+    }
+    // Most recent first
+    return [...out].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [orders, segment, search]);
+
+  // ── Desktop kanban columns ──
+  // Four columns per R13: Awaiting payment, Queued (paid), Printing, Ready.
+  // Built from the same `orders` source, filtered by the sidebar's search +
+  // date filters when set (status + payment filters are NOT applied on
+  // desktop — the columns ARE the status filter).
+  const desktopBase = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let out = orders;
+    if (dateFilter === 'today') out = out.filter((o) => isToday(o.createdAt));
+    else if (dateFilter === '7d') out = out.filter((o) => withinDays(o.createdAt, 7));
+    else if (dateFilter === '30d') out = out.filter((o) => withinDays(o.createdAt, 30));
+    if (q) {
+      out = out.filter(
+        (o) =>
+          o.id.toLowerCase().includes(q) ||
+          o.customerToken.toLowerCase().includes(q) ||
+          (o.tokenNumber ?? '').toLowerCase().includes(q) ||
+          (o.customerPhone ?? '').toLowerCase().includes(q),
+      );
+    }
+    return out;
+  }, [orders, search, dateFilter]);
+
+  const kanbanColumns: Array<{
+    key: string;
+    title: string;
+    statuses: OrderStatus[];
+    pill: 'pending' | 'printing' | 'ready' | 'collected';
+  }> = [
+    { key: 'awaiting', title: 'Awaiting payment', statuses: ['awaiting_payment'], pill: 'pending' },
+    { key: 'queued', title: 'Queued', statuses: ['paid'], pill: 'pending' },
+    { key: 'printing', title: 'Printing', statuses: ['printing'], pill: 'printing' },
+    { key: 'ready', title: 'Ready', statuses: ['ready'], pill: 'ready' },
+  ];
+
+  const columnOrders = (statuses: OrderStatus[]) =>
+    desktopBase
+      .filter((o) => statuses.includes(o.status))
+      .sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+  // ── Order drawer (Sheet in drawer mode on desktop, bottom sheet on mobile) ──
+  const [drawerOrderId, setDrawerOrderId] = useState<string | null>(null);
+  const drawerOrder = useMemo(
+    () => orders.find((o) => o.id === drawerOrderId) ?? null,
+    [orders, drawerOrderId],
+  );
+
+  // ── Render ──
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 py-6 sm:px-6 lg:max-w-[1280px] lg:py-8">
+        <SkeletonBox className="h-9 w-32" />
+        <SkeletonBox className="h-12 w-full" />
+        <div className="grid gap-3 lg:grid-cols-2">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </div>
+    );
+  }
+
+  if (error && orders.length === 0) {
+    return (
+      <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <ClearErrorState
+          message={error}
+          fix="Check your connection and try again. If the problem persists, your session may have expired."
+          referenceCode="ORDERS_LOAD"
+          onRetry={() => void load()}
+        />
+      </div>
+    );
+  }
+
+  const displayToken = (o: OrderRow) => o.tokenNumber ?? o.customerToken;
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Orders"
-        description={`${orders.length} of ${total} total · filtered to ${filtered.length}`}
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
+    <>
+      {/* ── Mobile layout (< 1200px): segmented + OrderCard list ── */}
+      <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 pb-24 pt-6 sm:px-6 lg:hidden">
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--label)]">
+              Orders
+            </h1>
+            <p className="mt-0.5 text-sm text-[var(--label-2)]">
+              {orders.length} of {total} total
+            </p>
+          </div>
+          <button
+            type="button"
             onClick={() => void load(true)}
             disabled={refreshing}
-            className="min-h-[44px] gap-1.5"
+            aria-label="Refresh orders"
+            className="inline-flex size-12 items-center justify-center rounded-full text-[var(--label-2)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
           >
-            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            Refresh
-          </Button>
-        }
-      />
+            {refreshing ? (
+              <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-5" aria-hidden="true" />
+            )}
+          </button>
+        </header>
 
-      {/* Filters */}
-      <Card className="border-border">
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="search" className="text-xs">Search</Label>
+        {/* Search */}
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--label-3)]"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by token, ID, or phone"
+            aria-label="Search orders"
+            className="min-h-[48px] w-full rounded-[var(--radius-input)] border border-transparent bg-[var(--fill)] pl-10 pr-3 py-3 text-base text-[var(--label)] placeholder:text-[var(--label-3)] focus:outline-none"
+          />
+        </div>
+
+        <SegmentedControl
+          options={segmentOptions}
+          value={segment}
+          onChange={onSegmentChange}
+          ariaLabel="Order status segment"
+        />
+
+        {actionError && (
+          <p className="text-xs text-[var(--danger-text)]" role="alert">
+            {actionError}
+          </p>
+        )}
+
+        {/* Order card list */}
+        {mobileFiltered.length === 0 ? (
+          <ClearEmptyState
+            icon={<Inbox className="size-6" aria-hidden="true" />}
+            title="No orders in this view"
+            description={
+              orders.length === 0
+                ? 'No orders have been placed at your shop yet.'
+                : 'Try a different segment or clear the search.'
+            }
+          />
+        ) : (
+          <ul className="space-y-2">
+            {mobileFiltered.map((o) => (
+              <OrderCard
+                key={o.id}
+                order={o}
+                busy={busy?.startsWith(`${o.id}:`) ?? false}
+                onOpen={() => setDrawerOrderId(o.id)}
+                onVerify={() => void quickVerify(o.id, 'verify')}
+                onReject={() => void quickVerify(o.id, 'reject')}
+                onStart={() => void quickStart(o.id)}
+                onReady={() => void quickReady(o.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* ── Desktop layout (≥ 1200px): 240px sidebar + four kanban columns ── */}
+      <div className="hidden lg:mx-auto lg:flex lg:w-full lg:max-w-[1280px] lg:gap-6 lg:px-6 lg:py-8">
+        {/* Sidebar — filters + search + refresh */}
+        <aside className="flex w-60 shrink-0 flex-col gap-4">
+          <div>
+            <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--label)]">
+              Orders
+            </h1>
+            <p className="mt-0.5 text-sm text-[var(--label-2)]">
+              {orders.length} of {total} total
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-[15px] font-semibold text-[var(--label)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+          >
+            {refreshing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-4" aria-hidden="true" />
+            )}
+            Refresh
+          </button>
+
+          <Group padding="content" title="Search">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="search"
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--label-3)]"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="token, order ID, or phone"
-                className="h-11 pl-9 sm:h-9"
+                placeholder="token, ID, phone"
+                aria-label="Search orders"
+                className="min-h-[44px] w-full rounded-[var(--radius-input)] border border-transparent bg-[var(--fill)] pl-9 pr-3 py-2.5 text-sm text-[var(--label)] placeholder:text-[var(--label-3)] focus:outline-none"
               />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="status" className="text-xs">Order status</Label>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-              <SelectTrigger id="status" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {ORDER_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="payment" className="text-xs">Payment</Label>
-            <Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v as PaymentFilter)}>
-              <SelectTrigger id="payment" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All payments</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-                <SelectItem value="refunded">Refunded</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="date" className="text-xs">Date range</Label>
-            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-              <SelectTrigger id="date" className="h-11 sm:h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All time</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          </Group>
 
-      {actionError && (
-        <Card className="border-danger/30 bg-danger-soft">
-          <CardContent className="p-3 text-sm text-danger">⚠ {actionError}</CardContent>
-        </Card>
-      )}
+          <Group padding="rows" title="Date range">
+            <InsetList>
+              {(['all', 'today', '7d', '30d'] as DateFilter[]).map((d) => (
+                <FilterRow
+                  key={d}
+                  label={
+                    d === 'all' ? 'All time' :
+                    d === 'today' ? 'Today' :
+                    d === '7d' ? 'Last 7 days' :
+                    'Last 30 days'
+                  }
+                  selected={dateFilter === d}
+                  onClick={() => setDateFilter(d)}
+                />
+              ))}
+            </InsetList>
+          </Group>
 
-      {/* List */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base">Order queue</CardTitle>
-          <CardDescription className="text-xs">
-            Click any order to view files, payment verification, status actions, and the activity timeline.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          {loading ? (
-            <div className="p-4">
-              <TableSkeleton rows={6} cols={5} />
-            </div>
-          ) : error ? (
-            <div className="p-6 text-sm text-danger">
-              {error}
-              <div className="mt-3">
-                <Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
-              </div>
-            </div>
-          ) : paged.length === 0 ? (
-            <EmptyState
-              className="px-4 py-12"
-              icon={<Inbox className="size-5" />}
-              title="No orders match your filters"
-              description={
-                orders.length === 0
-                  ? 'No orders have been placed at your shop yet. New orders will appear here automatically.'
-                  : 'Try clearing the search or switching the status filter.'
-              }
-            />
-          ) : (
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10 pl-4 text-center">
-                    <Checkbox
-                      aria-label="Select all eligible orders on this page"
-                      checked={
-                        pagedEligible.length === 0
-                          ? false
-                          : allEligibleOnPageSelected
-                            ? true
-                            : someEligibleOnPageSelected
-                              ? 'indeterminate'
-                              : false
-                      }
-                      onCheckedChange={(v) => toggleSelectAllOnPage(v === true)}
-                      disabled={batchState.running || pagedEligible.length === 0}
-                    />
-                  </TableHead>
-                  <TableHead className="pl-1">Token</TableHead>
-                  <TableHead className="hidden md:table-cell">Customer</TableHead>
-                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="hidden sm:table-cell">Placed</TableHead>
-                  <TableHead className="pr-4 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paged.map((o) => {
-                  const pstatus = paymentStatus(o);
-                  const canVerify = o.status === 'awaiting_payment';
-                  const canStart = o.status === 'paid';
-                  const canReady = o.status === 'printing';
-                  const idBusy = busy?.startsWith(`${o.id}:`) ?? false;
-                  const eligible = isEligibleForBatch(o.status);
-                  const isChecked = selectedIds.has(o.id);
-                  return (
-                    <TableRow key={o.id} className="cursor-pointer">
-                      <TableCell className="w-10 pl-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          aria-label={`Select order ${o.tokenNumber ?? o.customerToken} for batch print`}
-                          checked={isChecked}
-                          disabled={!eligible || batchState.running}
-                          onCheckedChange={(v) => toggleRow(o.id, v === true)}
-                          title={!eligible ? `Orders in status '${o.status}' cannot be batch-printed (files may not be ready or have been removed).` : undefined}
-                        />
-                      </TableCell>
-                      <TableCell className="pl-1">
-                        <Link
-                          href={`/shop/orders/${o.id}`}
-                          className="font-mono font-semibold tabular-nums text-brand hover:underline"
-                        >
-                          {o.tokenNumber ?? o.customerToken}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-                        {o.customerPhone ?? <span className="italic">—</span>}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell"><PaymentBadge status={pstatus === 'rejected' ? 'failed' : pstatus} /></TableCell>
-                      <TableCell><OrderStatusBadge status={o.status} /></TableCell>
-                      <TableCell className="text-right font-mono text-sm tabular-nums">{formatINRFromPaise(o.totalAmountPaise)}</TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</TableCell>
-                      <TableCell className="pr-4">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {canVerify && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void quickVerify(o.id, 'verify')}
-                                disabled={idBusy}
-                                aria-label="Verify payment"
-                                className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
-                                title="Verify payment"
-                              >
-                                {busy === `${o.id}:verify` ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                                <span className="hidden sm:inline">Verify</span>
-                              </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={idBusy}
-                                    aria-label="Reject payment"
-                                    className="min-h-[44px] min-w-[44px] gap-1 border-danger/30 text-danger hover:bg-danger-soft"
-                                    title="Reject payment"
-                                  >
-                                    {busy === `${o.id}:reject` ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Reject this payment?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Order {o.tokenNumber ?? o.customerToken} will be marked cancelled.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      className="bg-danger text-danger-foreground hover:bg-danger/90"
-                                      onClick={(e) => { e.preventDefault(); void quickVerify(o.id, 'reject'); }}
-                                    >
-                                      Yes, reject
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </>
-                          )}
-                          {canStart && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void quickStart(o.id)}
-                              disabled={idBusy}
-                              aria-label="Start printing"
-                              className="min-h-[44px] gap-1 border-brand/30 text-brand hover:bg-brand-soft"
-                              title="Start printing"
-                            >
-                              {busy === `${o.id}:start` ? <Loader2 className="size-3.5 animate-spin" /> : <PrinterIcon className="size-3.5" />}
-                              <span className="hidden sm:inline">Start</span>
-                            </Button>
-                          )}
-                          {canReady && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void quickReady(o.id)}
-                              disabled={idBusy}
-                              aria-label="Mark ready for pickup"
-                              className="min-h-[44px] gap-1 border-success/30 text-success hover:bg-success-soft"
-                              title="Mark ready for pickup"
-                            >
-                              {busy === `${o.id}:ready` ? <Loader2 className="size-3.5 animate-spin" /> : <PackageCheck className="size-3.5" />}
-                              <span className="hidden sm:inline">Ready</span>
-                            </Button>
-                          )}
-                          <Button asChild size="sm" variant="ghost" className="gap-1">
-                            <Link href={`/shop/orders/${o.id}`}><FileText className="size-3.5" /> Open</Link>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+          {actionError && (
+            <p className="text-xs text-[var(--danger-text)]" role="alert">
+              {actionError}
+            </p>
           )}
-        </CardContent>
-      </Card>
+        </aside>
 
-      {/* Pagination */}
-      {filtered.length > PAGE_SIZE && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground tabular-nums">
-            Page {safePage + 1} of {totalPages} · {filtered.length} orders
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={safePage === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="min-h-[44px] gap-1"
-            >
-              <ChevronLeft className="size-4" /> Prev
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={safePage >= totalPages - 1}
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              className="min-h-[44px] gap-1"
-            >
-              Next <ChevronRight className="size-4" />
-            </Button>
-          </div>
+        {/* Kanban board — on #E8E9EF background per R13 */}
+        <div
+          className="flex flex-1 gap-4 overflow-x-auto rounded-[var(--radius-card)] p-4"
+          style={{ backgroundColor: 'var(--kanban-fill, #E8E9EF)' }}
+        >
+          {kanbanColumns.map((col) => {
+            const colOrders = columnOrders(col.statuses);
+            return (
+              <section
+                key={col.key}
+                className="flex w-72 shrink-0 flex-col gap-2"
+                aria-label={col.title}
+              >
+                <div className="flex items-center justify-between px-2 py-1">
+                  <h2 className="text-sm font-semibold text-[var(--label)]">
+                    {col.title}
+                  </h2>
+                  <ClearBadge count={colOrders.length} />
+                </div>
+                <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
+                  {colOrders.length === 0 ? (
+                    <div className="rounded-[var(--radius-card)] bg-[var(--surface)]/40 px-3 py-6 text-center text-xs text-[var(--label-2)]">
+                      No orders
+                    </div>
+                  ) : (
+                    colOrders.map((o) => (
+                      <KanbanCard
+                        key={o.id}
+                        order={o}
+                        onOpen={() => setDrawerOrderId(o.id)}
+                      />
+                    ))
+                  )}
+                </div>
+              </section>
+            );
+          })}
         </div>
-      )}
+      </div>
 
-      {/* Floating batch action bar */}
-      {/* Visible whenever orders are selected OR a batch is in progress / just finished */}
+      {/* ── Floating batch-action bar (kept from the original) ──
+          Visible whenever orders are selected OR a batch is in progress. */}
       {(selectedIds.size > 0 || batchState.running || (batchState.done && !batchState.error)) && (
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="mx-auto flex max-w-5xl flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4">
-            {/* Left: status / progress */}
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--hairline)] bg-[rgba(255,255,255,0.86)] backdrop-blur-lg safe-bottom">
+          <div className="mx-auto flex max-w-[640px] flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4 lg:max-w-[1280px]">
             <div className="min-w-0 flex-1 space-y-1">
               {batchState.running ? (
                 <>
-                  <div className="flex items-center gap-2 text-sm font-medium text-brand">
-                    <Loader2 className="size-4 animate-spin" />
+                  <div className="flex items-center gap-2 text-sm font-medium text-[var(--accent)]">
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                     <span className="tabular-nums">
                       Printing order {batchState.currentOrderIdx} of {batchState.totalOrders}
                       {batchState.totalFilesInCurrentOrder > 0
@@ -886,53 +902,57 @@ export default function ShopOrdersPage() {
                     </span>
                   </div>
                   {batchState.currentFilename && (
-                    <p className="truncate text-xs text-muted-foreground" title={batchState.currentFilename}>
+                    <p className="truncate text-xs text-[var(--label-2)]" title={batchState.currentFilename}>
                       {batchState.currentFilename}
                     </p>
                   )}
-                  <Progress
-                    value={
-                      batchState.totalFiles > 0
-                        ? (batchState.completedFiles / batchState.totalFiles) * 100
-                        : 0
-                    }
-                    className="h-1.5"
-                  />
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--track)]">
+                    <div
+                      className="h-full bg-[var(--accent)] transition-[width] duration-200"
+                      style={{
+                        width: `${
+                          batchState.totalFiles > 0
+                            ? (batchState.completedFiles / batchState.totalFiles) * 100
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
                 </>
               ) : batchState.done && batchState.results.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <span className="font-medium text-foreground">
+                  <span className="font-medium text-[var(--label)]">
                     {batchState.canceled ? 'Batch canceled.' : 'Batch complete.'}
                   </span>
-                  <span className="text-success tabular-nums">
-                    <Check className="mr-0.5 inline size-3" />
+                  <span className="text-[var(--success-text)] tabular-nums">
+                    <Check className="mr-0.5 inline size-3" aria-hidden="true" />
                     {batchState.results.filter((r) => r.status === 'success').length} succeeded
                   </span>
-                  <span className="text-danger tabular-nums">
-                    <XCircle className="mr-0.5 inline size-3" />
+                  <span className="text-[var(--danger-text)] tabular-nums">
+                    <XCircle className="mr-0.5 inline size-3" aria-hidden="true" />
                     {batchState.results.filter((r) => r.status === 'failed').length} failed
                   </span>
                   {batchState.results.some((r) => r.status === 'skipped') && (
-                    <span className="text-muted-foreground tabular-nums">
-                      <Ban className="mr-0.5 inline size-3" />
+                    <span className="text-[var(--label-2)] tabular-nums">
+                      <Ban className="mr-0.5 inline size-3" aria-hidden="true" />
                       {batchState.results.filter((r) => r.status === 'skipped').length} skipped
                     </span>
                   )}
-                  <details className="text-muted-foreground">
+                  <details className="text-[var(--label-2)]">
                     <summary className="cursor-pointer">Details</summary>
                     <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto text-xs">
                       {batchState.results.map((r, idx) => (
                         <li key={idx} className="flex items-start gap-1">
                           {r.status === 'success' ? (
-                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-success" />
+                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-[var(--success-text)]" aria-hidden="true" />
                           ) : r.status === 'skipped' ? (
-                            <Ban className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                            <Ban className="mt-0.5 size-3 shrink-0 text-[var(--label-2)]" aria-hidden="true" />
                           ) : (
-                            <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
+                            <XCircle className="mt-0.5 size-3 shrink-0 text-[var(--danger-text)]" aria-hidden="true" />
                           )}
                           <span className="truncate" title={`${r.orderToken} — ${r.filename}${r.error ? ` — ${r.error}` : ''}`}>
                             <span className="font-mono">{r.orderToken}</span> · {r.filename}
-                            {r.error && <span className="text-danger"> — {r.error}</span>}
+                            {r.error && <span className="text-[var(--danger-text)]"> — {r.error}</span>}
                           </span>
                         </li>
                       ))}
@@ -940,87 +960,325 @@ export default function ShopOrdersPage() {
                   </details>
                 </div>
               ) : batchState.done && batchState.error ? (
-                <div className="flex items-center gap-2 text-sm text-danger">
-                  <AlertCircle className="size-4 shrink-0" />
+                <div className="flex items-center gap-2 text-sm text-[var(--danger-text)]">
+                  <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
                   <span className="break-words">{batchState.error}</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Layers className="size-4 text-brand" />
+                <div className="flex items-center gap-2 text-sm font-medium text-[var(--label)]">
+                  <Layers className="size-4 text-[var(--accent)]" aria-hidden="true" />
                   <span className="tabular-nums">{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    ({pagedEligible.length} eligible on this page)
-                  </span>
                 </div>
               )}
             </div>
 
-            {/* Right: actions */}
             <div className="flex shrink-0 items-center gap-2">
               {batchState.running ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={cancelBatch}
-                  className="min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft"
-                >
-                  <X className="size-4" /> Cancel
-                </Button>
+                <DestructiveButton size="compact" onClick={cancelBatch}>
+                  <X className="size-4" aria-hidden="true" /> Cancel
+                </DestructiveButton>
               ) : batchState.done ? (
                 <>
-                  {batchState.error && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={resetBatch}
-                      className="min-h-[44px] gap-1.5"
-                    >
-                      Dismiss
-                    </Button>
-                  )}
-                  {!batchState.error && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={resetBatch}
-                      className="min-h-[44px] gap-1.5"
-                    >
-                      <Check className="size-4" /> Done
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSelection}
-                    className="min-h-[44px] gap-1.5"
-                  >
-                    Clear selection
-                  </Button>
+                  <TextButton size="compact" onClick={clearSelection}>Clear selection</TextButton>
+                  <TintedButton size="compact" onClick={resetBatch}>
+                    <Check className="size-4" aria-hidden="true" /> Done
+                  </TintedButton>
                 </>
               ) : (
                 <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSelection}
-                    disabled={selectedIds.size === 0}
-                    className="min-h-[44px] gap-1.5"
-                  >
-                    <Ban className="size-4" /> Clear
-                  </Button>
-                  <Button
-                    size="sm"
+                  <TextButton size="compact" onClick={clearSelection} disabled={selectedIds.size === 0}>
+                    <Ban className="size-4" aria-hidden="true" /> Clear
+                  </TextButton>
+                  <PrimaryButton
+                    size="compact"
                     onClick={() => void runBatchPrint()}
                     disabled={selectedIds.size === 0}
-                    className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
                   >
-                    <PrinterIcon className="size-4" />
-                    Batch Print{selectedIds.size > 0 ? <> (<span className="tabular-nums">{selectedIds.size}</span>)</> : ''}
-                  </Button>
+                    <PrinterIcon className="size-4" aria-hidden="true" />
+                    Batch Print{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                  </PrimaryButton>
                 </>
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Order drawer (Sheet) — opens when a card is selected ── */}
+      <Sheet
+        open={drawerOrderId !== null}
+        onClose={() => setDrawerOrderId(null)}
+        title={drawerOrder ? `Order ${displayToken(drawerOrder)}` : 'Order'}
+        footer={
+          drawerOrder && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                href={`/shop/orders/${drawerOrder.id}`}
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-full bg-[var(--accent)] px-4 text-[15px] font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-press)]"
+              >
+                <FileText className="size-4" aria-hidden="true" />
+                Open order
+              </Link>
+            </div>
+          )
+        }
+      >
+        {drawerOrder && (
+          <DrawerOrderSummary
+            order={drawerOrder}
+            busy={busy?.startsWith(`${drawerOrder.id}:`) ?? false}
+            onVerify={() => void quickVerify(drawerOrder.id, 'verify')}
+            onReject={() => void quickVerify(drawerOrder.id, 'reject')}
+            onStart={() => void quickStart(drawerOrder.id)}
+            onReady={() => void quickReady(drawerOrder.id)}
+          />
+        )}
+      </Sheet>
+    </>
+  );
+}
+
+// ── Local helper components ──────────────────────────────────────────────
+
+/** Maps an OrderStatus to a Clear StatusPill lifecycle state. */
+function statusPillFor(status: OrderStatus): { s: 'pending' | 'printing' | 'ready' | 'collected' | 'error'; label: string } {
+  switch (status) {
+    case 'awaiting_payment': return { s: 'pending', label: 'Awaiting payment' };
+    case 'paid': return { s: 'pending', label: 'Paid' };
+    case 'printing': return { s: 'printing', label: 'Printing' };
+    case 'ready': return { s: 'ready', label: 'Ready' };
+    case 'collected': return { s: 'collected', label: 'Collected' };
+    case 'cancelled': return { s: 'error', label: 'Cancelled' };
+    case 'refunded': return { s: 'error', label: 'Refunded' };
+    default: return { s: 'pending', label: String(status) };
+  }
+}
+
+/** Mobile OrderCard — white tile with token, amount, customer, status chip, quick actions. */
+function OrderCard({
+  order,
+  busy,
+  onOpen,
+  onVerify,
+  onReject,
+  onStart,
+  onReady,
+}: {
+  order: OrderRow;
+  busy: boolean;
+  onOpen: () => void;
+  onVerify: () => void;
+  onReject: () => void;
+  onStart: () => void;
+  onReady: () => void;
+}) {
+  const token = order.tokenNumber ?? order.customerToken;
+  const sp = statusPillFor(order.status);
+  const canVerify = order.status === 'awaiting_payment';
+  const canStart = order.status === 'paid';
+  const canReady = order.status === 'printing';
+  return (
+    <li>
+      <article
+        className="rounded-[var(--radius-card)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)]"
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex w-full items-start justify-between gap-3 text-left"
+          aria-label={`Open order ${token}`}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-base font-semibold tabular-nums text-[var(--label)]">
+              {token}
+            </p>
+            <p className="mt-0.5 truncate text-sm text-[var(--label-2)]">
+              {order.customerPhone ?? 'Walk-in'}
+            </p>
+          </div>
+          <span className="text-base font-semibold tabular-nums text-[var(--label)]">
+            {formatINRFromPaise(order.totalAmountPaise)}
+          </span>
+        </button>
+
+        <div className="my-3 h-px w-full bg-[var(--hairline)]" aria-hidden="true" />
+
+        <div className="flex items-center justify-between gap-2">
+          <StatusPill status={sp.s} label={sp.label} />
+          <div className="flex items-center gap-1.5">
+            {canVerify && (
+              <button
+                type="button"
+                onClick={onVerify}
+                disabled={busy}
+                aria-label={`Verify payment for order ${token}`}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-press)] disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
+                Verify
+              </button>
+            )}
+            {canVerify && (
+              <button
+                type="button"
+                onClick={onReject}
+                disabled={busy}
+                aria-label={`Reject payment for order ${token}`}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+              >
+                <XCircle className="size-3.5" aria-hidden="true" />
+                Reject
+              </button>
+            )}
+            {canStart && (
+              <button
+                type="button"
+                onClick={onStart}
+                disabled={busy}
+                aria-label={`Start printing order ${token}`}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--accent-tint)] px-3 text-xs font-semibold text-[var(--accent-tint-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PrinterIcon className="size-3.5" aria-hidden="true" />}
+                Start
+              </button>
+            )}
+            {canReady && (
+              <button
+                type="button"
+                onClick={onReady}
+                disabled={busy}
+                aria-label={`Mark order ${token} ready for pickup`}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--success-tint)] px-3 text-xs font-semibold text-[var(--success-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PackageCheck className="size-3.5" aria-hidden="true" />}
+                Ready
+              </button>
+            )}
+          </div>
+        </div>
+      </article>
+    </li>
+  );
+}
+
+/** Desktop KanbanCard — white tile with name + total + split line + status chip. */
+function KanbanCard({ order, onOpen }: { order: OrderRow; onOpen: () => void }) {
+  const token = order.tokenNumber ?? order.customerToken;
+  const sp = statusPillFor(order.status);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full rounded-[var(--radius-card)] bg-[var(--surface)] p-3 text-left shadow-[var(--shadow-card)] transition-colors hover:bg-[var(--fill)]"
+      aria-label={`Open order ${token}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-mono text-sm font-semibold tabular-nums text-[var(--label)]">
+          {token}
+        </p>
+        <span className="text-sm font-semibold tabular-nums text-[var(--label)]">
+          {formatINRFromPaise(order.totalAmountPaise)}
+        </span>
+      </div>
+      <p className="mt-0.5 truncate text-xs text-[var(--label-2)]">
+        {order.customerPhone ?? 'Walk-in'}
+      </p>
+      <div className="my-2 h-px w-full bg-[var(--hairline)]" aria-hidden="true" />
+      <div className="flex items-center justify-between">
+        <StatusPill status={sp.s} label={sp.label} />
+        <span className="text-xs text-[var(--label-3)]">
+          {new Date(order.createdAt).toLocaleDateString()}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/** Filter row for the desktop sidebar (selectable, min-h-44). */
+function FilterRow({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className={[
+          'flex w-full items-center justify-between min-h-[44px] px-4 py-2 text-left text-sm transition-colors',
+          selected ? 'bg-[var(--accent-tint)] text-[var(--accent-tint-text)] font-semibold' : 'text-[var(--label)] hover:bg-[var(--fill)]',
+        ].join(' ')}
+      >
+        <span>{label}</span>
+        {selected && <Check className="size-4" aria-hidden="true" />}
+      </button>
+    </li>
+  );
+}
+
+/** Drawer contents — order summary + quick actions. */
+function DrawerOrderSummary({
+  order,
+  busy,
+  onVerify,
+  onReject,
+  onStart,
+  onReady,
+}: {
+  order: OrderRow;
+  busy: boolean;
+  onVerify: () => void;
+  onReject: () => void;
+  onStart: () => void;
+  onReady: () => void;
+}) {
+  const token = order.tokenNumber ?? order.customerToken;
+  const sp = statusPillFor(order.status);
+  const canVerify = order.status === 'awaiting_payment';
+  const canStart = order.status === 'paid';
+  const canReady = order.status === 'printing';
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <StatusPill status={sp.s} label={sp.label} />
+        <span className="text-2xl font-bold tabular-nums text-[var(--label)]">
+          {formatINRFromPaise(order.totalAmountPaise)}
+        </span>
+      </div>
+
+      <Group padding="rows">
+        <InsetList>
+          <ValueRow label="Token" value={token} />
+          <ValueRow label="Customer" value={order.customerPhone ?? 'Walk-in'} />
+          <ValueRow label="Placed" value={new Date(order.createdAt).toLocaleString()} />
+          <ValueRow label="Status" value={order.status.replace(/_/g, ' ')} />
+        </InsetList>
+      </Group>
+
+      {(canVerify || canStart || canReady) && (
+        <div className="flex flex-col gap-2">
+          {canVerify && (
+            <>
+              <PrimaryButton onClick={onVerify} disabled={busy} loading={busy}>
+                <Check className="size-4" aria-hidden="true" />
+                Verify payment
+              </PrimaryButton>
+              <DestructiveButton onClick={onReject} disabled={busy}>
+                <XCircle className="size-4" aria-hidden="true" />
+                Reject payment
+              </DestructiveButton>
+            </>
+          )}
+          {canStart && (
+            <PrimaryButton onClick={onStart} disabled={busy} loading={busy}>
+              <PrinterIcon className="size-4" aria-hidden="true" />
+              Start printing
+            </PrimaryButton>
+          )}
+          {canReady && (
+            <PrimaryButton onClick={onReady} disabled={busy} loading={busy}>
+              <PackageCheck className="size-4" aria-hidden="true" />
+              Mark ready for pickup
+            </PrimaryButton>
+          )}
         </div>
       )}
     </div>

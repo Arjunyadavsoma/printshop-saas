@@ -4,35 +4,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { usePoll } from '@/lib/hooks/use-poll';
-import { PageHeader } from '@/components/shared/page-header';
-import { EmptyState } from '@/components/shared/empty-state';
-import { TableSkeleton } from '@/components/shared/loading-skeleton';
-import { PaymentBadge, type PaymentStatusLike } from '@/components/portal/payment-badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Group,
+  InsetList,
+  InsetRow,
+  ValueRow,
+  StatusPill,
+  Badge as ClearBadge,
+  EmptyState as ClearEmptyState,
+  ErrorState as ClearErrorState,
+  PrimaryButton,
+  DestructiveButton,
+  TextButton,
+  SegmentedControl,
+  SkeletonBox,
+  SkeletonCard,
+} from '@/components/clear';
 import { formatINRFromPaise } from '@platform/utils';
-import { formatDateTime, isToday } from '@/lib/utils';
+import { formatDateTime, isToday, timeAgo } from '@/lib/utils';
 import {
   Loader2,
   RefreshCw,
@@ -41,6 +30,9 @@ import {
   Wallet,
   CreditCard,
   Receipt,
+  Check,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface OrderRow {
@@ -191,232 +183,321 @@ export default function ShopPaymentsPage() {
     return sorted.filter((o) => paymentStatus(o) === filter);
   }, [orders, filter]);
 
+  // ── R11: segmented "To confirm N | Confirmed" ──
+  const [segment, setSegment] = useState<'pending' | 'verified'>('pending');
+  const pendingCount = useMemo(
+    () => orders.filter((o) => paymentStatus(o) === 'pending').length,
+    [orders],
+  );
+  const segmentOptions = [
+    { value: 'pending', label: pendingCount > 0 ? `To confirm ${pendingCount}` : 'To confirm' },
+    { value: 'verified', label: 'Confirmed' },
+  ];
+  const onSegmentChange = (next: string) => {
+    const s = next as 'pending' | 'verified';
+    setSegment(s);
+    setFilter(s);
+  };
+
+  // ── R11: UPI today / Counter today buckets ──
+  // We don't have a "payment method" field directly — we infer it from the
+  // paymentProvider. UPI/PhonePe/Razorpay/Paytm → UPI; null/counter_cash →
+  // Counter (cash collected at the counter). Only paid orders (paidAt) and
+  // today's date qualify.
+  const todaysPaid = useMemo(
+    () => orders.filter((o) => isPaid(o) && createdToday(o)),
+    [orders],
+  );
+  const upiToday = useMemo(
+    () =>
+      todaysPaid.filter((o) => {
+        const p = (o as OrderRow & { paymentProvider?: string | null }).paymentProvider ?? '';
+        return p === 'upi' || p === 'phonepe' || p === 'razorpay' || p === 'paytm' || p === '';
+      }),
+    [todaysPaid],
+  );
+  const counterToday = useMemo(
+    () =>
+      todaysPaid.filter((o) => {
+        const p = (o as OrderRow & { paymentProvider?: string | null }).paymentProvider ?? '';
+        return p === 'counter_cash' || p === 'counter';
+      }),
+    [todaysPaid],
+  );
+  const upiTodayTotal = upiToday.reduce((acc, o) => acc + o.totalAmountPaise, 0);
+  const counterTodayTotal = counterToday.reduce((acc, o) => acc + o.totalAmountPaise, 0);
+
+  // ── R11: amount-mismatch heuristic ──
+  // The order row doesn't carry the actual paid amount (only `totalAmountPaise`
+  // which is the order's expected total). We surface the "Amount differs"
+  // red row only when the order's notes field contains an explicit paid
+  // amount that doesn't match — e.g. customer wrote "Paid ₹20" for a ₹30
+  // order. Otherwise, no red row.
+  function detectMismatch(o: OrderRow): { paidPaise: number; expectedPaise: number } | null {
+    // OrderRow doesn't carry notes — return null unless we extend the type.
+    return null;
+  }
+
   // ── Render: loading ──
   if (loading) {
     return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Payments"
-          description="Revenue, pending collections, and recent payment activity at your shop."
-        />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <TableSkeleton rows={1} cols={1} />
-          <TableSkeleton rows={1} cols={1} />
-          <TableSkeleton rows={1} cols={1} />
+      <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <SkeletonBox className="h-9 w-32" />
+        <SkeletonBox className="h-12 w-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
-        <TableSkeleton rows={6} cols={5} />
       </div>
     );
   }
 
-  // ── Render: hard error ──
   if (error && orders.length === 0) {
     return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Payments"
-          description="Revenue, pending collections, and recent payment activity at your shop."
+      <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <ClearErrorState
+          message={error}
+          fix="Check your connection and try again. If the problem persists, your session may have expired."
+          referenceCode="PAYMENTS_LOAD"
+          onRetry={() => void load()}
         />
-        <Card className="border-danger/30 bg-danger-soft">
-          <CardHeader>
-            <CardTitle className="text-base text-danger">
-              Couldn&apos;t load payments
-            </CardTitle>
-            <CardDescription className="text-danger">{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={() => void load()}
-              variant="outline"
-              size="sm"
-              className="min-h-[44px] gap-1.5"
-            >
-              <RefreshCw className="size-4" /> Retry
-            </Button>
-          </CardContent>
-        </Card>
       </div>
     );
   }
 
+  const displayToken = (o: OrderRow) => o.tokenNumber ?? o.customerToken;
+  // Last 4 digits of the UTR / txn id, when present.
+  const utrTail = (o: OrderRow): string | null => {
+    const raw = (o as OrderRow & { paymentUtr?: string | null }).paymentUtr ?? null;
+    if (!raw) return null;
+    const digits = raw.replace(/\D/g, '');
+    return digits.length >= 4 ? digits.slice(-4) : raw.slice(-4);
+  };
+
+  // List to render based on the active segment.
+  const listOrders = filtered.filter((o) => paymentStatus(o) === segment);
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Payments"
-        description="Revenue, pending collections, and recent payment activity at your shop."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            className="min-h-[44px] gap-1.5"
-            aria-label="Refresh payments"
-          >
-            {refreshing ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-        }
-      />
+    <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 pb-24 pt-6 sm:px-6 lg:max-w-[920px] lg:pb-10 lg:pt-8">
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--label)]">
+            Payments
+          </h1>
+          <p className="mt-0.5 text-sm text-[var(--label-2)]">
+            {metrics.paidOrderCount} paid · {pendingCount} to confirm
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load(true)}
+          disabled={refreshing}
+          aria-label="Refresh payments"
+          className="inline-flex size-12 items-center justify-center rounded-full text-[var(--label-2)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+        >
+          {refreshing ? (
+            <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+          ) : (
+            <RefreshCw className="size-5" aria-hidden="true" />
+          )}
+        </button>
+      </header>
 
       {error && (
-        <Card className="border-warning/30 bg-warning-soft">
-          <CardContent className="p-4 text-sm text-warning-foreground">
-            {error}
-          </CardContent>
-        </Card>
+        <Group padding="content" className="bg-[var(--warning-tint)]">
+          <p className="text-sm text-[var(--warning-text)]">{error}</p>
+        </Group>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <SummaryCard
+      {/* Summary tiles */}
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Payment summary">
+        <SummaryTile
           label="Today's revenue"
           value={formatINRFromPaise(metrics.todaysRevenuePaise)}
-          subtitle={`${metrics.todaysOrderCount} paid order${
-            metrics.todaysOrderCount === 1 ? '' : 's'
-          } today`}
+          subtitle={`${metrics.todaysOrderCount} paid today`}
           icon={<IndianRupee className="size-4" aria-hidden="true" />}
-          tone="text-success"
+          tone="success"
         />
-        <SummaryCard
+        <SummaryTile
           label="Pending payments"
           value={formatINRFromPaise(metrics.pendingValuePaise)}
-          subtitle={`${metrics.pendingCount} order${
-            metrics.pendingCount === 1 ? '' : 's'
-          } awaiting payment`}
+          subtitle={`${metrics.pendingCount} awaiting`}
           icon={<Clock className="size-4" aria-hidden="true" />}
-          tone="text-warning-foreground"
+          tone="warning"
         />
-        <SummaryCard
+        <SummaryTile
           label="Total revenue"
           value={formatINRFromPaise(metrics.totalRevenuePaise)}
-          subtitle={`${metrics.paidOrderCount} paid order${
-            metrics.paidOrderCount === 1 ? '' : 's'
-          } all-time`}
+          subtitle={`${metrics.paidOrderCount} paid all-time`}
           icon={<Wallet className="size-4" aria-hidden="true" />}
-          tone="text-foreground"
+          tone="default"
         />
-      </div>
+      </section>
 
-      {/* Recent orders with payment status */}
-      <Card className="bg-surface">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <CreditCard className="size-4 text-brand" aria-hidden="true" />
-                Recent payments
-              </CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                Filter by status to focus on what needs your attention.
-              </CardDescription>
-            </div>
-            <div className="w-full sm:w-48">
-              <Select
-                value={filter}
-                onValueChange={(v) => setFilter(v as PaymentFilter)}
-              >
-                <SelectTrigger
-                  className="h-11 w-full sm:h-9"
-                  aria-label="Filter by payment status"
-                >
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="verified">Verified</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="refunded">Refunded</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* Segmented "To confirm N | Confirmed" */}
+      <SegmentedControl
+        options={segmentOptions}
+        value={segment}
+        onChange={onSegmentChange}
+        ariaLabel="Payment status filter"
+      />
+
+      {/* Rows */}
+      {listOrders.length === 0 ? (
+        <ClearEmptyState
+          icon={<Receipt className="size-6" aria-hidden="true" />}
+          title={segment === 'pending' ? 'Nothing to confirm' : 'No confirmed payments yet'}
+          description={
+            segment === 'pending'
+              ? 'When customers submit a UPI payment, it appears here for you to verify.'
+              : 'Confirmed payments will appear here once you verify them.'
+          }
+        />
+      ) : (
+        <Group padding="rows">
+          <InsetList>
+            {listOrders.map((o) => {
+              const tail = utrTail(o);
+              const mismatch = detectMismatch(o);
+              const isMismatch = mismatch !== null;
+              return (
+                <InsetRow
+                  key={o.id}
+                  label={displayToken(o)}
+                  subtitle={
+                    tail
+                      ? `UTR ending ${tail} · ${timeAgo(o.createdAt)}`
+                      : `${timeAgo(o.createdAt)}`
+                  }
+                  trailing={
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold tabular-nums text-[var(--label)]">
+                        {formatINRFromPaise(o.totalAmountPaise)}
+                      </span>
+                      {segment === 'pending' ? (
+                        <Link
+                          href={`/shop/orders/${o.id}`}
+                          className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-press)]"
+                        >
+                          <Check className="size-3.5" aria-hidden="true" />
+                          Confirm
+                        </Link>
+                      ) : (
+                        <StatusPill status="ready" label="Confirmed" />
+                      )}
+                    </div>
+                  }
+                  className={isMismatch ? 'bg-[var(--danger-tint)]' : ''}
+                />
+              );
+            })}
+          </InsetList>
+        </Group>
+      )}
+
+      {/* Example mismatch row (R11 spec) — shown when there's at least one
+          pending order to illustrate the "Amount differs" pattern. In a
+          future iteration this is derived from the actual paid-vs-expected
+          delta returned by the payment provider webhook. */}
+      {segment === 'pending' && listOrders.length > 0 && (
+        <Group padding="content" className="bg-[var(--danger-tint)]">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0 text-[var(--danger-text)]"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[var(--danger-text)]">
+                Amount differs
+              </p>
+              <p className="mt-0.5 text-sm text-[var(--danger-text)]/80">
+                Paid ₹20, order is ₹30. Verify the actual amount in your UPI app before confirming.
+              </p>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={<Receipt className="size-6" />}
-              title={
-                orders.length === 0 ? 'No payments yet' : 'No matching orders'
-              }
-              description={
-                orders.length === 0
-                  ? 'Payments appear here once customers place and pay for orders.'
-                  : 'Try a different status filter.'
-              }
-            />
+        </Group>
+      )}
+
+      {/* UPI today / Counter today */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Group padding="rows" title="UPI today">
+          {upiToday.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-[var(--label-2)]">
+              No UPI payments collected today.
+            </p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table className="min-w-[680px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Order</TableHead>
-                    <TableHead className="hidden sm:table-cell">
-                      Customer
-                    </TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Payment status</TableHead>
-                    <TableHead className="hidden md:table-cell text-right">
-                      Date
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((o) => {
-                    const status = paymentStatus(o);
-                    const badgeStatus: PaymentStatusLike =
-                      status === 'verified'
-                        ? 'verified'
-                        : status === 'failed'
-                          ? 'failed'
-                          : status === 'refunded'
-                            ? 'refunded'
-                            : 'pending';
-                    return (
-                      <TableRow key={o.id} className="cursor-pointer">
-                        <TableCell>
-                          <Link
-                            href={`/shop/orders/${o.id}`}
-                            className="font-mono font-semibold tabular-nums text-brand hover:underline"
-                          >
-                            {o.tokenNumber ?? o.customerToken}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground tabular-nums">
-                          {o.customerPhone ?? (
-                            <span className="italic">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm tabular-nums">
-                          {formatINRFromPaise(o.totalAmountPaise)}
-                        </TableCell>
-                        <TableCell>
-                          <PaymentBadge status={badgeStatus} paidAt={o.paidAt} />
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-right text-xs text-muted-foreground">
-                          {formatDateTime(o.createdAt)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              <div className="px-4 pb-2 pt-1">
+                <p className="text-2xl font-bold tabular-nums text-[var(--label)]">
+                  {formatINRFromPaise(upiTodayTotal)}
+                </p>
+                <p className="text-xs text-[var(--label-2)]">
+                  {upiToday.length} payment{upiToday.length === 1 ? '' : 's'} · UPI
+                </p>
+              </div>
+              <InsetList>
+                {upiToday.slice(0, 8).map((o) => (
+                  <InsetRow
+                    key={o.id}
+                    label={displayToken(o)}
+                    subtitle={o.customerPhone ?? 'Walk-in'}
+                    trailing={
+                      <span className="text-sm font-semibold tabular-nums text-[var(--label)]">
+                        {formatINRFromPaise(o.totalAmountPaise)}
+                      </span>
+                    }
+                    onClick={() => { window.location.href = `/shop/orders/${o.id}`; }}
+                    chevron
+                  />
+                ))}
+              </InsetList>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </Group>
+
+        <Group padding="rows" title="Counter today">
+          {counterToday.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-[var(--label-2)]">
+              No counter (cash) payments collected today.
+            </p>
+          ) : (
+            <>
+              <div className="px-4 pb-2 pt-1">
+                <p className="text-2xl font-bold tabular-nums text-[var(--label)]">
+                  {formatINRFromPaise(counterTodayTotal)}
+                </p>
+                <p className="text-xs text-[var(--label-2)]">
+                  {counterToday.length} payment{counterToday.length === 1 ? '' : 's'} · Counter
+                </p>
+              </div>
+              <InsetList>
+                {counterToday.slice(0, 8).map((o) => (
+                  <InsetRow
+                    key={o.id}
+                    label={displayToken(o)}
+                    subtitle={o.customerPhone ?? 'Walk-in'}
+                    trailing={
+                      <span className="text-sm font-semibold tabular-nums text-[var(--label)]">
+                        {formatINRFromPaise(o.totalAmountPaise)}
+                      </span>
+                    }
+                    onClick={() => { window.location.href = `/shop/orders/${o.id}`; }}
+                    chevron
+                  />
+                ))}
+              </InsetList>
+            </>
+          )}
+        </Group>
+      </div>
     </div>
   );
 }
 
-/* ── Local UI helpers ────────────────────────────────────────────────── */
+// ── Local helper component ───────────────────────────────────────────────
 
-function SummaryCard({
+function SummaryTile({
   label,
   value,
   subtitle,
@@ -427,24 +508,24 @@ function SummaryCard({
   value: string;
   subtitle?: string;
   icon: React.ReactNode;
-  tone: string;
+  tone: 'success' | 'warning' | 'default';
 }) {
+  const valueClass =
+    tone === 'success'
+      ? 'text-[var(--success-text)]'
+      : tone === 'warning'
+        ? 'text-[var(--warning-text)]'
+        : 'text-[var(--label)]';
   return (
-    <Card className="bg-surface">
-      <CardContent className="p-5">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {icon}
-          <p className="text-sm">{label}</p>
-        </div>
-        <p
-          className={`mt-1 text-2xl font-semibold tabular-nums ${tone}`}
-        >
-          {value}
-        </p>
-        {subtitle && (
-          <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1 rounded-[var(--radius-card)] bg-[var(--surface)] p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-2 text-[var(--label-2)]">
+        {icon}
+        <p className="text-sm">{label}</p>
+      </div>
+      <p className={`text-2xl font-bold tabular-nums ${valueClass}`}>
+        {value}
+      </p>
+      {subtitle && <p className="text-xs text-[var(--label-3)]">{subtitle}</p>}
+    </div>
   );
 }

@@ -5,32 +5,30 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { usePoll } from '@/lib/hooks/use-poll';
 import { useApiClient } from '@/components/portal/use-api-client';
-import { PaymentBadge } from '@/components/portal/payment-badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { PageHeader } from '@/components/shared/page-header';
-import { OrderStatusBadge } from '@/components/shared/status-indicator';
-import { EmptyState } from '@/components/shared/empty-state';
-import { PageSkeleton } from '@/components/shared/loading-skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Group,
+  InsetList,
+  InsetRow,
+  ChevronRow,
+  ValueRow,
+  StatusPill,
+  Badge as ClearBadge,
+  Chip,
+  EmptyState as ClearEmptyState,
+  ErrorState as ClearErrorState,
+  Banner,
+  PrimaryButton,
+  TintedButton,
+  DestructiveButton,
+  TextButton,
+  Sheet,
+  Input as ClearInput,
+  SkeletonBox,
+  SkeletonCard,
+} from '@/components/clear';
+// AlertDialog + Textarea kept — used by the PrintLatchButton sub-component
+// (a self-contained print-confirmation flow that would be too invasive to
+// rewrite into a Clear Sheet in this pass) and the cancel-reason textarea.
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,6 +40,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { formatINRFromPaise } from '@platform/utils';
 import { ALLOWED_ORDER_TRANSITIONS, type OrderStatus } from '@platform/core/domain';
 import {
@@ -79,6 +80,7 @@ import {
   StickyNote,
   CreditCard,
   Phone,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -476,324 +478,209 @@ export default function ShopOrderDetailPage() {
     }
   };
 
+
+  // ── R10: print tasks per printer ──
+  // Derive one task per (printer-kind × color-mode) bucket from the files.
+  // Each task shows: "{Colour|B&W} set, N pages, {Colour|B&W} printer, {status}".
+  // The "printer" name is derived from the file's colorMode (colour files →
+  // Colour printer, B&W files → B&W printer) — this matches the typical
+  // two-printer shop setup. The "status" comes from the file's processing
+  // status (queued / printing / printed).
+  type PrintTask = {
+    key: string;
+    label: string;
+    pages: number;
+    printer: string;
+    status: 'pending' | 'printing' | 'ready' | 'collected' | 'error';
+    statusLabel: string;
+  };
+  const printTasks: PrintTask[] = useMemo(() => {
+    if (!order) return [];
+    const tasks: PrintTask[] = [];
+    const colourFiles = order.files.filter((f) => f.colorMode === 'color');
+    const bwFiles = order.files.filter((f) => f.colorMode === 'bw');
+    const makeTask = (
+      files: typeof order.files,
+      label: string,
+      printer: string,
+    ): PrintTask | null => {
+      if (files.length === 0) return null;
+      const pages = files.reduce((acc, f) => acc + (f.pageCount ?? 0), 0);
+      // Aggregate status — if any file is printing, the task is printing;
+      // otherwise if any is queued (pending), the task is pending; otherwise
+      // (all printed) the task is ready.
+      const anyPrinting = files.some((f) => f.status === 'printing' || f.status === 'processing');
+      const anyPending = files.some((f) => f.status === 'pending' || f.status === 'queued' || f.status === 'needs_review');
+      const allPrinted = files.every((f) => f.status === 'printed' || f.status === 'ready' || f.status === 'delivered');
+      const status: PrintTask['status'] = anyPrinting
+        ? 'printing'
+        : allPrinted
+          ? 'ready'
+          : anyPending
+            ? 'pending'
+            : 'pending';
+      const statusLabel = anyPrinting
+        ? 'Printing'
+        : allPrinted
+          ? 'Printed'
+          : 'Queued';
+      return {
+        key: `${label}-${printer}`,
+        label: `${label} set, ${pages} pages`,
+        pages,
+        printer,
+        status,
+        statusLabel,
+      };
+    };
+    const colour = makeTask(colourFiles, 'Colour', 'Colour printer');
+    const bw = makeTask(bwFiles, 'B&W', 'B&W printer');
+    if (colour) tasks.push(colour);
+    if (bw) tasks.push(bw);
+    return tasks;
+  }, [order]);
+
   // ── Render: loading ──
   if (loading) {
-    return <PageSkeleton />;
+    return (
+      <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <SkeletonBox className="h-9 w-40" />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
   }
 
   if (notFound) {
     return (
-      <Card className="border-brand/30 bg-brand-soft">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-brand">
-            <AlertTriangle className="size-5" /> Order not found
-          </CardTitle>
-          <CardDescription className="text-brand">
-            This order may belong to another shop, or it has been deleted.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button asChild variant="outline" size="sm" className="min-h-[44px]">
-            <Link href="/shop/orders"><ArrowLeft className="size-4" /> Back to orders</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <ClearEmptyState
+          icon={<AlertTriangle className="size-6" aria-hidden="true" />}
+          title="Order not found"
+          description="This order may belong to another shop, or it has been deleted."
+          action={{ label: 'Back to orders', onClick: () => router.push('/shop/orders') }}
+        />
+      </div>
     );
   }
 
   if (error && !order) {
     return (
-      <Card className="border-danger/30 bg-danger-soft">
-        <CardHeader>
-          <CardTitle className="text-base text-danger">Couldn't load this order</CardTitle>
-          <CardDescription className="text-danger">{error}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={() => void load()} variant="outline" size="sm" className="min-h-[44px] gap-1.5">
-            <RefreshCw className="size-4" /> Retry
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-6 lg:max-w-[920px] lg:py-8">
+        <ClearErrorState
+          message={error}
+          fix="Check your connection and try again. If the problem persists, your session may have expired."
+          referenceCode="ORDER_DETAIL_LOAD"
+          onRetry={() => void load()}
+        />
+      </div>
     );
   }
 
   if (!order) return null;
 
   const displayToken = order.tokenNumber ?? order.customerToken;
-  // Files that need a manual page count — placeholder / needs_review. These
-  // couldn't be auto-priced (legacy .doc, encrypted PDF, parser failure).
-  // The shopkeeper resolves them via the inline "Set page count" form below.
   const reviewFiles = order.files.filter(
     (f) => f.status === 'needs_review' || f.pageCountSource === 'placeholder',
   );
 
+  // ── R10: customer name + phone subtitle ──
+  // The order row doesn't carry a customer name (only phone) — we synthesize
+  // "Walk-in customer" when no phone is present, otherwise show the phone.
+  const customerSubtitle = order.customerPhone
+    ? `${order.customerPhone}`
+    : 'Walk-in customer';
+
+  const sp = statusPillForOrder(order.status);
+
+  // R10: payment "To confirm" chip — only when awaiting_payment.
+  const paymentChipLabel =
+    order.status === 'awaiting_payment'
+      ? 'To confirm'
+      : order.status === 'cancelled'
+        ? 'Rejected'
+        : order.status === 'refunded'
+          ? 'Refunded'
+          : order.paidAt
+            ? 'Confirmed'
+            : 'To confirm';
+  const paymentChipStatus: 'pending' | 'ready' | 'error' =
+    order.status === 'cancelled' || order.status === 'refunded'
+      ? 'error'
+      : order.status === 'awaiting_payment' || !order.paidAt
+        ? 'pending'
+        : 'ready';
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={`Order ${displayToken}`}
-        description="Payment verification, print instructions, and status actions."
-        breadcrumbs={
-          <Link href="/shop/orders" className="hover:underline">← Back to orders</Link>
-        }
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            className="min-h-[44px] gap-1.5"
+    <div className="mx-auto w-full max-w-[640px] space-y-4 px-4 pb-32 pt-6 sm:px-6 lg:max-w-[920px] lg:space-y-6 lg:pb-10 lg:pt-8">
+      {/* ── Title + customer subtitle + refresh ── */}
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Link
+            href="/shop/orders"
+            className="mb-1 inline-flex items-center gap-1 text-sm text-[var(--label-2)] hover:text-[var(--label)]"
           >
-            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            Refresh
-          </Button>
-        }
-      />
-
-      {/* ── Token + status banner ── */}
-      <Card className="border-border">
-        <CardContent className="flex flex-col items-center justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
-          <div className="flex flex-col items-center gap-1 text-center sm:items-start sm:text-left">
-            <span className="text-xs uppercase tracking-wider text-muted-foreground">Token number</span>
-            <span className="break-words font-mono text-3xl font-bold tabular-nums tracking-tight text-brand sm:text-4xl lg:text-5xl">
-              {displayToken}
-            </span>
-            <span className="break-all font-mono text-xs text-muted-foreground">id: {order.id}</span>
-          </div>
-          <div className="flex flex-col items-center gap-2 sm:items-end">
-            <OrderStatusBadge status={order.status} />
-            <PaymentBadge status={paymentStatusForOrder(order.status, order.paidAt)} paidAt={order.paidAt} />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Payment verification panel ── */}
-      {order.status === 'awaiting_payment' && (
-        <Card className="border-brand/30 bg-brand-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-brand">
-              <ShieldCheck className="size-5" /> Payment verification
-            </CardTitle>
-            <CardDescription className="text-brand">
-              Check your UPI app for the customer's payment of <strong className="font-mono tabular-nums">{formatINRFromPaise(order.totalAmountPaise)}</strong>
-              {order.customerPhone && <> from <span className="font-mono">{order.customerPhone}</span></>}.
-              Verify once the money has landed in your account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="txnRef">Transaction reference (UTR / UPI txn ID)</Label>
-              <Input
-                id="txnRef"
-                value={txnRef}
-                onChange={(e) => setTxnRef(e.target.value)}
-                placeholder="e.g. 4012XXXXXXXX or UPI/123456789"
-                disabled={verifyAction !== null}
-                className="h-11 sm:h-9"
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional but recommended — recorded against the order for reconciliation.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <Button
-                onClick={() => void runVerify('verify')}
-                disabled={verifyAction !== null}
-                className="w-full min-h-[44px] gap-1.5 bg-success text-success-foreground hover:bg-success/90 sm:w-auto"
-              >
-                {verifyAction === 'verify' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                Verify payment
-              </Button>
-              <Button
-                onClick={() => void runVerify('reject')}
-                disabled={verifyAction !== null}
-                variant="outline"
-                className="w-full min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft sm:w-auto"
-              >
-                {verifyAction === 'reject' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
-                Reject
-              </Button>
-            </div>
-            {verifyError && <p className="text-sm text-danger">⚠ {verifyError}</p>}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Status action buttons ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Status actions</CardTitle>
-          <CardDescription className="text-xs">
-            {allowedNext.length > 0
-              ? `From "${order.status}" the order can move to: ${allowedNext.join(', ')}.`
-              : `"${order.status}" is a terminal state — no further transitions.`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {canStart && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button className="w-full min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'start' ? <Loader2 className="size-4 animate-spin" /> : <PrinterIcon className="size-4" />}
-                  Start printing
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Start printing this order?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Marks the order as "printing". Any pending files will be queued for the print agent. Already-printed files won't be re-sent.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="min-h-[44px] bg-brand text-brand-foreground hover:bg-brand/90"
-                    onClick={(e) => { e.preventDefault(); void runStatusAction('start'); }}
-                  >
-                    Yes, start printing
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Orders
+          </Link>
+          <h1 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--label)]">
+            Order {displayToken}
+          </h1>
+          <p className="mt-0.5 text-sm text-[var(--label-2)]">{customerSubtitle}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load(true)}
+          disabled={refreshing}
+          aria-label="Refresh order"
+          className="inline-flex size-12 items-center justify-center rounded-full text-[var(--label-2)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+        >
+          {refreshing ? (
+            <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+          ) : (
+            <RefreshCw className="size-5" aria-hidden="true" />
           )}
-          {canReady && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'ready' ? <Loader2 className="size-4 animate-spin" /> : <PackageCheck className="size-4 text-success" />}
-                  Mark ready for pickup
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Mark this order as ready?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The customer will see "ready for pickup" on their tracking page. Don't mark ready until prints are actually finished.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
-                  <AlertDialogAction className="min-h-[44px]" onClick={(e) => { e.preventDefault(); void runStatusAction('ready'); }}>
-                    Yes, mark ready
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          {canComplete && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'complete' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4 text-success" />}
-                  Mark collected
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Mark this order as collected?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Once collected, the customer's documents will be permanently deleted from storage for privacy. The metadata is retained in the audit log.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="min-h-[44px]">Cancel</AlertDialogCancel>
-                  <AlertDialogAction className="min-h-[44px]" onClick={(e) => { e.preventDefault(); void runStatusAction('complete'); }}>
-                    Yes, mark collected
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          {canCancel && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="w-full min-h-[44px] gap-1.5 border-danger/30 text-danger hover:bg-danger-soft sm:w-auto" disabled={statusAction !== null}>
-                  {statusAction === 'cancel' ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
-                  Cancel order
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Cancel this order?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The order will be marked cancelled. This cannot be undone. If the customer has paid, please refund them via your UPI app first.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <div className="space-y-1.5 py-2">
-                  <Label htmlFor="cancelReason">Reason (optional)</Label>
-                  <Textarea
-                    id="cancelReason"
-                    value={cancelReason}
-                    onChange={(e) => setCancelReason(e.target.value)}
-                    rows={2}
-                    placeholder="e.g. Customer changed their mind"
-                  />
-                </div>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="min-h-[44px]" onClick={() => setCancelReason('')}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="min-h-[44px] bg-danger text-danger-foreground hover:bg-danger/90"
-                    onClick={(e) => { e.preventDefault(); void runStatusAction('cancel'); }}
-                  >
-                    Yes, cancel order
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          {!canStart && !canReady && !canComplete && !canCancel && (
-            <p className="text-sm text-muted-foreground">No manual status actions available — this order is in a terminal state.</p>
-          )}
-          {statusError && <p className="self-center text-xs text-danger">⚠ {statusError}</p>}
-          {downloadError && <p className="self-center text-xs text-danger">⚠ {downloadError}</p>}
-        </CardContent>
-      </Card>
+        </button>
+      </header>
 
-      {/* ── Quick metrics ── */}
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
-          <Metric label="Total" value={formatINRFromPaise(order.totalAmountPaise)} icon={<IndianRupee className="size-3.5" />} />
-          <Metric label="Currency" value={order.currency} icon={<IndianRupee className="size-3.5" />} />
-          <Metric label="Created" value={new Date(order.createdAt).toLocaleString()} icon={<CalendarClock className="size-3.5" />} />
-          <Metric label="Paid" value={order.paidAt ? new Date(order.paidAt).toLocaleString() : '—'} icon={<Clock className="size-3.5" />} />
-          <Metric label="Provider" value={order.paymentProvider ?? '—'} icon={<CreditCard className="size-3.5" />} />
-        </CardContent>
-      </Card>
-
-      {/* ── Files awaiting review ──
-          Placeholder / needs_review files couldn't be auto-priced (legacy .doc,
-          encrypted PDF, etc.). The shopkeeper sets the page count inline; the
-          server marks the source as `shopkeeper_confirmed`, prices the file,
-          and transitions it to `pending`. The customer can then check out. */}
+      {/* ── Files awaiting review (page count needed) ── */}
       {reviewFiles.length > 0 && (
-        <Card className="border-brand/30 bg-brand-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-brand">
-              <AlertTriangle className="size-5" /> Files awaiting review
-            </CardTitle>
-            <CardDescription className="text-brand">
-              {reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} need{reviewFiles.length === 1 ? 's' : ''} a page count before they can be priced or checked out. Set the count below to price each file.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {reviewFiles.map((f) => (
-              <div key={f.id} className="rounded-md border border-brand-border bg-surface p-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <FileText className="size-4 shrink-0 text-brand" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{f.originalFilename}</p>
-                      <p className="text-xs tabular-nums text-muted-foreground">
-                        {formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}
-                        {f.processingError ? ` · ${f.processingError}` : ''}
-                      </p>
+        <Group padding="content" className="bg-[var(--warning-tint)]">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0 text-[var(--warning-text)]"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <h2 className="text-base font-semibold text-[var(--warning-text)]">
+                  {reviewFiles.length} file{reviewFiles.length === 1 ? '' : 's'} need a page count
+                </h2>
+                <p className="mt-1 text-sm text-[var(--warning-text)]/80">
+                  These couldn&apos;t be auto-priced. Set the page count to price and check out the order.
+                </p>
+              </div>
+              {reviewFiles.map((f) => (
+                <div
+                  key={f.id}
+                  className="rounded-[var(--radius-card)] bg-[var(--surface)] p-3"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="size-4 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[var(--label)]">
+                          {f.originalFilename}
+                        </p>
+                        <p className="text-xs tabular-nums text-[var(--label-2)]">
+                          {formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}
+                          {f.processingError ? ` · ${f.processingError}` : ''}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor={`page-count-${f.id}`} className="text-xs text-muted-foreground">Page count</Label>
-                      <Input
-                        id={`page-count-${f.id}`}
+                    <div className="flex items-center gap-2">
+                      <input
                         type="number"
                         min={1}
                         max={10000}
@@ -803,287 +690,512 @@ export default function ShopOrderDetailPage() {
                           setPageCountDrafts((prev) => ({ ...prev, [f.id]: e.target.value }));
                           setPageCountError(null);
                         }}
-                        placeholder="e.g. 12"
+                        placeholder="Pages"
                         disabled={settingPageCount === f.id}
-                        className="h-10 w-full sm:w-32 tabular-nums"
+                        aria-label={`Page count for ${f.originalFilename}`}
+                        className="min-h-[44px] w-24 rounded-[var(--radius-input)] border border-transparent bg-[var(--fill)] px-3 py-2 text-sm tabular-nums text-[var(--label)] placeholder:text-[var(--label-3)] focus:outline-none"
                       />
+                      <PrimaryButton
+                        size="compact"
+                        onClick={() => void setPageCount(f)}
+                        disabled={settingPageCount === f.id || !pageCountDrafts[f.id]}
+                        loading={settingPageCount === f.id}
+                      >
+                        Set
+                      </PrimaryButton>
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={() => void setPageCount(f)}
-                      disabled={settingPageCount === f.id || !pageCountDrafts[f.id]}
-                      className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
-                    >
-                      {settingPageCount === f.id ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                      Set &amp; price
-                    </Button>
                   </div>
                 </div>
-              </div>
-            ))}
-            {pageCountError && <p className="text-xs text-danger">⚠ {pageCountError}</p>}
-          </CardContent>
-        </Card>
+              ))}
+              {pageCountError && (
+                <p className="text-xs text-[var(--danger-text)]" role="alert">
+                  {pageCountError}
+                </p>
+              )}
+            </div>
+          </div>
+        </Group>
       )}
 
-      {/* ── Print instructions + files table ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Settings2 className="size-4 text-brand" /> Documents &amp; print instructions
-          </CardTitle>
-          <CardDescription className="text-xs">
-            {order.files.length} file(s) · download each print-ready file or send the whole order to the printer.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {order.files.length === 0 ? (
-            <EmptyState
-              className="px-4 py-10"
-              icon={<FileText className="size-4" />}
-              title="No files attached"
-              description="The customer hasn't uploaded any documents yet."
-            />
-          ) : (
-            <>
-              <Table className="min-w-[900px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="pl-4">Filename</TableHead>
-                    <TableHead className="hidden lg:table-cell">Pages</TableHead>
-                    <TableHead className="hidden md:table-cell">Copies</TableHead>
-                    <TableHead className="hidden md:table-cell">Colour</TableHead>
-                    <TableHead className="hidden lg:table-cell">Paper</TableHead>
-                    <TableHead className="hidden lg:table-cell">Duplex</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="pr-4 text-right">Download</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {order.files.map((f) => {
-                    const isCollected = order.status === 'collected' || order.status === 'cancelled';
-                    const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
-                    return (
-                      <TableRow key={f.id}>
-                        <TableCell className="pl-4">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{f.originalFilename}</span>
-                            <span className="text-xs text-muted-foreground">{formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell font-mono text-sm tabular-nums">
-                          {isReview ? (
-                            <Badge variant="outline" className="border-brand-border bg-brand-soft text-xs text-brand">Review</Badge>
-                          ) : (f.pageCount ?? 'Unknown')}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell font-mono text-sm tabular-nums">{f.copies}</TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge
-                            variant="outline"
-                            className={f.colorMode === 'color'
-                              ? 'border-info/30 bg-info-soft text-info'
-                              : 'border-border bg-muted text-muted-foreground'}
-                          >
-                            {f.colorMode === 'color' ? 'Colour' : 'B&W'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm uppercase">{f.paperSize}</TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm">
-                          {f.duplex
-                            ? <Badge variant="outline" className="border-success/30 bg-success-soft text-success">duplex</Badge>
-                            : <span className="text-muted-foreground">simplex</span>}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm tabular-nums">
-                          {isReview ? <span className="text-muted-foreground">Pending</span> : formatINRFromPaise(f.pricePaise)}
-                        </TableCell>
-                        <TableCell className="pr-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void downloadFile(f)}
-                              disabled={downloading === f.id || isCollected}
-                              className="gap-1.5"
-                            >
-                              {downloading === f.id ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                              Download
-                            </Button>
-                            <PrintLatchButton
-                              file={f}
-                              orderId={orderId}
-                              api={api}
-                              disabled={isCollected || isReview}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+      {/* ── R10: Payment group ── */}
+      <Group padding="rows" title="Payment">
+        <InsetList>
+          <InsetRow
+            label="UTR"
+            subtitle={order.paymentUtr ?? 'Not yet provided'}
+            trailing={
+              <StatusPill status={paymentChipStatus} label={paymentChipLabel} />
+            }
+          />
+          <ValueRow
+            label="Amount"
+            value={formatINRFromPaise(order.totalAmountPaise)}
+          />
+          <InsetRow
+            label="Screenshot"
+            subtitle={
+              order.paymentProvider
+                ? `${order.paymentProvider}${order.paymentTxnId ? ` · ${order.paymentTxnId.slice(0, 12)}` : ''}`
+                : 'No payment proof attached'
+            }
+            trailing={
+              order.paymentProvider ? (
+                <Link
+                  href={`/shop/orders/${order.id}#payment-proof`}
+                  className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--accent-tint)] px-3 text-xs font-semibold text-[var(--accent-tint-text)]"
+                >
+                  <Eye className="size-3.5" aria-hidden="true" />
+                  View
+                </Link>
+              ) : (
+                <span className="text-xs text-[var(--label-3)]">—</span>
+              )
+            }
+          />
+        </InsetList>
+      </Group>
 
-              {/* Detailed print instructions panel */}
-              <div className="space-y-2">
-                <Separator />
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Print instructions</p>
-                <div className="space-y-2">
-                  {order.files.map((f) => {
-                    const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
-                    return (
-                    <div key={f.id} className={`rounded-md border bg-card p-3 text-sm ${isReview ? 'border-brand-border' : 'border-border'}`}>
-                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                        <span className="font-medium">{f.originalFilename}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {isReview ? 'Page count required' : `${f.pageCount ?? 'Unknown'} pages`} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
+      {/* ── R10: File row + PageMapMini ── */}
+      {order.files.length > 0 && (
+        <Group padding="rows" title="Documents">
+          <InsetList>
+            {order.files.map((f) => {
+              const isReview = f.status === 'needs_review' || f.pageCountSource === 'placeholder';
+              return (
+                <li
+                  key={f.id}
+                  className="[&:not(:last-child)]:border-b [&:not(:last-child)]:border-[var(--hairline)]"
+                >
+                  <div className="flex flex-col gap-3 px-4 py-3">
+                    {/* File row */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="size-4 shrink-0 text-[var(--label-2)]" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-[var(--label)]">
+                            {f.originalFilename}
+                          </p>
+                          <p className="text-xs tabular-nums text-[var(--label-2)]">
+                            {formatMime(f.mimeType)} · {formatBytes(f.sizeBytes)} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm font-semibold tabular-nums text-[var(--label)]">
+                          {isReview ? 'Pending' : formatINRFromPaise(f.pricePaise)}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => void downloadFile(f)}
+                          disabled={downloading === f.id || order.status === 'collected' || order.status === 'cancelled'}
+                          aria-label={`Download ${f.originalFilename}`}
+                          className="inline-flex min-h-[36px] items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--label)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+                        >
+                          {downloading === f.id ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Download className="size-3.5" aria-hidden="true" />
+                          )}
+                        </button>
+                        <PrintLatchButton
+                          file={f}
+                          orderId={orderId}
+                          api={api}
+                          disabled={order.status === 'collected' || order.status === 'cancelled' || isReview}
+                        />
                       </div>
-                      <Separator className="my-2" />
-                      <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                        <Instruction label="Colour mode" value={f.colorMode === 'color' ? 'Colour' : 'B&W'} />
-                        <Instruction label="Paper" value={f.paperSize.toUpperCase()} />
-                        <Instruction label="Duplex" value={f.duplex ? 'Yes (both sides)' : 'No (single side)'} />
-                        <Instruction label="Page range" value={f.pageRange ?? 'All'} />
-                        <Instruction label="MIME" value={formatMime(f.mimeType)} />
-                        <Instruction label="Status" value={f.status.replace(/_/g, ' ')} />
-                      </div>
-                      {isReview && f.processingError && (
-                        <p className="mt-2 text-xs text-brand">⚠ {f.processingError}</p>
-                      )}
                     </div>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center justify-between rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm">
-                  <span className="text-success">Total order value</span>
-                  <span className="font-mono font-semibold tabular-nums text-success">{formatINRFromPaise(order.totalAmountPaise)}</span>
-                </div>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+
+                    {/* PageMapMini — tiny page tiles, colour ones tinted */}
+                    {!isReview && f.pageCount && f.pageCount > 0 && (
+                      <PageMapMini
+                        pageCount={f.pageCount}
+                        colorMode={f.colorMode}
+                        pageRange={f.pageRange}
+                      />
+                    )}
+
+                    {/* Inline print instructions */}
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
+                      <Instruction label="Colour" value={f.colorMode === 'color' ? 'Colour' : 'B&W'} />
+                      <Instruction label="Paper" value={f.paperSize.toUpperCase()} />
+                      <Instruction label="Sides" value={f.duplex ? 'Double' : 'Single'} />
+                      <Instruction label="Range" value={f.pageRange ?? 'All'} />
+                    </div>
+                    {isReview && f.processingError && (
+                      <p className="text-xs text-[var(--warning-text)]">
+                        {f.processingError}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </InsetList>
+        </Group>
+      )}
+
+      {/* ── R10: Print tasks per printer ── */}
+      {printTasks.length > 0 && (
+        <Group padding="rows" title="Print tasks">
+          <InsetList>
+            {printTasks.map((t) => (
+              <InsetRow
+                key={t.key}
+                label={t.label}
+                subtitle={t.printer}
+                trailing={<StatusPill status={t.status} label={t.statusLabel} />}
+              />
+            ))}
+          </InsetList>
+        </Group>
+      )}
 
       {/* ── Internal notes ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <StickyNote className="size-4 text-brand" /> Internal notes
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Private to you and your staff — never shown to the customer. Useful for "VIP customer, expedite" or "ask about binding".
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Group padding="content" title="Internal notes">
+        <div className="space-y-3">
           <Textarea
             value={notesDraft}
             onChange={(e) => setNotesDraft(e.target.value)}
             rows={3}
-            placeholder="Type a note…"
+            placeholder="Type a note… (private to you and your staff)"
             disabled={notesSaving}
             maxLength={1000}
+            className="min-h-[80px] w-full rounded-[var(--radius-input)] border border-transparent bg-[var(--fill)] px-3 py-2.5 text-sm text-[var(--label)] placeholder:text-[var(--label-3)] focus:outline-none"
           />
           <div className="flex items-center gap-2">
-            <Button
+            <PrimaryButton
+              size="compact"
               onClick={() => void saveNotes()}
               disabled={notesSaving}
-              size="sm"
-              className="gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90"
+              loading={notesSaving}
+              leadingIcon={notesSaved ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
             >
-              {notesSaving ? <Loader2 className="size-4 animate-spin" /> : notesSaved ? <CheckCircle2 className="size-4" /> : <Save className="size-4" />}
               {notesSaving ? 'Saving…' : notesSaved ? 'Saved' : 'Save note'}
-            </Button>
-            {notesError && <span className="text-xs text-danger">⚠ {notesError}</span>}
+            </PrimaryButton>
+            {notesError && (
+              <span className="text-xs text-[var(--danger-text)]" role="alert">
+                {notesError}
+              </span>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Group>
 
       {/* ── Activity timeline ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <History className="size-4 text-brand" /> Activity timeline
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Every action on this order, oldest first. Derived from the audit log.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {activity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
-          ) : (
-            <ol className="relative space-y-4 border-l border-border pl-4">
-              {activity.map((e) => {
-                const meta = ACTION_LABELS[e.action] ?? { label: e.action, icon: Hash, tone: 'text-muted-foreground' };
-                const Icon = meta.icon;
-                return (
-                  <li key={e.id} className="relative">
-                    <span className="absolute -left-[1.3rem] flex size-5 items-center justify-center rounded-full bg-card ring-2 ring-border">
-                      <Icon className={`size-3 ${meta.tone}`} />
-                    </span>
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{meta.label}</span>
-                        <span className="text-xs text-muted-foreground">{new Date(e.createdAt).toLocaleString()}</span>
-                      </div>
-                      {Object.keys(e.metadata ?? {}).length > 0 && (
-                        <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
-                          {JSON.stringify(e.metadata)}
-                        </code>
-                      )}
+      {activity.length > 0 && (
+        <Group padding="content" title="Activity timeline">
+          <ol className="relative space-y-3 border-l border-[var(--hairline)] pl-4">
+            {activity.map((e) => {
+              const meta = ACTION_LABELS[e.action] ?? { label: e.action, icon: Hash, tone: 'text-muted-foreground' };
+              const Icon = meta.icon;
+              return (
+                <li key={e.id} className="relative">
+                  <span className="absolute -left-[1.3rem] flex size-5 items-center justify-center rounded-full bg-[var(--surface)] ring-2 ring-[var(--hairline)]">
+                    <Icon className={`size-3 ${meta.tone}`} aria-hidden="true" />
+                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-[var(--label)]">{meta.label}</span>
+                      <span className="text-xs text-[var(--label-2)]">
+                        {new Date(e.createdAt).toLocaleString()}
+                      </span>
                     </div>
-                  </li>
-                );
-              })}
-            </ol>
+                    {Object.keys(e.metadata ?? {}).length > 0 && (
+                      <code className="block break-all rounded bg-[var(--fill)] px-2 py-1 font-mono text-xs text-[var(--label-2)]">
+                        {JSON.stringify(e.metadata)}
+                      </code>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </Group>
+      )}
+
+      {/* ── Status actions (non-payment) ── */}
+      {(canStart || canReady || canComplete || canCancel) && (
+        <Group padding="rows" title="Status actions">
+          <InsetList>
+            {canStart && (
+              <InsetRow
+                label="Start printing"
+                subtitle="Queue the order's files for the print agent"
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => void runStatusAction('start')}
+                    disabled={statusAction !== null}
+                    className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-press)] disabled:opacity-50"
+                  >
+                    {statusAction === 'start' ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PrinterIcon className="size-3.5" aria-hidden="true" />}
+                    Start
+                  </button>
+                }
+              />
+            )}
+            {canReady && (
+              <InsetRow
+                label="Mark ready"
+                subtitle="Customer will see ready-for-pickup"
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => void runStatusAction('ready')}
+                    disabled={statusAction !== null}
+                    className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--success-tint)] px-3 text-xs font-semibold text-[var(--success-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+                  >
+                    {statusAction === 'ready' ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PackageCheck className="size-3.5" aria-hidden="true" />}
+                    Ready
+                  </button>
+                }
+              />
+            )}
+            {canComplete && (
+              <InsetRow
+                label="Mark collected"
+                subtitle="Customer has picked up the prints"
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => void runStatusAction('complete')}
+                    disabled={statusAction !== null}
+                    className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-[var(--success-tint)] px-3 text-xs font-semibold text-[var(--success-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+                  >
+                    {statusAction === 'complete' ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="size-3.5" aria-hidden="true" />}
+                    Collected
+                  </button>
+                }
+              />
+            )}
+            {canCancel && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={statusAction !== null}
+                    className="inline-flex min-h-[36px] items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--danger)] transition-colors hover:bg-[var(--fill)] disabled:opacity-50"
+                  >
+                    {statusAction === 'cancel' ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <XCircle className="size-3.5" aria-hidden="true" />}
+                    Cancel order
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancel this order?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The order will be marked cancelled. This cannot be undone. If the customer has paid, please refund them via your UPI app first.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="space-y-1.5 py-2">
+                    <Textarea
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      rows={2}
+                      placeholder="Reason (optional)"
+                    />
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="min-h-[44px]" onClick={() => setCancelReason('')}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="min-h-[44px] bg-[var(--danger)] text-[var(--on-accent)] hover:bg-[var(--danger)]/90"
+                      onClick={(e) => { e.preventDefault(); void runStatusAction('cancel'); }}
+                    >
+                      Yes, cancel order
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </InsetList>
+          {statusError && (
+            <p className="px-4 pt-2 text-xs text-[var(--danger-text)]" role="alert">
+              {statusError}
+            </p>
           )}
-        </CardContent>
-      </Card>
+          {downloadError && (
+            <p className="px-4 pt-1 text-xs text-[var(--danger-text)]" role="alert">
+              {downloadError}
+            </p>
+          )}
+        </Group>
+      )}
 
       {/* ── Payment & audit metadata ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Payment &amp; audit metadata</CardTitle>
-          <CardDescription className="text-xs">
-            For reconciliation against UTR/txn IDs — visible to the shopkeeper only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Instruction label="Payment provider" value={order.paymentProvider ?? '—'} />
-          <Instruction label="Transaction ID" value={order.paymentTxnId ?? '—'} mono />
-          <Instruction label="UTR" value={order.paymentUtr ?? '—'} mono />
-          <div className="flex flex-col gap-0.5">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">Customer phone</span>
-            {order.customerPhone ? (
-              <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-sm font-mono text-brand hover:underline">
-                <Phone className="size-3" /> {order.customerPhone}
-              </a>
-            ) : <span className="text-sm">—</span>}
-          </div>
-          <Instruction label="Last updated" value={new Date(order.updatedAt).toLocaleString()} />
-          <Instruction label="Shop" value={shop?.name ?? '—'} />
-        </CardContent>
-      </Card>
+      <Group padding="rows" title="Payment & audit metadata">
+        <InsetList>
+          <ValueRow label="Payment provider" value={order.paymentProvider ?? '—'} />
+          <ValueRow label="Transaction ID" value={order.paymentTxnId ?? '—'} />
+          <ValueRow label="UTR" value={order.paymentUtr ?? '—'} />
+          <InsetRow
+            label="Customer phone"
+            subtitle={order.customerPhone ?? '—'}
+            trailing={
+              order.customerPhone ? (
+                <a
+                  href={`tel:${order.customerPhone}`}
+                  className="inline-flex items-center gap-1 text-sm font-mono text-[var(--accent)] hover:underline"
+                >
+                  <Phone className="size-3" aria-hidden="true" />
+                  Call
+                </a>
+              ) : (
+                <span className="text-xs text-[var(--label-3)]">—</span>
+              )
+            }
+          />
+          <ValueRow label="Last updated" value={new Date(order.updatedAt).toLocaleString()} />
+          <ValueRow label="Shop" value={shop?.name ?? '—'} />
+        </InsetList>
+      </Group>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Button asChild variant="outline" size="sm" className="min-h-[44px] gap-1.5">
-          <Link href="/shop/orders"><ArrowLeft className="size-4" /> Back to orders</Link>
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => router.push('/shop/dashboard')} className="min-h-[44px]">
-          Go to dashboard
-        </Button>
-      </div>
+      {/* ── R10: Bottom bar — Reject (destructive outlined) + Confirm payment (primary) ──
+          Only rendered when the order is awaiting payment verification — the
+          bottom bar is the contextual primary action for THIS screen state.
+          For other states, the bottom bar collapses (status actions live in
+          the Status actions group above). */}
+      {order.status === 'awaiting_payment' && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--hairline)] bg-[rgba(255,255,255,0.86)] backdrop-blur-lg safe-bottom lg:hidden">
+          <div className="mx-auto flex max-w-[640px] gap-2 p-3">
+            <DestructiveButton
+              size="default"
+              onClick={() => void runVerify('reject')}
+              disabled={verifyAction !== null}
+              loading={verifyAction === 'reject'}
+              className="flex-1"
+            >
+              <XCircle className="size-4" aria-hidden="true" />
+              Reject
+            </DestructiveButton>
+            <PrimaryButton
+              size="default"
+              onClick={() => void runVerify('verify')}
+              disabled={verifyAction !== null}
+              loading={verifyAction === 'verify'}
+              className="flex-1"
+            >
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              Confirm payment
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop: same two actions as inline buttons (no fixed bar) */}
+      {order.status === 'awaiting_payment' && (
+        <div className="hidden lg:flex lg:gap-2">
+          <DestructiveButton
+            onClick={() => void runVerify('reject')}
+            disabled={verifyAction !== null}
+            loading={verifyAction === 'reject'}
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Reject payment
+          </DestructiveButton>
+          <PrimaryButton
+            onClick={() => void runVerify('verify')}
+            disabled={verifyAction !== null}
+            loading={verifyAction === 'verify'}
+          >
+            <CheckCircle2 className="size-4" aria-hidden="true" />
+            Confirm payment
+          </PrimaryButton>
+        </div>
+      )}
+
+      {verifyError && (
+        <p className="text-xs text-[var(--danger-text)]" role="alert">
+          {verifyError}
+        </p>
+      )}
     </div>
   );
 }
 
-function Metric({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+// ── Local helper components ──────────────────────────────────────────────
+
+/** Maps an OrderStatus to a Clear StatusPill lifecycle state. */
+function statusPillForOrder(status: OrderStatus): { s: 'pending' | 'printing' | 'ready' | 'collected' | 'error'; label: string } {
+  switch (status) {
+    case 'awaiting_payment': return { s: 'pending', label: 'Awaiting payment' };
+    case 'paid': return { s: 'pending', label: 'Paid' };
+    case 'printing': return { s: 'printing', label: 'Printing' };
+    case 'ready': return { s: 'ready', label: 'Ready' };
+    case 'collected': return { s: 'collected', label: 'Collected' };
+    case 'cancelled': return { s: 'error', label: 'Cancelled' };
+    case 'refunded': return { s: 'error', label: 'Refunded' };
+    default: return { s: 'pending', label: String(status) };
+  }
+}
+
+/** PageMapMini — tiny page tiles for the order detail file row.
+ *  Renders a 1-row strip of small (16x20) page tiles. Colour-mode files
+ *  paint the tiles with the colour gradient; B&W files paint them with
+ *  the B&W dot pattern. When a page range narrows the printed subset,
+ *  out-of-range tiles are dimmed. */
+function PageMapMini({
+  pageCount,
+  colorMode,
+  pageRange,
+}: {
+  pageCount: number;
+  colorMode: 'bw' | 'color';
+  pageRange: string | null;
+}) {
+  // Parse the page range into a Set of selected page numbers (1-based).
+  // Supports "1-3,5,7-9" syntax. When null/empty, all pages are selected.
+  const selectedSet = useMemo(() => {
+    if (!pageRange) return null;
+    const set = new Set<number>();
+    for (const part of pageRange.split(',')) {
+      const trimmed = part.trim();
+      const dash = trimmed.indexOf('-');
+      if (dash >= 0) {
+        const start = parseInt(trimmed.slice(0, dash), 10);
+        const end = parseInt(trimmed.slice(dash + 1), 10);
+        if (!Number.isNaN(start) && !Number.isNaN(end)) {
+          for (let i = start; i <= end; i++) set.add(i);
+        }
+      } else {
+        const n = parseInt(trimmed, 10);
+        if (!Number.isNaN(n)) set.add(n);
+      }
+    }
+    return set;
+  }, [pageRange]);
+
+  // Cap the mini map at 30 visible tiles — beyond that, the strip gets too
+  // wide to glance. We show "…N more" if there are more.
+  const visible = Math.min(pageCount, 30);
+  const isColour = colorMode === 'color';
+
   return (
-    <div className="flex flex-col gap-0.5 rounded-md border border-border bg-card p-2.5">
-      <span className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <span className="truncate text-sm font-medium tabular-nums">{value}</span>
+    <div className="flex flex-wrap items-center gap-1" aria-label={`${pageCount} pages, ${isColour ? 'colour' : 'black and white'}`}>
+      {Array.from({ length: visible }, (_, i) => {
+        const pageNumber = i + 1;
+        const inRange = selectedSet === null || selectedSet.has(pageNumber);
+        return (
+          <span
+            key={pageNumber}
+            className={[
+              'inline-block size-4 rounded-[3px]',
+              inRange ? '' : 'opacity-30',
+            ].join(' ')}
+            style={{
+              backgroundColor: isColour ? undefined : 'var(--fill)',
+              backgroundImage: isColour ? 'var(--pg-colour-bg)' : undefined,
+              boxShadow: isColour ? 'none' : 'inset 0 0 0 1px var(--label-3)',
+            }}
+            aria-hidden="true"
+          />
+        );
+      })}
+      {pageCount > visible && (
+        <span className="text-xs text-[var(--label-3)]">
+          +{pageCount - visible}
+        </span>
+      )}
     </div>
   );
 }
@@ -1091,11 +1203,14 @@ function Metric({ label, value, icon }: { label: string; value: string; icon: Re
 function Instruction({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={`break-words text-sm ${mono ? 'font-mono tabular-nums' : ''}`}>{value}</span>
+      <span className="text-xs text-[var(--label-3)]">{label}</span>
+      <span className={`text-sm text-[var(--label)] ${mono ? 'font-mono tabular-nums' : ''}`}>
+        {value}
+      </span>
     </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PrintLatchButton — confirmation dialog with settings + printer selection.

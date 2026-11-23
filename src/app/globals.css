@@ -426,3 +426,44 @@
     transition: background-color 100ms ease-out, color 100ms ease-out;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   BACKWARD COMPATIBILITY: CMYK token aliases
+   The old customer components (src/components/customer/) reference these
+   variable names. They're aliased to the nearest Clear token so old
+   components get Clear colours automatically without per-file changes.
+   These will be removed once all customer components are migrated to
+   src/components/clear/.
+   ════════════════════════════════════════════════════════════════════ */
+:root {
+  --color-paper: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--label);
+  --color-muted: var(--label-2);
+  --color-cyan-ink: var(--accent);
+  --color-magenta-ink: #C2185B; /* kept for colour-page indicator */
+  --color-yellow-ink: #FFD60A; /* kept for decorative only */
+  --color-on-cyan: var(--on-accent);
+  --color-border-ink: var(--hairline);
+  --color-border-ink-strong: var(--label-3);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--danger);
+  --radius-tight: 8px;
+  --radius-default: 12px;
+  --radius-soft: 22px;
+  --shadow-sheet: var(--shadow-pop);
+  --shadow-bar: var(--shadow-card);
+  --shadow-slip: var(--shadow-pop);
+  --font-customer: var(--font-sans);
+}
+.dark {
+  --color-paper: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--label);
+  --color-muted: var(--label-2);
+  --color-cyan-ink: var(--accent);
+  --color-on-cyan: var(--on-accent);
+  --color-border-ink: var(--hairline);
+  --color-border-ink-strong: var(--label-3);
+}
