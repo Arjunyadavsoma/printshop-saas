@@ -467,3 +467,95 @@
   --color-border-ink: var(--hairline);
   --color-border-ink-strong: var(--label-3);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   REFERENCE DESIGN CLASSES — 1:1 match with PrintShop Clear design screens
+   These are the exact CSS classes from the reference HTML, used by the
+   customer flow and shop portal pages for pixel-perfect replication.
+   ════════════════════════════════════════════════════════════════════ */
+.ref-screen {
+  box-sizing: border-box;
+  font-family: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #1C1C1E;
+  background: #F2F3F7;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 100vh;
+}
+.ref-screen button { font: inherit; cursor: pointer; }
+.ref-screen.m { width: 100%; max-width: 390px; min-height: 100vh; }
+.ref-screen.d { width: 100%; max-width: 1280px; min-height: 100vh; }
+
+.ref-top { padding: 16px 20px 0; font-size: 15px; color: #5B5F66; display: flex; align-items: center; gap: 6px; min-height: 48px; }
+.ref-dot { width: 8px; height: 8px; border-radius: 50%; background: #1F8A55; display: inline-block; flex: none; }
+.ref-h { margin: 8px 20px 0; font-size: 34px; line-height: 1.08; letter-spacing: -0.02em; font-weight: 700; }
+.ref-sub { margin: 6px 20px 0; font-size: 16px; color: #5B5F66; }
+.ref-st { display: flex; gap: 6px; margin: 4px 20px 0; }
+.ref-st i { flex: 1; height: 4px; border-radius: 2px; background: #DADBE1; display: block; }
+.ref-st .on { background: #0A58D6; }
+
+.ref-g { margin: 16px 20px 0; background: #fff; border-radius: 22px; padding: 4px 16px; }
+.ref-g.p { padding: 16px; }
+.ref-r { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; border-bottom: 1px solid #DADBE1; font-size: 16px; }
+.ref-r:last-child { border: 0; }
+.ref-r small { display: block; font-size: 14px; color: #5B5F66; }
+.ref-v { font-size: 15px; color: #5B5F66; text-align: right; }
+.ref-cap { margin: 12px 28px 0; font-size: 14px; line-height: 1.45; color: #5B5F66; }
+
+.ref-bar { margin-top: auto; background: rgba(255,255,255,0.86); backdrop-filter: blur(16px); border-top: 1px solid #DADBE1; padding: 14px 20px 24px; display: flex; align-items: center; gap: 12px; position: sticky; bottom: 0; }
+.ref-bar b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.ref-bar small { font-size: 13px; color: #5B5F66; }
+
+.ref-btn { flex: 1.2; height: 52px; border-radius: 26px; border: 0; background: #0A58D6; color: #fff; font-weight: 600; font-size: 17px; padding: 0 20px; cursor: pointer; }
+.ref-btn.s { background: #E6EEFC; color: #0A4CB8; }
+.ref-btn.k { background: #fff; color: #B3261E; border: 1px solid #DADBE1; flex: 1; }
+
+.ref-seg { margin: 16px 20px 0; background: #E3E4EA; border-radius: 12px; padding: 3px; display: flex; height: 44px; }
+.ref-seg button { flex: 1; border: 0; background: transparent; border-radius: 10px; font-size: 14px; font-weight: 500; color: #1C1C1E; cursor: pointer; }
+.ref-seg .on { background: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.14); }
+
+.ref-chip { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: #E6EEFC; color: #0A4CB8; white-space: nowrap; }
+.ref-chip.ok { background: #DDF3E7; color: #14663F; }
+.ref-chip.a { background: #FFF1CC; color: #7A4B00; }
+.ref-chip.rd { background: #FBE3E1; color: #9C1F18; }
+
+.ref-tab { display: flex; justify-content: space-around; background: rgba(255,255,255,0.9); border-top: 1px solid #DADBE1; padding: 8px 0 22px; margin-top: auto; }
+.ref-tab span { font-size: 12px; font-weight: 600; color: #5B5F66; text-align: center; min-width: 64px; cursor: pointer; }
+.ref-tab .on { color: #0A58D6; }
+.ref-tab i { display: block; width: 22px; height: 22px; border-radius: 7px; border: 2px solid currentColor; margin: 0 auto 2px; }
+
+.ref-rad { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #B9BCC4; flex: none; }
+.ref-rad.on { border: 7px solid #0A58D6; }
+.ref-rad.dn { background: #1F8A55; border-color: #1F8A55; }
+
+.ref-sw { width: 51px; height: 31px; border-radius: 16px; background: #1F8A55; position: relative; flex: none; cursor: pointer; }
+.ref-sw::after { content: ""; position: absolute; top: 2px; right: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; }
+.ref-sw.off { background: #DADBE1; }
+.ref-sw.off::after { right: auto; left: 2px; }
+
+.ref-in { height: 48px; border-radius: 12px; background: #F2F3F7; border: 0; padding: 0 14px; font: inherit; font-size: 16px; width: 100%; margin-top: 6px; }
+
+.ref-code { font-size: 56px; font-weight: 700; letter-spacing: 0.12em; text-align: center; font-variant-numeric: tabular-nums; }
+.ref-perf { border-top: 2px dashed #C9CBD2; margin: 14px -16px; }
+
+.ref-mini { display: flex; gap: 3px; }
+.ref-mini i { width: 16px; height: 22px; border-radius: 3px; background: #F2F3F7; border: 1px solid #CBD0D8; display: block; }
+.ref-mini .c { background: linear-gradient(160deg, #CFE3FF, #F6D3EC 55%, #FFF0B8); }
+
+.ref-pg { height: 92px; border-radius: 12px; border: 0; background: #F2F3F7; position: relative; padding: 0; display: block; width: 100%; cursor: pointer; }
+.ref-pg.c { background: linear-gradient(160deg, #CFE3FF, #F6D3EC 55%, #FFF0B8); }
+.ref-pg span { position: absolute; top: 8px; left: 10px; font-size: 12px; font-weight: 600; }
+.ref-pg i { position: absolute; top: 8px; right: 8px; width: 14px; height: 14px; border-radius: 50%; display: block; }
+.ref-pg.b i { background: linear-gradient(90deg, #1C1C1E 50%, #fff 50%); border: 1px solid #6B6F76; }
+.ref-pg.c i { background: conic-gradient(#E5484D, #F5C400, #30A46C, #0091FF, #D6409F, #E5484D); }
+.ref-pg em { position: absolute; left: 8px; bottom: 8px; font-style: normal; font-size: 12px; font-weight: 600; background: #fff; border-radius: 999px; padding: 2px 8px; }
+
+.ref-sb { width: 240px; background: #fff; border-right: 1px solid #DADBE1; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; flex: none; }
+.ref-nv { display: flex; justify-content: space-between; align-items: center; height: 44px; border-radius: 12px; padding: 0 12px; font-size: 15px; font-weight: 500; cursor: pointer; }
+.ref-nv.on { background: #E6EEFC; color: #0A4CB8; font-weight: 600; }
+
+.ref-col { flex: 1; background: #E8E9EF; border-radius: 18px; padding: 12px; min-width: 0; }
+.ref-ch { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 15px; margin: 2px 4px 10px; }
+.ref-card { background: #fff; border-radius: 14px; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; align-items: flex-start; cursor: pointer; }
+.ref-card small { font-size: 13px; color: #5B5F66; }

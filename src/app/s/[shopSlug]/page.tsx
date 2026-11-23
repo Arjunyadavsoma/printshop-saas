@@ -1,23 +1,15 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Phone, MapPin } from 'lucide-react';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { AppBar } from '@/components/clear/app-bar';
-import { CustomerOrderFlowV2Lazy } from './CustomerOrderFlowV2Lazy';
+import { ReferenceCustomerFlow } from './ReferenceCustomerFlow';
 
 /**
  * /s/[shopSlug] — the QR landing. Server Component.
  *
- * Loads the shop from the DB, renders the new AppBar (shop name + open/closed
- * dot + rate-board subtitle), the live "printers online · wait" line, and the
- * CustomerOrderFlowV2 below. Closed shops get an explanatory card with the
- * opening hours + a Call button — the customer is never left staring at a
- * dead dropzone.
- *
- * Everything is wrapped in `<div className="customer-flow">` so the design
- * tokens (CMYK palette, Anek font, halftone textures, touch-target minimum)
- * from globals.css apply.
+ * Loads the shop from the DB and renders the reference-design customer flow
+ * (ReferenceCustomerFlow) which 1:1 matches the .ref-* CSS classes in
+ * globals.css. Closed shops get an explanatory card with the opening hours
+ * + a Call button — the customer is never left staring at a dead dropzone.
  */
 export default async function ShopLanding({ params }: { params: Promise<{ shopSlug: string }> }) {
   const { shopSlug } = await params;
@@ -56,25 +48,20 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const bwPerPagePaise = bwRule?.slabs[0]?.perPagePaise ?? pricingCfg?.bw_a4_per_page ?? null;
   const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? pricingCfg?.color_a4_per_page ?? null;
 
-  const rateSubtitle = formatRateSubtitle(bwPerPagePaise, colorPerPagePaise);
+  // Format the per-page rates as the reference design strings (e.g. "₹2").
+  const bwPriceText = bwPerPagePaise != null ? `₹${Math.round(bwPerPagePaise / 100)}` : '₹2';
+  const colorPriceText = colorPerPagePaise != null ? `₹${Math.round(colorPerPagePaise / 100)}` : '₹10';
+
   // Default to open/accepting when fields are missing (in-memory adapter doesn't
   // always apply Prisma @default(true) — be defensive so demo shops work).
   const shopIsOpen = shop.isOpen ?? true;
   const shopAccepting = shop.acceptingOrders ?? true;
   const closed = !shopIsOpen || !shopAccepting;
   const hoursText = formatOpeningHours(shop.openingHours);
-  // Default retention to 24h when field missing (Prisma @default(24)).
-  const retentionHours = shop.retentionHours ?? 24;
 
   return (
-    <div className="customer-flow min-h-dvh flex flex-col">
-      <AppBar
-        title={shop.name}
-        subtitle={rateSubtitle}
-        status={shopIsOpen ? 'open' : 'closed'}
-      />
-
-      <main className="flex-1 mx-auto w-full max-w-xl px-4 pt-4 pb-32 sm:px-6">
+    <div className="customer-flow min-h-dvh flex flex-col items-center">
+      <main className="flex-1 w-full">
         {closed ? (
           <ClosedShopCard
             hoursText={hoursText}
@@ -82,64 +69,18 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
             phone={shop.phone}
           />
         ) : (
-          <>
-            {/* Live status line — "2 printers online · ~6 min wait". */}
-            <p className="text-sm text-[var(--color-muted)] tnum mb-4">
-              {`${onlinePrinters.length} printer${onlinePrinters.length === 1 ? '' : 's'} online${onlinePrinters.length === 0 ? ' · We\u2019ll print as soon as a printer comes online' : ` · ~${waitMinutes} min wait`}${queued.length > 0 ? ` · ${queued.length} job${queued.length === 1 ? '' : 's'} ahead` : ''}`}
-            </p>
-
-            <CustomerOrderFlowV2Lazy
-              shopSlug={shop.slug}
-              shopName={shop.name}
-              upiId={shop.upiId}
-              upiPayeeName={shop.upiPayeeName ?? shop.name}
-              paymentMode={shop.paymentMode}
-              retentionHours={retentionHours}
-            />
-
-            {/* Trust line — addresses the privacy concern right under the upload. */}
-            <p className="mt-6 text-xs text-[var(--color-muted)] leading-relaxed">
-              {`Files deleted ${retentionHours}h after pickup. 0% commission — you pay the shop directly.`}
-            </p>
-
-            {/* Shop info section — hours + address + Call/Directions. */}
-            <section
-              className="mt-6 rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4"
-              aria-label="Shop information"
-            >
-              <p className="text-sm font-medium text-[var(--color-ink)]">
-                Hours: {hoursText}
-              </p>
-              <p className="mt-1 text-sm text-[var(--color-muted)] flex items-start gap-1.5">
-                <MapPin className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
-                <span>{shop.address}</span>
-              </p>
-              <div className="mt-3 flex flex-col sm:flex-row gap-2">
-                <a
-                  href={`tel:${shop.phone}`}
-                  aria-label={`Call ${shop.name}`}
-                  className="touch-target inline-flex items-center justify-center gap-2 flex-1 min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-cyan-ink)] text-white font-medium text-base hover:bg-[var(--color-cyan-ink)]/90 active:bg-[var(--color-cyan-ink)]/80 shadow-[var(--shadow-bar)] transition-colors"
-                >
-                  <Phone className="size-4" aria-hidden="true" />
-                  Call shop
-                </a>
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.address)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Get directions to ${shop.name}`}
-                  className="touch-target inline-flex items-center justify-center gap-2 flex-1 min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-border-ink)] font-medium text-base hover:bg-[var(--color-paper)] active:bg-[var(--color-paper)] transition-colors"
-                >
-                  <MapPin className="size-4" aria-hidden="true" />
-                  Directions
-                </a>
-              </div>
-            </section>
-
-            <p className="mt-4 text-center text-xs text-[var(--color-muted)]">
-              <Link href="/" className="underline">All shops</Link>
-            </p>
-          </>
+          <ReferenceCustomerFlow
+            shopSlug={shop.slug}
+            shopName={shop.name}
+            upiId={shop.upiId}
+            bwPrice={bwPriceText}
+            colorPrice={colorPriceText}
+            hours={hoursText}
+            waitMinutes={Math.max(1, waitMinutes)}
+            printerCount={Math.max(1, onlinePrinters.length)}
+            shopPhone={shop.phone}
+            shopAddress={shop.address}
+          />
         )}
       </main>
     </div>
@@ -148,14 +89,6 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
-/** Build the rate-board subtitle: "B&W ₹2 · Colour ₹8 /page" (or fallback). */
-function formatRateSubtitle(bwPaise: number | null, colorPaise: number | null): string {
-  const parts: string[] = [];
-  if (bwPaise !== null) parts.push(`B&W ₹${(bwPaise / 100).toFixed(0)}`);
-  if (colorPaise !== null) parts.push(`Colour ₹${(colorPaise / 100).toFixed(0)}`);
-  if (parts.length === 0) return 'Pricing at counter';
-  return `${parts.join(' · ')} /page`;
-}
 
 /** Render the opening hours JSON or fallback string as a one-line summary. */
 function formatOpeningHours(hours: unknown): string {

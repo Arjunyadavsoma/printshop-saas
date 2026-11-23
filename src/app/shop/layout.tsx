@@ -108,6 +108,16 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
     pathname === '/shop/forgot-password' ||
     pathname === '/shop/reset-password';
 
+  // Ref-shop routes render their own `.ref-screen` chrome (`.ref-top` + 
+  // `.ref-tab` / `.ref-sb`) directly in the page — they must NOT be wrapped
+  // by the legacy Clear shells (which would produce duplicate top bars +
+  // bottom navs). The page itself uses <RefShopLayout> for auth + shop name.
+  const isRefShopRoute =
+    pathname === '/shop/dashboard' ||
+    pathname === '/shop/orders' ||
+    pathname === '/shop/payments' ||
+    pathname.startsWith('/shop/orders/');
+
   // Optional ?legacy=1 forces the legacy AppShell chrome for un-migrated pages.
   const useLegacyShell =
     typeof window !== 'undefined' &&
@@ -199,6 +209,13 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
   };
 
   const footerHref = shopSlug ? `/shops/${shopSlug}` : '/shop/dashboard';
+
+  // Ref-shop routes render their own `.ref-screen` chrome (top bar, bottom
+  // tab bar / desktop sidebar) directly in the page. The page does its own
+  // shop-name fetch + auth refresh; we just pass the children through bare.
+  if (isRefShopRoute) {
+    return <div className="min-h-dvh bg-page">{children}</div>;
+  }
 
   // Legacy fallback (for un-migrated sub-pages that opt in via ?legacy=1).
   if (useLegacyShell) {
