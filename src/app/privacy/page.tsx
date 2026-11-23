@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ShieldCheck, FileText, Clock, Share2, BarChart3, UserCheck } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 
 /**
  * /privacy — Plain-language privacy + file retention policy.

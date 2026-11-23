@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Phone, MapPin } from 'lucide-react';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 import { CustomerOrderFlowV2Lazy } from './CustomerOrderFlowV2Lazy';
 
 /**

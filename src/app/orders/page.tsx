@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardList, Smartphone, ArrowRight, Trash2, RefreshCw } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
-import { StatusPill } from '@/components/customer/status-pill';
-import { EmptyState } from '@/components/customer/empty-state';
-import { SkeletonBox, SkeletonText } from '@/components/customer/skeleton';
-import { PrimaryButton, SecondaryButton, TextButton } from '@/components/customer/button';
-import { TextField } from '@/components/customer/text-field';
-import { formatRupees } from '@/components/customer/price-breakdown';
+import { AppBar } from '@/components/clear/app-bar';
+import { StatusPill } from '@/components/clear/status-pill';
+import { EmptyState } from '@/components/clear/empty-state';
+import { SkeletonBox, SkeletonText } from '@/components/clear/compat';
+import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
+import { TextField } from '@/components/clear/compat';
+import { formatRupees } from '@/components/clear/price-breakdown';
 
 import {
   readRecentOrders, forgetOrder, type RecentOrderSummary,
@@ -74,14 +74,14 @@ export default function MyOrdersPage() {
                   aria-hidden="true"
                 >
                   <div className="flex items-center justify-between">
-                    <SkeletonText lines={1} width="medium" />
+                    <SkeletonBox width="medium" height={20} />
                     <SkeletonBox width={84} height={22} radius="9999px" />
                   </div>
                   <div className="mt-2">
-                    <SkeletonText lines={1} width="long" />
+                    <SkeletonBox width="long" height={20} />
                   </div>
                   <div className="mt-2 flex items-center justify-between">
-                    <SkeletonText lines={1} width="short" />
+                    <SkeletonBox width="short" height={20} />
                     <SkeletonBox width={64} height={20} radius="var(--radius-tight)" />
                   </div>
                 </div>

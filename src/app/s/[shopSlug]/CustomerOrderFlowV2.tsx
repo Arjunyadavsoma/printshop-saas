@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Clock, FileText, RotateCcw } from 'lucide-react';
-import { Stepper } from '@/components/customer/stepper';
-import { UploadDropzone } from '@/components/customer/upload-dropzone';
-import { FileCard, type FileCardStatus } from '@/components/customer/file-card';
-import { PageStrip, type PageStripPage } from '@/components/customer/page-strip';
+import { Stepper } from '@/components/clear/stepper';
+import { UploadDropzone } from '@/components/clear/upload-dropzone';
+import { FileCard, type FileCardStatus } from '@/components/clear/file-card';
+import { PageStrip } from '@/components/clear/page-strip';
 import { ColorSuggestionPrompt } from '@/lib/customer/color-suggestion';
 import { track, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
 import {
@@ -14,18 +14,18 @@ import {
 } from '@/lib/customer/last-choices';
 import { useDraftRecovery } from '@/lib/hooks/use-draft-recovery';
 import { loadDraft, type DraftData, type DraftFile } from '@/lib/customer/draft-storage';
-import { Chip, ChipGroup } from '@/components/customer/chip';
-import { NumberStepper } from '@/components/customer/number-stepper';
-import { SegmentedControl } from '@/components/customer/segmented-control';
-import { BottomSheet } from '@/components/customer/bottom-sheet';
-import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/customer/price-breakdown';
-import { TextField } from '@/components/customer/text-field';
-import { PhoneField } from '@/components/customer/phone-field';
-import { StickyActionBar } from '@/components/customer/sticky-action-bar';
-import { PrimaryButton, SecondaryButton, TextButton } from '@/components/customer/button';
-import { PaymentSheet } from '@/components/customer/payment-sheet';
-import { UTRInput } from '@/components/customer/utr-input';
-import type { PageMode } from '@/components/customer/tokens';
+import { Chip, ChipGroup } from '@/components/clear/chip';
+import { NumberStepper } from '@/components/clear/number-stepper';
+import { SegmentedControl } from '@/components/clear/segmented-control';
+import { BottomSheet } from '@/components/clear/compat';
+import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
+import { TextField } from '@/components/clear/compat';
+import { PhoneField } from '@/components/clear/compat';
+import { StickyActionBar } from '@/components/clear/compat';
+import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
+import { PaymentSheet } from '@/components/clear/payment-sheet';
+import { UTRInput } from '@/components/clear/utr-input';
+import type { PageMode } from '@/components/clear/tokens';
 import { buildUpiIntentUrl } from '@/lib/payments/upi';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
 
@@ -1359,7 +1359,7 @@ export function CustomerOrderFlowV2({
     <section className="flex flex-col gap-4" aria-labelledby="flow-heading">
       <h2 id="flow-heading" className="sr-only">Order flow</h2>
 
-      <Stepper steps={STEPS} current={step} ariaLabel="Order progress" />
+      <Stepper steps={3} current={step}  />
 
       {error && (
         <div
@@ -1516,7 +1516,7 @@ export function CustomerOrderFlowV2({
                   pages={Array.from({ length: active.pageCount ?? 0 }, (_, i) => ({
                     pageNumber: i + 1,
                     mode: active.pageModes.get(i + 1) ?? 'bw',
-                  } satisfies PageStripPage))}
+                  }))}
                   onToggle={(page) => toggleMode(active.fileId, page)}
                   onBulkSet={(mode) => setAllModes(active.fileId, mode)}
                   suggestionAvailable={!!active.suggestion && active.suggestion.some((s) => s.isColor)}
@@ -1633,8 +1633,8 @@ export function CustomerOrderFlowV2({
               '—'
             )
           }
-        >
-          {step === 1 ? (
+          action={
+            step === 1 ? (
             <PrimaryButton
               onClick={() => setStep(2)}
               disabled={quoting || quote?.totalPaise == null}
@@ -1649,8 +1649,9 @@ export function CustomerOrderFlowV2({
             >
               {placing ? 'Placing…' : totalPaise != null ? `Pay ${formatRupees(totalPaise)}` : 'Pay'}
             </PrimaryButton>
-          )}
-        </StickyActionBar>
+          )
+          }
+        />
       )}
 
       {/* ── More options bottom sheet ── */}

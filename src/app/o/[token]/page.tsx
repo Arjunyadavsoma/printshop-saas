@@ -6,18 +6,18 @@ import {
   Phone, MapPin, Share2, XCircle, AlertTriangle, Loader2, CheckCircle2,
 } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 import { CustomerThemeToggle } from '@/components/customer/theme-toggle';
-import { TokenSlip } from '@/components/customer/token-slip';
-import { StatusTimeline } from '@/components/customer/status-timeline';
-import { StatusPill } from '@/components/customer/status-pill';
-import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/customer/price-breakdown';
-import { PrimaryButton, SecondaryButton, TextButton } from '@/components/customer/button';
-import { SkeletonBox, SkeletonText } from '@/components/customer/skeleton';
+import { TokenSlip } from '@/components/clear/token-slip';
+import { StatusTimeline } from '@/components/clear/status-timeline';
+import { StatusPill } from '@/components/clear/status-pill';
+import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
+import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
+import { SkeletonBox, SkeletonText } from '@/components/clear/compat';
 import { ErrorState } from '@/components/customer/error-state';
-import { OfflineBanner } from '@/components/customer/offline-banner';
+import { OfflineBanner } from '@/components/clear/compat';
 import { Toast } from '@/components/customer/toast';
-import { UTRInput } from '@/components/customer/utr-input';
+import { UTRInput } from '@/components/clear/utr-input';
 
 import { useTrackPoll, type FetchResult } from '@/lib/hooks/use-track-poll';
 import { useOrderRealtime } from '@/lib/hooks/use-order-realtime';
@@ -348,19 +348,19 @@ export default function TrackOrderPage() {
   if (phase === 'loading' && !track) {
     return (
       <div className="customer-flow">
-        <OfflineBanner online={online} />
+        <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Loading order" onBack={() => router.back()} />
         <main className="mx-auto max-w-xl px-4 py-6 space-y-6" aria-busy="true" aria-live="polite">
           {/* TokenSlip skeleton */}
           <div className="rounded-[var(--radius-soft)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-6">
-            <SkeletonText lines={1} width="short" className="self-center" />
+            <SkeletonBox width="short" height={20} className="self-center" />
             <div className="mt-3 flex justify-center">
               <SkeletonBox width={160} height={40} radius="var(--radius-default)" />
             </div>
             <div className="mt-4 border-t border-dashed border-[var(--color-border-ink)] pt-4 space-y-2">
-              <SkeletonText lines={1} width="long" />
-              <SkeletonText lines={1} width="medium" />
-              <SkeletonText lines={1} width="long" />
+              <SkeletonBox width="long" height={20} />
+              <SkeletonBox width="medium" height={20} />
+              <SkeletonBox width="long" height={20} />
             </div>
             <div className="mt-4 flex justify-center">
               <SkeletonBox width={96} height={96} radius="var(--radius-tight)" />
@@ -368,12 +368,12 @@ export default function TrackOrderPage() {
           </div>
           {/* Timeline skeleton */}
           <div className="space-y-4">
-            <SkeletonText lines={1} width="short" />
+            <SkeletonBox width="short" height={20} />
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex gap-3">
                 <SkeletonBox width={32} height={32} radius="9999px" />
                 <div className="flex-1 pt-1">
-                  <SkeletonText lines={1} width="medium" />
+                  <SkeletonBox width="medium" height={20} />
                 </div>
               </div>
             ))}
@@ -387,7 +387,7 @@ export default function TrackOrderPage() {
   if (notFound) {
     return (
       <div className="customer-flow">
-        <OfflineBanner online={online} />
+        <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Order not found" onBack={() => router.push('/')} />
         <main className="mx-auto max-w-xl">
           <ErrorState
@@ -403,7 +403,7 @@ export default function TrackOrderPage() {
   if (phase === 'error' && !track) {
     return (
       <div className="customer-flow">
-        <OfflineBanner online={online} />
+        <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Order tracking" onBack={() => router.push('/')} />
         <main className="mx-auto max-w-xl">
           <ErrorState
@@ -446,7 +446,7 @@ export default function TrackOrderPage() {
 
   return (
     <div className="customer-flow">
-      <OfflineBanner online={online} />
+      <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
       <AppBar
         title={`Order ${orderNumber}`}
         subtitle={shopName}

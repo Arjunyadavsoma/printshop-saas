@@ -4,7 +4,7 @@ import { useState, useId } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Phone, Mail, MessageSquare } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 
 /**
  * /help — Help + FAQ. A short list of 5–8 questions the customer is most
