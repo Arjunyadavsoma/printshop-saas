@@ -1,86 +1,80 @@
-# API — Mobile Executor / Queue v2
+# Mobile Executor — API Reference
 
-All endpoints under `/api/v1`. Zod-validated. Backward compatible.
+All endpoints are additive and backward compatible. Old PrintEXE builds work unchanged.
 
-## Shopkeeper endpoints (withAuth, roles: owner + staff)
+## Shopkeeper endpoints (withAuth: owner/staff)
 
-### GET /shop/queue
-List tasks in queue order.
-**Response:** `{ tasks: QueueItem[], count: number }`
+### GET /api/v1/shop/queue
+List tasks in queue order with executor labels, priority, held status, printer paths.
 
-QueueItem: `{ id, orderId, fileId, status, priority, position, isHeld, executorMode, claimedByAgentId, kind, copies, colorMode, setLabel, printerId, version, lastExecutorKind, executorLabel, createdAt }`
+Response: `{ tasks: [{ id, orderId, kind, colorMode, copies, sheetCount, status, priority, isHeld, executorMode, position, claimedByAgentId, claimLeaseExpiresAt, executorLabel, printerId, printerName, ageSeconds }] }`
 
-executorLabel: "Waiting" | "Held" | "Printing on Shop PC" | "Printing on phone" | "Needs you" | "Printed"
+### POST /api/v1/shop/queue/reorder
+Body: `{ taskId, beforeId?, afterId?, toTop? }`
+Reorders using fractional index positioning.
 
-### POST /shop/queue/reorder
-**Body:** `{ taskId: uuid, beforeId?: uuid, afterId?: uuid, toTop?: boolean }`
-**Response:** `{ reordered: true }`
+### POST /api/v1/shop/tasks/:id/priority
+Body: `{ priority: 0 | 10 }`
+0 = normal, 10 = urgent.
 
-### POST /shop/tasks/:id/priority
-**Body:** `{ priority: 0 | 10 }`
-**Response:** `{ updated: true }`
+### POST /api/v1/shop/tasks/:id/hold
+Sets `isHeld = true`. Held tasks are never auto-dispatched.
 
-### POST /shop/tasks/:id/hold
-No body. Sets `isHeld=true`.
-**Response:** `{ held: true }`
+### POST /api/v1/shop/tasks/:id/release
+Sets `isHeld = false`. Task returns to the queue.
 
-### POST /shop/tasks/:id/release
-No body. Sets `isHeld=false`.
-**Response:** `{ released: true }`
+### POST /api/v1/shop/tasks/:id/reroute
+Body: `{ printerId, pathId? }`
+Changes the target printer for this task.
 
-### POST /shop/tasks/:id/reroute
-**Body:** `{ printerId: uuid }`
-**Response:** `{ rerouted: true }`
+### POST /api/v1/shop/tasks/:id/reprint
+Creates a new attempt. Requires explicit confirmation. Names the consequence: "This prints the pages again."
 
-### POST /shop/tasks/:id/reprint
-No body. Creates new attempt (increments attempts, resets status to queued).
-**Response:** `{ reprinted: true }`
+### POST /api/v1/shop/printers/sync
+Body: `{ printers: [{ printerUuid?, displayName, supportsColor, supportsDuplex, paperSizes, paths: [{ kind, uri, status, capabilities }] }] }`
+Agent reports its discovered printers + paths. Server merges by printerUuid.
 
-### POST /shop/printers/sync
-Agent reports its printers + paths.
-**Body:** `{ printers: [{ systemName, displayName, supportsColor, supportsDuplex, printerUuid?, paths: [{ kind, uri, status, capabilities }] }] }`
-**Response:** `{ synced: true, printers: [{ id, merged: boolean }] }`
+### GET/PATCH /api/v1/shop/printers/:id
+GET: printer details with paths.
+PATCH: `{ displayName?, isDefaultColor?, isDefaultBw?, enabled?, mergeWithId? }`
 
-### PATCH /shop/printers/:id
-Rename, set defaults, enable/disable, merge.
-**Body:** `{ displayName?, isDefaultColor?, isDefaultBw?, enabled?, mergeWithId? }`
+### POST /api/v1/shop/walkin
+Body: `{ files: [{ filename, mimeType, size, storageKey }], customerName?, customerPhone?, note? }`
+Creates a walk-in order from phone uploads.
 
 ## Device-agent endpoints (withDeviceAuth)
 
-### POST /agents/jobs/:id/claim (mobile only)
-Atomic claim with version check.
-**Precondition:** task is queued or held, unclaimed.
-**Response:** `{ taskId, leaseExpiresAt, signedFileUrl, taskDetails: { kind, copies, colorMode, paperSize, duplex, taskPdfStorageKey } }`
-**Errors:** 409 if already claimed/dispatched, 403 if not a mobile agent.
+### POST /api/v1/agents/jobs/:id/claim
+Mobile agent claims a task. Atomic with version check.
+Response: `{ leaseExpiresAt, signedFileUrl, task: { id, kind, colorMode, copies, sheetCount, paperSize, duplex } }`
 
-### POST /agents/jobs/:id/lease/renew
-Extends lease by 60s. Only the claiming agent.
-**Response:** `{ leaseExpiresAt }`
+### POST /api/v1/agents/jobs/:id/lease/renew
+Renews the claim lease (15s heartbeat). Extends by 60s.
 
-### POST /agents/jobs/:id/release
-Returns task to queue. Only the claiming agent.
-**Response:** `{ released: true }`
+### POST /api/v1/agents/jobs/:id/release
+Gives the task back to the queue. Clears `claimedByAgentId`.
 
-### POST /agents/jobs/:id/pullback
-Asks PC to return the task. Creates a DeviceCommand (task.release.request).
-**Response:** `{ pullback: true }` or 409 if PC already started printing.
+### POST /api/v1/agents/jobs/:id/pullback
+Asks the PC to return the task. Sends a DeviceCommand to the PC agent.
+If PC already started → `409 Already printing on Shop PC`.
 
-### POST /agents/jobs/:id/status (existing, extended)
-**Body (extended):** `{ status, lastError?, attempt?, ippJobId?, detail? }`
-Old fields unchanged; new fields optional.
+### POST /api/v1/agents/jobs/:id/status (existing, extended)
+Body: `{ status, attempt?, detail?, ippJobId? }`
+Extended with `attempt` (idempotency) and `ippJobId` (for IPP job tracking).
+Old builds send the same body as before (without the new optional fields).
 
 ## Socket events (additive)
 
-| Event | Payload |
-|-------|---------|
-| queue.updated | `{ queueVersion, shopId }` |
-| task.claimed | `{ taskId, agentId, agentName, queueVersion }` |
-| task.released | `{ taskId, queueVersion }` |
-| task.priority.changed | `{ taskId, priority, queueVersion }` |
-| task.held | `{ taskId, held, queueVersion }` |
-| task.status | `{ taskId, status, queueVersion }` |
-| printer.status | `{ printerId, status, queueVersion }` |
-| agent.status | `{ agentId, kind, isOnline, queueVersion }` |
-| device.revoked | `{ agentId, queueVersion }` |
+| Event | Payload | When |
+|-------|---------|------|
+| queue.updated | `{queueVersion}` | Queue order/content changed |
+| task.claimed | `{taskId, agentId, agentName, queueVersion}` | Mobile claimed |
+| task.released | `{taskId, queueVersion}` | Returned to queue |
+| task.priority.changed | `{taskId, priority, queueVersion}` | Priority changed |
+| task.held | `{taskId, held, queueVersion}` | Hold/release |
+| task.status | `{taskId, status, queueVersion}` | Status update |
+| printer.status | `{printerId, status, queueVersion}` | Printer state |
+| agent.status | `{agentId, kind, isOnline, queueVersion}` | Agent online/offline |
+| device.revoked | `{agentId, queueVersion}` | Device revoked |
 
-`queueVersion` is per-shop, monotonically increasing. Clients detect gaps → refetch.
+`queueVersion` is monotonically increasing per shop. Clients detect gaps → refetch.

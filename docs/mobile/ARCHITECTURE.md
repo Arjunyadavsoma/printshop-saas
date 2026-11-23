@@ -1,121 +1,120 @@
-# Architecture — Mobile Executor + Two-Executor Print Queue
+# Mobile Executor — Architecture
 
-## Executors
+## Overview
 
-| Executor | Device | Mode | Auto-claims? | Prints when? |
-|----------|--------|------|-------------|--------------|
-| PC Agent (PrintEXE) | Shop Windows PC | AUTO | Yes (polls /jobs/pending) | Automatically when task is queued |
-| Mobile Agent | Shopkeeper's phone | MANUAL_ONLY | No (shopkeeper taps Print) | Only when shopkeeper taps "Print now" |
+Two executor types per shop:
+- **PC agent (PrintEXE)**: always-on, automatic. Polls `/jobs/pending`, receives tasks, prints them.
+- **Mobile agents (phones)**: manual only. Shopkeeper taps "Print now" on a task. Can print to any LAN IPP printer.
 
-A shop may have one PC agent + multiple mobile agents (phones).
+The server is the **only gatekeeper** — it controls who gets which task and when.
 
-## Print Task Lifecycle
+## Executor Model
 
 ```
-Customer pays → Server splits into tasks (colour set / B&W set)
-    ↓
-Task is QUEUED (priority=0, isHeld=false, executorMode=AUTO, position=assigned)
-    ↓
-┌─────────────────┐                    ┌─────────────────┐
-│ PC Agent polls  │                    │ Shopkeeper opens│
-│ /jobs/pending   │                    │ queue on phone  │
-│ (server filters │                    │ (sees all tasks)│
-│  AUTO+unheld)   │                    │                 │
-└────────┬────────┘                    └────────┬────────┘
-         │                                      │
-    Dispatched                              Taps "Print now"
-    (agent receives)                             │
-         │                                  Claim (atomic)
-    Printing                              (version check)
-         │                                      │
-    Completed                             Lease (60s, renew 15s)
-         │                                      │
-    ✓ Done                               Download → IPP Print
-                                              │
-                                         Report status
-                                              │
-                                    ┌─────────┴─────────┐
-                                    │                   │
-                               Completed           Lease expired
-                               ✓ Done              → UNCERTAIN
-                                                  (shopkeeper decides)
+┌─────────────┐     ┌──────────────────────────────────────────┐
+│  Customer   │────▶│              PrintShop Server             │
+│  (web/QR)   │     │                                          │
+└─────────────┘     │  ┌─────────┐    ┌──────────────────┐    │
+                    │  │ Queue   │    │  Dispatcher       │    │
+                    │  │ Service │◀──▶│  (filters tasks)  │    │
+                    │  └────┬────┘    └────────┬─────────┘    │
+                    │       │                  │               │
+                    │       │    ┌─────────────┴──────────┐   │
+                    │       │    │                        │   │
+                    └───────┼────┼────────────────────────┼───┘
+                            │    │                        │
+                    ┌───────▼────▼───┐        ┌──────────▼───┐
+                    │   PC Agent     │        │ Mobile Agent  │
+                    │   (PrintEXE)   │        │  (Flutter)    │
+                    │   AUTO only    │        │  MANUAL only  │
+                    │   Windows queue│        │  LAN IPP      │
+                    └────────────────┘        └───────────────┘
 ```
 
-## Claim/Lease Sequence
+## Claim/Lease Flow (mobile printing)
 
 ```
 Phone                    Server                   PC Agent
-  |                        |                         |
-  | POST /jobs/:id/claim   |                         |
-  |----------------------->|                         |
-  |                        | Atomic UPDATE           |
-  |                        | WHERE version = N       |
-  |                        | AND claimedByAgentId    |
-  |                        |     IS NULL             |
-  |                        |                         |
-  |  200 OK                |                         |
-  |  {lease, fileUrl}      |                         |
-  |<-----------------------|                         |
-  |                        |                         |
-  | POST /lease/renew      |                         |
-  |  (every 15s)           |                         |
-  |----------------------->|                         |
-  |                        | Extends lease +60s      |
-  |                        |                         |
-  | POST /jobs/:id/status  |                         |
-  |  {state: "completed"}  |                         |
-  |----------------------->|                         |
-  |                        | Marks PRINTED           |
-  |                        | Clears claim            |
-  |                        |                         |
+  │                        │                        │
+  │ POST /jobs/:id/claim   │                        │
+  │───────────────────────▶│                        │
+  │                        │ Atomic UPDATE          │
+  │                        │ SET claimedByAgentId   │
+  │                        │ WHERE version=?        │
+  │                        │ AND claimedByAgentId   │
+  │                        │ IS NULL                │
+  │                        │                        │
+  │  200: lease+fileURL    │                        │
+  │◀───────────────────────│                        │
+  │                        │                        │
+  │ POST /lease/renew      │                        │
+  │ (every 15s)            │                        │
+  │───────────────────────▶│                        │
+  │                        │ Extends lease 60s      │
+  │                        │                        │
+  │ Download file          │                        │
+  │ Print via IPP          │                        │
+  │                        │                        │
+  │ POST /jobs/:id/status  │                        │
+  │ {state: "printed"}     │                        │
+  │───────────────────────▶│                        │
+  │                        │ Marks PRINTED          │
+  │                        │ Publishes task.status  │
+  │                        │                        │
 ```
+
+## Lease Expiry → UNCERTAIN
+
+If the phone dies mid-print (lease expires without PRINTED):
+1. Server sets status to `uncertain` (NEVER auto-retry)
+2. Dashboard shows "Needs you" for this task
+3. Shopkeeper decides: Mark printed / Reprint / Cancel
 
 ## Pull Back from PC
 
 ```
 Phone                    Server                   PC Agent
-  |                        |                         |
-  | POST /jobs/:id/pullback|                         |
-  |----------------------->|                         |
-  |                        | DeviceCommand:          |
-  |                        |   task.release.request  |
-  |                        |------------------------>|
-  |                        |                         |
-  |                        |    task.release.ack     |
-  |                        |    (only if not started)|
-  |                        |<------------------------|
-  |                        |                         |
-  |  200 OK (can claim)    |                         |
-  |  OR 409 (already       |                         |
-  |  printing)             |                         |
-  |<-----------------------|                         |
+  │                        │                        │
+  │ POST /jobs/:id/pullback│                        │
+  │───────────────────────▶│                        │
+  │                        │ DeviceCommand:         │
+  │                        │ task.release.request   │
+  │                        │───────────────────────▶│
+  │                        │                        │
+  │                        │  PC checks: not started│
+  │                        │  task.release.ack      │
+  │                        │◀───────────────────────│
+  │                        │                        │
+  │  200: can claim        │                        │
+  │◀───────────────────────│                        │
+  │                        │                        │
+  │ POST /jobs/:id/claim   │                        │
+  │───────────────────────▶│                        │
 ```
+
+If PC already started → `409 Already printing on Shop PC`
 
 ## Queue Ordering
 
-```
+```sql
 ORDER BY
   isHeld ASC,           -- non-held first
   priority DESC,        -- urgent (10) before normal (0)
-  position ASC,         -- fractional index (drag reorder)
+  position ASC,         -- fractional index for drag reorder
   createdAt ASC         -- FIFO for same position
 ```
 
 ## Printer Merging
 
-Same physical printer reported by PC (Windows queue) and phone (LAN IPP):
-1. PC reports printer with `printerUuid` from IPP Get-Printer-Attributes
-2. Phone discovers printer via mDNS, queries IPP, gets same `printerUuid`
-3. Server matches by `printerUuid` within the same shop → same Printer record
-4. Each agent creates its own PrinterPath (WINDOWS_QUEUE vs LAN_IPP)
-5. If UUIDs don't match (different printers), shopkeeper can merge manually
+Same `printerUuid` in same shop → same logical Printer (multiple PrinterPaths).
+Different UUIDs → separate Printers (shopkeeper can merge manually).
 
 ## Old PrintEXE Compatibility
 
-The server filters `/jobs/pending`:
-- Only `executorMode='AUTO'` tasks → old PrintEXE never sees MANUAL_ONLY tasks
-- Only `isHeld=false` → old PrintEXE never sees held tasks
-- Only `claimedByAgentId IS NULL` → old PrintEXE never sees claimed tasks
-- Response shape unchanged → old builds parse it without modification
+The server filters `/jobs/pending` to only return:
+- `executorMode = 'AUTO'`
+- `isHeld = false`
+- `claimedByAgentId IS NULL`
+- Target printer has eligible PC path
 
-**Old PrintEXE builds need zero changes.**
+Old PrintEXE builds poll as before — they see fewer tasks (held/manual filtered) but the response shape is identical. **Zero changes needed to old builds.**
