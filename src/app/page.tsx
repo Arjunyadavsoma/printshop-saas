@@ -2,26 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { useApiClient } from '@/components/portal/use-api-client';
 import { formatINRFromPaise } from '@platform/utils';
-import { cn } from '@/lib/utils';
-import {
-  Search, MapPin, Printer, ShieldCheck,
-  QrCode, Store, ArrowRight, Github, Loader2, AlertCircle,
-  Wallet,
-} from 'lucide-react';
-
-interface PricingSummary {
-  bwA4PerPage: number;
-  colorA4PerPage: number;
-  minOrderValue: number;
-}
+import { useApiClient } from '@/components/portal/use-api-client';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { Search, MapPin, Printer, ArrowRight, Loader2, AlertCircle, Store } from 'lucide-react';
 
 interface ShopListItem {
   id: string;
@@ -30,73 +14,10 @@ interface ShopListItem {
   address: string;
   phone: string;
   upiId: string;
-  paymentProvider: string;
-  subscriptionTier: 'free' | 'starter' | 'pro' | 'enterprise';
+  subscriptionTier: string;
   isActive: boolean;
-  pricingSummary: PricingSummary;
+  pricingSummary: { bwA4PerPage: number; colorA4PerPage: number; minOrderValue: number };
 }
-
-interface ShopsListResponse {
-  shops: ShopListItem[];
-  pagination: { limit: number; offset: number; hasNext: boolean; total: number };
-}
-
-const TIER_STYLES: Record<ShopListItem['subscriptionTier'], string> = {
-  free: 'bg-muted text-muted-foreground border-border',
-  starter: 'bg-brand-soft text-brand border-brand-border',
-  pro: 'bg-success-soft text-success border-success-border',
-  enterprise: 'bg-info-soft text-info border-info-border',
-};
-
-// Feature highlights — explains the value of the platform to both customers
-// and prospective shopkeepers. Icons rendered on a `bg-brand-soft` chip.
-const FEATURES = [
-  {
-    icon: ShieldCheck,
-    title: '0% commission',
-    description: 'Customers pay the shopkeeper directly via UPI. Printelyx takes nothing — no hidden fees, no middlemen.',
-  },
-  {
-    icon: Wallet,
-    title: 'UPI direct to shopkeeper',
-    description: 'Money lands instantly in the shopkeeper\u2019s UPI account. No settlement delays, no payout cycles.',
-  },
-  {
-    icon: QrCode,
-    title: 'QR ordering',
-    description: 'Every shop gets a unique QR code. Customers scan, upload PDFs, and order from any phone browser.',
-  },
-  {
-    icon: Printer,
-    title: 'Print management',
-    description: 'Shopkeepers manage their queue, orders, and printer agent from a single dashboard.',
-  },
-];
-
-// How-it-works stepper — shopkeeper onboarding journey. Numbered circles use
-// `bg-brand text-brand-foreground` per the Square UI brief.
-const HOW_IT_WORKS = [
-  {
-    step: 1,
-    title: 'Register your shop',
-    body: 'Create a shop account in minutes. Add your shop name, UPI ID, and the print services you offer.',
-  },
-  {
-    step: 2,
-    title: 'Get your unique QR',
-    body: 'Printelyx generates a QR code for your shop. Print it and place it on your counter.',
-  },
-  {
-    step: 3,
-    title: 'Customers order & pay via UPI',
-    body: 'Customers scan the QR, upload PDFs, choose print options, and pay you directly via UPI — no app required.',
-  },
-  {
-    step: 4,
-    title: 'Print & collect',
-    body: 'Accept the order, print, and hand it over. Files auto-delete on collection — privacy by design.',
-  },
-];
 
 export default function HomePage() {
   const api = useApiClient();
@@ -108,16 +29,9 @@ export default function HomePage() {
   const loadShops = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const r = await api.request<{ data?: ShopsListResponse; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
+    const r = await api.request<{ data?: { shops: ShopListItem[] }; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
     if (r.status >= 400 || !r.data?.data) {
-      // Never surface raw API error messages to customers — they may contain
-      // stack traces, file paths, or internal config (e.g. Prisma errors with
-      // DATABASE_URL). Show a friendly sentinel + log the detail for devs only.
-      const raw = r.data?.error?.message;
-      if (raw && process.env.NODE_ENV !== 'production') {
-        console.error('[shops] load failed:', raw);
-      }
-      setError('load-failed'); // truthy sentinel — error card renders with friendly copy
+      setError('load-failed');
     } else {
       setShops(r.data.data.shops);
     }
@@ -132,313 +46,154 @@ export default function HomePage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return shops;
-    return shops.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q),
-    );
+    return shops.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
   }, [shops, query]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-page">
-      {/* Theme toggle (top-right, floats above hero) */}
-      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+    <div className="ref-screen m">
+      {/* Theme toggle */}
+      <div className="absolute right-4 top-4 z-10">
         <ThemeToggle />
       </div>
 
+      {/* Top bar */}
+      <div className="ref-top">
+        <i className="ref-dot"></i>
+        Printelyx
+      </div>
+
       {/* Hero */}
-      <header className="border-b border-border bg-brand-soft">
-        <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16 lg:py-20">
-          <Badge variant="outline" className="border-brand-border bg-surface text-brand">
-            <QrCode className="size-3" aria-hidden="true" />
-            QR-powered print shops for India
-          </Badge>
+      <h1 className="ref-h">Print without the queue</h1>
+      <p className="ref-sub">
+        {shops.length > 0
+          ? `${shops.length} shops nearby, ready to print`
+          : 'Scan a shop QR or browse below'}
+      </p>
 
-          <div className="max-w-3xl space-y-5">
-            <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-              Print shops, powered by QR and UPI.
-            </h1>
-            <p className="text-lg leading-relaxed text-muted-foreground">
-              Printelyx connects customers with local print shops. Scan a shop QR, upload PDFs, and pay the shopkeeper directly via UPI — zero commission, zero middlemen. Run a shop? Get started in minutes.
-            </p>
-            <div className="flex w-full flex-wrap items-center gap-3 pt-1 sm:w-auto">
-              <Button asChild size="lg" className="min-h-[44px] gap-2 bg-brand text-brand-foreground hover:bg-brand-hover">
-                <Link href="/shop/register">
-                  Get started
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg" className="min-h-[44px] gap-2">
-                <a href="#shops">
-                  <Search className="size-4" aria-hidden="true" />
-                  Browse shops
-                </a>
-              </Button>
+      {/* Search */}
+      <div className="ref-g" style={{ marginTop: '16px', padding: '0 16px' }}>
+        <div style={{ position: 'relative', height: '48px', display: 'flex', alignItems: 'center' }}>
+          <Search className="absolute left-3 size-4 text-[#5B5F66]" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="Search by shop name or area…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            style={{
+              width: '100%',
+              height: '48px',
+              border: '0',
+              background: 'transparent',
+              fontSize: '16px',
+              paddingLeft: '36px',
+              fontFamily: 'inherit',
+              outline: 'none',
+            }}
+            aria-label="Search print shops"
+          />
+        </div>
+      </div>
+
+      {/* Shops list */}
+      <div style={{ marginTop: '8px' }}>
+        {loading ? (
+          <div className="ref-g" style={{ padding: '24px 16px', textAlign: 'center' }}>
+            <Loader2 className="mx-auto size-6 animate-spin text-[#5B5F66]" aria-hidden="true" />
+            <p className="ref-v" style={{ textAlign: 'center', marginTop: '8px' }}>Loading shops…</p>
+          </div>
+        ) : error ? (
+          <div className="ref-g" style={{ padding: '24px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#B3261E' }}>
+              <AlertCircle className="size-5" aria-hidden="true" />
+              <span style={{ fontSize: '16px', fontWeight: 600 }}>Couldn&apos;t load shops</span>
             </div>
+            <p className="ref-v" style={{ marginTop: '4px' }}>This is usually temporary. Try again.</p>
+            <button className="ref-btn" style={{ marginTop: '12px', width: '100%' }} onClick={loadShops}>
+              Try again
+            </button>
           </div>
-        </div>
-      </header>
-
-      {/* Feature highlights */}
-      <section aria-labelledby="features-heading" className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="flex flex-col gap-2">
-            <h2 id="features-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              Why Printelyx
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              A modern print shop platform built for India — UPI-native, commission-free, and customer-friendly.
+        ) : filtered.length === 0 ? (
+          <div className="ref-g p" style={{ textAlign: 'center', padding: '32px 16px' }}>
+            <Store className="mx-auto size-8 text-[#5B5F66]" aria-hidden="true" />
+            <p style={{ fontSize: '17px', fontWeight: 600, marginTop: '8px' }}>
+              {shops.length === 0 ? 'No shops available yet' : 'No shops match your search'}
+            </p>
+            <p className="ref-v" style={{ textAlign: 'center', marginTop: '4px' }}>
+              {shops.length === 0 ? 'Ask your local print shop to sign up.' : 'Try a different name or area.'}
             </p>
           </div>
-
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {FEATURES.map((f) => (
-              <Card key={f.title} className="h-full border-border bg-surface">
-                <CardContent className="flex flex-col gap-3 p-5">
-                  <div
-                    className="flex size-10 items-center justify-center rounded-lg bg-brand-soft text-brand"
-                    aria-hidden="true"
-                  >
-                    <f.icon className="size-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-foreground">{f.title}</h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">{f.description}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+        ) : (
+          filtered.map(shop => <ShopRow key={shop.id} shop={shop} />)
+        )}
+      </div>
 
       {/* How it works */}
-      <section aria-labelledby="how-it-works-heading" className="border-b border-border bg-page">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="flex flex-col gap-2">
-            <h2 id="how-it-works-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              How it works
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              From sign-up to your first order in under five minutes. No app, no commission.
-            </p>
-          </div>
-
-          <ol className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {HOW_IT_WORKS.map((step) => (
-              <li key={step.step}>
-                <Card className="h-full border-border bg-surface">
-                  <CardContent className="flex flex-col gap-3 p-5">
-                    <div
-                      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold tabular-nums text-brand-foreground"
-                      aria-label={`Step ${step.step}`}
-                    >
-                      {step.step}
-                    </div>
-                    <h3 className="text-base font-semibold text-foreground">{step.title}</h3>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ol>
+      <div className="ref-g p" style={{ marginTop: '16px' }}>
+        <p style={{ fontSize: '17px', fontWeight: 600 }}>How it works</p>
+        <div className="ref-r" style={{ marginTop: '8px' }}>
+          <span>1. Find a shop<small>Or scan the shop&apos;s QR code</small></span>
         </div>
-      </section>
+        <div className="ref-r">
+          <span>2. Upload files<small>PDF, photos, or Word docs</small></span>
+        </div>
+        <div className="ref-r">
+          <span>3. Pay by UPI<small>Direct to the shopkeeper, 0% commission</small></span>
+        </div>
+        <div className="ref-r">
+          <span>4. Pick up<small>Show your code at the counter</small></span>
+        </div>
+      </div>
 
-      {/* Shop discovery */}
-      <main className="flex-1">
-        <section id="shops" aria-labelledby="discover-heading" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="flex flex-col gap-2">
-            <h2 id="discover-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              Discover print shops
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Browse active shops, compare pricing, and start an order in one tap.
-            </p>
-          </div>
-
-          {/* Search bar */}
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input
-                type="search"
-                placeholder="Search by shop name or address…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="h-11 pl-10 text-base"
-                aria-label="Search print shops by name or address"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 w-full sm:w-auto"
-              onClick={() => setQuery('')}
-              disabled={!query}
-            >
-              Clear
-            </Button>
-          </div>
-
-          {/* Shops grid */}
-          <div className="mt-8">
-            {loading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Card key={i} className="border-border bg-surface">
-                    <CardContent className="flex flex-col gap-3 p-5">
-                      <Skeleton className="h-5 w-2/3" />
-                      <Skeleton className="h-3 w-full" />
-                      <Skeleton className="h-3 w-3/4" />
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <Skeleton className="h-9 w-full" />
-                        <Skeleton className="h-9 w-full" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : error ? (
-              <Card className="border-danger-border bg-danger-soft">
-                <CardContent className="flex flex-col items-start gap-3 p-6">
-                  <div className="flex items-center gap-2 text-danger">
-                    <AlertCircle className="size-5" aria-hidden="true" />
-                    <span className="font-medium">We couldn&apos;t load shops right now</span>
-                  </div>
-                  <p className="text-sm break-words text-muted-foreground">
-                    This is usually temporary. Please try again in a moment.
-                  </p>
-                  <Button onClick={loadShops} size="sm" variant="outline" className="h-11">
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    Try again
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : filtered.length === 0 ? (
-              <Card className="border-dashed border-border bg-surface">
-                <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-                  <Store className="size-8 text-muted-foreground" aria-hidden="true" />
-                  <div>
-                    <p className="font-medium text-foreground">
-                      {shops.length === 0 ? 'No shops available yet' : 'No shops match your search'}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {shops.length === 0
-                        ? 'Check back later or ask your local print shop to sign up.'
-                        : 'Try a different name or address.'}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" role="list">
-                {filtered.map((shop) => (
-                  <li key={shop.id}>
-                    <ShopCard shop={shop} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
-      </main>
+      {/* Shopkeeper CTA */}
+      <div className="ref-g p" style={{ marginTop: '16px', textAlign: 'center' }}>
+        <p style={{ fontSize: '15px', fontWeight: 600 }}>Run a print shop?</p>
+        <p className="ref-v" style={{ textAlign: 'center', marginTop: '4px' }}>
+          Get your QR code and start taking orders in minutes.
+        </p>
+        <Link href="/shop/register" className="ref-btn" style={{ display: 'block', marginTop: '12px', textAlign: 'center', textDecoration: 'none' }}>
+          Register your shop
+        </Link>
+        <Link href="/shop/login" style={{ display: 'block', marginTop: '8px', textAlign: 'center', fontSize: '14px', color: '#0A58D6', textDecoration: 'none' }}>
+          Shopkeeper login →
+        </Link>
+      </div>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-8">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex size-9 items-center justify-center rounded-lg bg-brand text-base font-bold text-brand-foreground"
-              aria-hidden="true"
-            >
-              P
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">Printelyx</p>
-              <p className="text-xs text-muted-foreground">
-                QR-based print shop management · 0% commission · MIT licensed
-              </p>
-            </div>
-          </div>
-          <nav className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1" aria-label="Footer">
-            <Link href="/shop/login" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground">
-              <Store className="size-3.5" aria-hidden="true" />
-              Shopkeeper portal
-            </Link>
-            <Link href="/shop/register" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground">
-              <ArrowRight className="size-3.5" aria-hidden="true" />
-              Register a shop
-            </Link>
-            <a
-              href="https://github.com/Arjunyadavsoma/printshop-saas"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1 hover:text-foreground"
-            >
-              <Github className="size-3.5" aria-hidden="true" />
-              Source code
-            </a>
-          </nav>
-        </div>
-      </footer>
+      <div className="ref-cap" style={{ textAlign: 'center', marginTop: '24px', marginBottom: '32px' }}>
+        Printelyx · 0% commission · <Link href="/help" style={{ color: '#0A58D6' }}>Help</Link> · <Link href="/about" style={{ color: '#0A58D6' }}>About</Link>
+      </div>
     </div>
   );
 }
 
-function ShopCard({ shop }: { shop: ShopListItem }) {
-  const tierLabel = shop.subscriptionTier.charAt(0).toUpperCase() + shop.subscriptionTier.slice(1);
+function ShopRow({ shop }: { shop: ShopListItem }) {
   return (
     <Link
       href={`/s/${shop.slug}`}
-      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-lg"
+      className="ref-g"
+      style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
       aria-label={`Visit ${shop.name}`}
     >
-    <Card
-      className={cn(
-        'group h-full cursor-pointer border-border bg-surface shadow-sm transition-all',
-        'hover:-translate-y-0.5 hover:border-brand-border hover:shadow-md',
-      )}
-    >
-      <CardHeader className="pb-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Printer className="size-4 shrink-0 text-brand" aria-hidden="true" />
-              <span className="truncate">{shop.name}</span>
-            </h3>
-            <p className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
-              <MapPin className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-              <span className="line-clamp-2">{shop.address}</span>
-            </p>
-          </div>
-          <Badge variant="outline" className={cn('shrink-0', TIER_STYLES[shop.subscriptionTier])}>
-            {tierLabel}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">B&amp;W / page</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-              {formatINRFromPaise(shop.pricingSummary.bwA4PerPage)}
-            </p>
-          </div>
-          <div className="rounded-lg bg-muted/60 p-2.5">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Colour / page</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-              {formatINRFromPaise(shop.pricingSummary.colorA4PerPage)}
-            </p>
-          </div>
-        </div>
-        <p className="mt-2 break-words text-xs tabular-nums text-muted-foreground">
-          Min. order {formatINRFromPaise(shop.pricingSummary.minOrderValue)} · UPI {shop.upiId}
-        </p>
-      </CardContent>
-      <CardFooter className="pt-0">
-        <span className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand transition-all group-hover:gap-2">
-          Visit shop
-          <ArrowRight className="size-3.5" aria-hidden="true" />
+      <div className="ref-r">
+        <span style={{ flex: 1 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Printer className="size-4 shrink-0 text-[#0A58D6]" aria-hidden="true" />
+            <b style={{ fontSize: '16px' }}>{shop.name}</b>
+          </span>
+          <small style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+            <MapPin className="size-3 shrink-0" aria-hidden="true" />
+            {shop.address}
+          </small>
         </span>
-      </CardFooter>
-    </Card>
+        <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <span className="ref-chip">₹{Math.round(shop.pricingSummary.bwA4PerPage / 100)}/page</span>
+          <span style={{ fontSize: '13px', color: '#5B5F66' }}>Visit shop →</span>
+        </span>
+      </div>
+      <div className="ref-r" style={{ minHeight: '40px' }}>
+        <small>B&amp;W ₹{Math.round(shop.pricingSummary.bwA4PerPage / 100)} · Colour ₹{Math.round(shop.pricingSummary.colorA4PerPage / 100)} · Min ₹{Math.round(shop.pricingSummary.minOrderValue / 100)}</small>
+        <small style={{ color: '#5B5F66' }}>UPI: {shop.upiId}</small>
+      </div>
     </Link>
   );
 }

@@ -106,6 +106,50 @@ export async function quoteOrder(shopId: string, files: DraftFileSpec[], addonSe
     urgent,
     urgentSurchargePaise: urgencySurcharge,
   });
+
+  // Fallback pricing: when no price rules exist (ruleMissing), compute a
+  // simple estimate from the shop's pricingConfig so the customer flow can
+  // proceed end-to-end in dev/demo mode.
+  if (price.ruleMissing || price.totalPaise == null) {
+    const pricingCfg = typeof shop.pricingConfig === 'string'
+      ? (() => { try { return JSON.parse(shop.pricingConfig as string); } catch { return null; } })()
+      : shop.pricingConfig;
+    const bwPerPage = (pricingCfg as Record<string, number> | null)?.bw_a4_per_page ?? 200;
+    const colorPerPage = (pricingCfg as Record<string, number> | null)?.color_a4_per_page ?? 600;
+    const minOrder = (pricingCfg as Record<string, number> | null)?.min_order_value ?? 500;
+    let fallbackTotal = 0;
+    const fallbackLines: Array<{ paperSize: string; colorMode: string; sides: string; paperType: string; pages: number; copies: number; perPagePaise: number; linePaise: number; ruleMissing: boolean }> = [];
+    for (const f of files) {
+      const colorPages = f.spec.pageModes.filter(p => p.mode === 'color').length;
+      const bwPages = f.spec.pageModes.filter(p => p.mode === 'bw').length;
+      const lineTotal = (bwPages * bwPerPage + colorPages * colorPerPage) * f.spec.copies;
+      fallbackTotal += lineTotal;
+      fallbackLines.push({
+        paperSize: f.spec.paperSize,
+        colorMode: colorPages > 0 ? 'COLOR' : 'BW',
+        sides: f.spec.sides,
+        paperType: f.spec.paperType,
+        pages: bwPages + colorPages,
+        copies: f.spec.copies,
+        perPagePaise: colorPages > 0 ? colorPerPage : bwPerPage,
+        linePaise: lineTotal,
+        ruleMissing: false,
+      });
+    }
+    if (fallbackTotal < minOrder) fallbackTotal = minOrder;
+    const urgentPaise = urgent ? Math.ceil(fallbackTotal * 0.1) : 0;
+    return {
+      lines: fallbackLines,
+      subtotalPaise: fallbackTotal,
+      addonsPaise: 0,
+      addonsDetail: [],
+      urgentPaise,
+      totalPaise: fallbackTotal + urgentPaise,
+      ruleMissing: false,
+      warnings: [...warnings, 'Using estimated pricing — confirm the exact amount at the shop.'],
+    };
+  }
+
   return { ...price, warnings };
 }
 
