@@ -7,16 +7,15 @@ import {
 } from 'lucide-react';
 
 import { AppBar } from '@/components/clear/app-bar';
-import { CustomerThemeToggle } from '@/components/customer/theme-toggle';
 import { TokenSlip } from '@/components/clear/token-slip';
 import { StatusTimeline } from '@/components/clear/status-timeline';
 import { StatusPill } from '@/components/clear/status-pill';
 import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
 import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
 import { SkeletonBox, SkeletonText } from '@/components/clear/compat';
-import { ErrorState } from '@/components/customer/error-state';
+import { ErrorState } from '@/components/clear/compat';
 import { OfflineBanner } from '@/components/clear/compat';
-import { Toast } from '@/components/customer/toast';
+import { Toast } from '@/components/clear/compat';
 import { UTRInput } from '@/components/clear/utr-input';
 
 import { useTrackPoll, type FetchResult } from '@/lib/hooks/use-track-poll';
@@ -458,7 +457,6 @@ export default function TrackOrderPage() {
             className="inline-flex items-center gap-1"
           >
             <StatusPill status={pillVariant} label={pillLabel} />
-            <CustomerThemeToggle />
           </span>
         }
       />

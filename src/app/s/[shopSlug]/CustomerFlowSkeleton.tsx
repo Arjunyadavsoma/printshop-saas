@@ -1,4 +1,4 @@
-import { SkeletonBox, SkeletonText } from '@/components/customer/skeleton';
+import { SkeletonBox } from '@/components/clear/compat';
 
 /**
  * CustomerFlowSkeleton — the placeholder shown by `next/dynamic` while the
@@ -37,8 +37,8 @@ export function CustomerFlowSkeleton() {
       <div className="rounded-[var(--radius-soft)] border-2 border-dashed border-[var(--color-border-ink-strong)] bg-[var(--color-surface)] p-8">
         <div className="flex flex-col items-center gap-3">
           <SkeletonBox width={48} height={48} radius="9999px" />
-          <SkeletonText lines={1} width="short" />
-          <SkeletonText lines={1} width="medium" />
+          <SkeletonBox width="short" height={20} />
+          <SkeletonBox width="medium" height={20} />
         </div>
       </div>
 
@@ -47,8 +47,8 @@ export function CustomerFlowSkeleton() {
         <div className="flex items-center gap-3">
           <SkeletonBox width={56} height={56} radius="var(--radius-tight)" />
           <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-            <SkeletonText lines={1} width="medium" />
-            <SkeletonText lines={1} width="short" />
+            <SkeletonBox width="medium" height={20} />
+            <SkeletonBox width="short" height={20} />
           </div>
         </div>
       </div>
@@ -65,7 +65,7 @@ export function CustomerFlowSkeleton() {
       <div className="sticky bottom-0 z-10 bg-[var(--color-surface)] border-t border-[var(--color-border-ink)] safe-bottom-bar">
         <div className="flex items-center gap-4 px-4 py-3">
           <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <SkeletonText lines={1} width="short" />
+            <SkeletonBox width="short" height={20} />
             <SkeletonBox width={64} height={20} radius="var(--radius-tight)" />
           </div>
           <SkeletonBox width={120} height={48} radius="var(--radius-default)" />

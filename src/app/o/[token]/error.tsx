@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { AppBar } from '@/components/customer/app-bar';
-import { ErrorState } from '@/components/customer/error-state';
+import { AppBar } from '@/components/clear/app-bar';
+import { ErrorState } from '@/components/clear/error-state';
 
 /**
  * /o/[token]/error — boundary for the tracking page.

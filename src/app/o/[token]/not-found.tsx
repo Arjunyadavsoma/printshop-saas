@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Receipt } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 
 /**
  * /o/[token]/not-found — the dedicated "Order not found" panel.

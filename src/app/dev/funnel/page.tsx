@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 
 /**
  * /dev/funnel — internal analytics funnel view.

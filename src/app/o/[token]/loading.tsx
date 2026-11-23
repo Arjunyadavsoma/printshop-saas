@@ -5,18 +5,18 @@
  * swap-in is invisible: a token-slip-shaped card with perforation hints, a
  * 5-step timeline skeleton, and a small price row skeleton at the bottom.
  */
-import { SkeletonBox, SkeletonText } from '@/components/customer/skeleton';
+import { SkeletonBox } from '@/components/clear/skeleton';
 
 export default function OrderLoading() {
   return (
-    <div className="customer-flow">
+    <div className="">
       {/* AppBar skeleton — same shape as the shop one but with a status pill */}
       <header className="sticky top-0 z-10 bg-[var(--color-paper)] border-b border-[var(--color-border-ink)] safe-top">
         <div className="flex items-center gap-3 px-4 min-h-[56px]">
           <SkeletonBox width={24} height={24} radius="var(--radius-tight)" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <SkeletonText lines={1} width="short" />
-            <SkeletonText lines={1} width="medium" />
+            <SkeletonBox width="short" height={20} />
+            <SkeletonBox width="medium" height={20} />
           </div>
           <SkeletonBox width={84} height={22} radius="9999px" />
         </div>
@@ -26,21 +26,21 @@ export default function OrderLoading() {
         {/* Token slip skeleton — perforated edges preserved */}
         <div className="rounded-[var(--radius-soft)] bg-[var(--color-surface)] perforated-top perforated-bottom shadow-[var(--shadow-slip)] overflow-hidden">
           <div className="px-5 py-6 flex flex-col items-center gap-4">
-            <SkeletonText lines={1} width="short" />
+            <SkeletonBox width="short" height={20} />
             <SkeletonBox width={120} height={36} radius="var(--radius-default)" />
             <div className="w-full border-t border-dashed border-[var(--color-border-ink)]" />
             <div className="w-full space-y-2">
               <div className="flex items-baseline justify-between gap-3">
-                <SkeletonText lines={1} width="short" />
-                <SkeletonText lines={1} width="medium" />
+                <SkeletonBox width="short" height={20} />
+                <SkeletonBox width="medium" height={20} />
               </div>
               <div className="flex items-baseline justify-between gap-3">
-                <SkeletonText lines={1} width="short" />
-                <SkeletonText lines={1} width="medium" />
+                <SkeletonBox width="short" height={20} />
+                <SkeletonBox width="medium" height={20} />
               </div>
               <div className="flex items-baseline justify-between gap-3">
-                <SkeletonText lines={1} width="short" />
-                <SkeletonText lines={1} width="medium" />
+                <SkeletonBox width="short" height={20} />
+                <SkeletonBox width="medium" height={20} />
               </div>
             </div>
             <SkeletonBox width={96} height={96} radius="var(--radius-tight)" />
@@ -49,13 +49,13 @@ export default function OrderLoading() {
 
         {/* Timeline skeleton — 5 numbered steps */}
         <div className="space-y-3">
-          <SkeletonText lines={1} width="short" />
+          <SkeletonBox width="short" height={20} />
           <ol className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <li key={i} className="flex gap-3">
                 <SkeletonBox width={32} height={32} radius="9999px" />
                 <div className="flex-1 pt-1">
-                  <SkeletonText lines={1} width="medium" />
+                  <SkeletonBox width="medium" height={20} />
                 </div>
               </li>
             ))}
@@ -66,7 +66,7 @@ export default function OrderLoading() {
         <div className="rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-4 py-3 flex items-center justify-between">
           <div className="flex items-baseline gap-2">
             <SkeletonBox width={64} height={28} radius="var(--radius-tight)" />
-            <SkeletonText lines={1} width="short" />
+            <SkeletonBox width="short" height={20} />
           </div>
           <SkeletonBox width={84} height={22} radius="9999px" />
         </div>

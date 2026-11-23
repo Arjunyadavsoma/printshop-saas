@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Store } from 'lucide-react';
 
-import { AppBar } from '@/components/customer/app-bar';
+import { AppBar } from '@/components/clear/app-bar';
 
 /**
  * /s/[shopSlug]/not-found — renders when `notFound()` is called from the
