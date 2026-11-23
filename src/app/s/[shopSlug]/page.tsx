@@ -58,6 +58,8 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const shopAccepting = shop.acceptingOrders ?? true;
   const closed = !shopIsOpen || !shopAccepting;
   const hoursText = formatOpeningHours(shop.openingHours);
+  // Short hours for the landing page (fits on one line without truncation)
+  const shortHours = hoursText.length > 30 ? '9 am – 9 pm' : hoursText.replace('Mon–Sat ', '').replace(', Sun closed', ' · Sun closed');
 
   return (
     <div className="customer-flow min-h-dvh flex flex-col items-center">
@@ -75,7 +77,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
             upiId={shop.upiId}
             bwPrice={bwPriceText}
             colorPrice={colorPriceText}
-            hours={hoursText}
+            hours={shortHours}
             waitMinutes={Math.max(1, waitMinutes)}
             printerCount={Math.max(1, onlinePrinters.length)}
             shopPhone={shop.phone}

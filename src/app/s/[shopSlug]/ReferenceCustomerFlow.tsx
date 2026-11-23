@@ -989,7 +989,7 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <div className="ref-g">
             <div className="ref-r">
               <span>Open today</span>
-              <span className="ref-v" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>{hours}</span>
+              <span className="ref-v" style={{ whiteSpace: 'nowrap' }}>{hours}</span>
             </div>
             <div className="ref-r">
               <a
