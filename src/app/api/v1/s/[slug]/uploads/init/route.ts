@@ -13,7 +13,7 @@ import { NotFoundError, ValidationError } from '@platform/core/errors';
  * back an upload session the client streams chunks into.
  */
 const BodySchema = z.object({
-  filename: z.string().min(1).max(255),
+  filename: z.string().min(1).max(500),
   mimeType: z.string().min(3).max(120),
   sizeBytes: z.number().int().positive(),
   /** Optional: attach to an existing draft order (multi-file order). */
@@ -66,7 +66,18 @@ export const POST = withRateLimit('uploads-init', 30, 60, async (req: NextReques
     }
 
     // Order total size guard is checked at chunk-append + complete time.
-    const sanitized = body.filename.replace(/[^\w.\-() ]+/g, '_').slice(0, 180);
+    // P9-Security §3: filename sanitization — strip every byte that is NOT
+    // a word char / dot / dash / parens / space (replaces path separators,
+    // NUL bytes, shell metacharacters with `_`), then strip leading dots
+    // (defends against hidden-file + traversal persistence) and collapse
+    // dot-runs so a `....pdf` can't smuggle a `..` past a downstream
+    // storage layer that interprets it as parent-dir. Cap at 180 chars so
+    // a pathologically long name doesn't blow up storage key limits.
+    const sanitized = body.filename
+      .replace(/[^\w.\-() ]+/g, '_')
+      .replace(/^\.+/g, '')
+      .replace(/\.{2,}/g, '.')
+      .slice(0, 180);
     const file = await repos.files.create({
       orderId,
       originalFilename: sanitized,

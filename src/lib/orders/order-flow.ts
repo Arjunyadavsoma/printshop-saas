@@ -217,6 +217,16 @@ export async function submitPayment(token: string, input: {
   method: 'upi' | 'counter_cash' | 'counter_upi';
   utr?: string;
   screenshotBytes?: Uint8Array;
+  /**
+   * P9-Security §4: the customer's declared payment amount (from the UPI
+   * app's confirmation screen). If supplied and it does NOT match the
+   * order's `totalAmountPaise`, the submission is rejected with
+   * `AMOUNT_MISMATCH` — the shopkeeper is not shown a misleading "paid"
+   * notification for a wrong-amount transfer. Optional for backward
+   * compat with clients that don't send it; the shopkeeper's manual
+   * verification is the safety net when omitted.
+   */
+  declaredAmountPaise?: number;
 }): Promise<{ paymentId: string; status: string }> {
   const db = getContainer().db;
   const order = await db.findOne<{ id: string; shopId: string; status: string; totalAmountPaise: number; orderNumber: string | null; customerToken: string; notes: string | null }>('order', { customerToken: token });
@@ -238,16 +248,71 @@ export async function submitPayment(token: string, input: {
     }
   }
 
+  // P9-Security §4: amount mismatch flag. The customer's declared amount
+  // must equal the order total exactly (paise — no float tolerance). A
+  // mismatch means the customer paid the wrong amount and the shopkeeper
+  // should NOT be told "this order is paid".
+  if (input.method === 'upi' && input.declaredAmountPaise !== undefined && input.declaredAmountPaise !== order.totalAmountPaise) {
+    throw new ValidationError(
+      `Amount mismatch — you entered Rs ${(input.declaredAmountPaise / 100).toFixed(2)} but the order total is Rs ${(order.totalAmountPaise / 100).toFixed(2)}. Re-check the amount in your UPI app and try again.`,
+    );
+  }
+
+  // P9-Security §4: duplicate UTR detection across the same shop. A single
+  // UTR can only legitimately map to ONE order in a shop. If the customer
+  // resubmits the same UTR for a DIFFERENT order in the same shop, that's
+  // fraud (using one UPI payment to credit two orders). We exclude:
+  //   - The current order (idempotent retry on the SAME order is allowed).
+  //   - Payments in REJECTED status (the customer re-paid after a reject).
+  if (input.method === 'upi' && input.utr) {
+    const dupes = await db.findMany<{ id: string; orderId: string; status: string }>(
+      'payment',
+      { utr: input.utr },
+      { limit: 50 },
+    );
+    for (const p of dupes) {
+      if (p.orderId === order.id) continue; // same order — idempotent retry
+      if (p.status === 'REJECTED') continue; // rejected → not blocking
+      // Look up the other order's shopId — duplicate scope is per-shop.
+      const otherOrder = await db.findOne<{ shopId: string }>('order', { id: p.orderId });
+      if (otherOrder?.shopId === order.shopId) {
+        throw new ValidationError(
+          `This UTR (${input.utr}) was already submitted for another order in this shop. Each UPI payment can only be linked to one order — if you meant to pay for both, make two separate UPI transfers.`,
+        );
+      }
+    }
+  }
+
+  // P9-Security §4: screenshot size + type limits. The shopkeeper reviews
+  // these on a phone — cap at 2 MB and require PNG or JPEG magic bytes.
+  // Rejects oversized files (bandwidth + storage abuse) and wrong types
+  // (a `.exe` renamed `.png` would crash the shopkeeper's image viewer).
+  let screenshotKey: string | null = null;
+  if (input.screenshotBytes && input.screenshotBytes.length > 0) {
+    const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+    if (input.screenshotBytes.length > MAX_SCREENSHOT_BYTES) {
+      throw new ValidationError(
+        `Screenshot is too large — the limit is 2 MB. Crop or downscale the image and try again.`,
+      );
+    }
+    const sb = input.screenshotBytes;
+    const isPng = sb.length >= 8 && sb[0] === 0x89 && sb[1] === 0x50 && sb[2] === 0x4e && sb[3] === 0x47;
+    const isJpeg = sb.length >= 3 && sb[0] === 0xff && sb[1] === 0xd8;
+    if (!isPng && !isJpeg) {
+      throw new ValidationError(
+        `Screenshot must be a PNG or JPEG image. Other formats are not accepted.`,
+      );
+    }
+    const ext = isPng ? 'png' : 'jpg';
+    const mime = isPng ? 'image/png' : 'image/jpeg';
+    screenshotKey = `shops/${order.shopId}/orders/${order.id}/pay/screenshot-${Date.now()}.${ext}`;
+    await getContainer().storage.put?.(screenshotKey, input.screenshotBytes, mime);
+  }
+
   const payeeName = (shop?.upiPayeeName as string) ?? (shop?.name as string) ?? '';
   const upiIntentUrl = (shop?.upiId as string)
     ? buildUpiIntentUrl({ payeeUpi: shop?.upiId as string, payeeName, amountPaise: order.totalAmountPaise, orderShortId: (order.orderNumber ?? order.id.slice(0, 8)) })
     : null;
-
-  let screenshotKey: string | null = null;
-  if (input.screenshotBytes) {
-    screenshotKey = `shops/${order.shopId}/orders/${order.id}/pay/screenshot-${Date.now()}.png`;
-    await getContainer().storage.put?.(screenshotKey, input.screenshotBytes, 'image/png');
-  }
 
   const payment = await repos.payments.createForOrder(order.id, {
     method: input.method,
@@ -303,8 +368,18 @@ export async function cancelOrder(token: string, reason: string): Promise<{ canc
 /** Tracking payload for /o/[token] — no login. */
 export async function orderTracking(token: string) {
   const db = getContainer().db;
-  const order = await db.findOne<{ id: string; shopId: string; status: string; pickupCode: string | null; orderNumber: string | null; customerName: string | null; customerToken: string; totalAmountPaise: number; subtotalPaise: number; addonsPaise: number; urgent: boolean; placedAt: Date | null; paidAt: Date | null; readyAt: Date | null; collectedAt: Date | null; cancelledAt: Date | null; cancelReason: string | null; priceSnapshot: unknown; paymentModeAtOrder: string | null }>('order', { customerToken: token });
+  const order = await db.findOne<{ id: string; shopId: string; status: string; expiresAt: Date | null; pickupCode: string | null; orderNumber: string | null; customerName: string | null; customerToken: string; totalAmountPaise: number; subtotalPaise: number; addonsPaise: number; urgent: boolean; placedAt: Date | null; paidAt: Date | null; readyAt: Date | null; collectedAt: Date | null; cancelledAt: Date | null; cancelReason: string | null; priceSnapshot: unknown; paymentModeAtOrder: string | null }>('order', { customerToken: token });
   if (!order) throw new NotFoundError('Order not found');
+  // P9-Security §1: an expired awaiting_payment order is treated the SAME as
+  // an unknown token — return NotFoundError so the response shape matches
+  // the unknown-token case (no enumeration). The order is still in the DB
+  // for the shopkeeper's records, but the customer URL no longer resolves.
+  // We only do this for `awaiting_payment` (the pre-payment window); after
+  // payment the order is durable and the customer should always be able to
+  // track it, even if the shop is slow to mark it ready / collected.
+  if (order.status === 'awaiting_payment' && order.expiresAt && order.expiresAt.getTime() < Date.now()) {
+    throw new NotFoundError('Order not found');
+  }
   const shop = await db.findOne<{ id: string; name: string; address: string; phone: string; upiPayeeName: string | null }>('shop', { id: order.shopId });
   const files = await repos.files.findByOrder(order.id);
   const events = await repos.orderEvents.forOrder(order.id);

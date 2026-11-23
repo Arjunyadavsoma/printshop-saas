@@ -24,9 +24,21 @@ export function assertValidUpiId(upi: string): string {
   return clean;
 }
 
-/** UTR: exactly 12 digits. */
+/**
+ * UTR: exactly 12 digits, no whitespace, no other characters.
+ *
+ * P9-Security §4: previously this function called `.trim()` on the input,
+ * silently accepting `'123456789012 '` (with a trailing space). The
+ * trim was a convenience for users who paste with whitespace — but it
+ * silently weakened the format contract: a UTR with embedded whitespace
+ * is NOT a 12-digit string, and accepting it after trim could mask a
+ * copy-paste error (e.g. copying two UTRs separated by a space and
+ * sending the first half + a space). The strict check rejects whitespace
+ * outright; the client's UTR input component should trim client-side and
+ * show the user the cleaned value before submission.
+ */
 export function isValidUtr(utr: string): boolean {
-  return /^\d{12}$/.test(utr.trim());
+  return /^\d{12}$/.test(utr);
 }
 
 /** Build the upi:// intent link. Amount is integer PAISE (no floats anywhere). */

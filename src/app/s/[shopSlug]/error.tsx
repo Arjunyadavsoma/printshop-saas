@@ -12,6 +12,10 @@ import { ErrorState } from '@/components/customer/error-state';
  * Renders when the server component throws (DB unreachable, slug lookup
  * failed). The retry button calls `reset()` — Next.js re-runs the server
  * component.
+ *
+ * P9-Security §6: the boundary surfaces the Next.js error `digest` as a
+ * short reference code so the customer can quote it to support without
+ * seeing (or pasting) a raw stack trace.
  */
 export default function ShopError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const router = useRouter();
@@ -30,6 +34,7 @@ export default function ShopError({ error, reset }: { error: Error & { digest?: 
         <ErrorState
           message="We couldn't load this shop."
           fix="Check your connection and try again. If the link is from a QR code, scan it again — the shop may have moved."
+          referenceCode={error.digest}
           onRetry={() => reset()}
         />
       </main>

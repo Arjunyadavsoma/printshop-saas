@@ -293,6 +293,70 @@ export async function markDeliveryReceived(
 }
 
 /**
+ * P9-Security §7 — schedule a FORCED cleanup for a sensitive document.
+ *
+ * Sensitive documents (Aadhaar, PAN, ID copies) the customer marked as
+ * sensitive must be deleted from cloud storage RIGHT AFTER printing — not
+ * the usual 15-min grace period (`after_receipt`) or the 24h post-pickup
+ * sweep (`after_collect`). The privacy contract is: the moment the last
+ * page leaves the printer, the file is gone from the server.
+ *
+ * This helper creates a `forced` FileCleanupTask with `scheduledAt = now`
+ * so the next cron tick of /api/v1/cron/cleanup deletes it (typically
+ * within 5 minutes — the cron is the GitHub-Actions scheduler). For
+ * environments where the cron is not yet wired, the opportunistic sweep
+ * in `processCleanupTasks` will pick it up the next time ANY cleanup task
+ * is processed.
+ *
+ * Idempotency: the cron's `processCleanupTasks` handles a missing storage
+ * object gracefully (marks the task completed). Calling this helper twice
+ * for the same file is safe — it creates two tasks; the first one deletes
+ * the blob, the second one is a no-op.
+ *
+ * @param fileId      The PrintFile whose storage object should be deleted.
+ * @param shopId      The shop that owns the file (tenant scope).
+ * @param storageKey  The cloud-storage key for the file's ORIGINAL bytes
+ *                    (NOT the normalized PDF — the original carries the
+ *                    raw upload with potential EXIF / metadata).
+ */
+export async function scheduleForcedCleanupForFile(
+  fileId: string,
+  shopId: string,
+  storageKey: string,
+): Promise<{ scheduled: boolean; taskId: string | null }> {
+  const now = new Date();
+  const container = getContainer();
+  try {
+    const task = await container.db.insert<{ id: string }>('fileCleanupTask', {
+      id: crypto.randomUUID(),
+      printFileId: fileId,
+      shopId,
+      storageKey,
+      cleanupType: 'forced',
+      scheduledAt: now,
+      status: 'pending',
+    });
+    try {
+      container.logger.info('cleanup: forced cleanup scheduled for sensitive file', {
+        fileId, shopId, scheduledAt: now.toISOString(),
+      });
+    } catch { /* noop */ }
+    return { scheduled: true, taskId: task.id };
+  } catch (err) {
+    // The FileCleanupTask table may not exist yet on a fresh deploy (it's
+    // added by a migration). Don't crash the caller — the next deploy that
+    // has the table will start scheduling forced cleanups. Log the failure
+    // so the operator sees it.
+    try {
+      container.logger.error('cleanup: failed to schedule forced cleanup', {
+        fileId, shopId, error: err instanceof Error ? err.message : String(err),
+      });
+    } catch { /* noop */ }
+    return { scheduled: false, taskId: null };
+  }
+}
+
+/**
  * Process pending cleanup tasks (called by a cron or scheduled endpoint).
  * Deletes files from cloud storage whose scheduledAt has passed.
  *

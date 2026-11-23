@@ -14,6 +14,13 @@ import { submitPayment } from '@/lib/orders/order-flow';
 const BodySchema = z.object({
   method: z.enum(['upi', 'counter_cash', 'counter_upi']),
   utr: z.string().regex(/^\d{12}$/).optional(),
+  /**
+   * P9-Security §4: the customer's declared payment amount (from the UPI
+   * app's confirmation screen). Optional — older clients don't send it.
+   * If supplied, `submitPayment` rejects with AMOUNT_MISMATCH when it
+   * does not equal the order total.
+   */
+  declaredAmountPaise: z.number().int().nonnegative().optional(),
 });
 
 export const POST = withRateLimit<{ token: string }>('order-payment', 20, 60, async (req: NextRequest, ctx: { params: Promise<{ token: string }> }) => {
@@ -23,6 +30,7 @@ export const POST = withRateLimit<{ token: string }>('order-payment', 20, 60, as
     const result = await submitPayment(token, {
       method: body.method,
       utr: body.utr,
+      declaredAmountPaise: body.declaredAmountPaise,
       screenshotBytes: undefined, // screenshot upload is a separate presigned flow (Phase 8 polish)
     });
     return ok(result);

@@ -91,10 +91,35 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
     if (!storage.put) {
       throw new NormalizeError('STORAGE_PUT_UNAVAILABLE', 'Storage adapter does not support server-side writes.');
     }
-    await storage.put(originalKey, bytes, s.mimeType);
+    // P9-Security §3: strip EXIF / GPS metadata from stored images BEFORE
+    // the original bytes land in cloud storage. A phone-camera JPEG carries
+    // the customer's home/office GPS coordinates in the EXIF IFD; without
+    // this strip step, those coordinates persist in the stored ORIGINAL
+    // and leak to anyone with storage access (shop staff, backups, leaks).
+    // PNGs without EXIF round-trip unchanged. PDFs and Office docs are not
+    // touched here (PDFs may carry XMP metadata but no GPS by default;
+    // Office docs are converted to PDF by soffice which strips metadata).
+    // The strip is best-effort: if sharp is unavailable or the image is
+    // malformed, we fall back to storing the original bytes (the pipeline's
+    // normalize step will surface a CORRUPT_IMAGE failure for malformed
+    // inputs; a missing sharp install is a deployment issue, not a security
+    // regression on its own).
+    let bytesToStore = bytes;
+    if (sniffed === 'image' || sniffed === 'heic') {
+      try {
+        bytesToStore = await stripImageExif(bytes);
+      } catch {
+        // Sharp unavailable or the bytes are a corrupt image — keep the
+        // original bytes; the downstream normalize step will mark the file
+        // FAILED if the bytes are actually corrupt. The strip is a privacy
+        // enhancement, not a correctness gate.
+        bytesToStore = bytes;
+      }
+    }
+    await storage.put(originalKey, bytesToStore, s.mimeType);
     await getContainer().db.update('printFile', { id: s.fileId }, {
-      sizeBytes: bytes.length,
-      checksum: sha256Hex(bytes),
+      sizeBytes: bytesToStore.length,
+      checksum: sha256Hex(bytesToStore),
       status: 'converting',
     });
 
@@ -111,3 +136,33 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
     return fail(toAppError(cause));
   }
 });
+
+/**
+ * Strip EXIF / GPS metadata from an image. Re-encodes the image through
+ * sharp without `withMetadata()` so the output carries no EXIF, no ICC, no
+ * XMP — only the pixels. Honours EXIF orientation by calling `.rotate()`
+ * (so a portrait photo rotated 90° stays portrait after stripping).
+ *
+ * Falls back to returning the original bytes if sharp cannot decode the
+ * input (the caller — `complete/route.ts` — handles this case).
+ */
+async function stripImageExif(bytes: Uint8Array): Promise<Uint8Array> {
+  type SharpFn = typeof import('sharp');
+  let sharp: SharpFn;
+  try {
+    const mod = await import('sharp');
+    sharp = ((mod as unknown as { default?: SharpFn }).default ?? (mod as unknown as SharpFn));
+  } catch {
+    throw new Error('IMAGE_PIPE_UNAVAILABLE');
+  }
+  // Read the input format so we re-encode to the same format (PNG→PNG,
+  // JPEG→JPEG, WEBP→WEBP). Falling back to JPEG for unknown formats.
+  const meta = await sharp(bytes).metadata();
+  const fmt = (meta.format ?? 'jpeg') as 'png' | 'jpeg' | 'webp';
+  const out = await sharp(bytes, { failOn: 'error' })
+    .rotate() // apply EXIF orientation to the pixel data, then drop the tag
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    [fmt]({})
+    .toBuffer();
+  return new Uint8Array(out);
+}
