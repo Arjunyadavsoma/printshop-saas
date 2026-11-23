@@ -15,8 +15,8 @@
  * orders" page render the same colour + label for the same status.
  */
 
-import type { OrderStatus as PillStatus } from '@/components/customer/status-pill';
-import type { StepStatus, TimelineStep } from '@/components/customer/status-timeline';
+import type { OrderStatus as PillStatus } from '@/components/clear/status-pill';
+import type { StepStatus, TimelineStep } from '@/components/clear/status-timeline';
 
 /** The 5 named lifecycle steps shown to the customer. */
 export const TIMELINE_LABELS = ['Placed', 'Payment', 'Printing', 'Ready', 'Collected'] as const;

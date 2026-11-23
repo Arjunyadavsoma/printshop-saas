@@ -18,7 +18,7 @@
  * undefined, so importing this module from a Server Component is safe.
  */
 
-import type { PageMode } from '@/components/customer/tokens';
+import type { PageMode } from '@/components/clear/tokens';
 
 const DB_NAME = 'printshop-drafts';
 const DB_VERSION = 1;

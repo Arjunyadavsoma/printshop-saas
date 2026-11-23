@@ -14,8 +14,8 @@ import type { MetadataRoute } from 'next';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'PrintShop — Print Shop Management for India',
-    short_name: 'PrintShop',
+    name: 'Printelyx — Local Printing Marketplace',
+    short_name: 'Printelyx',
     description:
       'Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track your order until pickup.',
     start_url: '/',

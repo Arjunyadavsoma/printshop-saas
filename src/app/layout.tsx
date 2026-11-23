@@ -8,7 +8,7 @@ import { PWARegister } from "@/components/pwa/pwa-register";
 import { ThemeProvider } from "next-themes";
 
 /**
- * PrintShop "Clear" design system — Instrument Sans only (English only).
+ * Printelyx "Clear" design system — Instrument Sans only (English only).
  * Replaces Anek Latin + Devanagari + Telugu (Hindi/Telugu content removed).
  */
 const instrumentSans = Instrument_Sans({
@@ -21,12 +21,12 @@ const instrumentSans = Instrument_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "PrintShop — Print Shop Management for India",
-    template: "%s · PrintShop",
+    default: "Printelyx — Local Printing Marketplace",
+    template: "%s · Printelyx",
   },
   description:
     "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track your order until pickup.",
-  applicationName: "PrintShop",
+  applicationName: "Printelyx",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
-  appleWebApp: { capable: true, title: "PrintShop", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Printelyx", statusBarStyle: "default" },
   formatDetection: { telephone: false, address: false, email: false },
 };
 
