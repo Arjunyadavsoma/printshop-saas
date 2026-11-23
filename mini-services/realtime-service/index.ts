@@ -1,16 +1,21 @@
 /**
- * Realtime mini-service — the WebSocket relay for the shop dashboard.
+ * Realtime mini-service — the WebSocket relay for the shop dashboard + customer
+ * order tracking.
  *
  * Runs on TWO ports in one process:
  *  - 3003: socket.io server (path '/'), for browser dashboards (via Caddy
- *    `/?XTransformPort=3003`). Clients authenticate with the shop-owner JWT
- *    (HS256, verified with JWT_ACCESS_SECRET) and join room `shop:<shopId>`.
+ *    `/?XTransformPort=3003`). Two auth flows:
+ *      • `auth` event with a shop-owner JWT (HS256, verified with
+ *        JWT_ACCESS_SECRET) → joins room `shop:<shopId>` for dashboard events.
+ *      • `auth:order` event with a 128-bit order token (P8.5) → joins room
+ *        `order:<token>` for customer tracking events. The token IS the
+ *        credential — no separate auth.
  *  - 3004: plain HTTP `POST /emit` relay, for the Next.js RealtimeAdapter to
  *    push events server-to-server (bypasses Caddy; authenticated with
- *    REALTIME_EMIT_SECRET). Broadcasts to the shop rooms.
+ *    REALTIME_EMIT_SECRET). Broadcasts to the shop OR order rooms.
  *
  * Both ports share the same `io` instance, so an /emit POST reaches every
- * connected dashboard in the target shop room.
+ * connected dashboard / customer in the target room.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -108,6 +113,37 @@ io.on('connection', (socket: Socket) => {
     socket.emit('auth-ok', { shopId: claims.shopId, role: claims.role });
   });
 
+  // ── Customer order tracking (P8.5) ───────────────────────────────────────
+  // A customer visiting /o/[token] connects with the 128-bit order token —
+  // the token IS the credential (no separate auth). The server joins the
+  // socket to room `order:<token>` so the API can broadcast status + task
+  // updates to it via the /emit relay.
+  //
+  // Token shape: 32+ hex chars (128-bit minimum). We validate the format
+  // (not the existence) — joining a room requires knowing the token, which
+  // is itself the unguessable credential. A malformed token is rejected so
+  // a buggy client doesn't accidentally join an arbitrary-name room.
+  socket.on('auth:order', (data: { orderToken?: string }) => {
+    const orderToken = data?.orderToken;
+    if (!orderToken || !/^[a-f0-9]{32,128}$/i.test(orderToken)) {
+      socket.emit('auth-error', { message: 'invalid order token' });
+      socket.disconnect(true);
+      return;
+    }
+    socket.data.orderToken = orderToken;
+    socket.join(`order:${orderToken}`);
+    socket.emit('auth-ok', { orderToken });
+  });
+
+  // Application-level heartbeat. The socket.io engine already exchanges
+  // ping/pong frames automatically (pingInterval: 25s, pingTimeout: 60s),
+  // but the customer client ALSO sends a `ping` event every 25s so it can
+  // detect a half-open connection from its side without waiting for the
+  // engine timeout. We ack so the client can measure RTT.
+  socket.on('ping', () => {
+    socket.emit('pong', { t: Date.now() });
+  });
+
   socket.on('disconnect', () => {
     /* rooms auto-cleaned */
   });
@@ -148,8 +184,11 @@ const emitHttp = createServer(async (req: IncomingMessage, res: ServerResponse) 
     res.writeHead(400).end('missing channel/event');
     return;
   }
-  // Only allow shop-channel broadcasts (prevents spoofing system/internal rooms).
-  if (!body.channel.startsWith('shop:')) {
+  // Only allow shop-channel + order-channel broadcasts (prevents spoofing
+  // system/internal rooms). `order:` rooms are customer-facing tracking
+  // rooms (P8.5) — the order token is the credential, so anyone who can
+  // name the room already has read access to that order's state.
+  if (!body.channel.startsWith('shop:') && !body.channel.startsWith('order:')) {
     res.writeHead(403).end('channel not allowed');
     return;
   }

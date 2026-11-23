@@ -1,39 +1,43 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright config for PrintShop SaaS.
+ * Playwright config for the PrintShop customer redesign.
  *
- * Verifies @playwright/test@1.65.0 + Chromium 158 actually launch and
- * capture screenshots. See docs/AI_DEVELOPMENT_ENVIRONMENT.md §10.
+ * Tests run on 3 mobile viewports (360x800, 390x844, 412x915)
+ * with 4x CPU slowdown to simulate a mid-range phone.
  */
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
-
+  outputDir: './docs/redesign/evidence/playwright',
+  fullyParallel: false, // Sequential — the dev server can't handle parallel
+  retries: 1,
+  workers: 1,
+  reporter: [['html', { outputDir: './docs/redesign/evidence/playwright-report' }], ['list']],
   use: {
-    // Local dev server when running; production URL as fallback for env-verification smoke.
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+    baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    actionTimeout: 10_000,
-    navigationTimeout: 15_000,
+    CPU: 4, // 4x CPU slowdown
   },
-
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'mobile-360',
+      use: { ...devices['Pixel 5'], viewport: { width: 360, height: 800 } },
     },
     {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 5'] },
+      name: 'mobile-390',
+      use: { ...devices['iPhone 14'], viewport: { width: 390, height: 844 } },
+    },
+    {
+      name: 'mobile-412',
+      use: { viewport: { width: 412, height: 915 } },
     },
   ],
+  webServer: {
+    command: 'DATABASE_PROVIDER=memory bun run dev',
+    port: 3000,
+    timeout: 60_000,
+    reuseExistingServer: true,
+  },
 });

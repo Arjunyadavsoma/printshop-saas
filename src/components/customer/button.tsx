@@ -26,7 +26,7 @@ interface CustomerButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<Variant, string> = {
   primary: [
-    'bg-[var(--color-cyan-ink)] text-white',
+    'bg-[var(--color-cyan-ink)] text-[var(--color-on-cyan)]',
     'hover:bg-[var(--color-cyan-ink)]/90',
     'active:bg-[var(--color-cyan-ink)]/80',
     'shadow-[var(--shadow-bar)]',

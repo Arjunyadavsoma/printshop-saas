@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 
 import { AppBar } from '@/components/customer/app-bar';
+import { CustomerThemeToggle } from '@/components/customer/theme-toggle';
 import { TokenSlip } from '@/components/customer/token-slip';
 import { StatusTimeline } from '@/components/customer/status-timeline';
 import { StatusPill } from '@/components/customer/status-pill';
@@ -19,6 +20,7 @@ import { Toast } from '@/components/customer/toast';
 import { UTRInput } from '@/components/customer/utr-input';
 
 import { useTrackPoll, type FetchResult } from '@/lib/hooks/use-track-poll';
+import { useOrderRealtime } from '@/lib/hooks/use-order-realtime';
 import { useOnline, useShare } from '@/lib/hooks/use-online';
 import {
   mapToPill, buildTimeline, formatStepTimestamp, statusLabel,
@@ -117,6 +119,20 @@ export default function TrackOrderPage() {
   }, [token]);
 
   const { phase, data, error, notFound, refresh } = useTrackPoll<Track>(fetcher, [token]);
+
+  // ── Realtime layer (P8.5): a Socket.IO client joins room `order:<token>`
+  //    and pushes instant status changes. When the socket is down, the hook
+  //    falls back to polling internally; when it reconnects, it stops polling
+  //    + does a full state sync. Here we just consume its `status` to trigger
+  //    an immediate `refresh()` of the data-polling hook — the realtime
+  //    status arrives faster than the 5-second poll cadence, so the pill +
+  //    timeline jump the moment the shop advances the order.
+  const realtime = useOrderRealtime(token);
+  useEffect(() => {
+    if (!realtime.status) return;
+    if (data?.order.status === realtime.status) return; // already in sync
+    refresh();
+  }, [realtime.status, data?.order.status, refresh]);
 
   // Persist the order into the device-local recent-orders list so /orders
   // can list it. Skip on the very first load (no data yet) and only update
@@ -439,9 +455,10 @@ export default function TrackOrderPage() {
           <span
             aria-live="polite"
             aria-atomic="true"
-            className="inline-flex"
+            className="inline-flex items-center gap-1"
           >
             <StatusPill status={pillVariant} label={pillLabel} />
+            <CustomerThemeToggle />
           </span>
         }
       />

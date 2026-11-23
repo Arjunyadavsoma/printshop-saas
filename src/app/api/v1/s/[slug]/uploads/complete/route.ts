@@ -7,7 +7,7 @@ import { withRateLimit } from '@/lib/api/with-auth';
 import { finishSession, getSession, abandonSession, MAX_FILE_BYTES, MAX_ORDER_BYTES } from '@/lib/pipeline/upload-sessions';
 import { processUpload } from '@/lib/pipeline/process';
 import { sniffKind, detectKind, sha256Hex, NormalizeError } from '@/lib/pipeline/normalize';
-import { NotFoundError, ValidationError } from '@platform/core/errors';
+import { AppError, NotFoundError, ValidationError } from '@platform/core/errors';
 
 /**
  * POST /api/v1/s/[slug]/uploads/complete — assemble the chunks, validate
@@ -16,6 +16,11 @@ import { NotFoundError, ValidationError } from '@platform/core/errors';
  * suggestion → thumbnails). `wait=true` processes inline (tests / small
  * files); the default kicks processing off in the background and the UI
  * polls the file-status endpoint through CONVERTING.
+ *
+ * P8.7: `finishSession` now verifies the assembled bytes match the declared
+ * size (catches a truncated final chunk or a missing middle chunk before
+ * the pipeline runs). A mismatch returns 409 `SIZE_MISMATCH` — the client
+ * must re-upload the missing chunks (via GET /status to find the gaps).
  */
 const BodySchema = z.object({
   uploadId: z.string().uuid(),
@@ -28,8 +33,28 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
     const body = BodySchema.parse(await req.json());
     const session = getSession(body.uploadId);
     if (!session) throw new NotFoundError('Upload session not found or expired — restart the upload.');
+    if (session.status !== 'active') {
+      throw new NotFoundError('Upload session has expired — restart the upload.');
+    }
 
-    const finished = await finishSession(body.uploadId);
+    let finished: Awaited<ReturnType<typeof finishSession>>;
+    try {
+      finished = await finishSession(body.uploadId);
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      if (msg.startsWith('SIZE_MISMATCH') || msg.startsWith('MISSING_CHUNK') || msg.startsWith('ASSEMBLED_SIZE_MISMATCH')) {
+        // The client can query GET /status to find the missing chunks + re-upload them.
+        return fail(new AppError(
+          `Upload incomplete — ${msg}. Query GET /api/v1/s/[slug]/uploads/status?uploadId=${body.uploadId} for the missing chunk indices.`,
+          'UPLOAD_INCOMPLETE',
+          409,
+        ));
+      }
+      if (msg === 'UPLOAD_EXPIRED') {
+        return fail(new AppError('Upload session has expired — restart the upload.', 'UPLOAD_EXPIRED', 410));
+      }
+      throw cause;
+    }
     if (!finished) throw new NotFoundError('Upload session not found');
     const { bytes, session: s } = finished;
 
@@ -41,7 +66,7 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
     const siblings = await repos.files.findByOrder(s.orderId);
     const total = siblings.reduce((sum, f) => sum + (f.id === s.fileId ? 0 : f.sizeBytes), 0) + bytes.length;
     if (total > MAX_ORDER_BYTES) {
-      abandonSession(body.uploadId);
+      await abandonSession(body.uploadId);
       throw new ValidationError('This order exceeds the 200 MB limit. Split it into more than one order.');
     }
 

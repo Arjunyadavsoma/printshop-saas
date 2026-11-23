@@ -59,6 +59,18 @@ declare global {
   interface Window {
     NativeApp?: NativeAppBridge;
   }
+
+  // Background Sync API (Service Worker SyncManager). The lib.dom types
+  // don't include these yet — they're part of the ServiceWorker spec and
+  // available in Chromium browsers. Used by src/lib/customer/offline-queue.ts
+  // for replay-on-reconnect. iOS Safari falls back to the `online` event.
+  interface SyncManager {
+    register(tag: string): Promise<void>;
+    getTags(): Promise<string[]>;
+  }
+  interface ServiceWorkerRegistration {
+    readonly sync?: SyncManager;
+  }
 }
 
 export {};

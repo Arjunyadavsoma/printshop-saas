@@ -37,6 +37,15 @@ export interface DraftFile {
   pageCount: number;
   /** The FlowFileStatus at save time — 'uploading' | 'converting' | 'ready' | 'failed'. */
   status: string;
+  /** P8.7: upload session metadata for resumable uploads. Present while a
+   * file is mid-upload (status === 'uploading'); cleared once complete. */
+  uploadId?: string;
+  /** The declared size of the file (bytes) — used to match a resume candidate
+   * to a freshly-picked File on a future mount. */
+  sizeBytes?: number;
+  /** The chunk size used for the upload (bytes) — the server uses this to
+   * compute the expected chunk count for the status endpoint. */
+  chunkSize?: number;
 }
 
 /** Print options captured at save time (the active file's selections). */

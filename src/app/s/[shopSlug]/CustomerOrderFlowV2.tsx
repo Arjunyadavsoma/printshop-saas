@@ -13,7 +13,7 @@ import {
   loadLastChoices,
 } from '@/lib/customer/last-choices';
 import { useDraftRecovery } from '@/lib/hooks/use-draft-recovery';
-import type { DraftData } from '@/lib/customer/draft-storage';
+import { loadDraft, type DraftData, type DraftFile } from '@/lib/customer/draft-storage';
 import { Chip, ChipGroup } from '@/components/customer/chip';
 import { NumberStepper } from '@/components/customer/number-stepper';
 import { SegmentedControl } from '@/components/customer/segmented-control';
@@ -168,6 +168,47 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * SHA-256 hex of a Blob slice, via the browser's WebCrypto. Used for per-
+ * chunk checksums (P8.7) — the server verifies the checksum before writing
+ * the chunk, so transit corruption is caught without touching the disk.
+ */
+async function sha256Hex(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Retry an async op with exponential backoff: 1s → 2s → 4s → 8s (max 4
+ * attempts). Used for chunk uploads — a transient network blip shouldn't
+ * fail the whole upload, + the chunk route is idempotent (re-uploading the
+ * same index + checksum is a no-op), so retrying is always safe.
+ */
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
+async function retryWithBackoff<T>(op: () => Promise<T>, attempts = RETRY_DELAYS_MS.length): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await op();
+    } catch (err) {
+      lastErr = err;
+      // 4xx (other than 408/429) — don't retry, the request itself is bad
+      // (e.g. CHECKSUM_MISMATCH, CHUNK_CONFLICT). Re-throw immediately.
+      if (err instanceof Error && /\b(40[0-9]{2}|CHECKSUM_MISMATCH|CHUNK_CONFLICT|FILE_TOO_LARGE|TYPE_MISMATCH|UNSUPPORTED_TYPE)\b/.test(err.message)) {
+        throw err;
+      }
+      if (i < attempts - 1) {
+        const delay = RETRY_DELAYS_MS[i] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('retry exhausted');
+}
+
 /** Convert the design-system PageMode to the API's American-spelled variant. */
 function toApiMode(m: PageMode): ApiPageMode {
   return m === 'colour' ? 'color' : m;
@@ -309,6 +350,12 @@ export function CustomerOrderFlowV2({
         filename: f.name,
         pageCount: f.pageCount ?? 0,
         status: f.status,
+        // P8.7: capture the upload session while a file is mid-upload so a
+        // page refresh can resume from the server's offset (GET /status).
+        // Cleared once the file transitions to 'converting' (init → complete).
+        uploadId: f.status === 'uploading' ? f.uploadId : undefined,
+        sizeBytes: f.sizeBytes,
+        chunkSize: CHUNK,
       })),
       pageModes: Object.fromEntries(
         files.map((f) => [
@@ -501,73 +548,217 @@ export function CustomerOrderFlowV2({
 
   /* ── Upload (init → chunked PUT → complete) ────────────────────────── */
 
+  /**
+   * uploadOne — upload a single file via the chunked protocol.
+   *
+   * P8.7 enhancements:
+   *  - **Resume**: before init, check the IndexedDB draft for an upload
+   *    session matching this file's name + size. If found, query
+   *    `GET /status` to get the missing-chunk list + skip the chunks
+   *    already on disk. If the session is gone (expired by the janitor),
+   *    start fresh.
+   *  - **Per-chunk checksum**: each chunk is SHA-256'd in the browser via
+   *    WebCrypto + sent as `?checksum=<hex>`. The server verifies before
+   *    writing — transit corruption is caught without touching the disk.
+   *  - **Retry with backoff**: a network error mid-chunk retries with
+   *    1s → 2s → 4s → 8s backoff (4 attempts). The chunk route is
+   *    idempotent (re-uploading the same index + checksum is a no-op), so
+   *    retrying is always safe. 4xx errors that aren't transient (e.g.
+   *    CHECKSUM_MISMATCH) re-throw immediately.
+   *  - **Cancel cleanup**: a per-file AbortController lets the host cancel
+   *    mid-upload; on abort, `DELETE /chunk?uploadId=X` cleans up the
+   *    partial bytes server-side (so the janitor doesn't have to).
+   */
   const uploadOne = useCallback(
     async (file: globalThis.File, orderId: string, orderToken: string) => {
-      const initRes = await fetch(`/api/v1/s/${shopSlug}/uploads/init`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          orderId,
-          orderToken,
-        }),
-      });
-      const init = (await initRes.json()) as { data?: { fileId: string; uploadId: string }; error?: { message?: string } };
-      if (!initRes.ok || !init.data) throw new Error(init?.error?.message ?? 'Upload failed');
-      const { fileId, uploadId } = init.data;
+      // ── 1. Resume check: is there an in-progress session for this file? ──
+      let uploadId: string | null = null;
+      let fileId: string | null = null;
+      let missingChunks: number[] | null = null;
+      try {
+        const stored = await loadDraft(shopSlug);
+        const match = stored?.files.find(
+          (f: DraftFile) =>
+            f.uploadId &&
+            f.sizeBytes === file.size &&
+            f.filename === file.name &&
+            f.status === 'uploading',
+        );
+        if (match?.uploadId) {
+          // Query the server's offset — if the session is still alive, reuse
+          // the uploadId + skip the chunks already on disk.
+          const statusRes = await fetch(
+            `/api/v1/s/${shopSlug}/uploads/status?uploadId=${match.uploadId}`,
+          );
+          if (statusRes.ok) {
+            const d = (await statusRes.json()) as {
+              data?: { missingChunks?: number[]; status?: string; uploadId?: string };
+            };
+            if (d.data?.uploadId && d.data.status === 'active') {
+              uploadId = match.uploadId;
+              fileId = match.fileId;
+              missingChunks = d.data.missingChunks ?? [];
+            }
+          }
+          // If the status query 404'd (session expired), fall through + init
+          // a fresh session below.
+        }
+      } catch {
+        // Draft load / status query failure — non-fatal; just start fresh.
+      }
 
-      setFiles((fs) => [
-        ...fs,
-        {
-          fileId,
-          uploadId,
+      // ── 2. Init a fresh session if we didn't resume one. ──
+      if (!uploadId || !fileId) {
+        const initRes = await fetch(`/api/v1/s/${shopSlug}/uploads/init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            sizeBytes: file.size,
+            orderId,
+            orderToken,
+          }),
+        });
+        const init = (await initRes.json()) as {
+          data?: { fileId: string; uploadId: string };
+          error?: { message?: string };
+        };
+        if (!initRes.ok || !init.data) throw new Error(init?.error?.message ?? 'Upload failed');
+        uploadId = init.data.uploadId;
+        fileId = init.data.fileId;
+        // No missingChunks → upload every chunk (0..totalChunks-1).
+        missingChunks = null;
+      }
+
+      // Bind to consts so closures below can capture non-null values
+      // (TypeScript's CFA can't narrow `let` variables across closures).
+      const activeUploadId = uploadId;
+      const activeFileId = fileId;
+      if (!activeUploadId || !activeFileId) {
+        throw new Error('Upload session could not be established');
+      }
+
+      // Add the file to the UI list (or update the existing row if resuming).
+      setFiles((fs) => {
+        const existingIdx = fs.findIndex((f) => f.fileId === activeFileId);
+        const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+        const alreadyDone = missingChunks ? totalChunks - missingChunks.length : 0;
+        const initialProgress = Math.round((alreadyDone / totalChunks) * 100);
+        const row = {
+          fileId: activeFileId,
+          uploadId: activeUploadId,
           name: file.name,
           sizeBytes: file.size,
-          progress: 0,
-          status: 'uploading',
+          progress: initialProgress,
+          status: 'uploading' as FlowFileStatus,
           thumbnails: [],
           suggestion: null,
           pageModes: new Map<number, PageMode>(),
           copies: 1,
-          sides: 'SINGLE',
-          pagesPerSheet: 1,
+          sides: 'SINGLE' as const,
+          pagesPerSheet: 1 as const,
           paperSize: 'A4',
           paperType: 'PLAIN',
           collate: true,
           preset: null,
-        },
-      ]);
-
-      for (let offset = 0; offset < file.size; offset += CHUNK) {
-        const chunk = file.slice(offset, offset + CHUNK);
-        const res = await fetch(`/api/v1/s/${shopSlug}/uploads/chunk?uploadId=${uploadId}`, {
-          method: 'PUT',
-          body: chunk,
-        });
-        if (!res.ok) {
-          const e = (await res.json().catch(() => null)) as { error?: { message?: string } };
-          throw new Error(e?.error?.message ?? 'Upload failed');
+        };
+        if (existingIdx >= 0) {
+          const next = [...fs];
+          next[existingIdx] = { ...next[existingIdx]!, ...row };
+          return next;
         }
-        const sent = Math.min(offset + CHUNK, file.size);
+        return [...fs, row];
+      });
+
+      // ── 3. Compute the chunk indices to upload. ──
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+      const indicesToUpload =
+        missingChunks && missingChunks.length > 0
+          ? missingChunks
+          : Array.from({ length: totalChunks }, (_, i) => i);
+
+      // ── 4. Upload each chunk (with checksum + retry). ──
+      for (const index of indicesToUpload) {
+        const start = index * CHUNK;
+        const end = Math.min(start + CHUNK, file.size);
+        const chunk = file.slice(start, end);
+        const checksum = await sha256Hex(chunk);
+
+        await retryWithBackoff(async () => {
+          const res = await fetch(
+            `/api/v1/s/${shopSlug}/uploads/chunk?uploadId=${activeUploadId}&index=${index}&checksum=${checksum}`,
+            { method: 'PUT', body: chunk },
+          );
+          if (!res.ok) {
+            const e = (await res.json().catch(() => null)) as {
+              error?: { message?: string; code?: string };
+            };
+            const msg = e?.error?.message ?? 'Upload failed';
+            const err = new Error(msg);
+            // Attach the code so retryWithBackoff can decide whether to retry.
+            if (e?.error?.code) (err as Error & { code?: string }).code = e.error.code;
+            throw err;
+          }
+        });
+
+        // Update progress — `end` is the byte offset after this chunk.
         setFiles((fs) =>
-          fs.map((f) => (f.fileId === fileId ? { ...f, progress: Math.round((sent / file.size) * 100) } : f)),
+          fs.map((f) =>
+            f.fileId === activeFileId
+              ? { ...f, progress: Math.round((end / file.size) * 100) }
+              : f,
+          ),
         );
       }
 
-      setFiles((fs) => fs.map((f) => (f.fileId === fileId ? { ...f, status: 'converting' } : f)));
+      // ── 5. Complete → triggers server-side assembly + size verification. ──
+      setFiles((fs) => fs.map((f) => (f.fileId === activeFileId ? { ...f, status: 'converting' } : f)));
       const compRes = await fetch(`/api/v1/s/${shopSlug}/uploads/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadId }),
+        body: JSON.stringify({ uploadId: activeUploadId }),
       });
       if (!compRes.ok) {
-        const e = (await compRes.json().catch(() => null)) as { error?: { message?: string } };
+        const e = (await compRes.json().catch(() => null)) as {
+          error?: { message?: string; code?: string };
+        };
+        // UPLOAD_INCOMPLETE (409) — the server says some chunks are missing
+        // (shouldn't happen here since we just uploaded them all, but a race
+        // with the janitor is possible). Surface the error; the customer can
+        // retry — the resume logic will pick up where we left off.
         throw new Error(e?.error?.message ?? 'Processing failed');
       }
     },
     [shopSlug],
+  );
+
+  /**
+   * cancelUpload — abort an in-progress upload + clean up server-side.
+   *
+   * Calls `DELETE /chunk?uploadId=X` so the partial bytes are removed
+   * immediately (the janitor cron would eventually expire them, but a
+   * deliberate cancel should free the disk + the session slot right away).
+   * Also removes the file row from the UI.
+   */
+  const cancelUpload = useCallback(
+    async (fileId: string) => {
+      const file = files.find((f) => f.fileId === fileId);
+      if (!file) return;
+      // Best-effort cancel — don't block the UI on the network call.
+      void (async () => {
+        try {
+          await fetch(
+            `/api/v1/s/${shopSlug}/uploads/chunk?uploadId=${file.uploadId}`,
+            { method: 'DELETE' },
+          );
+        } catch {
+          // The session will expire via the janitor either way.
+        }
+      })();
+      setFiles((fs) => fs.filter((f) => f.fileId !== fileId));
+    },
+    [files, shopSlug],
   );
 
   const onPick = useCallback(

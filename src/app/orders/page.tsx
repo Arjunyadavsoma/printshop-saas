@@ -24,14 +24,23 @@ import { track, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
  * Each entry is a tiny summary saved to localStorage when an order is placed
  * (see CustomerOrderFlow's `place()`). The token IS the credential, so the
  * list is the device's view, not the customer's view across devices. A
- * "Look up by phone" panel teases the cross-device lookup — for the MVP it
- * only shows a phone input (no OTP backend).
+ * "Look up by phone" panel teases the cross-device lookup — it's behind the
+ * `OTP_ENABLED` feature flag (env: `NEXT_PUBLIC_OTP_ENABLED=true`). When the
+ * flag is off (the default), the panel shows a "Coming soon" disabled button.
+ *
+ * OTP is OFF by default — the default order path stays on the 128-bit order
+ * token + device-local recent-orders list. The OTP flow only protects the
+ * cross-device lookup (which would otherwise leak which orders belong to a
+ * given phone number to anyone who can type a number).
  */
+
+// Read the feature flag at module load. NEXT_PUBLIC_* vars are inlined by
+// Next.js at build time, so this is a build-time constant — flipping the
+// env var requires a redeploy.
+const OTP_ENABLED = process.env.NEXT_PUBLIC_OTP_ENABLED === 'true';
 
 export default function MyOrdersPage() {
   const [orders, setOrders] = useState<RecentOrderSummary[] | null>(null);
-  const [phone, setPhone] = useState('');
-  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // Read on the client only (localStorage isn't available on the server).
   useEffect(() => {
@@ -42,18 +51,6 @@ export default function MyOrdersPage() {
     if (!window.confirm('Remove this order from your list? The order itself is not affected.')) return;
     forgetOrder(token);
     setOrders(readRecentOrders());
-  };
-
-  const onPhoneSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      setPhoneError('Enter a 10-digit mobile number.');
-      return;
-    }
-    setPhoneError(null);
-    // MVP: no OTP backend. Surface an informative message instead of actually looking up.
-    alert('Phone-based order lookup is coming soon. For now, open the tracking link from your receipt.');
   };
 
   return (
@@ -108,37 +105,13 @@ export default function MyOrdersPage() {
           )}
         </section>
 
-        {/* ── Look up by phone (MVP — no OTP backend) ── */}
-        <section
-          className="rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-4 space-y-3"
-          aria-labelledby="phone-lookup-heading"
-        >
-          <div className="flex items-center gap-2">
-            <Smartphone className="size-5 text-[var(--color-cyan-ink)]" aria-hidden="true" />
-            <h2 id="phone-lookup-heading" className="text-sm font-semibold text-[var(--color-ink)]">
-              Look up by phone
-            </h2>
-          </div>
-          <p className="text-sm text-[var(--color-muted)]">
-            Enter your phone number to see all orders across devices. (Coming soon — for now, open the link from your receipt.)
-          </p>
-          <form onSubmit={onPhoneSubmit} className="space-y-3">
-            <TextField
-              id="phone"
-              label="Mobile number"
-              placeholder="10-digit mobile"
-              value={phone}
-              onChange={setPhone}
-              error={phoneError ?? undefined}
-              inputMode="numeric"
-              autoComplete="tel"
-              hint="We'll send a one-time password to confirm it's you."
-            />
-            <PrimaryButton type="submit" className="w-full">
-              Continue
-            </PrimaryButton>
-          </form>
-        </section>
+        {/* ── Look up by phone ──
+            When OTP_ENABLED is off (default), the panel shows a "Coming
+            soon" disabled button. When on, it runs the OTP send → verify
+            flow against /api/v1/auth/otp/{send,verify}. The full
+            cross-device order list (after verify) is out of scope for P8.6
+            — the OTP infrastructure is the deliverable. */}
+        <PhoneLookupPanel otpEnabled={OTP_ENABLED} />
 
         {/* ── Footer links ── */}
         <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)] pt-2">
@@ -150,6 +123,193 @@ export default function MyOrdersPage() {
         </nav>
       </main>
     </div>
+  );
+}
+
+/**
+ * Phone-lookup panel — gated by the OTP_ENABLED feature flag.
+ *
+ * Disabled (default): the section renders the phone input + a disabled
+ * "Coming soon" button. The copy explains the cross-device lookup is on the
+ * roadmap; the customer is told to open the receipt link for now.
+ *
+ * Enabled: the section runs a 2-step flow:
+ *   1. Enter phone → POST /api/v1/auth/otp/send → "Code sent" state.
+ *   2. Enter 6-digit code → POST /api/v1/auth/otp/verify → success path.
+ * The actual cross-device order fetch after verify is a separate ticket —
+ * this panel only proves the OTP infrastructure works end-to-end.
+ */
+function PhoneLookupPanel({ otpEnabled }: { otpEnabled: boolean }) {
+  const [phone, setPhone] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [stage, setStage] = useState<'phone' | 'code' | 'verified'>('phone');
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
+
+  const onSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      setPhoneError('Enter a 10-digit mobile number.');
+      return;
+    }
+    setPhoneError(null);
+    setSubmitting(true);
+    try {
+      // Anti-enumeration: the endpoint ALWAYS returns 200 `{ sent: true }`
+      // — we proceed to the code stage regardless (the customer will retry
+      // if no code arrives). The `sent: false, reason: 'disabled'` shape
+      // only fires when the flag is off at the server, which shouldn't
+      // happen here (the panel only renders this branch when otpEnabled).
+      const res = await fetch('/api/v1/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: digits }),
+      });
+      const d = (await res.json()) as { data?: { sent?: boolean; reason?: string } };
+      if (d?.data?.reason === 'disabled') {
+        // Server flag is off but client flag was on at build time — treat
+        // as "Coming soon" (the build will catch up on next deploy).
+        setPhoneError('Phone lookup is coming soon. Open the tracking link from your receipt for now.');
+        return;
+      }
+      setStage('code');
+    } catch {
+      setPhoneError('Could not send the code. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(code)) {
+      setCodeError('Enter the 6-digit code from the SMS.');
+      return;
+    }
+    setCodeError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/v1/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone.replace(/\D/g, ''), code }),
+      });
+      const d = (await res.json()) as {
+        data?: { valid?: boolean; attemptsRemaining?: number };
+        error?: { message?: string };
+      };
+      if (d?.data?.valid) {
+        setStage('verified');
+        setAttemptsRemaining(null);
+        return;
+      }
+      const remaining = d?.data?.attemptsRemaining ?? null;
+      setAttemptsRemaining(remaining);
+      setCodeError(
+        remaining === 0
+          ? 'Too many wrong attempts. Request a new code and try again.'
+          : `Wrong code. ${remaining ?? 0} attempt${remaining === 1 ? '' : 's'} left.`,
+      );
+    } catch {
+      setCodeError('Could not verify the code. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section
+      className="rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-4 space-y-3"
+      aria-labelledby="phone-lookup-heading"
+    >
+      <div className="flex items-center gap-2">
+        <Smartphone className="size-5 text-[var(--color-cyan-ink)]" aria-hidden="true" />
+        <h2 id="phone-lookup-heading" className="text-sm font-semibold text-[var(--color-ink)]">
+          Look up by phone
+        </h2>
+      </div>
+      <p className="text-sm text-[var(--color-muted)]">
+        {otpEnabled
+          ? 'Enter your phone number to see all orders across devices. We\'ll send a one-time password to confirm it\'s you.'
+          : 'Enter your phone number to see all orders across devices. (Coming soon — for now, open the link from your receipt.)'}
+      </p>
+
+      {!otpEnabled ? (
+        // ── Disabled: "Coming soon" ──
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-3">
+          <TextField
+            id="phone"
+            label="Mobile number"
+            placeholder="10-digit mobile"
+            value={phone}
+            onChange={setPhone}
+            error={phoneError ?? undefined}
+            inputMode="numeric"
+            autoComplete="tel"
+            disabled
+          />
+          <PrimaryButton type="submit" className="w-full" disabled>
+            Coming soon
+          </PrimaryButton>
+        </form>
+      ) : stage === 'phone' ? (
+        // ── Stage 1: enter phone, send OTP ──
+        <form onSubmit={onSendOtp} className="space-y-3">
+          <TextField
+            id="phone"
+            label="Mobile number"
+            placeholder="10-digit mobile"
+            value={phone}
+            onChange={setPhone}
+            error={phoneError ?? undefined}
+            inputMode="numeric"
+            autoComplete="tel"
+            hint="We'll send a one-time password to confirm it's you."
+          />
+          <PrimaryButton type="submit" className="w-full" disabled={submitting}>
+            {submitting ? 'Sending…' : 'Send code'}
+          </PrimaryButton>
+        </form>
+      ) : stage === 'code' ? (
+        // ── Stage 2: enter the 6-digit code ──
+        <form onSubmit={onVerifyOtp} className="space-y-3">
+          <TextField
+            id="code"
+            label="Verification code"
+            placeholder="6-digit code"
+            value={code}
+            onChange={setCode}
+            error={codeError ?? undefined}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            hint={attemptsRemaining === null ? undefined : `${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} left`}
+          />
+          <PrimaryButton type="submit" className="w-full" disabled={submitting}>
+            {submitting ? 'Verifying…' : 'Verify code'}
+          </PrimaryButton>
+          <TextButton
+            type="button"
+            onClick={() => { setStage('phone'); setCode(''); setCodeError(null); }}
+            className="w-full"
+          >
+            Use a different number
+          </TextButton>
+        </form>
+      ) : (
+        // ── Stage 3: verified (placeholder — full cross-device list is a future ticket) ──
+        <div className="space-y-2">
+          <p className="text-sm text-[var(--color-ink)]">
+            Phone verified. Cross-device order history is being assembled — open the link from your receipt for now.
+          </p>
+          <TextButton type="button" onClick={() => { setStage('phone'); setPhone(''); setCode(''); }} className="w-full">
+            Start over
+          </TextButton>
+        </div>
+      )}
+    </section>
   );
 }
 

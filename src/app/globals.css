@@ -118,6 +118,85 @@
 
   /* Customer flow font — Anek (Ek Type, Indian multilingual family) */
   --font-customer: var(--font-anek-latin), var(--font-anek-devanagari), var(--font-anek-telugu), ui-sans-serif, system-ui, sans-serif;
+
+  /* ── On-accent token: the text color used on top of cyan buttons.
+     Light mode: white on #006FA6 cyan → ~5.6:1 (AA pass).
+     Dark mode overrides this to ink (#0F1B2D) below — see the .dark scope.
+     White on the lighter dark-mode cyan #1A9BD6 only passes AA-large
+     (~3.1:1) for normal text; ink-on-cyan passes AA at ~5.4:1 in dark
+     mode. Resolving via a token keeps button.tsx's `text-white` →
+     `text-[var(--color-on-cyan)]` swap a one-line change. ── */
+  --color-on-cyan: #FFFFFF;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CUSTOMER FLOW — DARK MODE TOKENS (P8.9)
+   Selector: `.dark .customer-flow` (descendant).
+   - `.dark` is on <html>, added by next-themes (the `<ThemeProvider
+     attribute="class" defaultTheme="system" enableSystem>` in
+     src/app/layout.tsx injects a blocking inline script in <head> that
+     sets the class BEFORE React hydrates — no FOUC).
+   - `.customer-flow` is on the wrapper <div> each customer route adds
+     (see src/app/s/[shopSlug]/page.tsx, src/app/o/[token]/page.tsx).
+   The descendant selector ensures these overrides apply ONLY to the
+   customer surface in dark mode — the shopkeeper/admin portal keeps
+   its own `.dark` block (defined below) untouched.
+
+   WCAG contrast verification (computed via the WCAG 2.x contrast formula
+   on the sRGB-linearised luminance — see the verification script in
+   docs/redesign/UPI-MANUAL-TESTS.md Section 8 references):
+     Ink     (#F7F8FA) on Paper   (#0F1B2D) → 16.3:1  ✓ AA + AAA
+     Muted   (#8B97AB) on Paper   (#0F1B2D) →  5.9:1  ✓ AA + AAA-large
+     Cyan    (#1A9BD6) on Paper   (#0F1B2D) →  5.5:1  ✓ AA + AAA-large
+     Ink-on-Cyan (#0F1B2D) on Cyan (#1A9BD6) →  5.4:1  ✓ AA
+     Magenta (#E91E63) on Paper   (#0F1B2D) →  3.9:1  ✓ AA-large (decorative only — not used for body text)
+     Success (#0B7A4B) on Paper   (#0F1B2D) →  3.2:1  ✓ AA-large (status pills only)
+     Warning (#F59E0B) on Paper   (#0F1B2D) →  8.0:1  ✓ AA + AAA
+     Error   (#B3261E) on Paper   (#0F1B2D) →  2.6:1  ⚠ only used with a foreground color
+
+   White-on-cyan at #1A9BD6 gives 3.13:1 — fails AA for normal text. We
+   resolve this by overriding --color-on-cyan to ink in dark mode so
+   the PrimaryButton uses dark navy text on the lighter cyan, which
+   passes AA at 5.4:1. The cyan-as-text-color use (links, accents)
+   still works because cyan-on-paper is 5.5:1.
+   ════════════════════════════════════════════════════════════════ */
+.dark .customer-flow {
+  /* Surfaces — dark navy backgrounds (the "recycled printer paper" metaphor
+     inverted: dark mode is the press room at night, lit by safelight). */
+  --color-paper: #0F1B2D;            /* App background — dark navy */
+  --color-surface: #1A2740;          /* Cards, sheets — slightly lighter navy */
+  --color-ink: #F7F8FA;              /* Primary text — light on dark */
+  --color-muted: #8B97AB;            /* Secondary text — muted light grey */
+
+  /* CMYK accents — slightly lightened so they pop on the dark navy
+     background. The hue is preserved (still recognisably the C and M of
+     CMYK); only the luminance is nudged up. */
+  --color-cyan-ink: #1A9BD6;         /* Lighter cyan — 5.5:1 on dark paper */
+  --color-magenta-ink: #E91E63;      /* Lighter magenta — decorative (status) */
+  /* Yellow stays the same — already bright enough on dark. */
+
+  /* Semantic colours — keep the brand hues; the dark surface gives them
+     enough contrast for status pills + icons. Success/error are paired
+     with their -foreground token for any text on them. */
+  --color-success: #0B7A4B;
+  --color-warning: #F59E0B;
+  --color-error: #B3261E;
+
+  /* Derived borders — 10% white (vs 10% ink in light mode). The darker
+     the surface, the more visible a faint white border is. */
+  --color-border-ink: #FFFFFF1A;         /* 10% white — default border */
+  --color-border-ink-strong: #FFFFFF33;  /* 20% white — focused/active */
+
+  /* On-cyan text — DARK MODE override: ink (#0F1B2D) on cyan (#1A9BD6)
+     passes AA at 5.4:1. (White on the lighter dark cyan only passes
+     AA-large at 3.1:1.) This makes the PrimaryButton accessible in
+     dark mode without changing the cyan hue. */
+  --color-on-cyan: #0F1B2D;
+
+  /* Elevation — shadows are deeper on dark (less ambient light). */
+  --shadow-sheet: 0 -4px 16px rgb(0 0 0 / 0.32);
+  --shadow-bar: 0 1px 2px rgb(0 0 0 / 0.18);
+  --shadow-slip: 0 8px 32px rgb(0 0 0 / 0.40);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -146,19 +225,38 @@
 }
 
 /* ── Halftone textures (the signature visual element) ── */
-/* B&W page thumbnail — black halftone dots on white */
+/* B&W page thumbnail — black halftone dots on white (light mode). */
 .halftone-bw {
   background-color: var(--color-surface);
   background-image: radial-gradient(circle, rgb(15 27 45 / 0.2) 1px, transparent 1.5px);
   background-size: 4px 4px;
 }
+/* Dark mode: invert the dot color — white dots on the dark navy surface.
+   This preserves the "B&W page" visual metaphor (dark-on-light becomes
+   light-on-dark) without changing the .halftone-bw class name. */
+.dark .customer-flow .halftone-bw {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(circle, rgb(255 255 255 / 0.22) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+}
 
-/* Colour page thumbnail — magenta fill with cyan rosette overlay */
+/* Colour page thumbnail — magenta fill with cyan rosette overlay.
+   Magenta stays vivid on dark (it's a bright hue); the overlay colours
+   are nudged brighter in dark mode so the rosette pattern stays visible
+   against the magenta fill. */
 .halftone-colour {
   background-color: var(--color-magenta-ink);
   background-image:
     radial-gradient(circle, rgb(0 111 166 / 0.33) 1px, transparent 1.5px),
     radial-gradient(circle, rgb(255 214 10 / 0.2) 1px, transparent 1.5px);
+  background-size: 6px 6px, 8px 8px;
+  background-position: 0 0, 3px 3px;
+}
+.dark .customer-flow .halftone-colour {
+  background-color: var(--color-magenta-ink);
+  background-image:
+    radial-gradient(circle, rgb(26 155 214 / 0.45) 1px, transparent 1.5px),
+    radial-gradient(circle, rgb(255 214 10 / 0.3) 1px, transparent 1.5px);
   background-size: 6px 6px, 8px 8px;
   background-position: 0 0, 3px 3px;
 }
@@ -168,11 +266,20 @@
   background-color: rgb(91 102 117 / 0.1);
   border: 1px dashed rgb(91 102 117 / 0.4);
 }
+.dark .customer-flow .halftone-skip {
+  background-color: rgb(139 151 171 / 0.12);
+  border: 1px dashed rgb(139 151 171 / 0.45);
+}
 
 /* ── Perforated edge (token slip) ── */
+/* Light: dark ink dashes. Dark: light ink dashes — the tear-edge reads
+   on both backgrounds. */
 .perforated-top {
   border-top: 2px dashed rgb(15 27 45 / 0.2);
   position: relative;
+}
+.dark .customer-flow .perforated-top {
+  border-top-color: rgb(247 248 250 / 0.22);
 }
 .perforated-top::before,
 .perforated-top::after {
@@ -189,6 +296,9 @@
 
 .perforated-bottom {
   border-bottom: 2px dashed rgb(15 27 45 / 0.2);
+}
+.dark .customer-flow .perforated-bottom {
+  border-bottom-color: rgb(247 248 250 / 0.22);
 }
 
 /* ── Touch target minimum (WCAG 2.5.5) ── */

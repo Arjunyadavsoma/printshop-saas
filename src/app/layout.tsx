@@ -150,6 +150,25 @@ export default function RootLayout({
           src="/native-bridges.js"
           strategy="beforeInteractive"
         />
+        {/* ── FOUC prevention for the customer-flow dark mode (P8.9).
+            next-themes (the <ThemeProvider> below) injects its OWN
+            inline script that reads localStorage('theme') +
+            prefers-color-scheme and adds the `dark` class to <html>
+            BEFORE React hydrates. That script is sufficient on its own.
+
+            This defensive inline script is a SECOND layer: it sets the
+            `color-scheme` CSS property on <html> from the same inputs so
+            the browser's native form controls / scrollbars match the
+            theme from the very first paint (next-themes sets the class
+            but does not set color-scheme). It runs synchronously in
+            <head> before hydration — no FOUC.
+
+            `suppressHydrationWarning` on <html> prevents React from
+            flagging the class/color-scheme attributes that this script
+            and next-themes set before hydration. */}
+        <Script id="customer-fouc-prevent" strategy="beforeInteractive">
+          {`(function(){try{var s=localStorage.getItem('theme')||'system';var d=s==='dark'||(s==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.style.colorScheme=d?'dark':'light';}catch(e){document.documentElement.style.colorScheme='light';}})();`}
+        </Script>
       </head>
       <body
         // suppressHydrationWarning — browser extensions (e.g. Monica,

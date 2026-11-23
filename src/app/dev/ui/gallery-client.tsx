@@ -26,6 +26,7 @@ import { Toast } from '@/components/customer/toast';
 import { OfflineBanner } from '@/components/customer/offline-banner';
 import { TextField } from '@/components/customer/text-field';
 import { PhoneField } from '@/components/customer/phone-field';
+import { CustomerThemeToggle } from '@/components/customer/theme-toggle';
 import { type PageMode } from '@/components/customer/tokens';
 import { FileText, Upload, AlertCircle, CheckCircle2, WifiOff } from 'lucide-react';
 
@@ -49,6 +50,12 @@ export function GalleryClient() {
         <Section title="AppBar" subtitle="Top bar — shop name + open/closed dot">
           <AppBar title="QuickPrint Demo" subtitle="B&W ₹2 · Colour ₹8 /page" status="open" />
           <AppBar title="QuickPrint Demo" subtitle="B&W ₹2 · Colour ₹8 /page" status="closed" />
+          <AppBar
+            title="QuickPrint Demo"
+            subtitle="B&W ₹2 · Colour ₹8 /page"
+            status="open"
+            actions={<CustomerThemeToggle />}
+          />
         </Section>
 
         <Section title="Buttons" subtitle="PrimaryButton, SecondaryButton, TextButton — 48px min, loading preserves width">
