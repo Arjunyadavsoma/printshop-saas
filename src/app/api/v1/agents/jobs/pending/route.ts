@@ -1,9 +1,9 @@
 import { withDeviceAuth } from '@/lib/api/with-auth';
 import { getContainer } from '@/lib/container';
-import { repos } from '@/lib/repositories';
 import { ok, fail } from '@/lib/api/envelope';
 import { AppError } from '@platform/core/errors';
 import { shopChannel } from '@platform/core/interfaces';
+import { getDispatchableTasks } from '@/lib/dispatch/dispatcher-gate';
 
 interface PendingJob {
   jobId: string;
@@ -66,7 +66,11 @@ const logger = () => getContainer().logger;
  */
 export const GET = withDeviceAuth(async (_req, _ctx, { agent, shopId }) => {
   const container = getContainer();
-  const queued = await repos.printJobs.findQueuedByShop(shopId, 10);
+  // Dispatcher gate: only AUTO tasks that are not held, not already claimed,
+  // and whose target printer has a WINDOWS_QUEUE path from a live PC agent.
+  // Tasks parked by the shopkeeper or claimed by a mobile agent are silently
+  // excluded — old PrintEXE builds see no change in the response shape.
+  const queued = await getDispatchableTasks(shopId, 10);
   const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';
   const jobs: PendingJob[] = [];
   const failedJobs: FailedJob[] = [];

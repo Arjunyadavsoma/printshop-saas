@@ -256,10 +256,21 @@ model PrintJob {
   file        PrintFile @relation(fields: [fileId], references: [id])
   shop        Shop      @relation(fields: [shopId], references: [id])
   printer     Printer?  @relation(fields: [printerId], references: [id])
+  // ── Mobile executor / queue v2 (additive; old agents ignore these) ──
+  priority            Int       @default(0)   // 0 normal, 10 urgent
+  position            String    @default("a0") // fractional index for drag reorder
+  isHeld              Boolean   @default(false)
+  executorMode        String    @default("AUTO") // AUTO | MANUAL_ONLY
+  claimedByAgentId    String?
+  claimLeaseExpiresAt DateTime?
+  version             Int       @default(1)   // optimistic concurrency
+  lastExecutorKind    String?                  // PC | MOBILE
 
   @@index([shopId, status])
   @@index([agentId])
   @@index([printerId])
+  @@index([shopId, isHeld, priority, position])
+  @@index([claimedByAgentId])
 }
 
 model PrintAgent {
@@ -284,9 +295,17 @@ model PrintAgent {
   shop            Shop      @relation(fields: [shopId], references: [id])
   pairingTickets  PairingTicket[]
   deviceCommands  DeviceCommand[]
+  // ── Mobile executor (additive) ──
+  kind            String    @default("PC")  // PC | MOBILE
+  platform        String?                   // android | ios | windows | linux
+  appVersion      String?
+  capabilities    String    @default("[]") // JSON array: ["queue.v2","ipp.lan"]
+  agentName       String?                   // human-readable: "Ana's phone"
+  printerPaths    PrinterPath[]
 
   @@index([shopId, isOnline])
   @@index([shopId, isEnabled])
+  @@index([shopId, kind])
 }
 
 /// Single-use, short-lived pairing ticket for the PrintEXE companion.
@@ -571,9 +590,34 @@ model Printer {
   updatedAt      DateTime  @updatedAt
   shop           Shop      @relation(fields: [shopId], references: [id])
   jobs           PrintJob[]
+  paths          PrinterPath[]
+  printerUuid    String?   // IPP printer-uuid or mDNS UUID for merging
 
   @@unique([shopId, systemName])
   @@index([shopId, enabled])
+  @@index([printerUuid])
+}
+
+/// PrinterPath — one physical printer accessible via multiple routes.
+/// A Windows queue (PC agent) and a LAN IPP URI (phone) can be paths
+/// on the same logical Printer (merged by printerUuid).
+model PrinterPath {
+  id           String   @id @default(uuid())
+  printerId    String
+  agentId      String
+  kind         String   // WINDOWS_QUEUE | LAN_IPP | RAW9100
+  uri          String   // ipp://192.168.1.50:631/ipp/print | windows:HP_LaserJet
+  lastSeenAt   DateTime?
+  status       String   @default("unknown") // online|offline|error|unknown
+  capabilities String   @default("{}")      // JSON: document-format-supported, sides, etc.
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  printer      Printer    @relation(fields: [printerId], references: [id])
+  agent        PrintAgent @relation(fields: [agentId], references: [id])
+
+  @@unique([printerId, agentId, kind])
+  @@index([printerId])
+  @@index([agentId])
 }
 
 model PrintSpec {

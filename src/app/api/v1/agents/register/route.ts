@@ -12,6 +12,20 @@ const RegisterSchema = z.object({
   os: z.string().max(40).optional(),
   version: z.string().max(40).optional(),
   printerName: z.string().max(200).optional(),
+  // ── Mobile executor / queue v2 (additive; old clients ignore these) ──
+  /** 'PC' (PrintEXE companion) or 'MOBILE' (PrintShop Android/iOS app).
+   *  Defaults to 'PC' for clients that don't send it (legacy PrintEXE). */
+  kind: z.enum(['PC', 'MOBILE']).default('PC'),
+  /** android | ios | windows | linux | … */
+  platform: z.string().max(40).optional(),
+  /** App version reported by the agent (e.g. '1.4.2'). */
+  appVersion: z.string().max(40).optional(),
+  /** JSON array of capability strings: ['queue.v2','ipp.lan']. Validated
+   *  as a string (the column stores text); the route stringifies the
+   *  parsed array so callers may send either a JSON array or a string. */
+  capabilities: z.union([z.array(z.string().max(60)).max(50), z.string().max(2048)]).optional(),
+  /** Human-readable name set by the device owner: "Ana's phone". */
+  agentName: z.string().max(120).optional(),
 });
 
 /**
@@ -43,7 +57,29 @@ export const POST = withAuth(async (req, ctx, principal) => {
   // for existing tokens because verification is hash-based, not format-based.
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashDeviceToken(token);
-  const agent = await repos.printAgents.create({ shopId: shop.id, name: body.name, tokenHash });
+  const capabilitiesStr = Array.isArray(body.capabilities)
+    ? JSON.stringify(body.capabilities)
+    : (body.capabilities ?? '[]');
+  const agent = await repos.printAgents.create({
+    shopId: shop.id,
+    name: body.name,
+    tokenHash,
+    kind: body.kind,
+    platform: body.platform ?? null,
+    appVersion: body.appVersion ?? null,
+    capabilities: capabilitiesStr,
+    agentName: body.agentName ?? null,
+  });
+
+  // Persist the legacy os/version/printerName fields (kept as a separate
+  // update for parity with the pre-v2 flow — old clients set these via
+  // heartbeat after register; new clients can send them in the register
+  // body directly via the optional fields above).
+  await repos.printAgents.update(agent.id, {
+    os: body.os ?? null,
+    version: body.version ?? null,
+    printerName: body.printerName ?? null,
+  });
 
   // Phase 5 fix: post-insert reconciliation, mirroring /companion/pair.
   // The pre-check above is TOCTOU-racy: two concurrent registrations by the
@@ -70,16 +106,12 @@ export const POST = withAuth(async (req, ctx, principal) => {
       403,
     );
   }
-  await repos.printAgents.update(agent.id, {
-    os: body.os ?? null,
-    version: body.version ?? null,
-    printerName: body.printerName ?? null,
-  });
   return ok({
     agentId: agent.id,
     deviceToken: token, // returned ONCE — the hash is stored, not the plaintext
     shopId: shop.id,
     shopName: shop.name,
+    kind: body.kind,
     warning: 'Save this token — it is shown only once.',
   });
 });

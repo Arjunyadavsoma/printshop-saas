@@ -33,6 +33,11 @@ export type PrinterRow = {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+  // ── Mobile executor / queue v2 (additive) ──
+  /** IPP printer-uuid or mDNS UUID — used to merge the same physical
+   *  printer across multiple paths (a Windows queue name + a LAN IPP
+   *  URI from a phone) into a single Printer row. */
+  printerUuid?: string | null;
 };
 
 export type PriceRuleRow = {

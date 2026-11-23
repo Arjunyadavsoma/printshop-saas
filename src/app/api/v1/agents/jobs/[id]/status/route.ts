@@ -11,6 +11,19 @@ const StatusSchema = z.object({
   status: z.enum(['printing', 'completed', 'failed', 'needs_review']),
   lastError: z.string().max(500).optional(),
   printerName: z.string().max(200).optional(),
+  // ── Mobile executor / queue v2 (additive; old clients keep working) ──
+  /** The 1-based attempt number this status report refers to. Used by the
+   *  idempotency guard: a duplicate (taskId, attempt) report with the same
+   *  status is a no-op. Without this, a retried HTTP request from a wedged
+   *  mobile app could double-count a state transition. */
+  attempt: z.number().int().min(1).optional(),
+  /** The IPP job id assigned by the printer (for cross-reference with the
+   *  printer's own job panel). Stored on the audit log only — not on the
+   *  PrintJob row (the column doesn't exist; we don't want to migrate). */
+  ippJobId: z.string().max(120).optional(),
+  /** Free-form detail — a stack trace, an IPP status message, a paper jam
+   *  description. Stored on the audit log; never auto-retried. */
+  detail: z.string().max(2000).optional(),
 });
 
 /**
@@ -38,6 +51,23 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
     const now = new Date();
     const container = getContainer();
     const channel = shopChannel(shopId);
+
+    // ── Idempotency guard for v2 mobile agents ──
+    // If the agent sends `attempt`, dedupe on (taskId, attempt, status):
+    // a retried HTTP request (e.g. the app crashed mid-flight and retried)
+    // is silently absorbed so a single physical event isn't double-counted.
+    // PC agents that don't send `attempt` skip this guard (legacy flow).
+    if (body.attempt !== undefined) {
+      const idemKey = `job:status:${id}:${body.attempt}:${body.status}`;
+      const existing = await container.cache.get(idemKey);
+      if (existing) {
+        return ok({ jobId: id, status: body.status, applied: false, idempotent: true, reason: 'duplicate (taskId, attempt, status) report — already applied' });
+      }
+      // Reserve the key for 24h — long enough to absorb retries but short
+      // enough that a legitimate same-attempt re-print (different attempt
+      // number) still goes through.
+      await container.cache.set(idemKey, new Date().toISOString(), 24 * 60 * 60);
+    }
 
     if (body.status === 'printing') {
       // ATOMIC CLAIM: conditional update WHERE id AND status='queued'.
@@ -135,6 +165,32 @@ export const POST = withDeviceAuth<{ id: string }>(async (req, ctx, { agent, sho
     }
 
     if (body.printerName) await repos.printAgents.update(agent.id, { printerName: body.printerName });
+
+    // Audit (best-effort) — captures the new v2 fields (attempt, ippJobId,
+    // detail) so the shopkeeper has a forensic trail when reviewing an
+    // uncertain/failed task.
+    try {
+      await container.db.insert('auditLog', {
+        id: crypto.randomUUID(),
+        shopId,
+        userId: null,
+        action: 'job.status',
+        entityType: 'PrintJob',
+        entityId: id,
+        metadata: JSON.stringify({
+          agentId: agent.id,
+          status: body.status,
+          attempt: body.attempt ?? null,
+          ippJobId: body.ippJobId ?? null,
+          detail: body.detail ?? null,
+          lastError: body.lastError ?? null,
+        }),
+        ip: req.headers.get('x-forwarded-for') || null,
+        createdAt: now,
+      });
+    } catch {
+      // best-effort
+    }
 
     return ok({ jobId: id, status: body.status, applied: true });
   } catch (cause) {

@@ -26,6 +26,20 @@ export interface PrintAgent {
   os: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // ── Mobile executor / queue v2 (additive; old fields keep working) ──
+  /** 'PC' (the PrintEXE companion on Windows) or 'MOBILE' (the PrintShop
+   *  Android/iOS app). Defaults to 'PC' for legacy rows. Drives which
+   *  dispatcher path the agent uses (PC = /agents/jobs/pending pull,
+   *  MOBILE = /agents/jobs/:id/claim push). */
+  kind?: 'PC' | 'MOBILE';
+  /** android | ios | windows | linux | … (free-form, for the dashboard). */
+  platform?: string | null;
+  /** App version reported by the agent (e.g. '1.4.2'). */
+  appVersion?: string | null;
+  /** JSON array of capability strings: ['queue.v2','ipp.lan','raw.9100']. */
+  capabilities?: string;
+  /** Human-readable name set by the device owner: "Ana's phone". */
+  agentName?: string | null;
 }
 
 export const PrintAgentSchema = z.object({

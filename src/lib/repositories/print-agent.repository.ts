@@ -19,6 +19,12 @@ interface PrintAgentRow {
   os: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // ── Mobile executor / queue v2 (additive; defaults applied in toDomain) ──
+  kind?: string | null;
+  platform?: string | null;
+  appVersion?: string | null;
+  capabilities?: string | null;
+  agentName?: string | null;
 }
 
 function toDomain(row: PrintAgentRow): PrintAgent {
@@ -40,6 +46,13 @@ function toDomain(row: PrintAgentRow): PrintAgent {
     os: row.os,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // Mobile executor / queue v2 — defaults for legacy rows that predate
+    // the columns (PC + no platform + empty capabilities JSON array).
+    kind: (row.kind === 'MOBILE' ? 'MOBILE' : 'PC') as 'PC' | 'MOBILE',
+    platform: row.platform ?? null,
+    appVersion: row.appVersion ?? null,
+    capabilities: row.capabilities ?? '[]',
+    agentName: row.agentName ?? null,
   };
 }
 
@@ -77,7 +90,16 @@ export class PrintAgentRepository extends BaseRepository<PrintAgentRow> {
     return rows.map(toDomain);
   }
 
-  async create(input: { shopId: string; name: string; tokenHash: string }): Promise<PrintAgent> {
+  async create(input: {
+    shopId: string;
+    name: string;
+    tokenHash: string;
+    kind?: 'PC' | 'MOBILE';
+    platform?: string | null;
+    appVersion?: string | null;
+    capabilities?: string;
+    agentName?: string | null;
+  }): Promise<PrintAgent> {
     const now = new Date();
     const row = await this.insertOne({
       id: crypto.randomUUID(),
@@ -92,6 +114,12 @@ export class PrintAgentRepository extends BaseRepository<PrintAgentRow> {
       os: null,
       createdAt: now,
       updatedAt: now,
+      // Mobile executor / queue v2 — defaults for backward compat.
+      kind: input.kind ?? 'PC',
+      platform: input.platform ?? null,
+      appVersion: input.appVersion ?? null,
+      capabilities: input.capabilities ?? '[]',
+      agentName: input.agentName ?? null,
     } as PrintAgentRow);
     return toDomain(row);
   }
