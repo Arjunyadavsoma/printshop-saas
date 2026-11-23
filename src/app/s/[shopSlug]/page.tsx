@@ -27,7 +27,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
     isOpen: boolean; acceptingOrders: boolean; openingHours: unknown;
     upiId: string; upiPayeeName: string | null; paymentMode: string;
     paymentMethods: string; minutesPerPageBw: number; minutesPerPageColor: number;
-    retentionHours: number;
+    retentionHours: number; pricingConfig: string | Record<string, number> | null;
   }>('shop', { slug: shopSlug });
   if (!shop) notFound();
 
@@ -36,19 +36,25 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const onlinePrinters = printers.filter(p => p.enabled && p.status === 'ONLINE');
   const queued = await repos.printJobs.findQueuedByShop(shop.id, 50);
   const queuedSheets = queued.reduce((sum, t) => sum + (t.sheetCount ?? 1) * (t.copies ?? 1), 0);
-  const minPerPp = Math.max(1, Math.round(
-    (shop.minutesPerPageBw + shop.minutesPerPageColor) / 2,
-  ));
+  // Default minutes-per-page to 1/2 when fields missing (in-memory adapter
+  // doesn't apply Prisma @default). Avoids NaN in wait calculation.
+  const minBw = shop.minutesPerPageBw ?? 1;
+  const minColor = shop.minutesPerPageColor ?? 2;
+  const minPerPp = Math.max(1, Math.round((minBw + minColor) / 2));
   const waitMinutes = Math.ceil((queuedSheets * minPerPp) / Math.max(1, onlinePrinters.length));
 
   // Rate board — one line, "B&W ₹2 · Colour ₹8 /page" per the DESIGN-PLAN
   // wireframe screen 1. Pulls the cheapest single-side A4 slab per colour
-  // mode from the active price rules.
+  // mode from the active price rules. Falls back to the shop's pricingConfig
+  // when no price rules exist (e.g. in-memory dev DB after seeding).
   const rateRows = await repos.priceRules.activeForShop(shop.id);
   const bwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'SINGLE');
   const colorRule = rateRows.find(r => r.colorMode === 'COLOR' && r.paperSize === 'A4' && r.sides === 'SINGLE');
-  const bwPerPagePaise = bwRule?.slabs[0]?.perPagePaise ?? null;
-  const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? null;
+  const pricingCfg = typeof shop.pricingConfig === 'string'
+    ? (() => { try { return JSON.parse(shop.pricingConfig); } catch { return null; } })()
+    : shop.pricingConfig;
+  const bwPerPagePaise = bwRule?.slabs[0]?.perPagePaise ?? pricingCfg?.bw_a4_per_page ?? null;
+  const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? pricingCfg?.color_a4_per_page ?? null;
 
   const rateSubtitle = formatRateSubtitle(bwPerPagePaise, colorPerPagePaise);
   // Default to open/accepting when fields are missing (in-memory adapter doesn't
@@ -57,6 +63,8 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const shopAccepting = shop.acceptingOrders ?? true;
   const closed = !shopIsOpen || !shopAccepting;
   const hoursText = formatOpeningHours(shop.openingHours);
+  // Default retention to 24h when field missing (Prisma @default(24)).
+  const retentionHours = shop.retentionHours ?? 24;
 
   return (
     <div className="customer-flow min-h-dvh flex flex-col">
@@ -77,9 +85,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
           <>
             {/* Live status line — "2 printers online · ~6 min wait". */}
             <p className="text-sm text-[var(--color-muted)] tnum mb-4">
-              {onlinePrinters.length} printer{onlinePrinters.length === 1 ? '' : 's'} online
-              {' · ~'}{waitMinutes} min wait
-              {queued.length > 0 ? ` · ${queued.length} job${queued.length === 1 ? '' : 's'} ahead` : ''}
+              {`${onlinePrinters.length} printer${onlinePrinters.length === 1 ? '' : 's'} online${onlinePrinters.length === 0 ? ' · We\u2019ll print as soon as a printer comes online' : ` · ~${waitMinutes} min wait`}${queued.length > 0 ? ` · ${queued.length} job${queued.length === 1 ? '' : 's'} ahead` : ''}`}
             </p>
 
             <CustomerOrderFlowV2Lazy
@@ -88,12 +94,12 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
               upiId={shop.upiId}
               upiPayeeName={shop.upiPayeeName ?? shop.name}
               paymentMode={shop.paymentMode}
-              retentionHours={shop.retentionHours}
+              retentionHours={retentionHours}
             />
 
             {/* Trust line — addresses the privacy concern right under the upload. */}
             <p className="mt-6 text-xs text-[var(--color-muted)] leading-relaxed">
-              Files deleted {shop.retentionHours}h after pickup. 0% commission — you pay the shop directly.
+              {`Files deleted ${retentionHours}h after pickup. 0% commission — you pay the shop directly.`}
             </p>
 
             {/* Shop info section — hours + address + Call/Directions. */}

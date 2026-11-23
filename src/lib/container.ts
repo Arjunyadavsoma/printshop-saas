@@ -274,8 +274,23 @@ function buildContainer(): Container {
     env('LOGGER_PROVIDER', 'json') === 'stub' ? new StubLoggerAdapter() : new JsonConsoleLogger({ service: 'printshop-api' });
 
   // Database
-  const database: DatabaseAdapter =
-    env('DATABASE_PROVIDER', 'prisma') === 'memory' ? new InMemoryDatabaseAdapter() : new PrismaDatabaseAdapter(db);
+  // In development, automatically fall back to in-memory if DATABASE_URL is
+  // missing or invalid (e.g. SQLite URL with PostgreSQL schema). This prevents
+  // the "URL must start with postgresql://" crash that breaks every page.
+  // In production, the validateDatabaseProvider() above enforces real Postgres.
+  const rawDbProvider = env('DATABASE_PROVIDER', 'prisma');
+  const rawDbUrl = env('DATABASE_URL', '');
+  const isDev = process.env.NODE_ENV !== 'production';
+  const urlLooksInvalid = !rawDbUrl || rawDbUrl.startsWith('file:') || (!rawDbUrl.startsWith('postgresql://') && !rawDbUrl.startsWith('postgres://'));
+  let database: DatabaseAdapter;
+  if (rawDbProvider === 'memory') {
+    database = new InMemoryDatabaseAdapter();
+  } else if (isDev && urlLooksInvalid) {
+    console.warn('[container] DATABASE_PROVIDER=prisma but DATABASE_URL is missing or not PostgreSQL — falling back to in-memory DB for development. Set DATABASE_PROVIDER=memory explicitly to silence this warning.');
+    database = new InMemoryDatabaseAdapter();
+  } else {
+    database = new PrismaDatabaseAdapter(db);
+  }
 
   // Storage
   const storageProvider = env('STORAGE_PROVIDER', 'memory');
