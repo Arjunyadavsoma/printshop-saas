@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
@@ -101,7 +100,6 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
   const api = useApiClient();
-  const router = useRouter();
   const [shops, setShops] = useState<ShopListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,8 +136,6 @@ export default function HomePage() {
       (s) => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q),
     );
   }, [shops, query]);
-
-  const onShopClick = (slug: string) => router.push(`/shops/${slug}`);
 
   return (
     <div className="flex min-h-screen flex-col bg-page">
@@ -335,7 +331,7 @@ export default function HomePage() {
               <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" role="list">
                 {filtered.map((shop) => (
                   <li key={shop.id}>
-                    <ShopCard shop={shop} onClick={() => onShopClick(shop.slug)} />
+                    <ShopCard shop={shop} />
                   </li>
                 ))}
               </ul>
@@ -386,27 +382,18 @@ export default function HomePage() {
   );
 }
 
-function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }) {
+function ShopCard({ shop }: { shop: ShopListItem }) {
   const tierLabel = shop.subscriptionTier.charAt(0).toUpperCase() + shop.subscriptionTier.slice(1);
   return (
+    <Link
+      href={`/s/${shop.slug}`}
+      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-lg"
+      aria-label={`Visit ${shop.name}`}
+    >
     <Card
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-      // Phase 6.3: removed aria-label to fix label-content-name-mismatch
-      // (axe-core WCAG 2.2 AA). The visible shop name serves as the
-      // accessible name — adding an aria-label that doesn't include ALL
-      // visible text (pricing, badges) triggers the rule.
       className={cn(
         'group h-full cursor-pointer border-border bg-surface shadow-sm transition-all',
         'hover:-translate-y-0.5 hover:border-brand-border hover:shadow-md',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
       )}
     >
       <CardHeader className="pb-0">
@@ -452,5 +439,6 @@ function ShopCard({ shop, onClick }: { shop: ShopListItem; onClick: () => void }
         </span>
       </CardFooter>
     </Card>
+    </Link>
   );
 }
