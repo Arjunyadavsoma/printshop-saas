@@ -108,7 +108,7 @@ export default function ShopCustomersPage() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    document.title = 'Customers · PrintShop SaaS';
+    document.title = 'Customers · Printelyx';
   }, []);
 
   const load = useCallback(

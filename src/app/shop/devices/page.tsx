@@ -178,7 +178,7 @@ export default function ShopDevicesPage() {
 
   // Document title — kept in sync so browser tabs reflect the page.
   useEffect(() => {
-    document.title = 'Devices & Printers · PrintShop SaaS';
+    document.title = 'Devices & Printers · Printelyx';
   }, []);
 
   // ── Load device list ─────────────────────────────────────────────────

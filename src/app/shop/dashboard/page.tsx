@@ -153,7 +153,7 @@ function isToday(iso: string): boolean {
 
 export default function ShopDashboardPage() {
   const api = useApiClient();
-  useEffect(() => { document.title = 'Dashboard · PrintShop SaaS'; }, []);
+  useEffect(() => { document.title = 'Dashboard · Printelyx'; }, []);
   const [shop, setShop] = useState<ShopInfo | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);

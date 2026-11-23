@@ -709,7 +709,7 @@ export function PaymentProviderSettings() {
           </CardTitle>
           <CardDescription className="text-xs">
             Configure these URLs in your payment provider&apos;s merchant dashboard under Webhook / Callback
-            settings so PrintShop can receive payment-status updates.
+            settings so Printelyx can receive payment-status updates.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -736,7 +736,7 @@ export function PaymentProviderSettings() {
             <ShieldCheck className="size-4" /> Security &amp; privacy
           </CardTitle>
           <CardDescription className="text-xs text-amber-700/80 dark:text-amber-400/80">
-            How PrintShop protects your payment credentials.
+            How Printelyx protects your payment credentials.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
@@ -745,14 +745,14 @@ export function PaymentProviderSettings() {
             <span>
               Your payment credentials are encrypted with{' '}
               <strong>AES-256-GCM</strong> before storage. They are only decrypted server-side, in-memory, at
-              the moment PrintShop&apos;s secure backend communicates with your payment provider.
+              the moment Printelyx&apos;s secure backend communicates with your payment provider.
             </span>
           </p>
           <p className="flex items-start gap-2">
             <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
             <span>
-              PrintShop will <strong>never</strong> ask for your UPI PIN, OTP, bank password, or payment-app
-              login password. Anyone claiming to be from PrintShop and asking for these is a scammer — report
+              Printelyx will <strong>never</strong> ask for your UPI PIN, OTP, bank password, or payment-app
+              login password. Anyone claiming to be from Printelyx and asking for these is a scammer — report
               them to <a className="underline" href="mailto:security@printshop.example">security@printshop.example</a>.
             </span>
           </p>
@@ -777,7 +777,7 @@ export function PaymentProviderSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect {disconnectingProvider ? labelFor(disconnectingProvider) : ''}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove your saved {disconnectingProvider} credentials from PrintShop.
+              This will permanently remove your saved {disconnectingProvider} credentials from Printelyx.
               {status?.activeProvider === disconnectingProvider
                 ? ' This provider is currently active — new checkouts will fall back to manual UPI payment until you activate another provider.'
                 : ''}
@@ -1547,7 +1547,7 @@ function PhonePeOnboardingGuide() {
         </p>
         <p>
           <strong className="text-foreground">6.</strong> In the PhonePe dashboard, add the{' '}
-          <em>Webhook URL</em> shown above (under <em>Developers → Webhooks</em>) so PrintShop receives
+          <em>Webhook URL</em> shown above (under <em>Developers → Webhooks</em>) so Printelyx receives
           payment-status callbacks.
         </p>
       </div>
@@ -1584,7 +1584,7 @@ function PaytmOnboardingGuide() {
         </p>
         <p>
           <strong className="text-foreground">4.</strong> The <em>Website</em> value is{' '}
-          <code>WEBSTAGING</code> for sandbox and <code>DEFAULT</code> for production. PrintShop auto-fills
+          <code>WEBSTAGING</code> for sandbox and <code>DEFAULT</code> for production. Printelyx auto-fills
           this when you change the environment toggle.
         </p>
         <p>

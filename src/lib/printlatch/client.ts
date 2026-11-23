@@ -267,7 +267,7 @@ export const PRINTLATCH_EXE_PATH = '%LOCALAPPDATA%\\PrintLatch\\bin\\printlatch.
 export function getPairingCommand(): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://your-printshop.vercel.app';
   // PowerShell requires the call operator (&) + $env: prefix (NOT %VAR%).
-  return `& "$env:LOCALAPPDATA\\PrintLatch\\bin\\printlatch.exe" pair --origin ${origin} --name "PrintShop SaaS"`;
+  return `& "$env:LOCALAPPDATA\\PrintLatch\\bin\\printlatch.exe" pair --origin ${origin} --name "Printelyx"`;
 }
 
 /** Disconnect — clears the stored browser token. The agent stays running. */

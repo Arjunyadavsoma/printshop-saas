@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 export interface AppShellProps {
   /** Sidebar navigation groups. */
   navGroups: NavGroup[];
-  /** Brand label (shop name / "PrintShop"). */
+  /** Brand label (shop name / "Printelyx"). */
   brandName: string;
   brandSubtitle?: string;
   brandHref?: string;
@@ -127,7 +127,7 @@ function AppShellFooter() {
           <div className="flex size-6 items-center justify-center rounded bg-brand text-xs font-bold text-brand-foreground">
             P
           </div>
-          <span>PrintShop SaaS &middot; 0% commission &middot; money to shopkeeper&rsquo;s UPI</span>
+          <span>Printelyx &middot; 0% commission &middot; money to shopkeeper&rsquo;s UPI</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1.5">

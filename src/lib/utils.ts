@@ -24,7 +24,7 @@ export { formatINRFromPaise } from "@platform/utils";
 
 /**
  * Format an ISO date string or Date as a short date-time (e.g. "07 Nov, 2:30 PM").
- * Uses the user's locale (Asia/Kolkata for PrintShop's Indian market).
+ * Uses the user's locale (Asia/Kolkata for Printelyx's Indian market).
  */
 export function formatDateTime(input: string | Date | number | null | undefined): string {
   if (input === null || input === undefined) return "—";

@@ -13,7 +13,7 @@ const RegisterSchema = z.object({
   version: z.string().max(40).optional(),
   printerName: z.string().max(200).optional(),
   // ── Mobile executor / queue v2 (additive; old clients ignore these) ──
-  /** 'PC' (PrintEXE companion) or 'MOBILE' (PrintShop Android/iOS app).
+  /** 'PC' (PrintEXE companion) or 'MOBILE' (Printelyx Android/iOS app).
    *  Defaults to 'PC' for clients that don't send it (legacy PrintEXE). */
   kind: z.enum(['PC', 'MOBILE']).default('PC'),
   /** android | ios | windows | linux | … */

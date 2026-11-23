@@ -68,7 +68,7 @@ export default function PrivacyPage() {
         {/* Intro — short, plain English */}
         <section className="text-sm text-[var(--color-muted)] leading-relaxed">
           <p>
-            PrintShop is built so that you pay the shop directly — we never
+            Printelyx is built so that you pay the shop directly — we never
             handle your money, and your files are deleted automatically.
             This page explains what data we touch and how long we keep it.
           </p>

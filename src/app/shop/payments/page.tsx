@@ -100,7 +100,7 @@ export default function ShopPaymentsPage() {
   const [filter, setFilter] = useState<PaymentFilter>('all');
 
   useEffect(() => {
-    document.title = 'Payments · PrintShop SaaS';
+    document.title = 'Payments · Printelyx';
   }, []);
 
   const load = useCallback(

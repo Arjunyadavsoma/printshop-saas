@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   // Read persisted auth on mount.
-  // Inside the PrintShop Companion Android app, tokens are stored via the
+  // Inside the Printelyx Companion Android app, tokens are stored via the
   // native storage bridge (window.NativeApp.storage — Capacitor Preferences,
   // app-sandboxed). In a regular browser, localStorage is used. The bridge
   // is async, so the read is async when it's present.

@@ -136,7 +136,7 @@ export function InstallPrompt() {
             </div>
             <div>
               <p className="text-sm font-medium text-foreground">
-                Install PrintShop on this device
+                Install Printelyx on this device
               </p>
               <p className="text-xs text-muted-foreground">
                 Open it from your home screen / Start menu — full-screen, no
@@ -190,7 +190,7 @@ export function InstallPrompt() {
             </div>
             <div>
               <p className="text-sm font-medium text-foreground">
-                Add PrintShop to your Home Screen
+                Add Printelyx to your Home Screen
               </p>
               <p className="text-xs text-muted-foreground">
                 Tap <Share className="inline size-3 align-text-bottom" /> Share →

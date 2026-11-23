@@ -150,7 +150,7 @@ export function DownloadAppClient() {
             <span className="text-2xl font-bold">P</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-            PrintShop Companion
+            Printelyx Companion
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
             The Android app that integrates with your print shop — native camera scanning, UPI payment, and order-ready notifications.
@@ -279,7 +279,7 @@ export function DownloadAppClient() {
                 { step: 'Open the downloaded file', detail: 'Tap the notification or find it in your Downloads folder.' },
                 { step: 'Allow install from this source', detail: 'Android will prompt "For your security, your phone is not allowed to install unknown apps from this source." Tap Settings → enable "Allow from this source".' },
                 { step: 'Install', detail: 'Tap "Install" and wait ~10 seconds for the installation to complete.' },
-                { step: 'Open PrintShop Companion', detail: 'Find it in your app drawer. The app loads your print shop\'s web app with native camera + UPI + notifications.' },
+                { step: 'Open Printelyx Companion', detail: 'Find it in your app drawer. The app loads your print shop\'s web app with native camera + UPI + notifications.' },
               ].map((item, i) => (
                 <li key={i} className="flex gap-3">
                   <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground text-sm font-bold">

@@ -55,7 +55,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: '0% commission',
-    description: 'Customers pay the shopkeeper directly via UPI. PrintShop takes nothing — no hidden fees, no middlemen.',
+    description: 'Customers pay the shopkeeper directly via UPI. Printelyx takes nothing — no hidden fees, no middlemen.',
   },
   {
     icon: Wallet,
@@ -85,7 +85,7 @@ const HOW_IT_WORKS = [
   {
     step: 2,
     title: 'Get your unique QR',
-    body: 'PrintShop generates a QR code for your shop. Print it and place it on your counter.',
+    body: 'Printelyx generates a QR code for your shop. Print it and place it on your counter.',
   },
   {
     step: 3,
@@ -161,7 +161,7 @@ export default function HomePage() {
               Print shops, powered by QR and UPI.
             </h1>
             <p className="text-lg leading-relaxed text-muted-foreground">
-              PrintShop connects customers with local print shops. Scan a shop QR, upload PDFs, and pay the shopkeeper directly via UPI — zero commission, zero middlemen. Run a shop? Get started in minutes.
+              Printelyx connects customers with local print shops. Scan a shop QR, upload PDFs, and pay the shopkeeper directly via UPI — zero commission, zero middlemen. Run a shop? Get started in minutes.
             </p>
             <div className="flex w-full flex-wrap items-center gap-3 pt-1 sm:w-auto">
               <Button asChild size="lg" className="min-h-[44px] gap-2 bg-brand text-brand-foreground hover:bg-brand-hover">
@@ -186,7 +186,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex flex-col gap-2">
             <h2 id="features-heading" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              Why PrintShop
+              Why Printelyx
             </h2>
             <p className="text-sm text-muted-foreground">
               A modern print shop platform built for India — UPI-native, commission-free, and customer-friendly.
@@ -355,7 +355,7 @@ export default function HomePage() {
               P
             </div>
             <div>
-              <p className="font-semibold text-foreground">PrintShop SaaS</p>
+              <p className="font-semibold text-foreground">Printelyx</p>
               <p className="text-xs text-muted-foreground">
                 QR-based print shop management · 0% commission · MIT licensed
               </p>

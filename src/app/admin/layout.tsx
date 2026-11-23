@@ -102,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const shellProps: AppShellProps = {
     navGroups: ADMIN_NAV_GROUPS,
-    brandName: 'PrintShop',
+    brandName: 'Printelyx',
     brandSubtitle: 'Admin Console',
     brandHref: '/admin',
     roleBadge: 'admin',

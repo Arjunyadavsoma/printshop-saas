@@ -51,7 +51,11 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? null;
 
   const rateSubtitle = formatRateSubtitle(bwPerPagePaise, colorPerPagePaise);
-  const closed = !shop.isOpen || !shop.acceptingOrders;
+  // Default to open/accepting when fields are missing (in-memory adapter doesn't
+  // always apply Prisma @default(true) — be defensive so demo shops work).
+  const shopIsOpen = shop.isOpen ?? true;
+  const shopAccepting = shop.acceptingOrders ?? true;
+  const closed = !shopIsOpen || !shopAccepting;
   const hoursText = formatOpeningHours(shop.openingHours);
 
   return (
@@ -59,7 +63,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
       <AppBar
         title={shop.name}
         subtitle={rateSubtitle}
-        status={shop.isOpen ? 'open' : 'closed'}
+        status={shopIsOpen ? 'open' : 'closed'}
       />
 
       <main className="flex-1 mx-auto w-full max-w-xl px-4 pt-4 pb-32 sm:px-6">

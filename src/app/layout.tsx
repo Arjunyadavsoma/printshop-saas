@@ -57,7 +57,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Native bridges for the PrintShop Companion Android app. */}
+        {/* Native bridges for the Printelyx Companion Android app. */}
         <Script src="/native-bridges.js" strategy="beforeInteractive" />
         {/* FOUC prevention: set dark class before paint */}
         <Script

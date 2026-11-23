@@ -121,7 +121,7 @@ export default function ShopServicesPage() {
   const [minOrderRupees, setMinOrderRupees] = useState('0.00');
 
   useEffect(() => {
-    document.title = 'Services & Pricing · PrintShop SaaS';
+    document.title = 'Services & Pricing · Printelyx';
   }, []);
 
   // Hydrate the draft state from a freshly-loaded shop record.

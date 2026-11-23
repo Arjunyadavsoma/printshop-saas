@@ -126,7 +126,7 @@ export default function ReportsPage() {
   const [range, setRange] = useState<DateRange>('30d');
 
   useEffect(() => {
-    document.title = 'Reports · PrintShop SaaS';
+    document.title = 'Reports · Printelyx';
   }, []);
 
   const load = useCallback(

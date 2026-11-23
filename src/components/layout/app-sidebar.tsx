@@ -25,7 +25,7 @@ export interface NavGroup {
 
 export interface AppSidebarProps {
   groups: NavGroup[];
-  /** Brand label shown in the sidebar header (shop name or "PrintShop"). */
+  /** Brand label shown in the sidebar header (shop name or "Printelyx"). */
   brandName: string;
   /** Optional secondary brand label (e.g. "Shopkeeper Portal"). */
   brandSubtitle?: string;

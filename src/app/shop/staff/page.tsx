@@ -40,7 +40,7 @@ import {
  * Staff & Permissions page.
  *
  * This is an INFORMATIONAL page for now — there is no backend staff API
- * yet. A single owner runs most PrintShop shops, so we surface:
+ * yet. A single owner runs most Printelyx shops, so we surface:
  *
  *   1. The current owner's account (from the auth context + shop profile).
  *   2. A permission matrix describing what each role (Owner, Manager,
@@ -146,7 +146,7 @@ export default function ShopStaffPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = 'Staff & Permissions · PrintShop SaaS';
+    document.title = 'Staff & Permissions · Printelyx';
   }, []);
 
   const load = useCallback(

@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  * The canonical signature accepts the payment status string + optional paidAt.
  * Callers that previously passed a filter value should map it to a status first.
  *
- * Uses PrintShop semantic tokens (docs/DESIGN_SYSTEM.md):
+ * Uses Printelyx semantic tokens (docs/DESIGN_SYSTEM.md):
  *   pending / awaiting → warning
  *   paid / verified    → success
  *   failed / disputed  → danger

@@ -5,7 +5,7 @@ import { PageTile, ColourSummary } from './page-tile';
 import { PrimaryButton, TextButton } from './button';
 
 /**
- * PageStrip — the signature screen of the PrintShop product.
+ * PageStrip — the signature screen of the Printelyx product.
  *
  * Virtualized grid of PageTile components (4 columns mobile, 6-8 desktop).
  * Running totals above. Bulk actions below. Money nudge when applicable.

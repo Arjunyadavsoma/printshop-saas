@@ -1,7 +1,7 @@
 /**
  * GET /api/v1/downloads/native-printer
  *
- * Streams a ZIP of the PrintShop Native Windows Printer service so the
+ * Streams a ZIP of the Printelyx Native Windows Printer service so the
  * shopkeeper can download it directly from the website (no GitHub
  * navigation / branch confusion — every shopkeeper gets the exact same
  * version + file layout as the one this deployment ships with).
@@ -20,7 +20,7 @@
  *   - start.bat       (Windows double-click helper — runs `node index.js`)
  *
  * Extracting the ZIP creates a `native-printer/` folder. The shopkeeper
- * moves it to a permanent location (e.g. C:\PrintShop\native-printer) and
+ * moves it to a permanent location (e.g. C:\Printelyx\native-printer) and
  * follows the 7-step guide on the Printer Setup page.
  *
  * PUBLIC endpoint — no auth. The source files are already public on
@@ -76,11 +76,11 @@ function customizeReadme(content: string, origin: string): string {
 function pairBat(origin: string): string {
   return [
     '@echo off',
-    'REM PrintShop Native Printer - pairing helper (auto-generated)',
+    'REM Printelyx Native Printer - pairing helper (auto-generated)',
     'REM Runs: node index.js pair --origin=<this-website>',
     'REM',
     'REM After running this, copy the printed pairing code + paste it on',
-    'REM the PrintShop website Printer Setup page, then run start.bat',
+    'REM the Printelyx website Printer Setup page, then run start.bat',
     '',
     `node index.js pair --origin=${origin}`,
     '',
@@ -89,7 +89,7 @@ function pairBat(origin: string): string {
     '  echo Pairing failed. See the error above.',
     ') else (',
     '  echo.',
-    '  echo Pairing code printed above. Paste it on the PrintShop website,',
+    '  echo Pairing code printed above. Paste it on the Printelyx website,',
     '  echo then run start.bat to start the service.',
     ')',
     '',
@@ -101,7 +101,7 @@ function pairBat(origin: string): string {
 function startBat(): string {
   return [
     '@echo off',
-    'REM PrintShop Native Printer - service start helper (auto-generated)',
+    'REM Printelyx Native Printer - service start helper (auto-generated)',
     'REM Runs: node index.js',
     'REM',
     'REM Keep this window open while printing!',
@@ -121,7 +121,7 @@ function startBat(): string {
 function installBat(): string {
   return [
     '@echo off',
-    'REM PrintShop Native Printer - dependency installer (auto-generated)',
+    'REM Printelyx Native Printer - dependency installer (auto-generated)',
     'REM Runs: npm install   (one-time, after first download)',
     '',
     'call npm install',
@@ -201,7 +201,7 @@ export async function GET(req: NextRequest) {
   } catch {
     /* keep default */
   }
-  const filename = `printshop-native-printer-v${version}.zip`;
+  const filename = `printelyx-native-printer-v${version}.zip`;
 
   return new NextResponse(zipBytes as unknown as BodyInit, {
     status: 200,

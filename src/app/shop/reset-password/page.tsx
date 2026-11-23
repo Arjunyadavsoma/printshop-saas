@@ -115,7 +115,7 @@ export default function ResetPasswordPage() {
             <div className="space-y-1">
               <CardTitle className="text-lg font-semibold text-foreground">Choose a new password</CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
-                Enter a new password for your PrintShop account. This link can only be used once.
+                Enter a new password for your Printelyx account. This link can only be used once.
               </CardDescription>
             </div>
           </CardHeader>

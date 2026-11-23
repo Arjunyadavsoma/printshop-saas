@@ -9,7 +9,7 @@ export function SiteFooter() {
             P
           </div>
           <div>
-            <p className="font-semibold text-foreground">PrintShop SaaS</p>
+            <p className="font-semibold text-foreground">Printelyx</p>
             <p className="text-xs text-muted-foreground">
               Phase 1 foundation · adapter-pattern architecture · MIT licensed
             </p>

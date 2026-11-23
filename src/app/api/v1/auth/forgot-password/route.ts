@@ -142,11 +142,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await container.email.send({
         to: user.email,
         from: process.env.EMAIL_FROM ?? 'no-reply@printshop.app',
-        subject: 'Reset your PrintShop password',
+        subject: 'Reset your Printelyx password',
         text: [
           `Hello,`,
           ``,
-          `We received a request to reset the password for your PrintShop account.`,
+          `We received a request to reset the password for your Printelyx account.`,
           ``,
           `Click the link below to choose a new password. The link expires in 15 minutes.`,
           ``,
@@ -154,15 +154,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ``,
           `If you didn't request this reset, you can safely ignore this email — your password won't change.`,
           ``,
-          `— PrintShop`,
+          `— Printelyx`,
         ].join('\n'),
         html: [
           `<p>Hello,</p>`,
-          `<p>We received a request to reset the password for your PrintShop account.</p>`,
+          `<p>We received a request to reset the password for your Printelyx account.</p>`,
           `<p>Click the link below to choose a new password. The link expires in 15 minutes.</p>`,
           `<p><a href="${resetUrl}">Reset my password</a></p>`,
           `<p style="color:#666;font-size:12px;">If you didn't request this reset, you can safely ignore this email — your password won't change.</p>`,
-          `<p>— PrintShop</p>`,
+          `<p>— Printelyx</p>`,
         ].join('\n'),
       });
     } catch {

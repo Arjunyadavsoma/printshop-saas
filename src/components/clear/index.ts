@@ -1,5 +1,5 @@
 /**
- * PrintShop "Clear" design system — component barrel.
+ * Printelyx "Clear" design system — component barrel.
  *
  * Single import surface for the Clear component library:
  *   import { PrimaryButton, Input, Group, Sheet } from '@/components/clear';

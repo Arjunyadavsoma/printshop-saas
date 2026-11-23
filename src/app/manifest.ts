@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 /**
- * Web App Manifest — makes PrintShop installable on mobile (Android Chrome,
+ * Web App Manifest — makes Printelyx installable on mobile (Android Chrome,
  * iOS Safari) + Windows (Edge/Chrome) as a standalone PWA.
  *
  * Phase 4 update: the manifest now serves BOTH the shopkeeper portal AND

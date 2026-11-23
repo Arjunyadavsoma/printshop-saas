@@ -201,7 +201,7 @@ export default function AdminLoginPage() {
             </Link>
           </CardFooter>
         </Card>
-        <p className="mt-6 text-center text-xs text-muted-foreground">PrintShop SaaS · Platform admin portal</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground">Printelyx · Platform admin portal</p>
       </div>
     </div>
   );

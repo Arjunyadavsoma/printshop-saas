@@ -59,7 +59,7 @@ export function saveNativePrefs(prefs: NativePrinterPrefs) {
 
 export function getNativePairingCommand(): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://printshop-saas-three.vercel.app';
-  return `node "${process.env.LOCALAPPDATA ?? '%LOCALAPPDATA%'}\\PrintShop\\native-printer\\index.js" pair --origin ${origin}`;
+  return `node "${process.env.LOCALAPPDATA ?? '%LOCALAPPDATA%'}\\Printelyx\\native-printer\\index.js" pair --origin ${origin}`;
 }
 
 export async function confirmNativePairing(code: string): Promise<{ success: boolean; error?: string }> {

@@ -25,7 +25,7 @@ interface FaqItem {
 const FAQ_ITEMS: FaqItem[] = [
   {
     q: 'How do I pay?',
-    a: 'Tap a UPI app (GPay, PhonePe, Paytm). After paying, enter the 12-digit UTR number from your payment receipt. The shop verifies it — PrintShop never touches your money.',
+    a: 'Tap a UPI app (GPay, PhonePe, Paytm). After paying, enter the 12-digit UTR number from your payment receipt. The shop verifies it — Printelyx never touches your money.',
   },
   {
     q: 'When will my prints be ready?',
@@ -33,7 +33,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: 'Is my payment safe?',
-    a: 'You pay the shop directly via UPI. PrintShop does not handle your money — 0% commission, no middleman. We never see your card or UPI PIN.',
+    a: 'You pay the shop directly via UPI. Printelyx does not handle your money — 0% commission, no middleman. We never see your card or UPI PIN.',
   },
   {
     q: 'Are my files private?',
@@ -109,14 +109,14 @@ export default function HelpPage() {
             Tell us what went wrong. If your report is about a specific order, include the order token from the tracking page URL so we can investigate faster.
           </p>
           <a
-            href="mailto:support@printshop.local?subject=PrintShop%20customer%20report&body=Describe%20what%20happened.%20If%20about%20an%20order%2C%20paste%20your%20order%20token%20here."
+            href="mailto:support@printshop.local?subject=Printelyx%20customer%20report&body=Describe%20what%20happened.%20If%20about%20an%20order%2C%20paste%20your%20order%20token%20here."
             className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] bg-[var(--color-cyan-ink)] px-4 py-3 text-sm font-medium text-white min-h-[48px]"
           >
             <Mail className="size-4" aria-hidden="true" />
             Email support
           </a>
           <a
-            href="https://wa.me/?text=Hello%20PrintShop%20support"
+            href="https://wa.me/?text=Hello%20Printelyx%20support"
             target="_blank"
             rel="noopener noreferrer"
             className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] min-h-[48px]"

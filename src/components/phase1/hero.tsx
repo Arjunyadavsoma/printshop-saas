@@ -30,7 +30,7 @@ export function Hero() {
           <Badge variant="outline">India-first</Badge>
         </div>
         <h1 className="mt-5 text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
-          PrintShop <span className="text-amber-600">SaaS</span>
+          Printelyx
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-muted-foreground sm:text-xl">
           QR-based print-shop management for the Indian market. Customers scan, upload, configure,

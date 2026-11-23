@@ -17,7 +17,7 @@
  *
  * To wire a real gateway:
  *  1. Register on MSG91 / Twilio / Gupshup; get the credentials.
- *  2. Register a DLT template (e.g. "Your PrintShop verification code is
+ *  2. Register a DLT template (e.g. "Your Printelyx verification code is
  *     {##OTP##}. Valid for 5 minutes. Do not share this code.").
  *  3. Set env: OTP_PROVIDER=sms, SMS_GATEWAY=msg91, MSG91_AUTH_KEY=…,
  *     MSG91_SENDER_ID=PRNTSH, MSGLT_TEMPLATE_ID=DLT-XXXX.

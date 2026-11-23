@@ -1,6 +1,6 @@
 /**
  * Type declarations for `window.NativeApp` — the native bridge API exposed by
- * the PrintShop Companion Android app.
+ * the Printelyx Companion Android app.
  *
  * The companion app injects `/native-bridges.js` (loaded via a beforeInteractive
  * <Script> tag in the root layout) which attaches `window.NativeApp` when

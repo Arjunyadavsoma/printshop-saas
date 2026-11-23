@@ -6,7 +6,7 @@ import type { OrderStatus } from '@platform/core/domain';
 /**
  * Stable colour mapping for every order status across the portal.
  *
- * Uses the PrintShop semantic design tokens (docs/DESIGN_SYSTEM.md):
+ * Uses the Printelyx semantic design tokens (docs/DESIGN_SYSTEM.md):
  *   awaiting_payment → muted   (neutral, action needed)
  *   paid             → info    (settled, calm)
  *   printing         → warning (in-progress, attention)

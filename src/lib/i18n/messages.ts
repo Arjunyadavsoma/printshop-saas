@@ -1,5 +1,5 @@
 /**
- * PrintShop i18n — English only (by decision).
+ * Printelyx i18n — English only (by decision).
  *
  * Hindi and Telugu have been REMOVED. This file is kept as a thin wrapper
  * so existing components that call `t('key')` continue to work without

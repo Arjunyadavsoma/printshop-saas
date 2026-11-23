@@ -28,7 +28,11 @@ export const POST = withRateLimit('uploads-init', 30, 60, async (req: NextReques
 
     const shop = await getContainer().db.findOne<{ id: string; name: string; isOpen: boolean; acceptingOrders: boolean; openingHours: unknown }>('shop', { slug });
     if (!shop) throw new NotFoundError('Shop not found');
-    if (!shop.isOpen || !shop.acceptingOrders) {
+    // Default to open/accepting when fields are missing (in-memory adapter
+    // doesn't apply Prisma @default(true) — be defensive so demo shops work).
+    const shopIsOpen = shop.isOpen ?? true;
+    const shopAccepting = shop.acceptingOrders ?? true;
+    if (!shopIsOpen || !shopAccepting) {
       throw new ValidationError('This shop is not accepting orders right now. Check the opening hours and try again later.');
     }
     if (body.sizeBytes > MAX_FILE_BYTES) {

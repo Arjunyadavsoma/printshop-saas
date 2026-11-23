@@ -143,7 +143,7 @@ function paymentStatus(o: OrderRow): PaymentFilter {
 
 export default function ShopOrdersPage() {
   const api = useApiClient();
-  useEffect(() => { document.title = 'Orders · PrintShop SaaS'; }, []);
+  useEffect(() => { document.title = 'Orders · Printelyx'; }, []);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

@@ -238,13 +238,13 @@ export default function ShopOrderDetailPage() {
   const [pageCountError, setPageCountError] = useState<string | null>(null);
 
   // A11Y-001: keep the tab title in sync with the loaded order so screen-reader
-  // users + browser-history/tab-switcher users see "Order <token> · PrintShop SaaS"
+  // users + browser-history/tab-switcher users see "Order <token> · Printelyx"
   // instead of the generic layout default. Re-runs when `order` changes (e.g. on
   // initial fetch + after any status-action refresh). Falls back to orderId if
   // the order has no tokenNumber yet (e.g. awaiting_payment before token mint).
   useEffect(() => {
     const label = order?.tokenNumber ?? orderId ?? 'Order';
-    document.title = `Order ${label} · PrintShop SaaS`;
+    document.title = `Order ${label} · Printelyx`;
   }, [order, orderId]);
 
   const load = useCallback(async (silent = false) => {

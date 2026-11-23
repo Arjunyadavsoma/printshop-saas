@@ -53,7 +53,7 @@ function deriveTitle(pathname: string): string {
   for (const k of sorted) {
     if (pathname.startsWith(k + '/')) return DEFAULT_ROUTE_LABELS[k];
   }
-  return 'PrintShop';
+  return 'Printelyx';
 }
 
 export function TopBar({
