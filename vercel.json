@@ -25,7 +25,7 @@
     },
     {
       "path": "/api/v1/cron/cleanup-uploads",
-      "schedule": "0 * * * *"
+      "schedule": "0 4 * * *"
     }
   ],
   "headers": [
