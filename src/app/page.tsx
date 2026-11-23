@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { formatINRFromPaise } from '@platform/utils';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { Search, MapPin, Printer, ArrowRight, Loader2, AlertCircle, Store } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Store } from 'lucide-react';
 
 interface ShopListItem {
   id: string;
@@ -65,9 +64,7 @@ export default function HomePage() {
       {/* Hero */}
       <h1 className="ref-h">Print without the queue</h1>
       <p className="ref-sub">
-        {shops.length > 0
-          ? `${shops.length} shops nearby, ready to print`
-          : 'Scan a shop QR or browse below'}
+        {shops.length > 0 ? `${shops.length} shops nearby` : 'Scan a shop QR or browse below'}
       </p>
 
       {/* Search */}
@@ -88,6 +85,7 @@ export default function HomePage() {
               paddingLeft: '36px',
               fontFamily: 'inherit',
               outline: 'none',
+              color: '#1C1C1E',
             }}
             aria-label="Search print shops"
           />
@@ -137,7 +135,7 @@ export default function HomePage() {
           <span>2. Upload files<small>PDF, photos, or Word docs</small></span>
         </div>
         <div className="ref-r">
-          <span>3. Pay by UPI<small>Direct to the shopkeeper, 0% commission</small></span>
+          <span>3. Pay by UPI<small>Direct to shopkeeper, 0% commission</small></span>
         </div>
         <div className="ref-r">
           <span>4. Pick up<small>Show your code at the counter</small></span>
@@ -148,10 +146,12 @@ export default function HomePage() {
       <div className="ref-g p" style={{ marginTop: '16px', textAlign: 'center' }}>
         <p style={{ fontSize: '15px', fontWeight: 600 }}>Run a print shop?</p>
         <p className="ref-v" style={{ textAlign: 'center', marginTop: '4px' }}>
-          Get your QR code and start taking orders in minutes.
+          Get your QR code and start taking orders.
         </p>
-        <Link href="/shop/register" className="ref-btn" style={{ display: 'block', marginTop: '12px', textAlign: 'center', textDecoration: 'none' }}>
-          Register your shop
+        <Link href="/shop/register" style={{ display: 'block', marginTop: '12px' }}>
+          <span className="ref-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            Register your shop
+          </span>
         </Link>
         <Link href="/shop/login" style={{ display: 'block', marginTop: '8px', textAlign: 'center', fontSize: '14px', color: '#0A58D6', textDecoration: 'none' }}>
           Shopkeeper login →
@@ -167,32 +167,40 @@ export default function HomePage() {
 }
 
 function ShopRow({ shop }: { shop: ShopListItem }) {
+  const bwPrice = Math.round(shop.pricingSummary.bwA4PerPage / 100);
+  const colorPrice = Math.round(shop.pricingSummary.colorA4PerPage / 100);
+  const minOrder = Math.round(shop.pricingSummary.minOrderValue / 100);
+  const tierLabel = shop.subscriptionTier.charAt(0).toUpperCase() + shop.subscriptionTier.slice(1);
+
   return (
     <Link
       href={`/s/${shop.slug}`}
       className="ref-g"
-      style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+      style={{ textDecoration: 'none', color: 'inherit', display: 'block', padding: 0 }}
       aria-label={`Visit ${shop.name}`}
     >
-      <div className="ref-r">
-        <span style={{ flex: 1 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Printer className="size-4 shrink-0 text-[#0A58D6]" aria-hidden="true" />
-            <b style={{ fontSize: '16px' }}>{shop.name}</b>
+      {/* Row 1: Shop name + tier badge */}
+      <div className="ref-r" style={{ minHeight: '52px', alignItems: 'center' }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: '16px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+            {shop.name}
           </span>
-          <small style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-            <MapPin className="size-3 shrink-0" aria-hidden="true" />
+          <small style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
             {shop.address}
           </small>
         </span>
-        <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <span className="ref-chip">₹{Math.round(shop.pricingSummary.bwA4PerPage / 100)}/page</span>
-          <span style={{ fontSize: '13px', color: '#5B5F66' }}>Visit shop →</span>
-        </span>
+        <span className="ref-chip" style={{ flex: 'none', marginLeft: '8px', alignSelf: 'center' }}>{tierLabel}</span>
       </div>
-      <div className="ref-r" style={{ minHeight: '40px' }}>
-        <small>B&amp;W ₹{Math.round(shop.pricingSummary.bwA4PerPage / 100)} · Colour ₹{Math.round(shop.pricingSummary.colorA4PerPage / 100)} · Min ₹{Math.round(shop.pricingSummary.minOrderValue / 100)}</small>
-        <small style={{ color: '#5B5F66' }}>UPI: {shop.upiId}</small>
+      {/* Row 2: Pricing summary */}
+      <div className="ref-r" style={{ minHeight: '44px', fontSize: '15px' }}>
+        <span style={{ flex: 1 }}>
+          <small style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <span>B&amp;W ₹{bwPrice}</span>
+            <span>Colour ₹{colorPrice}</span>
+            <span>Min ₹{minOrder}</span>
+          </small>
+        </span>
+        <span className="ref-v" style={{ flex: 'none', whiteSpace: 'nowrap' }}>Visit shop →</span>
       </div>
     </Link>
   );

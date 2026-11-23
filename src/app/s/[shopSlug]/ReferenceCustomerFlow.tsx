@@ -962,7 +962,7 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
         <div className="ref-screen m">
           <div className="ref-top"><i className="ref-dot"></i>{shopName}, open</div>
           <h1 className="ref-h">Print without the queue</h1>
-          <p className="ref-sub">{printerCount} printers online, about {waitMinutes} min wait</p>
+          <p className="ref-sub">{printerCount} {printerCount === 1 ? 'printer' : 'printers'} online, about {waitMinutes} min wait</p>
           <div className="ref-g p" style={{ textAlign: 'center', padding: '28px 16px' }}>
             <div style={{ fontSize: '17px', fontWeight: 600 }}>Add files to print</div>
             <div className="ref-v" style={{ textAlign: 'center', margin: '4px 0 16px' }}>
@@ -975,11 +975,11 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <div className="ref-g">
             <div className="ref-r">
               <span>Black &amp; white<small>per page</small></span>
-              <b>{bwPrice}</b>
+              <b style={{ fontSize: '20px' }}>{bwPrice}</b>
             </div>
             <div className="ref-r">
               <span>Colour<small>per page</small></span>
-              <b>{colorPrice}</b>
+              <b style={{ fontSize: '20px' }}>{colorPrice}</b>
             </div>
             <div className="ref-r">
               <span>Double-sided</span>
@@ -989,7 +989,7 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <div className="ref-g">
             <div className="ref-r">
               <span>Open today</span>
-              <span className="ref-v">{hours}</span>
+              <span className="ref-v" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>{hours}</span>
             </div>
             <div className="ref-r">
               <a
@@ -1019,6 +1019,42 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <StepDots />
           <h1 className="ref-h">Your files</h1>
           <p className="ref-sub">Step 1 of 3</p>
+
+          {/* Error banner — dismissible, with retry */}
+          {error && (
+            <div style={{
+              margin: '12px 20px 0',
+              background: '#FBE3E1',
+              color: '#9C1F18',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              fontSize: '14px',
+              lineHeight: '1.4',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+            }}>
+              <span style={{ flex: 1 }}>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                aria-label="Dismiss error"
+                style={{
+                  border: '0',
+                  background: 'transparent',
+                  color: '#9C1F18',
+                  fontSize: '18px',
+                  lineHeight: '1',
+                  cursor: 'pointer',
+                  padding: '0 0 0 4px',
+                  flex: 'none',
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           <div className="ref-g">
             {files.length === 0 && (
               <div className="ref-r">
@@ -1027,12 +1063,16 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
             )}
             {files.map((f) => {
               const sizeMb = formatBytes(f.sizeBytes);
+              const fileExt = f.name.split('.').pop()?.toLowerCase() ?? '';
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt);
+              const truncatedName = f.name.length > 28 ? f.name.slice(0, 25) + '…' : f.name;
+
               if (f.status === 'ready') {
                 return (
                   <div className="ref-r" key={f.fileId}>
-                    <span>
-                      {f.name}
-                      <small>{f.pageCount ?? 0} pages, {sizeMb}</small>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isImage ? '🖼️ ' : '📄 '}{truncatedName}
+                      <small>{f.pageCount ?? 0} {f.pageCount === 1 ? 'page' : 'pages'}, {sizeMb}</small>
                     </span>
                     <span className="ref-chip ok">Ready</span>
                   </div>
@@ -1041,23 +1081,30 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
               if (f.status === 'failed') {
                 return (
                   <div className="ref-r" key={f.fileId}>
-                    <span>
-                      {f.name}
-                      <small>Failed to process</small>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isImage ? '🖼️ ' : '📄 '}{truncatedName}
+                      <small>Failed to process — tap to retry</small>
                     </span>
                     <span className="ref-chip rd">Failed</span>
                   </div>
                 );
               }
+              // Uploading or converting
+              const isConverting = f.status === 'converting';
+              const isUploading = f.status === 'uploading';
               return (
-                <div className="ref-r" key={f.fileId}>
-                  <span>
-                    {f.name}
-                    <small>{f.status === 'uploading' ? 'Uploading…' : 'Preparing your file'}</small>
-                  </span>
-                  <span className="ref-chip">{f.progress}%</span>
-                </div>
-              );
+                  <div className="ref-r" key={f.fileId}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isImage ? '🖼️ ' : '📄 '}{truncatedName}
+                      <small>{isUploading && f.progress < 100 ? `Uploading… ${f.progress}%` : isConverting || (isUploading && f.progress >= 100) ? 'Processing…' : 'Uploading…'}</small>
+                    </span>
+                    {isUploading && f.progress < 100 ? (
+                      <span className="ref-chip">{f.progress}%</span>
+                    ) : (
+                      <span className="ref-chip">Processing</span>
+                    )}
+                  </div>
+                );
             })}
           </div>
           <div className="ref-g" style={{ padding: 0 }}>
@@ -1072,16 +1119,16 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           </div>
           <div className="ref-bar">
             <div style={{ flex: 1 }}>
-              <small>{files.length} files</small>
-              <b>{totalPages} pages</b>
+              <small>{files.length} {files.length === 1 ? 'file' : 'files'}</small>
+              <b>{totalPages > 0 ? `${totalPages} ${totalPages === 1 ? 'page' : 'pages'}` : 'Processing…'}</b>
             </div>
             <button
               type="button"
               className="ref-btn"
-              disabled={readyFiles.length === 0 || quoting}
+              disabled={readyFiles.length === 0}
               onClick={() => setStep('options')}
             >
-              Continue
+              {readyFiles.length === 0 ? 'Waiting for files…' : 'Continue'}
             </button>
           </div>
         </div>
