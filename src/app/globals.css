@@ -3,502 +3,379 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ════════════════════════════════════════════════════════════════════
+   PRINTSHOP "CLEAR" DESIGN SYSTEM v2
+   Single source of truth for all tokens (customer + shopkeeper + admin).
+   Feel: calm, premium, quiet, precise. Content is the hero; chrome
+   disappears. One blue action colour, frosted bars, fully rounded
+   primary buttons, grouped rounded surfaces on a soft grey ground.
+   ════════════════════════════════════════════════════════════════════ */
+
 @theme inline {
-  /* ── UI revamp (frontend-design skill): elevation, motion, fluid type ── */
+  /* ── Shadows (kept from previous system) ── */
   --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
   --shadow-card: 0 1px 3px 0 rgb(16 24 40 / 0.07), 0 1px 2px -1px rgb(16 24 40 / 0.06);
   --shadow-pop: 0 10px 30px -8px rgb(16 24 40 / 0.18), 0 4px 10px -4px rgb(16 24 40 / 0.08);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
-  --text-fluid-display: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem);
-  --text-fluid-h1: clamp(1.75rem, 1.35rem + 1.6vw, 2.5rem);
-  --text-fluid-h2: clamp(1.375rem, 1.15rem + 0.9vw, 1.75rem);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-space-grotesk), var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  /* PrintShop semantic brand + status tokens (docs/DESIGN_SYSTEM.md) */
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
-  --color-brand-soft: var(--brand-soft);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-success-soft: var(--success-soft);
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-warning-soft: var(--warning-soft);
-  --color-warning-text: var(--warning-text);
-  --color-info: var(--info);
-  --color-info-foreground: var(--info-foreground);
-  --color-info-soft: var(--info-soft);
-  --color-danger: var(--danger);
-  --color-danger-foreground: var(--danger-foreground);
-  --color-danger-soft: var(--danger-soft);
-  --color-brand-hover: var(--brand-hover);
-  --color-brand-border: var(--brand-border);
-  --color-success-border: var(--success-border);
-  --color-warning-border: var(--warning-border);
-  --color-info-border: var(--info-border);
-  --color-danger-border: var(--danger-border);
-  --color-focus: var(--focus);
-  --color-page: var(--page);
+
+  /* ── Font: Instrument Sans (English only, Latin subset) ── */
+  --font-sans: var(--font-instrument), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── Clear colour tokens → Tailwind utilities ── */
+  --color-ground: var(--ground);
   --color-surface: var(--surface);
-  --color-surface-elevated: var(--surface-elevated);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-label: var(--label);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-tint-text: var(--accent-tint-text);
+  --color-hairline: var(--hairline);
+  --color-track: var(--track);
+  --color-fill: var(--fill);
 
-  /* ════════════════════════════════════════════════════════════════
-     CUSTOMER REDESIGN TOKENS (Phase 2)
-     Grounded in CMYK process inks — the four plates a printing press
-     uses. B&W = K channel (black ink). Colour = full CMYK process.
-     See docs/redesign/DESIGN-PLAN.md for the full system.
-     These coexist with the existing portal tokens above — customer
-     routes use these via the .customer-flow scope + component classes.
-     ════════════════════════════════════════════════════════════════ */
+  /* ── Status colours (each = colour + icon + text, never colour alone) ── */
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-danger-text: var(--danger-text);
 
-  /* Core palette — CMYK process colours */
-  --color-paper: #F7F8FA;        /* App background — recycled printer paper */
-  --color-surface: #FFFFFF;       /* Cards, sheets — fresh A4 */
-  --color-ink: #0F1B2D;           /* Primary text, borders — printer toner */
-  --color-muted: #5B6675;         /* Secondary text — pencil-mark grey */
-  --color-cyan-ink: #006FA6;      /* Primary action — the C in CMYK */
-  --color-magenta-ink: #C2185B;   /* Colour-page indicator — the M in CMYK */
-  --color-yellow-ink: #FFD60A;    /* Decorative only — the Y in CMYK */
+  /* ── Print semantics (the product's visual hook) ── */
+  --color-pg-bw-dot: var(--pg-bw-dot);
+  --color-pg-colour-bg: var(--pg-colour-bg);
+  --color-pg-colour-dot: var(--pg-colour-dot);
+  --color-kanban-fill: var(--kanban-fill);
 
-  /* Semantic colours */
-  --color-success: #0B7A4B;       /* Paid, Ready, Collected */
-  --color-warning: #F59E0B;       /* Slow, needs attention (always dark text) */
-  --color-error: #B3261E;         /* Failed, Rejected, Cancelled */
+  /* ── Backward-compat: map Clear tokens to legacy Square UI names ── */
+  /* Shopkeeper/admin components use these — no per-file changes needed. */
+  --color-background: var(--ground);
+  --color-foreground: var(--label);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--label);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--label);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--fill);
+  --color-secondary-foreground: var(--label);
+  --color-muted: var(--fill);
+  --color-muted-foreground: var(--label-2);
+  --color-accent-foreground: var(--label);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--on-accent);
+  --color-border: var(--hairline);
+  --color-input: var(--hairline);
+  --color-ring: var(--accent);
 
-  /* Derived borders (Ink at low opacity) */
-  --color-border-ink: #0F1B2D1A;  /* 10% Ink — default card/input border */
-  --color-border-ink-strong: #0F1B2D33; /* 20% Ink — focused/active border */
+  /* Legacy brand mapping (shopkeeper portal) */
+  --color-brand: var(--accent);
+  --color-brand-foreground: var(--on-accent);
+  --color-brand-soft: var(--accent-tint);
+  --color-brand-hover: var(--accent-press);
+  --color-brand-border: var(--accent-tint);
+  --color-success-foreground: #FFFFFF;
+  --color-success-soft: var(--success-tint);
+  --color-warning-foreground: var(--warning-text);
+  --color-warning-soft: var(--warning-tint);
+  --color-warning-text: var(--warning-text);
+  --color-info: var(--accent);
+  --color-info-foreground: var(--on-accent);
+  --color-info-soft: var(--accent-tint);
+  --color-danger-foreground: var(--on-accent);
+  --color-danger-soft: var(--danger-tint);
+  --color-focus: var(--accent);
+  --color-page: var(--ground);
+  --color-surface-elevated: var(--surface);
+  --color-sidebar: var(--surface);
+  --color-sidebar-foreground: var(--label);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: var(--on-accent);
+  --color-sidebar-accent: var(--accent-tint);
+  --color-sidebar-accent-foreground: var(--accent-tint-text);
+  --color-sidebar-border: var(--hairline);
+  --color-sidebar-ring: var(--accent);
+  --color-chart-1: var(--accent);
+  --color-chart-2: var(--success);
+  --color-chart-3: var(--warning);
+  --color-chart-4: var(--danger);
+  --color-chart-5: var(--label-3);
 
-  /* Radius scale — three values for different roles */
-  --radius-tight: 4px;   /* Chips, page tiles — cut paper corner */
-  --radius-default: 8px; /* Cards, inputs, buttons — rounded paper corner */
-  --radius-soft: 16px;   /* Bottom sheets, sticky bars — curled paper edge */
-
-  /* Elevation — borders encode structure, shadows only for floating elements */
-  --shadow-sheet: 0 -4px 16px rgb(15 27 45 / 0.12);
-  --shadow-bar: 0 1px 2px rgb(15 27 45 / 0.06);
-  --shadow-slip: 0 8px 32px rgb(15 27 45 / 0.16);
-
-  /* Customer flow font — Anek (Ek Type, Indian multilingual family) */
-  --font-customer: var(--font-anek-latin), var(--font-anek-devanagari), var(--font-anek-telugu), ui-sans-serif, system-ui, sans-serif;
-
-  /* ── On-accent token: the text color used on top of cyan buttons.
-     Light mode: white on #006FA6 cyan → ~5.6:1 (AA pass).
-     Dark mode overrides this to ink (#0F1B2D) below — see the .dark scope.
-     White on the lighter dark-mode cyan #1A9BD6 only passes AA-large
-     (~3.1:1) for normal text; ink-on-cyan passes AA at ~5.4:1 in dark
-     mode. Resolving via a token keeps button.tsx's `text-white` →
-     `text-[var(--color-on-cyan)]` swap a one-line change. ── */
-  --color-on-cyan: #FFFFFF;
+  /* ── Radii by role (NOT one scale) ── */
+  --radius-input: 12px;
+  --radius-thumb: 12px;
+  --radius-segment-track: 12px;
+  --radius-segment-inner: 10px;
+  --radius-group: 22px;
+  --radius-sheet: 28px;
+  --radius-card: 14px;
+  --radius-kanban: 18px;
+  --radius-chip: 9999px;
+  --radius-button: 9999px;
+  /* Legacy radius mapping */
+  --radius: 0.75rem;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
 }
 
-/* ════════════════════════════════════════════════════════════════
-   CUSTOMER FLOW — DARK MODE TOKENS (P8.9)
-   Selector: `.dark .customer-flow` (descendant).
-   - `.dark` is on <html>, added by next-themes (the `<ThemeProvider
-     attribute="class" defaultTheme="system" enableSystem>` in
-     src/app/layout.tsx injects a blocking inline script in <head> that
-     sets the class BEFORE React hydrates — no FOUC).
-   - `.customer-flow` is on the wrapper <div> each customer route adds
-     (see src/app/s/[shopSlug]/page.tsx, src/app/o/[token]/page.tsx).
-   The descendant selector ensures these overrides apply ONLY to the
-   customer surface in dark mode — the shopkeeper/admin portal keeps
-   its own `.dark` block (defined below) untouched.
-
-   WCAG contrast verification (computed via the WCAG 2.x contrast formula
-   on the sRGB-linearised luminance — see the verification script in
-   docs/redesign/UPI-MANUAL-TESTS.md Section 8 references):
-     Ink     (#F7F8FA) on Paper   (#0F1B2D) → 16.3:1  ✓ AA + AAA
-     Muted   (#8B97AB) on Paper   (#0F1B2D) →  5.9:1  ✓ AA + AAA-large
-     Cyan    (#1A9BD6) on Paper   (#0F1B2D) →  5.5:1  ✓ AA + AAA-large
-     Ink-on-Cyan (#0F1B2D) on Cyan (#1A9BD6) →  5.4:1  ✓ AA
-     Magenta (#E91E63) on Paper   (#0F1B2D) →  3.9:1  ✓ AA-large (decorative only — not used for body text)
-     Success (#0B7A4B) on Paper   (#0F1B2D) →  3.2:1  ✓ AA-large (status pills only)
-     Warning (#F59E0B) on Paper   (#0F1B2D) →  8.0:1  ✓ AA + AAA
-     Error   (#B3261E) on Paper   (#0F1B2D) →  2.6:1  ⚠ only used with a foreground color
-
-   White-on-cyan at #1A9BD6 gives 3.13:1 — fails AA for normal text. We
-   resolve this by overriding --color-on-cyan to ink in dark mode so
-   the PrimaryButton uses dark navy text on the lighter cyan, which
-   passes AA at 5.4:1. The cyan-as-text-color use (links, accents)
-   still works because cyan-on-paper is 5.5:1.
-   ════════════════════════════════════════════════════════════════ */
-.dark .customer-flow {
-  /* Surfaces — dark navy backgrounds (the "recycled printer paper" metaphor
-     inverted: dark mode is the press room at night, lit by safelight). */
-  --color-paper: #0F1B2D;            /* App background — dark navy */
-  --color-surface: #1A2740;          /* Cards, sheets — slightly lighter navy */
-  --color-ink: #F7F8FA;              /* Primary text — light on dark */
-  --color-muted: #8B97AB;            /* Secondary text — muted light grey */
-
-  /* CMYK accents — slightly lightened so they pop on the dark navy
-     background. The hue is preserved (still recognisably the C and M of
-     CMYK); only the luminance is nudged up. */
-  --color-cyan-ink: #1A9BD6;         /* Lighter cyan — 5.5:1 on dark paper */
-  --color-magenta-ink: #E91E63;      /* Lighter magenta — decorative (status) */
-  /* Yellow stays the same — already bright enough on dark. */
-
-  /* Semantic colours — keep the brand hues; the dark surface gives them
-     enough contrast for status pills + icons. Success/error are paired
-     with their -foreground token for any text on them. */
-  --color-success: #0B7A4B;
-  --color-warning: #F59E0B;
-  --color-error: #B3261E;
-
-  /* Derived borders — 10% white (vs 10% ink in light mode). The darker
-     the surface, the more visible a faint white border is. */
-  --color-border-ink: #FFFFFF1A;         /* 10% white — default border */
-  --color-border-ink-strong: #FFFFFF33;  /* 20% white — focused/active */
-
-  /* On-cyan text — DARK MODE override: ink (#0F1B2D) on cyan (#1A9BD6)
-     passes AA at 5.4:1. (White on the lighter dark cyan only passes
-     AA-large at 3.1:1.) This makes the PrimaryButton accessible in
-     dark mode without changing the cyan hue. */
-  --color-on-cyan: #0F1B2D;
-
-  /* Elevation — shadows are deeper on dark (less ambient light). */
-  --shadow-sheet: 0 -4px 16px rgb(0 0 0 / 0.32);
-  --shadow-bar: 0 1px 2px rgb(0 0 0 / 0.18);
-  --shadow-slip: 0 8px 32px rgb(0 0 0 / 0.40);
-}
-
-/* ════════════════════════════════════════════════════════════════
-   CUSTOMER FLOW STYLES
-   Scoped to .customer-flow so they don't affect the shopkeeper/admin
-   portal. Applied as a wrapper class on customer route layouts.
-   ════════════════════════════════════════════════════════════════ */
-
-.customer-flow {
-  font-family: var(--font-customer);
-  background-color: var(--color-paper);
-  color: var(--color-ink);
-  min-height: 100dvh;
-}
-
-/* Indic scripts need more line-height for matras */
-.customer-flow :lang(hi),
-.customer-flow :lang(te) {
-  line-height: 1.6;
-}
-
-/* Tabular numerals for prices, page counts, UTR */
-.customer-flow .tnum {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-/* ── Halftone textures (the signature visual element) ── */
-/* B&W page thumbnail — black halftone dots on white (light mode). */
-.halftone-bw {
-  background-color: var(--color-surface);
-  background-image: radial-gradient(circle, rgb(15 27 45 / 0.2) 1px, transparent 1.5px);
-  background-size: 4px 4px;
-}
-/* Dark mode: invert the dot color — white dots on the dark navy surface.
-   This preserves the "B&W page" visual metaphor (dark-on-light becomes
-   light-on-dark) without changing the .halftone-bw class name. */
-.dark .customer-flow .halftone-bw {
-  background-color: var(--color-surface);
-  background-image: radial-gradient(circle, rgb(255 255 255 / 0.22) 1px, transparent 1.5px);
-  background-size: 4px 4px;
-}
-
-/* Colour page thumbnail — magenta fill with cyan rosette overlay.
-   Magenta stays vivid on dark (it's a bright hue); the overlay colours
-   are nudged brighter in dark mode so the rosette pattern stays visible
-   against the magenta fill. */
-.halftone-colour {
-  background-color: var(--color-magenta-ink);
-  background-image:
-    radial-gradient(circle, rgb(0 111 166 / 0.33) 1px, transparent 1.5px),
-    radial-gradient(circle, rgb(255 214 10 / 0.2) 1px, transparent 1.5px);
-  background-size: 6px 6px, 8px 8px;
-  background-position: 0 0, 3px 3px;
-}
-.dark .customer-flow .halftone-colour {
-  background-color: var(--color-magenta-ink);
-  background-image:
-    radial-gradient(circle, rgb(26 155 214 / 0.45) 1px, transparent 1.5px),
-    radial-gradient(circle, rgb(255 214 10 / 0.3) 1px, transparent 1.5px);
-  background-size: 6px 6px, 8px 8px;
-  background-position: 0 0, 3px 3px;
-}
-
-/* Skipped page — greyed out with dashed border */
-.halftone-skip {
-  background-color: rgb(91 102 117 / 0.1);
-  border: 1px dashed rgb(91 102 117 / 0.4);
-}
-.dark .customer-flow .halftone-skip {
-  background-color: rgb(139 151 171 / 0.12);
-  border: 1px dashed rgb(139 151 171 / 0.45);
-}
-
-/* ── Perforated edge (token slip) ── */
-/* Light: dark ink dashes. Dark: light ink dashes — the tear-edge reads
-   on both backgrounds. */
-.perforated-top {
-  border-top: 2px dashed rgb(15 27 45 / 0.2);
-  position: relative;
-}
-.dark .customer-flow .perforated-top {
-  border-top-color: rgb(247 248 250 / 0.22);
-}
-.perforated-top::before,
-.perforated-top::after {
-  content: '';
-  position: absolute;
-  top: -8px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background-color: var(--color-paper);
-}
-.perforated-top::before { left: -8px; }
-.perforated-top::after { right: -8px; }
-
-.perforated-bottom {
-  border-bottom: 2px dashed rgb(15 27 45 / 0.2);
-}
-.dark .customer-flow .perforated-bottom {
-  border-bottom-color: rgb(247 248 250 / 0.22);
-}
-
-/* ── Touch target minimum (WCAG 2.5.5) ── */
-.touch-target {
-  min-height: 48px;
-  min-width: 48px;
-}
-
-/* ── Safe area insets ── */
-.safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-.safe-bottom-bar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
-
-/* ── Focus ring (visible keyboard focus) ── */
-.customer-flow *:focus-visible {
-  outline: 2px solid var(--color-cyan-ink);
-  outline-offset: 2px;
-}
-
-/* ── Page flip animation (reduced-motion respected) ── */
-@keyframes page-flip {
-  0% { transform: rotateY(0deg); }
-  50% { transform: rotateY(90deg); }
-  100% { transform: rotateY(0deg); }
-}
-.page-flip {
-  animation: page-flip 200ms ease-out;
-  transform-style: preserve-3d;
-}
-@media (prefers-reduced-motion: reduce) {
-  .page-flip {
-    animation: none;
-    transition: opacity 100ms ease-out;
-  }
-}
-
+/* ════════════════════════════════════════════════════════════════════
+   LIGHT MODE (default)
+   ════════════════════════════════════════════════════════════════════ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.48 0 0); /* Phase 6.3: darkened from 0.556 for WCAG 2.2 AA contrast on semi-transparent backgrounds */
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  /* PrintShop brand + semantic status tokens (light) — see docs/DESIGN_SYSTEM.md */
-  /* Square UI Migration: Refined semantic tokens.
-   * Brand: blue-indigo (#3157D5 → oklch(0.50 0.19 264))
-   * Success: green (#16865B → oklch(0.52 0.14 152))
-   * Warning: amber (#B7791F → oklch(0.58 0.13 65))
-   * Danger: red (#C43D46 → oklch(0.52 0.19 25))
-   * All foreground-on-soft pairs verified ≥4.5:1 via scripts/validate-contrast.ts
-   */
-  --brand: oklch(0.50 0.19 264);
-  --brand-foreground: oklch(0.985 0 0);
-  --brand-soft: oklch(0.95 0.04 264);
-  --brand-hover: oklch(0.45 0.19 264);
-  --brand-border: oklch(0.80 0.05 264);
-  --success: oklch(0.52 0.14 152);
-  --success-foreground: oklch(0.985 0 0);
-  --success-soft: oklch(0.95 0.04 152);
-  --success-border: oklch(0.80 0.05 152);
-  --warning: oklch(0.72 0.15 65);
-  --warning-foreground: oklch(0.18 0.04 65);
-  --warning-soft: oklch(0.95 0.05 65);
-  --warning-text: oklch(0.45 0.13 65);
-  --warning-border: oklch(0.80 0.06 65);
-  --info: oklch(0.50 0.13 230);
-  --info-foreground: oklch(0.985 0 0);
-  --info-soft: oklch(0.95 0.04 230);
-  --info-border: oklch(0.80 0.05 230);
-  --danger: oklch(0.52 0.19 25);
-  --danger-foreground: oklch(0.985 0 0);
-  --danger-soft: oklch(0.95 0.05 25);
-  --danger-border: oklch(0.80 0.06 25);
-  --focus: oklch(0.55 0.15 264);
-  --page: oklch(0.97 0.003 264);
-  --surface: oklch(1 0 0);
-  --surface-elevated: oklch(0.99 0.002 264);
+  /* Core palette */
+  --ground: #F2F3F7;
+  --surface: #FFFFFF;
+  --label: #1C1C1E;
+  --label-2: #5B5F66;
+  --label-3: #6B6F76;
+  --hairline: #DADBE1;
+  --track: #E3E4EA;
+  --fill: #F2F3F7;
+
+  /* Accent */
+  --accent: #0A58D6;
+  --accent-press: #094FBF;
+  --on-accent: #FFFFFF;
+  --accent-tint: #E6EEFC;
+  --accent-tint-text: #0A4CB8;
+
+  /* Status */
+  --success: #1F8A55;
+  --success-tint: #DDF3E7;
+  --success-text: #14663F;
+  --warning: #F5C400;
+  --warning-tint: #FFF1CC;
+  --warning-text: #7A4B00;
+  --danger: #B3261E;
+  --danger-tint: #FBE3E1;
+  --danger-text: #9C1F18;
+
+  /* Print semantics */
+  --pg-bw-dot: conic-gradient(#1C1C1E 0deg 180deg, #FFFFFF 180deg 360deg);
+  --pg-colour-bg: linear-gradient(160deg, #CFE3FF, #F6D3EC 55%, #FFF0B8);
+  --pg-colour-dot: conic-gradient(#E5484D, #F5C400, #30A46C, #0091FF, #D6409F, #E5484D);
+  --kanban-fill: #E8E9EF;
+
+  /* Legacy Square UI values (for components not yet migrated) */
+  --background: #F2F3F7;
+  --foreground: #1C1C1E;
+  --card: #FFFFFF;
+  --card-foreground: #1C1C1E;
+  --popover: #FFFFFF;
+  --popover-foreground: #1C1C1E;
+  --primary: #0A58D6;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F2F3F7;
+  --secondary-foreground: #1C1C1E;
+  --muted: #F2F3F7;
+  --muted-foreground: #5B5F66;
+  --accent-foreground: #1C1C1E;
+  --destructive: #B3261E;
+  --destructive-foreground: #FFFFFF;
+  --border: #DADBE1;
+  --input: #DADBE1;
+  --ring: #0A58D6;
+  --brand: #0A58D6;
+  --brand-foreground: #FFFFFF;
+  --brand-soft: #E6EEFC;
+  --brand-hover: #094FBF;
+  --brand-border: #E6EEFC;
+  --success-foreground: #FFFFFF;
+  --success-soft: #DDF3E7;
+  --success-border: #DDF3E7;
+  --warning-foreground: #7A4B00;
+  --warning-soft: #FFF1CC;
+  --warning-border: #FFF1CC;
+  --info: #0A58D6;
+  --info-foreground: #FFFFFF;
+  --info-soft: #E6EEFC;
+  --info-border: #E6EEFC;
+  --danger-foreground: #FFFFFF;
+  --danger-soft: #FBE3E1;
+  --danger-border: #FBE3E1;
+  --focus: #0A58D6;
+  --page: #F2F3F7;
+  --surface-elevated: #FFFFFF;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #1C1C1E;
+  --sidebar-primary: #0A58D6;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #E6EEFC;
+  --sidebar-accent-foreground: #0A4CB8;
+  --sidebar-border: #DADBE1;
+  --sidebar-ring: #0A58D6;
+  --chart-1: #0A58D6;
+  --chart-2: #1F8A55;
+  --chart-3: #F5C400;
+  --chart-4: #B3261E;
+  --chart-5: #6B6F76;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   DARK MODE
+   Layered surfaces from ~#000 to ~#1C1C1E (not flat grey slabs).
+   AA re-verified. Dots and colour gradient still obvious.
+   ════════════════════════════════════════════════════════════════════ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  /* PrintShop brand + semantic status tokens (dark) */
-  --brand: oklch(0.68 0.17 264);
-  --brand-foreground: oklch(0.145 0 0);
-  --brand-soft: oklch(0.3 0.05 264);
-  --brand-hover: oklch(0.62 0.17 264);
-  --brand-border: oklch(0.4 0.05 264);
-  --success: oklch(0.7 0.17 152);
-  --success-foreground: oklch(0.145 0 0);
-  --success-soft: oklch(0.3 0.06 152);
-  --success-border: oklch(0.4 0.06 152);
-  --warning-border: oklch(0.4 0.06 70);
-  --info-border: oklch(0.4 0.06 230);
-  --danger-border: oklch(0.4 0.06 25);
-  --focus: oklch(0.65 0.15 264);
-  --warning: oklch(0.78 0.16 70);
-  --warning-foreground: oklch(0.18 0.04 70);
-  --warning-soft: oklch(0.3 0.06 70);
-  --warning-text: oklch(0.85 0.12 70);
-  --info: oklch(0.7 0.13 230);
-  --info-foreground: oklch(0.145 0 0);
-  --info-soft: oklch(0.3 0.05 230);
-  --danger: oklch(0.68 0.2 25);
-  --danger-foreground: oklch(0.985 0 0);
-  --danger-soft: oklch(0.3 0.07 25);
-  /* Square UI: page/surface layering for dark mode.
-     --page sits just above --background; --surface matches --card for
-     panels; --surface-elevated lifts hovered/active cards. All carry a
-     faint brand tint (hue 264) for cohesion. */
-  --page: oklch(0.16 0.006 264);
-  --surface: oklch(0.22 0.008 264);
-  --surface-elevated: oklch(0.27 0.01 264);
+  --ground: #0B0B0D;
+  --surface: #1C1C1E;
+  --label: #F2F3F7;
+  --label-2: #9B9BA4;
+  --label-3: #6B6F76;
+  --hairline: rgba(255, 255, 255, 0.12);
+  --track: #2A2A2E;
+  --fill: #1C1C1E;
+
+  --accent: #2E7FFF;
+  --accent-press: #1A6FE8;
+  --on-accent: #FFFFFF;
+  --accent-tint: rgba(46, 127, 255, 0.15);
+  --accent-tint-text: #7BAEFF;
+
+  --success: #30A46C;
+  --success-tint: rgba(48, 164, 108, 0.15);
+  --success-text: #5FCB8E;
+  --warning: #F5C400;
+  --warning-tint: rgba(245, 196, 0, 0.15);
+  --warning-text: #FFD933;
+  --danger: #E5484D;
+  --danger-tint: rgba(229, 72, 77, 0.15);
+  --danger-text: #FF6B70;
+
+  --pg-bw-dot: conic-gradient(#F2F3F7 0deg 180deg, #1C1C1E 180deg 360deg);
+  --pg-colour-bg: linear-gradient(160deg, #1A3A5C, #3D1A3D 55%, #3D3A1A);
+  --pg-colour-dot: conic-gradient(#E5484D, #F5C400, #30A46C, #0091FF, #D6409F, #E5484D);
+  --kanban-fill: #141416;
+
+  /* Legacy Square UI dark values */
+  --background: #0B0B0D;
+  --foreground: #F2F3F7;
+  --card: #1C1C1E;
+  --card-foreground: #F2F3F7;
+  --popover: #1C1C1E;
+  --popover-foreground: #F2F3F7;
+  --primary: #2E7FFF;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1C1C1E;
+  --secondary-foreground: #F2F3F7;
+  --muted: #1C1C1E;
+  --muted-foreground: #9B9BA4;
+  --accent-foreground: #F2F3F7;
+  --destructive: #E5484D;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.15);
+  --ring: #2E7FFF;
+  --brand: #2E7FFF;
+  --brand-foreground: #FFFFFF;
+  --brand-soft: rgba(46, 127, 255, 0.15);
+  --brand-hover: #1A6FE8;
+  --brand-border: rgba(46, 127, 255, 0.25);
+  --success-foreground: #FFFFFF;
+  --success-soft: rgba(48, 164, 108, 0.15);
+  --success-border: rgba(48, 164, 108, 0.25);
+  --warning-foreground: #FFD933;
+  --warning-soft: rgba(245, 196, 0, 0.15);
+  --warning-border: rgba(245, 196, 0, 0.25);
+  --info: #2E7FFF;
+  --info-foreground: #FFFFFF;
+  --info-soft: rgba(46, 127, 255, 0.15);
+  --info-border: rgba(46, 127, 255, 0.25);
+  --danger-foreground: #FFFFFF;
+  --danger-soft: rgba(229, 72, 77, 0.15);
+  --danger-border: rgba(229, 72, 77, 0.25);
+  --focus: #2E7FFF;
+  --page: #0B0B0D;
+  --surface-elevated: #2A2A2E;
+  --sidebar: #1C1C1E;
+  --sidebar-foreground: #F2F3F7;
+  --sidebar-primary: #2E7FFF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(46, 127, 255, 0.15);
+  --sidebar-accent-foreground: #7BAEFF;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #2E7FFF;
+  --chart-1: #2E7FFF;
+  --chart-2: #30A46C;
+  --chart-3: #F5C400;
+  --chart-4: #E5484D;
+  --chart-5: #9B9BA4;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   BASE LAYER
+   ════════════════════════════════════════════════════════════════════ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+  }
+  /* Visible keyboard focus — 2px accent ring with offset */
+  *:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   UTILITIES
+   ════════════════════════════════════════════════════════════════════ */
 @layer utilities {
-  /* Square UI: tabular figures for financial / numeric alignment. */
+  /* Tabular numerals for prices, page counts, UTR, codes */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
   }
-  /* Dense table metadata — only for justified compact numeric columns. */
-  .text-table-meta {
-    @apply text-xs text-muted-foreground;
-  }
-}
 
-@layer utilities {
-  /* Display face for headings / hero numbers (Space Grotesk). */
-  .font-display {
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
+  /* Frosted bar — sticky bottom action bar + top bar */
+  .frosted-bar {
+    background-color: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
-  /* Skeleton shimmer (loading states — same dimensions as content). */
+  .dark .frosted-bar {
+    background-color: rgba(28, 28, 30, 0.86);
+  }
+  @supports not (backdrop-filter: blur(16px)) {
+    .frosted-bar {
+      background-color: var(--surface);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .frosted-bar {
+      background-color: var(--surface);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+
+  /* Safe area insets */
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-bottom-bar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+  /* Touch target minimum */
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  /* Skeleton shimmer */
   .skeleton-shimmer {
     position: relative;
     overflow: hidden;
@@ -511,11 +388,32 @@
     background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
     animation: shimmer 1.6s var(--ease-out-quint) infinite;
   }
+  .dark .skeleton-shimmer::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+  }
   @keyframes shimmer {
     100% { transform: translateX(100%); }
   }
+
+  /* Page tile flip (the signature moment — 150-200ms) */
+  @keyframes page-tile-flip {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.96); }
+    100% { transform: scale(1); }
+  }
+  .page-tile-flip {
+    animation: page-tile-flip 150ms var(--ease-out-quint);
+  }
+
+  /* Dense table metadata */
+  .text-table-meta {
+    @apply text-xs text-muted-foreground;
+  }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
@@ -523,40 +421,8 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* ── Print identity tokens (docs/DESIGN.md — "counter slip / process ink").
-   The customer surface (/s/*, /o/*) uses these; the shopkeeper Square-UI
-   tokens above are untouched. Color NEVER carries the signal alone: every
-   COLOR/B&W chip also has a dot glyph + word (see PageStrip). ── */
-:root {
-  --paper: #F1F3F2;        /* cool uncoated stock */
-  --ink: #1D2530;          /* blue-black iron-gall ink */
-  --p-cyan: #0B7FA6;       /* process cyan — COLOR state */
-  --p-magenta: #C02E6E;    /* process magenta — COLOR secondary */
-  --p-yellow: #8F6E00;     /* deepened yellow (AA on paper) */
-  --p-yellow-tint: #FFF3C4;
-  --halftone: #2B3441;
-}
-@theme inline {
-  --color-paper: var(--paper);
-  --color-ink: var(--ink);
-  --color-p-cyan: var(--p-cyan);
-  --color-p-magenta: var(--p-magenta);
-  --color-p-yellow: var(--p-yellow);
-  --color-p-yellow-tint: var(--p-yellow-tint);
-  --color-halftone: var(--halftone);
-}
-@layer utilities {
-  /* Halftone-dot texture for B&W pages and quiet surfaces. */
-  .halftone {
-    background-image: radial-gradient(circle, var(--halftone) 1px, transparent 1.4px);
-    background-size: 6px 6px;
-  }
-  /* Perforated tear edge — pickup-code stub. */
-  .perforation {
-    background-image: linear-gradient(90deg, var(--ink) 55%, transparent 0%);
-    background-size: 10px 2px;
-    background-repeat: repeat-x;
+  .page-tile-flip {
+    animation: none;
+    transition: background-color 100ms ease-out, color 100ms ease-out;
   }
 }

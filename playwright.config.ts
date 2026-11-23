@@ -18,7 +18,7 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    CPU: 4, // 4x CPU slowdown
+
   },
   projects: [
     {

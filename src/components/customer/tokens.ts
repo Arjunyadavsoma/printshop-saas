@@ -1,55 +1,56 @@
 /**
- * Design tokens for the customer flow.
- * Re-exported here so components can import them as typed constants
- * instead of hardcoding hex values. The CSS variables live in globals.css
- * under the @theme block; these are the TS-side mirrors for any JS-side
- * logic (e.g., canvas rendering, inline styles for dynamic values).
+ * PrintShop "Clear" design system — TypeScript token mirrors.
+ *
+ * These mirror the CSS variables in globals.css for any JS-side logic
+ * (canvas rendering, inline styles for dynamic values). Components should
+ * prefer CSS variables (var(--ground), var(--accent), etc.) via Tailwind
+ * arbitrary values over these TS constants.
+ *
+ * English only. No Hindi/Telugu. No Anek. No CMYK.
  */
 
 export const colors = {
-  paper: '#F7F8FA',
+  ground: '#F2F3F7',
   surface: '#FFFFFF',
-  ink: '#0F1B2D',
-  muted: '#5B6675',
-  cyanInk: '#006FA6',
-  magentaInk: '#C2185B',
-  yellowInk: '#FFD60A',
-  success: '#0B7A4B',
-  warning: '#F59E0B',
-  error: '#B3261E',
+  label: '#1C1C1E',
+  label2: '#5B5F66',
+  label3: '#6B6F76',
+  hairline: '#DADBE1',
+  track: '#E3E4EA',
+  fill: '#F2F3F7',
+  accent: '#0A58D6',
+  accentPress: '#094FBF',
+  onAccent: '#FFFFFF',
+  accentTint: '#E6EEFC',
+  accentTintText: '#0A4CB8',
+  success: '#1F8A55',
+  successTint: '#DDF3E7',
+  successText: '#14663F',
+  warning: '#F5C400',
+  warningTint: '#FFF1CC',
+  warningText: '#7A4B00',
+  danger: '#B3261E',
+  dangerTint: '#FBE3E1',
+  dangerText: '#9C1F18',
 } as const;
 
 export const radii = {
-  tight: '4px',
-  default: '8px',
-  soft: '16px',
-  full: '9999px',
+  input: 12,
+  thumb: 12,
+  segmentTrack: 12,
+  segmentInner: 10,
+  group: 22,
+  sheet: 28,
+  card: 14,
+  kanban: 18,
+  chip: 9999,
+  button: 9999,
 } as const;
 
-export const spacing = {
-  1: '4px',
-  2: '8px',
-  3: '12px',
-  4: '16px',
-  5: '20px',
-  6: '24px',
-  8: '32px',
-  12: '48px',
-} as const;
-
-export const typeScale = {
-  xs: '12px',
-  sm: '14px',
-  base: '16px',
-  lg: '20px',
-  xl: '24px',
-  '2xl': '32px',
-} as const;
-
-/** Page color modes — the three states a page can be in. */
+/** Page colour modes — the three states a page can be in. */
 export type PageMode = 'bw' | 'colour' | 'skip';
 
-/** The CMYK page-mode labels (never colour-alone — always text + icon). */
+/** The page-mode labels (never colour-alone — always text + dot). */
 export const PAGE_MODE_LABELS: Record<PageMode, string> = {
   bw: 'B&W',
   colour: 'Colour',

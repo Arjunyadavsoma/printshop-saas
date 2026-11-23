@@ -106,12 +106,12 @@ beforeEach(async () => {
 });
 
 function jsonReq(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
-  const init: RequestInit = {
+  const init = {
     method,
     headers: { 'content-type': 'application/json', ...headers },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  return new NextRequest(`http://localhost:3000${path}`, init);
+  return new NextRequest(`http://localhost:3000${path}`, init as Record<string, unknown>);
 }
 
 describe('Order token security — entropy', () => {
