@@ -19,7 +19,15 @@ import { NextResponse, type NextRequest } from 'next/server';
  * in-memory storage uses same-origin /api/v1/storage/put + /api/v1/storage/get
  * routes, which 'self' allows).
  */
-export function middleware(_req: NextRequest) {
+export function middleware(req: NextRequest) {
+  // AUDIT P1-7: /dev/* pages were publicly reachable on production (a
+  // statically prerendered page never reaches a layout-level gate, so the
+  // gate lives here at the request layer — the one place static output
+  // cannot bypass). Fail closed like requireDev().
+  if (req.nextUrl.pathname.startsWith('/dev') && process.env.NODE_ENV !== 'development') {
+    return new NextResponse('Not available', { status: 404 });
+  }
+
   const res = NextResponse.next();
 
   // Derive the Supabase origin from the env var (if configured).

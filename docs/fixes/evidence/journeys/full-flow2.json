@@ -94,7 +94,7 @@
     },
     {
       "step": "resolved-text",
-      "text": "QuickPrint Demo Shop\nPay ₹6\n\nChoose your UPI app\n\nGoogle Pay\nOpen\nPhonePe\nOpen\nPaytm\nOpen\nBHIM\nOpen\nOther UPI apps\nChoose\nShop UPI ID\nquickprint@okaxis\nCopy\n\nAfter you pay, come back here and tap I've paid.\n\nPay at counter\nI've paid"
+      "text": "QuickPrint Demo Shop\nPay ₹6\n\nChoose your UPI app\n\nGoogle Pay\nOpen\nPhonePe\nOpen\nPaytm\nOpen\nBHIM\nOpen\nOther UPI apps\nChoose\nShop UPI ID\nquickprint@okaxis\nCopy\n\nAfter you pay, come back here and tap I've paid.\n\nPay at counter\nI've paid\nEnter UTR\n\nThe 12-digit reference number shown in your UPI app afte"
     },
     {
       "step": "10:my-orders",

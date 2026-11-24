@@ -235,7 +235,7 @@ function DashboardPageInner() {
           <span className="ref-chip a">Review</span>
         </Link>
         {colourPrinterOffline ? (
-          <Link href="/shop/printer" className="ref-r" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link href="/shop/devices" className="ref-r" style={{ textDecoration: 'none', color: 'inherit' }}>
             <span>Colour printer is offline</span>
             <span className="ref-chip rd">Fix</span>
           </Link>

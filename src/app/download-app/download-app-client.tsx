@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,80 +17,12 @@ import {
   ShieldCheck,
   QrCode,
   ArrowRight,
-  Loader2,
-  AlertCircle,
   CheckCircle2,
   ExternalLink,
 } from 'lucide-react';
 
-/**
- * Latest release info fetched from the GitHub API.
- * The workflow tags releases as `companion-v<run_number>`.
- */
-interface ReleaseInfo {
-  tagName: string;
-  name: string;
-  publishedAt: string;
-  apkUrl: string;        // direct download URL for the APK asset
-  releasePageUrl: string; // the GitHub release page URL
-  body: string;
-}
-
-const GITHUB_OWNER = 'Arjunyadavsoma';
-const GITHUB_REPO = 'printshop-saas';
-
-/**
- * Fetch the latest "companion-v*" release from GitHub.
- * The workflow creates a release tagged `companion-v<run_number>` on every
- * push to main. The GitHub API returns the release + its assets; we find
- * the `.apk` asset URL.
- */
-async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
-  try {
-    // List releases, pick the latest companion-v* tag.
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=10`,
-      { next: { revalidate: 300 } }, // cache for 5 min
-    );
-    if (!res.ok) return null;
-    const releases = (await res.json()) as Array<{
-      tag_name: string;
-      name: string;
-      published_at: string;
-      html_url: string;
-      body: string;
-      assets: Array<{
-        name: string;
-        browser_download_url: string;
-        size: number;
-      }>;
-    }>;
-    const companionRelease = releases.find((r) =>
-      r.tag_name.startsWith('companion-v'),
-    );
-    if (!companionRelease) return null;
-    const apkAsset = companionRelease.assets.find((a) =>
-      a.name.endsWith('.apk'),
-    );
-    if (!apkAsset) return null;
-    return {
-      tagName: companionRelease.tag_name,
-      name: companionRelease.name ?? companionRelease.tag_name,
-      publishedAt: companionRelease.published_at,
-      apkUrl: apkAsset.browser_download_url,
-      releasePageUrl: companionRelease.html_url,
-      body: companionRelease.body ?? '',
-    };
-  } catch {
-    return null;
-  }
-}
 
 /** Extract the SHA-256 checksum from the release body (if present). */
-function extractChecksum(body: string): string | null {
-  const match = body.match(/SHA-256[:\s]*`?([a-f0-9]{64})`?/i);
-  return match ? match[1] : null;
-}
 
 const FEATURES = [
   {
@@ -116,34 +47,27 @@ const FEATURES = [
   },
 ];
 
+const GITHUB_OWNER = 'Arjunyadavsoma';
+const GITHUB_REPO = 'printshop-saas';
+
+// AUDIT P1-10: the release lookup used to fetch the GitHub API from the
+// browser, which the site's CSP blocks (connect-src) — two console errors
+// on every visit and a dead "Fetching the latest build…" state. GitHub's
+// stable releases/latest URL reaches the newest APK via a normal
+// navigation (no API fetch), so the page links there directly and always
+// renders.
+const RELEASE_PAGE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+
 export function DownloadAppClient() {
-  const [release, setRelease] = useState<ReleaseInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const r = await fetchLatestRelease();
-      if (r) {
-        setRelease(r);
-      } else {
-        setError('No APK release found yet. The first build may still be running — check back in a few minutes.');
-      }
-      setLoading(false);
-    })();
-  }, []);
-
-  const checksum = release ? extractChecksum(release.body) : null;
-  // The QR code encodes the APK download URL so the user can scan from their
-  // phone to download directly. Using the Google Charts API alternative:
-  // api.qrserver.com is a free QR code generator that returns a PNG.
-  const qrUrl = release
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(release.apkUrl)}`
-    : null;
+  const releasePageUrl = RELEASE_PAGE_URL;
+  // The QR code encodes the stable releases/latest URL so a phone camera
+  // lands on the newest APK. api.qrserver.com returns a PNG image (an <img>
+  // load, not an API fetch — allowed by CSP).
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(releasePageUrl)}`;
 
   return (
     <div className="min-h-screen bg-page">
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:py-16">
+      <main className="mx-auto max-w-4xl px-4 py-10 sm:py-16">
         {/* Header */}
         <div className="text-center space-y-4 mb-10">
           <div className="inline-flex size-16 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-lg">
@@ -175,29 +99,7 @@ export function DownloadAppClient() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
-                <Loader2 className="size-5 animate-spin" aria-hidden="true" />
-                <span className="text-sm">Fetching the latest build…</span>
-              </div>
-            ) : error ? (
-              <div className="flex items-start gap-3 rounded-md border border-warning-border bg-warning-soft p-4">
-                <AlertCircle className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden="true" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">No APK available yet</p>
-                  <p className="text-sm text-muted-foreground">{error}</p>
-                  <Link
-                    href={`https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
-                  >
-                    Check the build status on GitHub
-                    <ExternalLink className="size-3" aria-hidden="true" />
-                  </Link>
-                </div>
-              </div>
-            ) : release ? (
+            {(
               <>
                 <div className="flex flex-col sm:flex-row gap-6 items-start">
                   {/* QR code */}
@@ -221,7 +123,7 @@ export function DownloadAppClient() {
 
                   {/* Download button + metadata */}
                   <div className="flex-1 space-y-3 w-full">
-                    <a href={release.apkUrl} download>
+                    <a href={releasePageUrl} target="_blank" rel="noopener noreferrer">
                       <Button
                         className="w-full min-h-[48px] gap-2 bg-brand text-brand-foreground hover:bg-brand-hover"
                         size="lg"
@@ -233,34 +135,26 @@ export function DownloadAppClient() {
                     <div className="space-y-1 text-sm text-muted-foreground">
                       <p className="flex items-center gap-2">
                         <CheckCircle2 className="size-4 text-success" aria-hidden="true" />
-                        Version: <span className="font-medium text-foreground">{release.tagName}</span>
+                        Source: <span className="font-medium text-foreground">GitHub Releases (latest build)</span>
                       </p>
                       <p className="flex items-center gap-2">
                         <CheckCircle2 className="size-4 text-success" aria-hidden="true" />
-                        Released: <span className="font-medium text-foreground">{new Date(release.publishedAt).toLocaleDateString()}</span>
+                        Integrity: <span className="font-medium text-foreground">compare the checksum on the release page</span>
                       </p>
-                      {checksum && (
-                        <p className="flex items-start gap-2">
-                          <CheckCircle2 className="size-4 text-success mt-0.5 shrink-0" aria-hidden="true" />
-                          <span className="break-all">
-                            SHA-256: <code className="font-mono text-xs">{checksum}</code>
-                          </span>
-                        </p>
-                      )}
                     </div>
                     <Link
-                      href={release.releasePageUrl}
+                      href={releasePageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
                     >
-                      View release notes on GitHub
+                      View release notes and checksum on GitHub
                       <ExternalLink className="size-3" aria-hidden="true" />
                     </Link>
                   </div>
                 </div>
               </>
-            ) : null}
+            )}
           </CardContent>
         </Card>
 
@@ -324,7 +218,7 @@ export function DownloadAppClient() {
             Back to the web app
           </Link>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

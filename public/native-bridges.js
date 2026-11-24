@@ -6,7 +6,7 @@
   // The imports in the TS source (@capacitor/camera, etc.) resolve to these.
   const Capacitor = window.Capacitor;
   if (!Capacitor) {
-    console.warn('[NativeApp] Capacitor runtime not loaded — bridges disabled.');
+    console.debug('[NativeApp] Capacitor runtime not loaded — bridges disabled.');
     return;
   }
 /**

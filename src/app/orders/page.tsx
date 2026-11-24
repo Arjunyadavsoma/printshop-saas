@@ -106,19 +106,16 @@ export default function MyOrdersPage() {
         </section>
 
         {/* ── Look up by phone ──
-            When OTP_ENABLED is off (default), the panel shows a "Coming
-            soon" disabled button. When on, it runs the OTP send → verify
-            flow against /api/v1/auth/otp/{send,verify}. The full
-            cross-device order list (after verify) is out of scope for P8.6
-            — the OTP infrastructure is the deliverable. */}
-        <PhoneLookupPanel otpEnabled={OTP_ENABLED} />
+            Renders ONLY when the OTP feature flag is on at build time
+            (NEXT_PUBLIC_OTP_ENABLED=true). When the flag is off (default)
+            the panel is not shown at all — a disabled "Coming soon" form is
+            dead UI (audit P1-13); the customer opens the receipt link. */}
+        {OTP_ENABLED && <PhoneLookupPanel otpEnabled={OTP_ENABLED} />}
 
         {/* ── Footer links ── */}
         <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)] pt-2">
           <Link href="/" className="underline hover:text-[var(--color-ink)]">Home</Link>
-          <span aria-hidden="true">·</span>
           <Link href="/help" className="underline hover:text-[var(--color-ink)]">Help</Link>
-          <span aria-hidden="true">·</span>
           <Link href="/privacy" className="underline hover:text-[var(--color-ink)]">Privacy</Link>
         </nav>
       </main>

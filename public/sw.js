@@ -18,10 +18,11 @@
  * purges old caches.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2'; // audit: adds /offline fallback page to the shell
 const STATIC_CACHE = `printshop-static-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
+  '/offline',
   '/shop/login',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
@@ -109,7 +110,13 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() =>
-          caches.match(req).then((cached) => cached || caches.match('/')),
+          // Offline: serve the cached copy of the page; if this page was
+          // never cached, serve the dedicated /offline page (now precached)
+          // instead of the home shell under the wrong URL.
+          caches
+            .match(req)
+            .then((cached) => cached || caches.match('/offline'))
+            .then((cached) => cached || caches.match('/')),
         ),
     );
     return;

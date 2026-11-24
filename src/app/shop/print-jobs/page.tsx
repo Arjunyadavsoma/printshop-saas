@@ -5,5 +5,7 @@ export default function OldRouteRedirect({ params }: { params: Promise<{ slug?: 
   const { slug, id } = params instanceof Promise ? {} as { slug?: string; id?: string } : params;
   if (slug) redirect(`/s/${slug}`);
   if (id) redirect(`/shop/orders/${id}`);
-  redirect('/');
+  // AUDIT P1-1: bare visits landed on the PUBLIC home page — a dead target
+  // for a shopkeeper URL. The print queue lives at /shop/orders.
+  redirect('/shop/orders');
 }

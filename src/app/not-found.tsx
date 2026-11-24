@@ -2,6 +2,11 @@ import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+export const metadata = {
+  title: 'Page not found',
+  robots: { index: false, follow: false },
+};
+
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4">
@@ -16,6 +21,9 @@ export default function NotFound() {
         <Button asChild className="h-11 bg-brand text-brand-foreground hover:bg-brand/90">
           <Link href="/">Back to home</Link>
         </Button>
+        <Link href="/help" className="text-sm text-brand hover:underline">
+          Get help instead
+        </Link>
       </div>
     </div>
   );

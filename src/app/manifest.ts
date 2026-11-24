@@ -4,10 +4,9 @@ import type { MetadataRoute } from 'next';
  * Web App Manifest — makes Printelyx installable on mobile (Android Chrome,
  * iOS Safari) + Windows (Edge/Chrome) as a standalone PWA.
  *
- * Phase 4 update: the manifest now serves BOTH the shopkeeper portal AND
- * the customer flow. The customer flow is the primary PWA use case for
- * returning customers (scan QR → upload → pay → track). The theme color
- * is Cyan-ink (#006FA6 — the C in CMYK) to match the customer redesign.
+ * The manifest serves BOTH the shopkeeper portal AND the customer flow
+ * (the primary PWA use case: scan QR → upload → pay → track). Colors
+ * match the shipped design tokens: accent #0A58D6 on Clear ground #F2F3F7.
  *
  * The service worker (public/sw.js) caches the app shell for offline use.
  * API calls are NEVER cached (always network) so orders/payments are fresh.
@@ -23,8 +22,8 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     display_override: ['standalone', 'minimal-ui'],
     orientation: 'any',
-    background_color: '#F7F8FA', // Paper — matches the customer-flow background
-    theme_color: '#006FA6', // Cyan-ink — the C in CMYK, matches the customer redesign
+    background_color: '#F2F3F7', // Clear ground — the background the installed app shows
+    theme_color: '#0A58D6', // Accent — matches the app's buttons and theme-color meta (audit P2-8)
     lang: 'en',
     dir: 'ltr',
     categories: ['business', 'productivity', 'utilities', 'shopping'],

@@ -1,0 +1,157 @@
+{
+  "/": {
+    "title": "Printelyx — Local Printing Marketplace",
+    "desc": "Scan a shop QR, upload files, choose print options, pay via ",
+    "canonical": null,
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Printelyx | Print without the queue | Scan a shop QR or browse below | Couldn't load shops | This is usually temporary. Try again. | Try again | How it works | 1. Find a shop | Or scan the s"
+  },
+  "/about": {
+    "title": "About · Printelyx",
+    "desc": "What Printelyx is: a direct line from your phone to your loc",
+    "canonical": "https://printelyx.cc.cd/about",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "About Printelyx | Printelyx connects your phone directly to a local print shop. You scan the shop's QR code, upload your files, choose how they should be printed, pay the shop by UP"
+  },
+  "/contact": {
+    "title": "Contact · Printelyx",
+    "desc": "Reach the Printelyx team, or contact the print shop directly",
+    "canonical": "https://printelyx.cc.cd/contact",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Contact | Questions about an order — status, payment verification, or file changes — are best answered by the shop itself. Open the tracking link from your receipt and use the Call "
+  },
+  "/pricing": {
+    "title": "Pricing · Printelyx",
+    "desc": "Printelyx charges nothing extra. Each shop sets its own per-",
+    "canonical": "https://printelyx.cc.cd/pricing",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Pricing | Printelyx adds nothing to your print cost. Every shop sets its own rates, and you see them before you pay — on the shop's card on the home page, and again as a line-by-lin"
+  },
+  "/terms": {
+    "title": "Terms · Printelyx",
+    "desc": "The plain-language terms of using Printelyx: what the servic",
+    "canonical": "https://printelyx.cc.cd/terms",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Terms of use | Plain-language summary, kept current in code. Last reviewed: November 2026. | What Printelyx is | Printelyx is a marketplace that lets you send print orders to a partic"
+  },
+  "/privacy": {
+    "title": "Privacy · Printelyx",
+    "desc": "What Printelyx collects, what it never collects, and exactly",
+    "canonical": "https://printelyx.cc.cd/privacy",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Privacy | What we collect, and what we don't | Printelyx is built so that you pay the shop directly — we never handle your money, and your files are deleted automatically. This page "
+  },
+  "/help": {
+    "title": "Help · Printelyx",
+    "desc": "Answers to the most common Printelyx questions: paying by UP",
+    "canonical": "https://printelyx.cc.cd/help",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Help | Frequently asked questions | Frequently asked questions | How do I pay? | Tap a UPI app (GPay, PhonePe, Paytm). After paying, enter the 12-digit UTR number from your payment rece"
+  },
+  "/orders": {
+    "title": "My orders · Printelyx",
+    "desc": "Recent print orders placed on this device, each trackable wi",
+    "canonical": "https://printelyx.cc.cd/orders",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "My orders | Orders placed on this device | Recent on this device | No orders yet | Scan a shop's QR code to start your first print order. | Find a shop | Home | Help | Privacy"
+  },
+  "/download-app": {
+    "title": "Download the Android Companion App · Printelyx",
+    "desc": "Install the Printelyx Companion Android app for native camer",
+    "canonical": "https://printelyx.cc.cd/download-app",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "P | Printelyx Companion | The Android app that integrates with your print shop — native camera scanning, UPI payment, and order-ready notifications. | Android 7.0+ (API 24+) | · | ~8 MB AP"
+  },
+  "/track": {
+    "title": "Track your order · Printelyx",
+    "desc": "Scan a shop QR, upload files, choose print options, pay via ",
+    "canonical": "https://printelyx.cc.cd/track",
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Track your order | Paste your tracking link from your receipt, or your order number. | Tracking link or order number | Track order"
+  },
+  "/definitely-not-a-page": {
+    "title": "Page not found · Printelyx",
+    "desc": "Scan a shop QR, upload files, choose print options, pay via ",
+    "canonical": null,
+    "og": true,
+    "ogImg": "https://printelyx.cc.cd/og.png",
+    "themeColors": [
+      "#0A58D6",
+      "#0B0B0D"
+    ],
+    "text": "Page not found | The page you're looking for doesn't exist or has been moved. | Back to home | Get help instead"
+  },
+  "homeChecks": {
+    "strayTheme": false,
+    "footerDots": 0,
+    "arrowGlyphs": 0,
+    "recentCard": false,
+    "searchBox": true,
+    "waLink": []
+  },
+  "privacyChecks": {
+    "realDate": true,
+    "retentionTable": true,
+    "dotLocal": false
+  },
+  "ordersChecks": {
+    "comingSoon": false,
+    "lookupPanel": false,
+    "emptyState": true
+  },
+  "aboutChecks": {
+    "stub": false,
+    "h1": "About Printelyx"
+  },
+  "manifest": "{\"name\":\"Printelyx — Local Printing Marketplace\",\"short_name\":\"Printelyx\",\"description\":\"Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track your order until pic"
+}

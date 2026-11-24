@@ -137,6 +137,17 @@ async function sha256Hex(blob: Blob): Promise<string> {
 }
 
 /** Map a server order status to a customer-facing label. */
+function upiIntentUrl(vpa: string, amountPaise: number, orderNumber: string | null): string {
+  const params = new URLSearchParams({
+    pa: vpa,
+    am: (amountPaise / 100).toFixed(2),
+    cu: 'INR',
+  });
+  if (orderNumber) params.set('tr', orderNumber);
+  return `upi://pay?${params.toString()}`;
+}
+
+/** Map a server order status to a customer-facing label. */
 function statusLabel(status: string): string {
   switch (status) {
     case 'awaiting_payment':
@@ -1253,7 +1264,7 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <p className="ref-cap">You pay the shop directly by UPI. No extra fees.</p>
           <div className="ref-bar">
             <div style={{ flex: 1 }}>
-              <small>{readyFiles.length} files, {totalPages} pages</small>
+              <small>{readyFiles.length} {readyFiles.length === 1 ? 'file' : 'files'}, {totalPages} {totalPages === 1 ? 'page' : 'pages'}</small>
               <b>{formatRupees(totalPaise)}</b>
             </div>
             <button
@@ -1274,12 +1285,29 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           <div className="ref-top"><i className="ref-dot"></i>{shopName}</div>
           <h1 className="ref-h">Pay {formatRupees(placed.totalPaise)}</h1>
           <p className="ref-sub">Choose your UPI app</p>
+          {/* Real UPI intent links (audit P1: these rows were static divs —
+              "Open" labels with no action). On a phone each row launches the
+              chosen app with the shop's VPA + amount prefilled. On desktop
+              the OS cannot handle upi:// — the Copy UPI ID row below is the
+              universal path, so the rows degrade gracefully there. */}
           <div className="ref-g">
-            <div className="ref-r"><span>Google Pay</span><span className="ref-v">Open</span></div>
-            <div className="ref-r"><span>PhonePe</span><span className="ref-v">Open</span></div>
-            <div className="ref-r"><span>Paytm</span><span className="ref-v">Open</span></div>
-            <div className="ref-r"><span>BHIM</span><span className="ref-v">Open</span></div>
-            <div className="ref-r"><span>Other UPI apps</span><span className="ref-v">Choose</span></div>
+            {[
+              { label: 'Google Pay' },
+              { label: 'PhonePe' },
+              { label: 'Paytm' },
+              { label: 'BHIM' },
+              { label: 'Other UPI apps' },
+            ].map((app) => (
+              <a
+                key={app.label}
+                className="ref-r"
+                href={upiIntentUrl(upiId, placed.totalPaise, placed.orderNumber)}
+                style={{ textDecoration: 'none', color: 'inherit' }}
+              >
+                <span>{app.label}</span>
+                <span className="ref-v">Open</span>
+              </a>
+            ))}
           </div>
           <div className="ref-g">
             <div className="ref-r">

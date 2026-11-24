@@ -20,6 +20,7 @@ const instrumentSans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://printelyx.cc.cd'),
   title: {
     default: "Printelyx — Local Printing Marketplace",
     template: "%s · Printelyx",
@@ -35,6 +36,20 @@ export const metadata: Metadata = {
       { url: "/icon-source.svg", sizes: "any", type: "image/svg+xml" },
     ],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  openGraph: {
+    type: "website",
+    siteName: "Printelyx",
+    title: "Printelyx — Local Printing Marketplace",
+    description:
+      "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track your order until pickup.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Printelyx — print without the queue" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Printelyx — Local Printing Marketplace",
+    description: "Scan a shop QR, upload files, and pay the print shop directly by UPI. 0% commission.",
+    images: ["/og.png"],
   },
   appleWebApp: { capable: true, title: "Printelyx", statusBarStyle: "default" },
   formatDetection: { telephone: false, address: false, email: false },

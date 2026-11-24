@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { ChevronDown, Phone, Mail, MessageSquare } from 'lucide-react';
 
 import { AppBar } from '@/components/clear/app-bar';
+import {
+  hasSupportEmail,
+  hasSupportWhatsApp,
+  supportMailto,
+  supportWhatsAppLink,
+} from '@/lib/customer/support-config';
 
 /**
  * /help — Help + FAQ. A short list of 5–8 questions the customer is most
@@ -97,7 +103,10 @@ export default function HelpPage() {
           </Link>
         </section>
 
-        {/* ── Report a problem ── */}
+        {/* ── Report a problem ──
+            Contact controls render ONLY when the deployment has configured
+            them (NEXT_PUBLIC_SUPPORT_EMAIL / NEXT_PUBLIC_SUPPORT_WHATSAPP).
+            No broken links, no .local addresses (audit P2-3). */}
         <section
           className="rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-4 space-y-3"
           aria-labelledby="report-heading"
@@ -108,30 +117,37 @@ export default function HelpPage() {
           <p className="text-sm text-[var(--color-muted)]">
             Tell us what went wrong. If your report is about a specific order, include the order token from the tracking page URL so we can investigate faster.
           </p>
-          <a
-            href="mailto:support@printshop.local?subject=Printelyx%20customer%20report&body=Describe%20what%20happened.%20If%20about%20an%20order%2C%20paste%20your%20order%20token%20here."
-            className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] bg-[var(--color-cyan-ink)] px-4 py-3 text-sm font-medium text-white min-h-[48px]"
-          >
-            <Mail className="size-4" aria-hidden="true" />
-            Email support
-          </a>
-          <a
-            href="https://wa.me/?text=Hello%20Printelyx%20support"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] min-h-[48px]"
-          >
-            <MessageSquare className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />
-            WhatsApp us
-          </a>
+          {hasSupportEmail() && (
+            <a
+              href={supportMailto('Printelyx customer report', 'Describe what happened. If about an order, paste your order token here.')}
+              className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] bg-[var(--color-cyan-ink)] px-4 py-3 text-sm font-medium text-white min-h-[48px]"
+            >
+              <Mail className="size-4" aria-hidden="true" />
+              Email support
+            </a>
+          )}
+          {hasSupportWhatsApp() && (
+            <a
+              href={supportWhatsAppLink('Hello Printelyx support')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="touch-target inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] min-h-[48px]"
+            >
+              <MessageSquare className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />
+              WhatsApp us
+            </a>
+          )}
+          {!hasSupportEmail() && !hasSupportWhatsApp() && (
+            <p className="text-sm text-[var(--color-muted)]">
+              In-app support is being set up. For now, ask the shop directly — the tracking page has a Call shop button.
+            </p>
+          )}
         </section>
 
         {/* ── Footer links ── */}
         <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)] pt-2">
           <Link href="/" className="underline hover:text-[var(--color-ink)]">Home</Link>
-          <span aria-hidden="true">·</span>
           <Link href="/orders" className="underline hover:text-[var(--color-ink)]">My orders</Link>
-          <span aria-hidden="true">·</span>
           <Link href="/privacy" className="underline hover:text-[var(--color-ink)]">Privacy</Link>
         </nav>
       </main>

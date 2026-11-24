@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description:
     'Install the Printelyx Companion Android app for native camera scanning, UPI payment, and order-ready notifications.',
   robots: { index: true, follow: true },
+  alternates: { canonical: '/download-app' },
 };
 
 /**

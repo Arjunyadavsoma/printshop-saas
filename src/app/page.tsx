@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { Search, Loader2, AlertCircle, Store } from 'lucide-react';
+import { Search, AlertCircle, Store } from 'lucide-react';
+import { readRecentOrders, type RecentOrderSummary } from '@/lib/customer/recent-orders';
 
 interface ShopListItem {
   id: string;
@@ -24,17 +25,33 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // Most recent order on this device — read client-side only (localStorage),
+  // surfaced as a "Your recent order" shortcut so returning customers don't
+  // have to dig through /orders (audit Phase-3 requirement).
+  const [recentOrder, setRecentOrder] = useState<RecentOrderSummary | null>(null);
+
+  useEffect(() => {
+    const list = readRecentOrders();
+    setRecentOrder(list.length > 0 ? list[0] : null);
+  }, []);
 
   const loadShops = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const r = await api.request<{ data?: { shops: ShopListItem[] }; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
-    if (r.status >= 400 || !r.data?.data) {
+    try {
+      const r = await api.request<{ data?: { shops: ShopListItem[] }; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
+      if (r.status >= 400 || !r.data?.data) {
+        setError('load-failed');
+      } else {
+        setShops(r.data.data.shops);
+      }
+    } catch {
+      // network failure / offline — show the retry card instead of hanging
+      // on the skeleton forever (audit P1-9).
       setError('load-failed');
-    } else {
-      setShops(r.data.data.shops);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [api]);
 
   useEffect(() => {
@@ -92,12 +109,42 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Returning customer: shortcut to the most recent order on this device */}
+      {recentOrder && (
+        <div className="ref-g" style={{ marginTop: '16px', padding: 0 }}>
+          <Link
+            href={`/o/${recentOrder.token}`}
+            className="ref-r"
+            style={{ textDecoration: 'none', color: 'inherit', minHeight: '52px', alignItems: 'center' }}
+            aria-label={`Track your recent order from ${recentOrder.shopName}`}
+          >
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: '13px', color: '#5B5F66', display: 'block' }}>Your recent order</span>
+              <span style={{ fontSize: '16px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {recentOrder.shopName}
+                {recentOrder.orderNumber ? ` · ${recentOrder.orderNumber}` : ''}
+              </span>
+            </span>
+            <span className="ref-chip">Track</span>
+          </Link>
+        </div>
+      )}
+
       {/* Shops list */}
       <div style={{ marginTop: '8px' }}>
         {loading ? (
-          <div className="ref-g" style={{ padding: '24px 16px', textAlign: 'center' }}>
-            <Loader2 className="mx-auto size-6 animate-spin text-[#5B5F66]" aria-hidden="true" />
-            <p className="ref-v" style={{ textAlign: 'center', marginTop: '8px' }}>Loading shops…</p>
+          // Skeleton rows sized like real shop rows (reserves layout space —
+          // no CLS when the list resolves; no "Loading…" dead text).
+          <div className="ref-g" style={{ padding: '8px 16px' }} aria-hidden="true">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="ref-r" style={{ minHeight: '96px', alignItems: 'center' }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', height: '16px', width: '55%', borderRadius: '8px', background: 'var(--hairline, #E4E6EB)' }} />
+                  <span style={{ display: 'block', height: '12px', width: '75%', borderRadius: '8px', background: 'var(--hairline, #E4E6EB)', marginTop: '8px' }} />
+                </span>
+                <span style={{ flex: 'none', width: '64px', height: '24px', borderRadius: '9999px', background: 'var(--hairline, #E4E6EB)' }} />
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="ref-g" style={{ padding: '24px 16px' }}>
@@ -154,14 +201,19 @@ export default function HomePage() {
           </span>
         </Link>
         <Link href="/shop/login" style={{ display: 'block', marginTop: '8px', textAlign: 'center', fontSize: '14px', color: '#0A58D6', textDecoration: 'none' }}>
-          Shopkeeper login →
+          Shopkeeper login
         </Link>
       </div>
 
       {/* Footer */}
-      <div className="ref-cap" style={{ textAlign: 'center', marginTop: '24px', marginBottom: '32px' }}>
-        Printelyx · 0% commission · <Link href="/help" style={{ color: '#0A58D6' }}>Help</Link> · <Link href="/about" style={{ color: '#0A58D6' }}>About</Link>
-      </div>
+      <footer className="ref-cap" style={{ textAlign: 'center', marginTop: '24px', marginBottom: '32px', color: '#5B5F66' }}>
+        <span style={{ display: 'block', marginBottom: '6px' }}>Printelyx — 0% commission</span>
+        <span style={{ display: 'inline-flex', gap: '12px', justifyContent: 'center' }}>
+          <Link href="/help" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>Help</Link>
+          <Link href="/about" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>About</Link>
+          <Link href="/contact" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>Contact</Link>
+        </span>
+      </footer>
     </div>
   );
 }
@@ -200,7 +252,7 @@ function ShopRow({ shop }: { shop: ShopListItem }) {
             <span>Min ₹{minOrder}</span>
           </small>
         </span>
-        <span className="ref-v" style={{ flex: 'none', whiteSpace: 'nowrap' }}>Visit shop →</span>
+        <span className="ref-v" style={{ flex: 'none', whiteSpace: 'nowrap' }}>Visit shop</span>
       </div>
     </Link>
   );

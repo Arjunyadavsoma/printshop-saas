@@ -50,6 +50,35 @@
 
 **Totals:** P0 **3** · P1 **14** · P2 **10**.
 
+
+## Phase 2–3 status (2026-11-24, branch fix/site-audit)
+
+Labels per the task rule: **Fixed and tested** / **Fixed, not tested** / **Not fixed** / **Cannot verify**.
+
+| ID | Status | Note |
+|---|---|---|
+| P0-1 | **Fixed and tested** | Inline UTR bottom-sheet replaces `window.prompt`; fake-UTR auto-generation removed. Regression: `tests/payment-utr.spec.ts` drives the full journey and asserts the sheet — green. |
+| P0-2 | **Fixed and tested** | Type gate at `uploads/init` (detectKind) + client-side pick filter + dev-fallback no longer simulates validation failures. Regressions in `pipeline.integration.test.ts` (txt → FAILED) — 14/14 green. |
+| P0-3 | **Fixed and tested** | Dev fallback uses the real parser, never size estimates; undeterminable → FAILED. Regression: 15 MB garbage PDF → FAILED (was "318 pages"). |
+| P1-1 | **Fixed, not tested on device** | `/shop/print-jobs` bare visits now redirect to `/shop/orders` (the real queue). |
+| P1-2 | **Fixed** | Dashboard "Printer Setup" link targets the canonical `/shop/devices`; legacy redirect kept for bookmarks. |
+| P1-3 | **RETRACTED — detector artifact** | Interactive re-drive: accordions open and answers become visible (`evidence/known-issues/help-accordion-after-click.png`). The original crawler clicked during the page's own loading state. |
+| P1-4 | **Fixed** | /about, /contact, /pricing, /terms are real pages; /contact controls hidden until `NEXT_PUBLIC_SUPPORT_EMAIL`/`NEXT_PUBLIC_SUPPORT_WHATSAPP` are configured. |
+| P1-5 | **Fixed and verified** | Per-route titles (incl. dynamic shop name for /s/[slug]), unique descriptions, canonicals, OG/Twitter + generated `public/og.png`; /o/[token] previews carry no personal data; 404 page has a title. |
+| P1-6 | **Not fixed (needs prod data access)** | QA shops live in the production datastore — deleting them is an owner action, not a code change. |
+| P1-7 | **Fixed and verified** | `/dev/ui`, `/dev/funnel` → 404 on the production build (request-level gate in middleware; layout gates alone were bypassed by static prerendering). |
+| P1-8 | **Fixed and verified** | `src/app/sitemap.ts` shipped; /sitemap.xml returns 200. |
+| P1-9 | **Fixed, not tested on device** | /offline page + SW precache and offline-navigation fallback + home shops-fetch try/catch (error card with Try again instead of hanging). |
+| P1-10 | **Fixed and verified** | GitHub API fetch removed (was CSP-blocked); the page links GitHub's stable releases/latest URL. |
+| P1-11 | **Fixed (re-audit pending)** | Footer restyled (no dots/arrows), links ≥48px targets; main-landmark/h1 findings re-checked in Phase 5. |
+| P1-12 | **Fixed (re-audit pending)** | /download-app wrapped in `<main>`; axe re-check in Phase 5. |
+| P1-13 | **Fixed and verified** | "Look up by phone / Coming soon" panel renders only when `NEXT_PUBLIC_OTP_ENABLED=true`. |
+| P1-14 | **Not fixed (owner decision needed)** | Renaming the misdated migration would desync any DB that already applied it. Recommended: rename `20251124000001_mobile_executor_queue_v2` → `20261124…` in a maintenance window OR rebuild environments with `prisma db push`; then fix `prisma/seed.ts` drift. |
+
+P2s: stray theme text removed; footer dots/arrows removed; `.local` addresses removed; real privacy date + retention table; manifest tokens aligned (#0A58D6 / #F2F3F7); Capacitor console noise downgraded to debug; contradictory colour-picker copy fixed ("0 pages look colourful, so they are set to colour" → honest copy); "1 files" pluralised; UPI app rows became real `upi://` intents; footer tap targets ≥48px; /track "unlabelled" finding **retracted** (the Clear Input wires label→input via htmlFor/id — crawler heuristic missed it).
+
+New during fixes: the customer flow's UPI app rows were static divs (dead UI) — now intent links; review-screen file/page counts pluralised; reference-code added to error.tsx + new global-error.tsx.
+
 ## Could not verify (and why)
 - **iOS Safari/WebKit specifics** — sandbox lacks WebKit system libraries (no sudo); Android emulation used. Real-iPhone checklist included in Phase 5.
 - **Production pages behind login, `/orders`, `/api/*`, `/admin`** — robots-disallowed; tested on local builds. `SHOP_TEST_EMAIL`/`SHOP_TEST_PASSWORD`/`TEST_SHOP_SLUG` were **not set** (rule 3) — production-authenticated behaviour untested.

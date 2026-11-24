@@ -214,7 +214,7 @@ export function ReferenceColorPages(props: ColorPagesProps) {
               {renderPageGrid(6)}
             </div>
             <p className="ref-cap" style={{ margin: '12px 0 0' }}>
-              {totals.colorPagesCount} {totals.colorPagesCount === 1 ? 'page looks' : 'pages look'} colourful, so they are set to colour. Click any page to switch it.
+              {totals.colorPagesCount === 0 ? 'All pages are set to black & white. Click any page to make it colour.' : `${totals.colorPagesCount} ${totals.colorPagesCount === 1 ? 'page looks' : 'pages look'} colourful, so those pages are set to colour. Click any page to switch it.`}
             </p>
 
             {/* File selector tabs */}
@@ -288,7 +288,7 @@ export function ReferenceColorPages(props: ColorPagesProps) {
         {renderPageGrid(4)}
       </div>
       <p className="ref-cap">
-        {totals.colorPagesCount} {totals.colorPagesCount === 1 ? 'page looks' : 'pages look'} colourful, so they are set to colour. Tap any page to switch it.
+        {totals.colorPagesCount === 0 ? 'All pages are set to black & white. Tap any page to make it colour.' : `${totals.colorPagesCount} ${totals.colorPagesCount === 1 ? 'page looks' : 'pages look'} colourful, so those pages are set to colour. Tap any page to switch it.`}
       </p>
 
       {/* File selector for multiple files */}
