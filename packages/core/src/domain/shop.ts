@@ -104,6 +104,24 @@ export interface Shop {
   paymentInstructions: string | null;
   /** New: whether the shop accepts cash on pickup. */
   cashOnPickup: boolean;
+  // ── Shop location (added for the location-aware build; the matching
+  // columns live in prisma/schema.prisma). Optional in the interface so
+  // code built against the pre-location shape keeps compiling; the
+  // repository maps them to null/false when the row has no value yet.
+  /** Full display address shown to customers (may differ from `address`). */
+  fullAddress?: string | null;
+  /** City, state and PIN code, as entered by the shopkeeper. */
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  /** WGS-84 coordinates. Null until the shopkeeper sets them. */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** True only when the coordinates came from geocoding/verification —
+   * never true for a hand-typed lat/lng. */
+  locationVerified?: boolean;
+  /** Last time any location field was saved. */
+  locationUpdatedAt?: Date | null;
   // Payment method customization
   paymentMethods: string;
   // Pamphlet / cover sheet feature
@@ -137,6 +155,15 @@ export const ShopSchema = z.object({
   paymentPhone: z.string().max(20).nullable(),
   paymentInstructions: z.string().max(2000).nullable(),
   cashOnPickup: z.boolean(),
+  // Shop location — all optional: older rows / pre-migration shapes omit them.
+  fullAddress: z.string().max(500).nullable().optional(),
+  city: z.string().max(100).nullable().optional(),
+  state: z.string().max(100).nullable().optional(),
+  pincode: z.string().max(10).nullable().optional(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+  locationVerified: z.boolean().optional(),
+  locationUpdatedAt: z.date().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

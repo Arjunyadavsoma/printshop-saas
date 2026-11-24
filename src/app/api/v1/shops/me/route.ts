@@ -4,7 +4,7 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { ShopPricingConfigSchema } from '@platform/core/domain';
 import { UpiIdSchema, IndianPhoneSchema } from '@platform/utils';
-import { ValidationError } from '@platform/core/errors';
+import { AppError, ValidationError } from '@platform/core/errors';
 
 /**
  * GET  /api/v1/shops/me          — owner's own shop (full profile, no creds).
@@ -42,7 +42,52 @@ const PatchShopSchema = z.object({
   pamphletEnabled: z.boolean().optional(),
   pamphletPricePaise: z.number().int().min(0).max(100000).optional(),
   pamphletName: z.string().max(100).nullable().optional(),
+  // ── Shop location ──
+  // Full display address (separate from the legacy `address` field),
+  // city / state / PIN, and WGS-84 coordinates. All optional; empty
+  // strings are normalised to null so a shopkeeper can clear a field.
+  // locationVerified is owner-asserted but the server never lets it be
+  // true without coordinates (see the coercion below) — hand-typed
+  // coordinates are saved with locationVerified=false.
+  fullAddress: z.string().max(500).nullable().optional(),
+  city: z.string().max(100).nullable().optional(),
+  state: z.string().max(100).nullable().optional(),
+  pincode: z
+    .string()
+    .max(10)
+    .nullable()
+    .optional()
+    .refine((v) => v === null || v === undefined || v.trim() === '' || /^[1-9][0-9]{5}$/.test(v.trim()), {
+      message: 'Enter a 6-digit PIN code starting with 1–9.',
+    }),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+  locationVerified: z.boolean().optional(),
 });
+
+/** Location field names — used for the pre-migration error guard below. */
+const LOCATION_FIELDS = [
+  'fullAddress',
+  'city',
+  'state',
+  'pincode',
+  'latitude',
+  'longitude',
+  'locationVerified',
+  'locationUpdatedAt',
+] as const;
+
+/**
+ * Interim guard: until the location columns land in the database (worker
+ * A's schema change + migration), Prisma rejects any write mentioning
+ * them with "Unknown argument `latitude`…". Surface that as an explicit
+ * 503 naming the missing migration instead of a generic 500, and only
+ * for location saves — other settings saves never include these keys.
+ */
+function isUnknownLocationArgError(cause: unknown): boolean {
+  const msg = cause instanceof Error ? cause.message : String(cause ?? '');
+  return LOCATION_FIELDS.some((f) => msg.includes(`Unknown argument \`${f}\``));
+}
 
 export const GET = withAuth(async (_req, _ctx, principal) => {
   const shop = await repos.shops.getByOwner(principal.userId);
@@ -79,6 +124,15 @@ export const GET = withAuth(async (_req, _ctx, principal) => {
     paymentPhone: shop.paymentPhone,
     paymentInstructions: shop.paymentInstructions,
     cashOnPickup: shop.cashOnPickup,
+    // Shop location.
+    fullAddress: shop.fullAddress ?? null,
+    city: shop.city ?? null,
+    state: shop.state ?? null,
+    pincode: shop.pincode ?? null,
+    latitude: shop.latitude ?? null,
+    longitude: shop.longitude ?? null,
+    locationVerified: shop.locationVerified ?? false,
+    locationUpdatedAt: shop.locationUpdatedAt ?? null,
   });
 }, ['owner']);
 
@@ -114,7 +168,37 @@ export const PATCH = withAuth(async (req, _ctx, principal) => {
     }
 
     const shop = await repos.shops.getByOwner(principal.userId);
-    const updated = await repos.shops.update(shop.id, body);
+
+    // ── Location normalisation ──
+    // Only when the patch touches a location field: empty strings become
+    // null (clear), a lone latitude/longitude is rejected (a half-filled
+    // pair is not a location), locationVerified is forced false when no
+    // coordinates are supplied, and locationUpdatedAt is stamped now.
+    const locationKeys = LOCATION_FIELDS.filter((k) => k in body);
+    const patch: Record<string, unknown> = { ...body };
+    if (locationKeys.length > 0) {
+      for (const k of ['fullAddress', 'city', 'state', 'pincode'] as const) {
+        if (k in patch && typeof patch[k] === 'string' && (patch[k] as string).trim() === '') {
+          patch[k] = null;
+        }
+      }
+      if (typeof patch.pincode === 'string') patch.pincode = (patch.pincode as string).trim();
+      const lat = patch.latitude as number | null | undefined;
+      const lng = patch.longitude as number | null | undefined;
+      const hasLat = lat !== undefined && lat !== null;
+      const hasLng = lng !== undefined && lng !== null;
+      if (hasLat !== hasLng) {
+        throw new ValidationError(
+          'Enter both latitude and longitude, or neither — a half-filled coordinate pair is not a location.',
+        );
+      }
+      if (!hasLat && patch.locationVerified === true) {
+        patch.locationVerified = false;
+      }
+      patch.locationUpdatedAt = new Date();
+    }
+
+    const updated = await repos.shops.update(shop.id, patch);
     await repos.audit.log({
       shopId: shop.id,
       userId: principal.userId,
@@ -140,8 +224,26 @@ export const PATCH = withAuth(async (req, _ctx, principal) => {
       paymentPhone: updated.paymentPhone,
       paymentInstructions: updated.paymentInstructions,
       cashOnPickup: updated.cashOnPickup,
+      fullAddress: updated.fullAddress ?? null,
+      city: updated.city ?? null,
+      state: updated.state ?? null,
+      pincode: updated.pincode ?? null,
+      latitude: updated.latitude ?? null,
+      longitude: updated.longitude ?? null,
+      locationVerified: updated.locationVerified ?? false,
+      locationUpdatedAt: updated.locationUpdatedAt ?? null,
     });
   } catch (cause) {
+    if (isUnknownLocationArgError(cause)) {
+      return fail(
+        new AppError(
+          'Shop location fields are not saved yet — the location database update has not been applied. ' +
+            'Your other settings are unaffected; try saving the location again after the update.',
+          'LOCATION_MIGRATION_PENDING',
+          503,
+        ),
+      );
+    }
     return fail(toAppError(cause));
   }
 }, ['owner']);

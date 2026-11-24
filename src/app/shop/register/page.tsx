@@ -31,6 +31,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { validateShopLocation } from '@/lib/location/validation';
 
 interface AccountStep {
   email: string;
@@ -45,6 +46,13 @@ interface BusinessStep {
   description: string;
   upiId: string;
   address: string;
+  // Optional shop location — never required at registration; the
+  // shopkeeper can add or change it later from Settings → Shop location.
+  city: string;
+  state: string;
+  pincode: string;
+  latitude: string;
+  longitude: string;
   // Payment method selection during registration.
   // NOTE: 'split' (partial-UPI + partial-cash) was removed from the UI
   // (audit H6) — it was collected but never honored by the pricing /
@@ -75,6 +83,7 @@ const DEFAULT_STATE: WizardState = {
   account: { email: '', password: '', passwordConfirm: '', phone: '', name: '' },
   business: {
     shopName: '', slug: '', description: '', upiId: '', address: '',
+    city: '', state: '', pincode: '', latitude: '', longitude: '',
     paymentMethods: 'both',
     pamphletEnabled: false,
     pamphletPricePaise: 1000, // ₹10 default
@@ -252,6 +261,16 @@ export default function ShopRegisterPage() {
     else if (slugStatus === 'taken') errs.slug = `The URL "/${slug}" is already in use`;
     if (!state.business.upiId.trim()) errs.upiId = 'UPI ID is required';
     else if (!/^[\w.\-]{2,}@[a-zA-Z][\w.\-]*$/.test(state.business.upiId)) errs.upiId = 'Invalid UPI VPA (e.g. shop@okaxis)';
+    // Location is optional — but a filled-in value must be valid; an
+    // invalid PIN / coordinate blocks advancing until fixed or cleared.
+    const locErrs = validateShopLocation({
+      pincode: state.business.pincode,
+      latitude: state.business.latitude,
+      longitude: state.business.longitude,
+    });
+    if (locErrs.pincode) errs.pincode = locErrs.pincode;
+    if (locErrs.latitude) errs.latitude = locErrs.latitude;
+    if (locErrs.longitude) errs.longitude = locErrs.longitude;
     return errs;
   }, [state.business, slugStatus]);
 
@@ -310,6 +329,13 @@ export default function ShopRegisterPage() {
           description: state.business.description,
           upiId: state.business.upiId,
           address: state.business.address,
+          // Optional location — sent only when filled in; coordinates
+          // typed here are unverified (locationVerified=false server-side).
+          city: state.business.city.trim() || undefined,
+          state: state.business.state.trim() || undefined,
+          pincode: state.business.pincode.trim() || undefined,
+          latitude: state.business.latitude.trim() === '' ? undefined : Number(state.business.latitude),
+          longitude: state.business.longitude.trim() === '' ? undefined : Number(state.business.longitude),
           services: state.services,
           paymentMethods: state.business.paymentMethods,
           pamphletEnabled: state.business.pamphletEnabled,
@@ -619,6 +645,66 @@ export default function ShopRegisterPage() {
                   disabled={submitting}
                 />
 
+                {/* Optional location — helps customers find the shop. Never
+                    required; invalid values are flagged, not silently kept. */}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field
+                    id="city"
+                    label="City (optional)"
+                    value={state.business.city}
+                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, city: v } }))}
+                    onBlur={() => markTouched('city')}
+                    error={undefined}
+                    placeholder="e.g. Bengaluru"
+                    disabled={submitting}
+                  />
+                  <Field
+                    id="state"
+                    label="State (optional)"
+                    value={state.business.state}
+                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, state: v } }))}
+                    onBlur={() => markTouched('state')}
+                    error={undefined}
+                    placeholder="e.g. Karnataka"
+                    disabled={submitting}
+                  />
+                  <Field
+                    id="pincode"
+                    label="PIN code (optional)"
+                    value={state.business.pincode}
+                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, pincode: v.replace(/\D/g, '').slice(0, 6) } }))}
+                    onBlur={() => markTouched('pincode')}
+                    error={showErr('business', 'pincode') ? businessErrors.pincode : undefined}
+                    placeholder="e.g. 560001"
+                    disabled={submitting}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    id="latitude"
+                    label="Latitude (optional)"
+                    value={state.business.latitude}
+                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, latitude: v } }))}
+                    onBlur={() => markTouched('latitude')}
+                    error={showErr('business', 'latitude') ? businessErrors.latitude : undefined}
+                    placeholder="e.g. 12.9716"
+                    disabled={submitting}
+                  />
+                  <Field
+                    id="longitude"
+                    label="Longitude (optional)"
+                    value={state.business.longitude}
+                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, longitude: v } }))}
+                    onBlur={() => markTouched('longitude')}
+                    error={showErr('business', 'longitude') ? businessErrors.longitude : undefined}
+                    placeholder="e.g. 77.5946"
+                    disabled={submitting}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Location is optional — leave it blank and add it later from Settings. Coordinates entered here are saved as unverified; use “Find on map” in Settings for verified coordinates.
+                </p>
+
                 {/* Payment method selection — audit H6: 'split' option removed
                     (was collected but never honored by the pricing/checkout
                     flow). The three remaining options cover every supported
@@ -726,6 +812,12 @@ export default function ShopRegisterPage() {
                   <ReviewRow label="URL" value={`/shops/${state.business.slug}`} />
                   <ReviewRow label="UPI ID" value={state.business.upiId} />
                   {state.business.address && <ReviewRow label="Address" value={state.business.address} />}
+                  {state.business.city && <ReviewRow label="City" value={state.business.city} />}
+                  {state.business.state && <ReviewRow label="State" value={state.business.state} />}
+                  {state.business.pincode && <ReviewRow label="PIN code" value={state.business.pincode} />}
+                  {(state.business.latitude || state.business.longitude) && (
+                    <ReviewRow label="Coordinates" value={`${state.business.latitude}, ${state.business.longitude}`} />
+                  )}
                   {state.business.description && <ReviewRow label="Description" value={state.business.description} />}
                 </ReviewBlock>
                 <ReviewBlock title="Services">

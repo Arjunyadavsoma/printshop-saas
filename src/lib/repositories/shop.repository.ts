@@ -31,6 +31,16 @@ interface ShopRow {
   pamphletEnabled: boolean | null;
   pamphletPricePaise: number | null;
   pamphletName: string | null;
+  // ── Shop location — optional: the columns land with worker A's
+  // schema change; rows read before the migration simply lack them.
+  fullAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationVerified?: boolean | null;
+  locationUpdatedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +96,15 @@ function toDomain(row: ShopRow): Shop {
     pamphletEnabled: row.pamphletEnabled ?? false,
     pamphletPricePaise: row.pamphletPricePaise ?? 0,
     pamphletName: row.pamphletName ?? null,
+    // Shop location — null/false when the row predates the columns.
+    fullAddress: row.fullAddress ?? null,
+    city: row.city ?? null,
+    state: row.state ?? null,
+    pincode: row.pincode ?? null,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
+    locationVerified: row.locationVerified ?? false,
+    locationUpdatedAt: row.locationUpdatedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

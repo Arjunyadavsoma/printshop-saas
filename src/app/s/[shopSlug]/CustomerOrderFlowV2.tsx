@@ -28,6 +28,13 @@ import { UTRInput } from '@/components/clear/utr-input';
 import type { PageMode } from '@/components/clear/tokens';
 import { buildUpiIntentUrl } from '@/lib/payments/upi';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
+import {
+  savePendingOrder,
+  readPendingOrder,
+  clearPendingOrder,
+  markUpiLaunched,
+  consumeUpiReturnFlag,
+} from '@/lib/customer/order-restore';
 
 /**
  * CustomerOrderFlowV2 — the redesigned customer order flow.
@@ -53,6 +60,14 @@ import { saveRecentOrder } from '@/lib/customer/recent-orders';
  *     on every change. Restored on mount so a refresh doesn't lose work.
  *   - "Order already placed" → sessionStorage so a refresh after placing
  *     skips straight back to the payment screen (Pay button stays disabled).
+ *   - PLUS a durable localStorage pending order (see
+ *     src/lib/customer/order-restore.ts): sessionStorage dies with the tab,
+ *     and Android routinely kills the background browser tab while the
+ *     customer is in the UPI app — without the durable record the customer
+ *     came back to an empty flow (or, via the PWA launcher, to `/`).
+ *     The pending record restores the payment screen on return, a
+ *     visibilitychange handler reopens the UTR sheet, and it is cleared
+ *     once the UTR is submitted / counter payment is chosen.
  */
 
 /* ── Types ───────────────────────────────────────────────────────────── */
@@ -568,26 +583,68 @@ export function CustomerOrderFlowV2({
   }, [shopSlug]);
 
   // Restore "already placed" from sessionStorage so a refresh after the
-  // Pay button tap doesn't re-enable it.
+  // Pay button tap doesn't re-enable it. Falls back to the durable
+  // localStorage pending order: sessionStorage dies when Android kills
+  // the background tab while the customer is in the UPI app, which is
+  // exactly the return path this must survive (see order-restore.ts).
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(PLACED_SESSION_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as PlacedOrder & { shopSlug?: string };
-      if (parsed.shopSlug && parsed.shopSlug !== shopSlug) return;
-      if (parsed.token && parsed.orderNumber) {
-        setPlaced({
-          token: parsed.token,
-          orderNumber: parsed.orderNumber,
-          pickupCode: parsed.pickupCode,
-          totalPaise: parsed.totalPaise,
-          placedAt: parsed.placedAt,
-        });
+      if (raw) {
+        const parsed = JSON.parse(raw) as PlacedOrder & { shopSlug?: string };
+        if ((!parsed.shopSlug || parsed.shopSlug === shopSlug) && parsed.token && parsed.orderNumber) {
+          setPlaced({
+            token: parsed.token,
+            orderNumber: parsed.orderNumber,
+            pickupCode: parsed.pickupCode,
+            totalPaise: parsed.totalPaise,
+            placedAt: parsed.placedAt,
+          });
+          return;
+        }
       }
     } catch {
-      // ignore
+      // ignore — fall through to the durable record below
+    }
+    const pending = readPendingOrder(shopSlug);
+    if (pending) {
+      setPlaced({
+        token: pending.token,
+        orderNumber: pending.orderNumber,
+        pickupCode: pending.pickupCode,
+        totalPaise: pending.totalPaise,
+        placedAt: pending.placedAt,
+      });
     }
   }, [shopSlug]);
+
+  // UPI return: when the tab becomes visible again, restore the payment
+  // screen if the tab was killed while the customer was in the UPI app,
+  // and reopen the UTR sheet if a UPI launch was in flight (the blind
+  // setTimeout(1500) in the launch handler fires while the tab is hidden
+  // and cannot be relied on). No-op on a plain mount with no pending
+  // order and no launch flag.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) return;
+      if (!placed) {
+        const pending = readPendingOrder(shopSlug);
+        if (pending) {
+          setPlaced({
+            token: pending.token,
+            orderNumber: pending.orderNumber,
+            pickupCode: pending.pickupCode,
+            totalPaise: pending.totalPaise,
+            placedAt: pending.placedAt,
+          });
+        }
+        return;
+      }
+      if (consumeUpiReturnFlag()) setPaymentSheetOpen(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [placed, shopSlug]);
 
   /* ── Rate card fetch (for preset price badges) ─────────────────────── */
 
@@ -1386,6 +1443,11 @@ export function CustomerOrderFlowV2({
       } catch {
         // sessionStorage may be unavailable — the in-memory state still works.
       }
+      // Durable pending-order record (localStorage): sessionStorage dies
+      // with the tab, and Android kills the background tab while the
+      // customer is in the UPI app. Without this, returning from UPI
+      // lands on an empty flow / homepage. See order-restore.ts.
+      savePendingOrder({ ...placedOrder, shopSlug, shopName });
       // Persist the order summary on the device so the "My orders" page
       // (/orders) can list it. The shopSlug is captured here because the
       // tracking API doesn't expose it; the tracking page later refreshes
@@ -1458,6 +1520,9 @@ export function CustomerOrderFlowV2({
       });
       const d = (await res.json()) as { error?: { message?: string } };
       if (!res.ok) throw new Error(d?.error?.message ?? 'Could not submit the payment');
+      // Payment reference submitted — the pending-order record has served
+      // its purpose; clear it so the homepage resume card disappears.
+      clearPendingOrder();
       // Head to the tracking page — the shop confirms there.
       window.location.href = `/o/${placed.token}`;
     } catch (e) {
@@ -1480,6 +1545,7 @@ export function CustomerOrderFlowV2({
         body: JSON.stringify({ method: 'counter_cash' }),
       });
       if (res.ok) {
+        clearPendingOrder();
         window.location.href = `/o/${placed.token}`;
       } else {
         const d = (await res.json().catch(() => null)) as { error?: { message?: string } };
@@ -2260,6 +2326,11 @@ function PaymentWaitingScreen({
     });
     // Trigger the platform UPI intent picker. On Android this opens the
     // OS UPI app chooser; on desktop it falls through silently.
+    // Mark the launch FIRST: the return path restores from the durable
+    // pending order + reopens the UTR sheet on visibilitychange (the
+    // setTimeout below fires while the tab is hidden and is only a
+    // fallback for a fast same-tab return).
+    markUpiLaunched();
     window.location.href = upiUri;
     // After the customer returns, open the UTR sheet so they can paste.
     setTimeout(() => setPaymentSheetOpen(true), 1500);
@@ -2352,6 +2423,7 @@ function PaymentWaitingScreen({
                 app_id: appId,
                 amount_paise_range: amountPaiseRange(placed.totalPaise),
               });
+              markUpiLaunched();
               window.location.href = upiUri;
               setTimeout(() => setPaymentSheetOpen(false), 800);
             }}

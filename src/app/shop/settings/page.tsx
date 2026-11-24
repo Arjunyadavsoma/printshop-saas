@@ -58,6 +58,13 @@ import {
 } from 'lucide-react';
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
+import {
+  validateShopLocation,
+  parseLatitude,
+  parseLongitude,
+  openStreetMapUrl,
+  openStreetMapEmbedUrl,
+} from '@/lib/location/validation';
 import { PaymentProviderSettings } from '@/components/portal/payment-provider-settings';
 import { ChangePasswordCard } from '@/components/portal/change-password-card';
 import { PageHeader } from '@/components/shared/page-header';
@@ -85,6 +92,15 @@ interface ShopInfo {
   paymentPhone: string | null;
   paymentInstructions: string | null;
   cashOnPickup: boolean;
+  // Shop location (optional — null until the shopkeeper sets it).
+  fullAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationVerified?: boolean;
+  locationUpdatedAt?: string | null;
 }
 
 interface QrResponse {
@@ -208,6 +224,8 @@ export default function ShopSettingsPage() {
       qr: 'shop-qr',
       // H16: deep-link to the security / change-password tab.
       security: 'security',
+      // Location section lives on the Profile tab.
+      location: 'profile',
     };
     const mapped = alias[raw];
     if (mapped && mapped !== tab) setTab(mapped);
@@ -223,6 +241,34 @@ export default function ShopSettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // ── Shop location ──
+  // Kept as strings in the form (inputs are text); parsed + validated on
+  // save with the shared validators in @/lib/location/validation. A
+  // location is only "verified" when its coordinates came from a
+  // successful geocode lookup — hand-typing lat/lng clears the flag.
+  const [fullAddress, setFullAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [locState, setLocState] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [locationVerified, setLocationVerified] = useState(false);
+  const [locationUpdatedAt, setLocationUpdatedAt] = useState<string | null>(null);
+  const [geocodedName, setGeocodedName] = useState<string | null>(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [locationSaved, setLocationSaved] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  // Errors from validateShopLocation, shown after a save/geocode attempt.
+  const [locationFieldErrors, setLocationFieldErrors] = useState<Record<string, string>>({});
+  // The coordinates currently on screen, parsed strictly (null = invalid).
+  const parsedLat = parseLatitude(latitude);
+  const parsedLng = parseLongitude(longitude);
+  const coordsValid =
+    (latitude.trim() === '' && longitude.trim() === '') ||
+    (parsedLat !== null && parsedLng !== null);
 
   // ── Pricing (editable) ──
   const [pricingDraft, setPricingDraft] = useState<ShopPricingConfig | null>(null);
@@ -275,6 +321,15 @@ export default function ShopSettingsPage() {
         setCashOnPickup(s.cashOnPickup);
         setUpiQrHasImage(Boolean(s.upiQrStorageKey));
         setPricingDraft(s.pricingConfig);
+        setFullAddress(s.fullAddress ?? s.address ?? '');
+        setCity(s.city ?? '');
+        setLocState(s.state ?? '');
+        setPincode(s.pincode ?? '');
+        setLatitude(s.latitude != null ? String(s.latitude) : '');
+        setLongitude(s.longitude != null ? String(s.longitude) : '');
+        setLocationVerified(s.locationVerified ?? false);
+        setLocationUpdatedAt(s.locationUpdatedAt ?? null);
+        setGeocodedName(null);
       } else if (shopR.status === 401) {
         setError('Session expired. Please log in again.');
       } else {
@@ -351,6 +406,110 @@ export default function ShopSettingsPage() {
     } finally {
       setSavingProfile(false);
     }
+  };
+
+  // ── Save location (separate from the profile save so a location
+  // problem never blocks saving the shop name / phone / address) ──
+  // Goes through the same PATCH /api/v1/shops/me endpoint; the server
+  // stamps locationUpdatedAt and forces locationVerified=false when no
+  // coordinates are supplied.
+  const saveLocation = async () => {
+    const errors = validateShopLocation({ pincode, latitude, longitude });
+    setLocationFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setLocationError('Fix the highlighted location fields before saving.');
+      return;
+    }
+    setSavingLocation(true);
+    setLocationError(null);
+    setLocationSaved(false);
+    try {
+      const body: Record<string, unknown> = {
+        fullAddress: fullAddress.trim() === '' ? null : fullAddress.trim(),
+        city: city.trim() === '' ? null : city.trim(),
+        state: locState.trim() === '' ? null : locState.trim(),
+        pincode: pincode.trim() === '' ? null : pincode.trim(),
+        latitude: latitude.trim() === '' ? null : parseLatitude(latitude),
+        longitude: longitude.trim() === '' ? null : parseLongitude(longitude),
+        // Only true when the coordinates on screen came from geocoding
+        // (or were already verified and untouched since loading).
+        locationVerified,
+      };
+      const r = await api.request<{ data?: ShopInfo; error?: { message?: string } }>(
+        'PATCH',
+        '/api/v1/shops/me',
+        { body },
+      );
+      if (r.status !== 200 || !r.data?.data) {
+        setLocationError(r.data?.error?.message ?? `Update failed (HTTP ${r.status}).`);
+        return;
+      }
+      const s = r.data.data;
+      setShop(s);
+      setLocationVerified(s.locationVerified ?? false);
+      setLocationUpdatedAt(s.locationUpdatedAt ?? null);
+      setLocationSaved(true);
+      setTimeout(() => setLocationSaved(false), 3000);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+
+  // ── Geocode the address via Nominatim ──
+  // On success the coordinates are filled in AND the location counts as
+  // verified; on failure nothing is overwritten and the error names the
+  // cause (no result / service down) so the shopkeeper can type the
+  // coordinates manually instead.
+  const geocodeAddress = async () => {
+    const errors = validateShopLocation({ pincode });
+    if (Object.keys(errors).length > 0) {
+      setLocationFieldErrors(errors);
+      setGeocodeError(errors.pincode ?? 'Fix the PIN code before looking up the address.');
+      return;
+    }
+    setGeocoding(true);
+    setGeocodeError(null);
+    setLocationFieldErrors({});
+    try {
+      const r = await api.request<{
+        data?: { latitude?: number; longitude?: number; displayName?: string };
+        error?: { message?: string };
+      }>('POST', '/api/v1/shop/location/geocode', {
+        body: {
+          address: fullAddress.trim(),
+          city: city.trim(),
+          state: locState.trim(),
+          pincode: pincode.trim(),
+        },
+      });
+      if (r.status !== 200 || !r.data?.data || r.data.data.latitude == null || r.data.data.longitude == null) {
+        setGeocodeError(r.data?.error?.message ?? `Lookup failed (HTTP ${r.status}).`);
+        return;
+      }
+      setLatitude(String(r.data.data.latitude));
+      setLongitude(String(r.data.data.longitude));
+      setLocationVerified(true);
+      setGeocodedName(r.data.data.displayName ?? null);
+    } catch (err) {
+      setGeocodeError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  // Typing coordinates by hand can never leave the location "verified":
+  // only a fresh geocode result (or an untouched verified save) counts.
+  const onLatitudeChange = (v: string) => {
+    setLatitude(v);
+    if (locationVerified) setLocationVerified(false);
+    setGeocodedName(null);
+  };
+  const onLongitudeChange = (v: string) => {
+    setLongitude(v);
+    if (locationVerified) setLocationVerified(false);
+    setGeocodedName(null);
   };
 
   const saveHours = async () => {
@@ -802,6 +961,186 @@ export default function ShopSettingsPage() {
               <Badge variant="outline" className="gap-1 self-start sm:self-auto">
                 <Tag className="size-3" /> tier: {shop.subscriptionTier}
               </Badge>
+            </CardFooter>
+          </Card>
+
+          {/* Shop location — full address, city/state/PIN, coordinates.
+              Saves through the same PATCH /api/v1/shops/me as the profile
+              (its own Save button so a location error never blocks the
+              profile save). Coordinates are optional; a location is only
+              "verified" when it came from the map lookup below. */}
+          <Card className="mt-4 bg-surface" id="location">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <MapPin className="size-4 text-brand" aria-hidden="true" /> Shop location
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Help customers find your shop. Everything here is optional — set as much as you like, and change it any time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="fullAddress">Full address</Label>
+                <Input
+                  id="fullAddress"
+                  value={fullAddress}
+                  onChange={(e) => setFullAddress(e.target.value)}
+                  placeholder="e.g. Shop 12, 1st Floor, MG Road, Bengaluru"
+                  disabled={savingLocation}
+                  className="h-11 sm:h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shown to customers on your shop page and order tracking.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g. Bengaluru"
+                    disabled={savingLocation}
+                    className="h-11 sm:h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="locState">State</Label>
+                  <Input
+                    id="locState"
+                    value={locState}
+                    onChange={(e) => setLocState(e.target.value)}
+                    placeholder="e.g. Karnataka"
+                    disabled={savingLocation}
+                    className="h-11 sm:h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pincode">PIN code</Label>
+                  <Input
+                    id="pincode"
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="e.g. 560001"
+                    inputMode="numeric"
+                    disabled={savingLocation}
+                    aria-invalid={Boolean(locationFieldErrors.pincode)}
+                    className="h-11 sm:h-9"
+                  />
+                  {locationFieldErrors.pincode && (
+                    <p className="text-xs text-danger">{locationFieldErrors.pincode}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Coordinates + map lookup */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="latitude">Latitude</Label>
+                  <Input
+                    id="latitude"
+                    value={latitude}
+                    onChange={(e) => onLatitudeChange(e.target.value)}
+                    placeholder="e.g. 12.9716"
+                    inputMode="decimal"
+                    disabled={savingLocation}
+                    aria-invalid={Boolean(locationFieldErrors.latitude)}
+                    className="h-11 sm:h-9"
+                  />
+                  {locationFieldErrors.latitude && (
+                    <p className="text-xs text-danger">{locationFieldErrors.latitude}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="longitude">Longitude</Label>
+                  <Input
+                    id="longitude"
+                    value={longitude}
+                    onChange={(e) => onLongitudeChange(e.target.value)}
+                    placeholder="e.g. 77.5946"
+                    inputMode="decimal"
+                    disabled={savingLocation}
+                    aria-invalid={Boolean(locationFieldErrors.longitude)}
+                    className="h-11 sm:h-9"
+                  />
+                  {locationFieldErrors.longitude && (
+                    <p className="text-xs text-danger">{locationFieldErrors.longitude}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void geocodeAddress()}
+                  disabled={geocoding || savingLocation}
+                  className="min-h-[44px] gap-1.5"
+                >
+                  {geocoding ? <Loader2 className="size-4 animate-spin" /> : <MapPin className="size-4" />}
+                  {geocoding ? 'Finding on map…' : 'Find on map'}
+                </Button>
+                {locationVerified ? (
+                  <Badge variant="outline" className="gap-1 self-start border-success/30 bg-success-soft text-success sm:self-auto">
+                    <CheckCircle2 className="size-3" /> Location verified
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {latitude.trim() || longitude.trim()
+                      ? 'Coordinates entered by hand are saved as unverified.'
+                      : 'Use “Find on map” to fill in verified coordinates from your address.'}
+                  </span>
+                )}
+              </div>
+              {geocodedName && (
+                <p className="text-xs text-muted-foreground">
+                  Matched: <span className="text-foreground">{geocodedName}</span> — check it looks right before saving.
+                </p>
+              )}
+              {geocodeError && <p className="text-sm text-danger">⚠ {geocodeError}</p>}
+
+              {/* Map preview — OpenStreetMap embed, no map library. */}
+              {coordsValid && parsedLat !== null && parsedLng !== null && (
+                <div className="space-y-1.5">
+                  <iframe
+                    title="Map preview of the shop location"
+                    src={openStreetMapEmbedUrl(parsedLat, parsedLng)}
+                    className="h-48 w-full rounded-md border border-border"
+                    loading="lazy"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    <a
+                      href={openStreetMapUrl(parsedLat, parsedLng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-brand hover:underline"
+                    >
+                      Open in OpenStreetMap ↗
+                    </a>
+                    {' '}· {parsedLat.toFixed(5)}, {parsedLng.toFixed(5)}
+                  </p>
+                </div>
+              )}
+
+              {locationUpdatedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Location last updated {new Date(locationUpdatedAt).toLocaleString('en-IN')}.
+                </p>
+              )}
+              {locationError && <p className="text-sm text-danger">⚠ {locationError}</p>}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:gap-2">
+              <Button
+                onClick={() => void saveLocation()}
+                disabled={savingLocation || geocoding}
+                className="w-full min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
+              >
+                {savingLocation ? <Loader2 className="size-4 animate-spin" /> : locationSaved ? <Check className="size-4" /> : <Save className="size-4" />}
+                {savingLocation ? 'Saving…' : locationSaved ? 'Saved' : 'Save location'}
+              </Button>
+              {locationSaved && (
+                <span className="text-xs font-medium text-success">✓ Location saved.</span>
+              )}
             </CardFooter>
           </Card>
 

@@ -428,7 +428,7 @@ export async function orderTracking(token: string) {
   if (order.status === 'awaiting_payment' && order.expiresAt && order.expiresAt.getTime() < Date.now()) {
     throw new NotFoundError('Order not found');
   }
-  const shop = await db.findOne<{ id: string; name: string; address: string; phone: string; upiPayeeName: string | null }>('shop', { id: order.shopId });
+  const shop = await db.findOne<{ id: string; name: string; address: string; phone: string; upiPayeeName: string | null; latitude?: number | null; longitude?: number | null }>('shop', { id: order.shopId });
   const files = await repos.files.findByOrder(order.id);
   const events = await repos.orderEvents.forOrder(order.id);
   const payments = await repos.payments.forOrder(order.id);
@@ -467,15 +467,31 @@ export async function orderTracking(token: string) {
       priceSnapshot: order.priceSnapshot,
       paymentModeAtOrder: order.paymentModeAtOrder,
     },
-    shop: shop ? { name: shop.name, address: shop.address, phone: shop.phone } : null,
+    shop: shop ? {
+      name: shop.name,
+      address: shop.address,
+      phone: shop.phone,
+      // Coordinates for directions / map links; null until the
+      // shopkeeper sets a location (worker A's Shop columns).
+      latitude: shop.latitude ?? null,
+      longitude: shop.longitude ?? null,
+    } : null,
     upiIntentUrl: payments[0]?.upiIntentUrl ?? null,
     payment: payments[0] ? { method: payments[0].method, status: payments[0].status, utr: payments[0].utr, rejectReason: payments[0].rejectReason } : null,
+    // Per-file print config + individual price, so the tracking page can
+    // show what each document costs (not just the order total).
     files: files.map(f => ({
       id: f.id,
       name: f.originalFilename,
       status: f.status,
       pageCount: f.pageCount,
       colorSuggestion: f.colorSuggestion,
+      copies: f.copies,
+      colorMode: f.colorMode,
+      pageRange: f.pageRange,
+      paperSize: f.paperSize,
+      duplex: f.duplex,
+      pricePaise: f.pricePaise,
     })),
     tasks,
     events: events.map(e => ({ type: e.type, actorType: e.actorType, at: e.createdAt, data: e.data })),
