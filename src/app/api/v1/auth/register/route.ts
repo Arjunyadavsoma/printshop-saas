@@ -64,6 +64,21 @@ const RegisterSchema = z.object({
   description: z.string().max(2000).optional().default(''),
   upiId: UpiIdSchema,
   address: z.string().max(300).default(''),
+  // Optional shop location — never required at registration. A supplied
+  // PIN must be a valid Indian PIN; coordinates are range-checked and
+  // saved unverified (only the Settings map lookup verifies a location).
+  city: z.string().max(100).optional().default(''),
+  state: z.string().max(100).optional().default(''),
+  pincode: z
+    .string()
+    .max(10)
+    .optional()
+    .default('')
+    .refine((v) => v === '' || /^[1-9][0-9]{5}$/.test(v.trim()), {
+      message: 'Enter a 6-digit PIN code starting with 1–9.',
+    }),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
   // Services — list of strings (bw, color, scan, laminate, binding, photo, document)
   services: z.array(z.string().max(40)).max(20).default([]),
   // Payment method customization (shopkeeper selects during registration)
@@ -90,6 +105,15 @@ const ALLOWED_SERVICES = new Set([
 
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Interim guard (mirrors PATCH /api/v1/shops/me): until the location
+ * columns land in the database, Prisma rejects writes mentioning them
+ * with "Unknown argument `latitude`…". */
+function isUnknownLocationArgError(cause: unknown): boolean {
+  const msg = cause instanceof Error ? cause.message : String(cause ?? '');
+  return ['fullAddress', 'city', 'state', 'pincode', 'latitude', 'longitude', 'locationVerified', 'locationUpdatedAt']
+    .some((f) => msg.includes(`Unknown argument \`${f}\``));
 }
 
 /** Returns true if the slug is reserved (cannot be registered as a shop URL). */
@@ -154,6 +178,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const unknown = body.services.filter((s) => !ALLOWED_SERVICES.has(s));
     if (unknown.length > 0) {
       throw new ValidationError(`Unknown service: ${unknown.join(', ')}`);
+    }
+
+    // Location pair check: a lone latitude or longitude is not a location.
+    const hasLat = body.latitude !== undefined && body.latitude !== null;
+    const hasLng = body.longitude !== undefined && body.longitude !== null;
+    if (hasLat !== hasLng) {
+      throw new ValidationError('Enter both latitude and longitude, or neither.');
     }
 
     // H10 fix: reject reserved slugs BEFORE any DB query — `admin`, `api`,
@@ -226,7 +257,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const pricingConfig = createDefaultPricingConfig();
       const servicesJson = JSON.stringify(body.services);
-      shop = await repos.shops.create({
+      // Optional location, saved unverified (typed coordinates are never
+      // "verified" — only the Settings map lookup verifies a location).
+      const hasLocation = Boolean(
+        body.city || body.state || body.pincode || hasLat || hasLng,
+      );
+      const locationFields = hasLocation
+        ? {
+            fullAddress: body.address || null,
+            city: body.city || null,
+            state: body.state || null,
+            pincode: body.pincode || null,
+            latitude: body.latitude ?? null,
+            longitude: body.longitude ?? null,
+            locationVerified: false,
+            locationUpdatedAt: new Date(),
+          }
+        : {};
+      const shopInput = {
         id: crypto.randomUUID(),
         name: body.shopName,
         slug: body.slug,
@@ -258,7 +306,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         pamphletName: body.pamphletName ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as Parameters<typeof repos.shops.create>[0]);
+      };
+      const createShop = (withLocation: boolean) =>
+        repos.shops.create({
+          ...shopInput,
+          ...(withLocation ? locationFields : {}),
+        } as Parameters<typeof repos.shops.create>[0]);
+      try {
+        shop = await createShop(hasLocation);
+      } catch (cause) {
+        // Interim (PR #6 regression guard): if the location columns are
+        // not migrated yet, create the shop WITHOUT the location rather
+        // than failing registration with a 500. The shopkeeper can add
+        // the location later from Settings. Remove once the migration
+        // is applied.
+        if (hasLocation && isUnknownLocationArgError(cause)) {
+          console.warn('[register] location columns not yet migrated — creating shop without location');
+          shop = await createShop(false);
+        } else {
+          throw cause;
+        }
+      }
     } catch (cause) {
       if (isUniqueConstraintError(cause)) {
         // The DB UNIQUE index caught a race the pre-flight check missed.

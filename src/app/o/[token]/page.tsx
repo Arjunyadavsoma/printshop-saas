@@ -25,6 +25,7 @@ import {
   mapToPill, buildTimeline, formatStepTimestamp, statusLabel,
   isCancelledStatus, canCancel,
 } from '@/lib/customer/order-status-mapping';
+import { openStreetMapUrl } from '@/lib/location/validation';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
 import { track as trackEvent, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
 
@@ -41,6 +42,7 @@ import { track as trackEvent, ANALYTICS_EVENTS } from '@/lib/customer/analytics'
 // ── Response shape from GET /api/v1/o/[token] ─────────────────────────────
 type Track = {
   order: {
+    id: string;
     orderNumber: string | null;
     status: string;
     totalPaise: number;
@@ -55,7 +57,7 @@ type Track = {
     cancelReason: string | null;
     priceSnapshot: unknown;
   };
-  shop: { name: string; address: string; phone: string } | null;
+  shop: { name: string; address: string; phone: string; latitude: number | null; longitude: number | null } | null;
   upiIntentUrl: string | null;
   payment: {
     method: string;
@@ -63,7 +65,12 @@ type Track = {
     utr: string | null;
     rejectReason: string | null;
   } | null;
-  files: Array<{ id: string; name: string; status: string; pageCount: number | null; colorSuggestion: unknown }>;
+  // Per-file print config + individual price (from orderTracking).
+  files: Array<{
+    id: string; name: string; status: string; pageCount: number | null; colorSuggestion: unknown;
+    copies: number; colorMode: string; pageRange: string | null; paperSize: string;
+    duplex: boolean; pricePaise: number;
+  }>;
   tasks: Array<{
     id: string;
     kind: string | null;
@@ -225,34 +232,96 @@ export default function TrackOrderPage() {
   }, [share, token]);
 
   // ── Action: open Google Maps directions to the shop ──
+  // Prefers exact coordinates when the shop has set a location.
   const onDirections = useCallback(() => {
     if (!data?.shop) return;
-    const q = encodeURIComponent(`${data.shop.name}, ${data.shop.address}`);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank', 'noopener,noreferrer');
+    const lat = data.shop.latitude;
+    const lng = data.shop.longitude;
+    const q = lat != null && lng != null
+      ? `${lat},${lng}`
+      : `${data.shop.name}, ${data.shop.address}`;
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`, '_blank', 'noopener,noreferrer');
   }, [data]);
 
   // ── Action: cancel the order (only before printing) ──
+  // Reason dropdown (POST /api/v1/o/[token]/cancel accepts { reason }).
+  // No refund is claimed here: per /refund-policy, refunds are issued
+  // directly by the shop to the customer's UPI account — Printelyx
+  // never holds the money, so a cancelled order is "refund requested
+  // from the shop", not "refunded".
+  const CANCEL_REASONS = [
+    'Changed my mind',
+    'Uploaded the wrong files',
+    'Ordered from the wrong shop by mistake',
+    'Price is too high',
+    'No longer needed',
+    'Other',
+  ];
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState(CANCEL_REASONS[0]);
   const [cancelling, setCancelling] = useState(false);
   const onCancel = useCallback(async () => {
     if (!data) return;
-    if (!window.confirm('Cancel this order? This cannot be undone.')) return;
     setCancelling(true);
     try {
       const res = await fetch(`/api/v1/o/${token}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Cancelled by customer' }),
+        body: JSON.stringify({ reason: cancelReason }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d?.error?.message ?? 'Could not cancel');
       setToast({ variant: 'success', message: 'Order cancelled. The shop has been notified.' });
+      setShowCancel(false);
       refresh();
     } catch (e) {
       setToast({ variant: 'error', message: e instanceof Error ? e.message : 'Could not cancel' });
     } finally {
       setCancelling(false);
     }
-  }, [data, token, refresh]);
+  }, [data, token, refresh, cancelReason]);
+
+  // ── Action: edit one file's print settings ──
+  // The API permits this only while status is 'awaiting_payment'
+  // (PATCH /api/v1/orders/:id/files/:fileId, X-Order-Token auth — the
+  // server rejects edits in any other status). Editing reprices the
+  // file and the order total; the page refreshes to show the new total.
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ copies: 1, colorMode: 'bw', paperSize: 'a4', duplex: false });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const canEditFiles = (status: string) => status === 'awaiting_payment';
+  const startEdit = useCallback((file: Track['files'][number]) => {
+    setEditError(null);
+    setEditDraft({
+      copies: file.copies ?? 1,
+      colorMode: file.colorMode === 'color' ? 'color' : 'bw',
+      paperSize: file.paperSize ?? 'a4',
+      duplex: file.duplex ?? false,
+    });
+    setEditingFileId(file.id);
+  }, []);
+  const saveEdit = useCallback(async (fileId: string) => {
+    if (!data) return;
+    setEditError(null);
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/v1/orders/${data.order.id}/files/${fileId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Order-Token': token },
+        body: JSON.stringify(editDraft),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error?.message ?? 'Could not save the changes');
+      setToast({ variant: 'success', message: 'Print settings updated — the total was recalculated.' });
+      setEditingFileId(null);
+      refresh();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Could not save the changes');
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [data, token, refresh, editDraft]);
 
   // ── Action: resubmit a UTR (when payment was rejected) ──
   const [utrValue, setUtrValue] = useState('');
@@ -433,6 +502,8 @@ export default function TrackOrderPage() {
   const shopName = track.shop?.name ?? 'This shop';
   const shopPhone = track.shop?.phone;
   const shopAddress = track.shop?.address;
+  const shopLat = track.shop?.latitude ?? null;
+  const shopLng = track.shop?.longitude ?? null;
   const totalRupees = formatRupees(track.order.totalPaise);
 
   // Payment state — surfaced as a card under the timeline.
@@ -499,6 +570,10 @@ export default function TrackOrderPage() {
                 <p className="mt-2 text-sm text-[var(--color-muted)]">
                   Place a new order at the shop to print again.
                 </p>
+                <p className="mt-2 text-sm text-[var(--color-muted)]">
+                  If you already paid, ask the shop for a refund — refunds are issued directly by the shop to your UPI account. See our{' '}
+                  <a href="/refund-policy" className="underline hover:text-[var(--color-ink)]">refund policy</a>.
+                </p>
               </div>
             </div>
           </section>
@@ -547,6 +622,109 @@ export default function TrackOrderPage() {
                 );
               })}
             </ul>
+          </section>
+        )}
+
+        {/* ── Documents — uploaded files with print config + individual prices ──
+            Config + price come from the tracking API (real data, not
+            assumptions). Editing is only offered while the order is still
+            awaiting payment — the API rejects edits in any other status. */}
+        {track.files.length > 0 && (
+          <section aria-labelledby="documents-heading">
+            <h2 id="documents-heading" className="text-sm font-semibold text-[var(--color-ink)] mb-2">
+              Documents · {track.files.length}
+            </h2>
+            <ul className="space-y-2">
+              {track.files.map((f) => (
+                <li
+                  key={f.id}
+                  className="rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-4 space-y-2"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-sm font-medium text-[var(--color-ink)]" title={f.name}>
+                      {f.name}
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold text-[var(--color-ink)] tnum tabular-nums">
+                      {formatRupees(f.pricePaise ?? 0)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    {f.pageCount ?? '–'} pages · {f.copies ?? 1} {f.copies === 1 ? 'copy' : 'copies'} ·{' '}
+                    {f.colorMode === 'color' ? 'Colour' : 'B&W'} · {String(f.paperSize ?? 'a4').toUpperCase()} ·{' '}
+                    {f.duplex ? 'double-sided' : 'single-sided'}
+                    {f.pageRange ? ` · pages ${f.pageRange}` : ''}
+                  </p>
+                  {editingFileId === f.id ? (
+                    <div className="space-y-3 border-t border-dashed border-[var(--color-border-ink)] pt-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-xs text-[var(--color-muted)]">
+                          Copies
+                          <input
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={editDraft.copies}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, copies: Math.max(1, Number(e.target.value) || 1) }))}
+                            className="mt-1 w-full rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] min-h-[44px]"
+                          />
+                        </label>
+                        <label className="text-xs text-[var(--color-muted)]">
+                          Colour
+                          <select
+                            value={editDraft.colorMode}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, colorMode: e.target.value }))}
+                            className="mt-1 w-full rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] min-h-[44px]"
+                          >
+                            <option value="bw">B&amp;W</option>
+                            <option value="color">Colour</option>
+                          </select>
+                        </label>
+                        <label className="text-xs text-[var(--color-muted)]">
+                          Paper size
+                          <select
+                            value={editDraft.paperSize}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, paperSize: e.target.value }))}
+                            className="mt-1 w-full rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] min-h-[44px]"
+                          >
+                            <option value="a4">A4</option>
+                            <option value="a3">A3</option>
+                            <option value="letter">Letter</option>
+                            <option value="legal">Legal</option>
+                          </select>
+                        </label>
+                        <label className="flex items-end gap-2 pb-1 text-xs text-[var(--color-muted)]">
+                          <input
+                            type="checkbox"
+                            checked={editDraft.duplex}
+                            onChange={(e) => setEditDraft((d) => ({ ...d, duplex: e.target.checked }))}
+                            className="size-5 accent-[var(--color-cyan-ink)]"
+                          />
+                          Double-sided
+                        </label>
+                      </div>
+                      {editError && <p className="text-xs text-[var(--color-error)]" role="alert">{editError}</p>}
+                      <div className="flex gap-2">
+                        <PrimaryButton onClick={() => void saveEdit(f.id)} loading={savingEdit} className="flex-1">
+                          Save changes
+                        </PrimaryButton>
+                        <TextButton onClick={() => setEditingFileId(null)} className="flex-1">
+                          Cancel
+                        </TextButton>
+                      </div>
+                    </div>
+                  ) : canEditFiles(track.order.status) ? (
+                    <div>
+                      <TextButton onClick={() => startEdit(f)}>Edit print settings</TextButton>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-[var(--color-muted)]">
+              {canEditFiles(track.order.status)
+                ? 'Print settings can be changed until payment — the total updates automatically.'
+                : 'Print settings can only be changed before payment.'}
+            </p>
           </section>
         )}
 
@@ -672,30 +850,77 @@ export default function TrackOrderPage() {
                 <Share2 className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />
                 Share order link
               </button>
+              {shopLat != null && shopLng != null && (
+                <a
+                  href={openStreetMapUrl(shopLat, shopLng)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="touch-target col-span-2 inline-flex items-center justify-center gap-2 rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-3 py-2.5 text-sm font-medium text-[var(--color-ink)] min-h-[48px]"
+                >
+                  <MapPin className="size-4 text-[var(--color-cyan-ink)]" aria-hidden="true" />
+                  View shop on map
+                </a>
+              )}
             </div>
 
             {canCancelOrder && (
-              <div className="pt-1">
-                <SecondaryButton
-                  onClick={onCancel}
-                  loading={cancelling}
-                  className="w-full"
-                >
-                  {cancelling ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      Cancelling…
-                    </>
-                  ) : (
-                    <>
+              <div className="pt-1 space-y-2">
+                {showCancel ? (
+                  <>
+                    <label htmlFor="cancel-reason" className="block text-xs font-medium text-[var(--color-muted)]">
+                      Reason for cancelling
+                    </label>
+                    <select
+                      id="cancel-reason"
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      className="w-full rounded-[var(--radius-default)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] px-3 py-2.5 text-sm text-[var(--color-ink)] min-h-[48px]"
+                    >
+                      {CANCEL_REASONS.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      Cancelling is free before printing starts. If you already paid, the shop refunds you directly to your UPI account — see our{' '}
+                      <a href="/refund-policy" className="underline hover:text-[var(--color-ink)]">refund policy</a>.
+                    </p>
+                    <div className="flex gap-2">
+                      <SecondaryButton
+                        onClick={onCancel}
+                        loading={cancelling}
+                        className="flex-1"
+                      >
+                        {cancelling ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            Cancelling…
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="size-4 text-[var(--color-error)]" aria-hidden="true" />
+                            Confirm cancellation
+                          </>
+                        )}
+                      </SecondaryButton>
+                      <TextButton onClick={() => setShowCancel(false)} className="flex-1">
+                        Keep order
+                      </TextButton>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <SecondaryButton
+                      onClick={() => setShowCancel(true)}
+                      className="w-full"
+                    >
                       <XCircle className="size-4 text-[var(--color-error)]" aria-hidden="true" />
                       Cancel order
-                    </>
-                  )}
-                </SecondaryButton>
-                <p className="mt-1 text-xs text-[var(--color-muted)] text-center">
-                  Available only before printing starts.
-                </p>
+                    </SecondaryButton>
+                    <p className="mt-1 text-xs text-[var(--color-muted)] text-center">
+                      Available only before printing starts.
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </section>
