@@ -23,7 +23,7 @@ export const GET = withRateLimit<{ slug: string }>('uploads-status', 240, 60, as
   try {
     await ctx.params;
     const uploadId = req.nextUrl.searchParams.get('uploadId') ?? '';
-    const status = getStatus(uploadId);
+    const status = await getStatus(uploadId);
     if (!status) throw new NotFoundError('Upload session not found or expired — restart the upload.');
     return ok(status);
   } catch (cause) {

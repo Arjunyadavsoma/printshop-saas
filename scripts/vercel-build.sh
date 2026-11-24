@@ -42,6 +42,21 @@ if [ -n "${DATABASE_URL:-}" ]; then
     echo "  ⚠   DATABASE_URL='postgresql://...@db.PROJECT.supabase.co:5432/...' bunx prisma migrate deploy"
     echo "  ⚠ Continuing build — migration columns were manually applied to production."
   fi
+
+  # Schema sync (db push) — this project manages its schema via
+  # prisma/schema.prisma + db push (CI + local do the same). Without this,
+  # NEW tables (e.g. the DB-backed UploadSession/UploadChunk registry that
+  # fixed production uploads) would never reach the production database,
+  # because there is no migrations/ directory for migrate deploy to apply.
+  # No --accept-data-loss: if drift ever requires destructive changes the
+  # build logs it loudly instead of silently destroying data.
+  echo "→ Syncing Prisma schema (db push, additive)..."
+  if timeout 60 bunx prisma db push --skip-generate 2>&1 | tail -6; then
+    echo "  ✓ Schema in sync"
+  else
+    echo "  ⚠ db push failed (likely pooled-connection timeout). Run manually:"
+    echo "  ⚠   DATABASE_URL='<direct-url>' bunx prisma db push"
+  fi
 else
   echo "  ⚠ DATABASE_URL not set — skipping migrations"
 fi

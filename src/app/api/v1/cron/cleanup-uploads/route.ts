@@ -33,9 +33,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const beforeActive = activeSessionCount();
+    const beforeActive = await activeSessionCount();
     const expired = await expireOldSessions();
-    const afterActive = activeSessionCount();
+    const afterActive = await activeSessionCount();
     return Response.json({
       success: true,
       data: {

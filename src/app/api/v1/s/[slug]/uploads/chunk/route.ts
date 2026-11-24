@@ -27,7 +27,7 @@ export const PUT = withRateLimit('uploads-chunk', 600, 60, async (req: NextReque
     const indexStr = req.nextUrl.searchParams.get('index') ?? '';
     const checksum = req.nextUrl.searchParams.get('checksum') ?? '';
 
-    const session = getSession(uploadId);
+    const session = await getSession(uploadId);
     if (!session) throw new NotFoundError('Upload session not found or expired — restart the upload.');
     if (session.status !== 'active') {
       throw new NotFoundError('Upload session has expired — restart the upload.');

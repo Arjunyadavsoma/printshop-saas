@@ -31,7 +31,7 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
   try {
     await ctx.params;
     const body = BodySchema.parse(await req.json());
-    const session = getSession(body.uploadId);
+    const session = await getSession(body.uploadId);
     if (!session) throw new NotFoundError('Upload session not found or expired — restart the upload.');
     if (session.status !== 'active') {
       throw new NotFoundError('Upload session has expired — restart the upload.');

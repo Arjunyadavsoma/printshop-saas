@@ -238,8 +238,8 @@ describe('Retention — /api/v1/cron/cleanup-uploads expires old sessions', () =
       mimeType: 'application/pdf',
       declaredSize: 100,
     });
-    // Sanity: the session is active.
-    expect((await import('@/lib/pipeline/upload-sessions')).activeSessionCount()).toBeGreaterThanOrEqual(1);
+    // Sanity: the session is active. (Registry is DB-backed — async reads.)
+    expect(await (await import('@/lib/pipeline/upload-sessions')).activeSessionCount()).toBeGreaterThanOrEqual(1);
 
     // Move the clock 2h forward — the session is now > 1h old.
     const twoHoursLater = Date.now() + 2 * 60 * 60 * 1000;
@@ -247,7 +247,7 @@ describe('Retention — /api/v1/cron/cleanup-uploads expires old sessions', () =
     expect(expired).toBeGreaterThanOrEqual(1);
 
     // The session is gone from the registry.
-    expect((await import('@/lib/pipeline/upload-sessions')).getSession(uploadId)).toBeNull();
+    expect(await (await import('@/lib/pipeline/upload-sessions')).getSession(uploadId)).toBeNull();
   });
 
   it('does NOT expire a session with recent chunk activity (< 1h)', async () => {
@@ -262,7 +262,7 @@ describe('Retention — /api/v1/cron/cleanup-uploads expires old sessions', () =
     });
     const expired = await expireOldSessions(Date.now() + 30 * 60 * 1000); // 30 min later
     expect(expired).toBe(0);
-    expect((await import('@/lib/pipeline/upload-sessions')).getSession(uploadId)).not.toBeNull();
+    expect(await (await import('@/lib/pipeline/upload-sessions')).getSession(uploadId)).not.toBeNull();
   });
 });
 

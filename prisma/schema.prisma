@@ -723,3 +723,43 @@ model Notification {
 
   @@index([shopId, readAt, createdAt])
 }
+
+// ── Resumable upload sessions (P8.7, DB-backed) ──────────────────────────
+// Sessions were previously held in a per-process in-memory Map + /tmp chunk
+// files. On Vercel every lambda instance has its own Map, so init/chunk/
+// complete hitting different instances returned "Upload session not found"
+// and the customer saw "Failed to process — tap to retry". Storing sessions
+// + chunks in Postgres makes every instance share the same state.
+
+model UploadSession {
+  uploadId     String   @id
+  orderId      String
+  fileId       String
+  orderToken   String
+  shopId       String
+  filename     String
+  mimeType     String
+  declaredSize Int
+  chunkSize    Int
+  status       String   @default("active") // active | expired | completed
+  createdAt    DateTime @default(now())
+  lastChunkAt  DateTime @default(now())
+  chunks       UploadChunk[]
+
+  @@index([lastChunkAt])
+  @@index([createdAt])
+}
+
+model UploadChunk {
+  id        String        @id @default(uuid())
+  uploadId  String
+  idx       Int
+  checksum  String
+  size      Int
+  bytes     Bytes
+  createdAt DateTime      @default(now())
+  session   UploadSession @relation(fields: [uploadId], references: [uploadId], onDelete: Cascade)
+
+  @@unique([uploadId, idx])
+  @@index([uploadId])
+}
