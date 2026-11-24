@@ -34,7 +34,15 @@ export async function processUpload(fileId: string): Promise<{ status: 'READY' |
     await storage.put(pdfKey, norm.pdfBytes, 'application/pdf');
 
     const suggestion = await suggestColors(norm.pdfBytes);
-    const thumbs = await renderThumbnails(norm.pdfBytes, norm.pageCount);
+    // Thumbnails are cosmetic — a missing pdftoppm binary must not fail
+    // the whole file (page count comes from pdf-lib alone). Degrade to
+    // no thumbnails instead of marking the file 'failed'.
+    let thumbs: Array<{ page: number; png: Uint8Array }> = [];
+    try {
+      thumbs = await renderThumbnails(norm.pdfBytes, norm.pageCount);
+    } catch (e) {
+      console.warn('[processUpload] thumbnails unavailable, continuing without them:', e instanceof Error ? e.message : String(e));
+    }
     for (const t of thumbs) {
       const thumbKey = file.storageKey.replace('/orig/', `/thumbs/${fileId}/`).replace(/\.[^.]+$/, `-${t.page}.png`);
       await storage.put?.(thumbKey, t.png, 'image/png');

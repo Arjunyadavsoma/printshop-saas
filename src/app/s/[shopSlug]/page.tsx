@@ -43,17 +43,20 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const rateRows = await repos.priceRules.activeForShop(shop.id);
   const bwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'SINGLE');
   const colorRule = rateRows.find(r => r.colorMode === 'COLOR' && r.paperSize === 'A4' && r.sides === 'SINGLE');
+  const doubleBwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'DOUBLE');
   const pricingCfg = typeof shop.pricingConfig === 'string'
     ? (() => { try { return JSON.parse(shop.pricingConfig); } catch { return null; } })()
     : shop.pricingConfig;
   const bwPerPagePaise = bwRule?.slabs[0]?.perPagePaise ?? pricingCfg?.bw_a4_per_page ?? null;
   const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? pricingCfg?.color_a4_per_page ?? null;
+  const doubleBwPerPagePaise = doubleBwRule?.slabs[0]?.perPagePaise ?? pricingCfg?.bw_a4_double_per_page ?? null;
   const pricesFromConfig = bwPerPagePaise != null && colorPerPagePaise != null;
 
   // Format the per-page rates as display strings (e.g. "₹2"). The spec
   // rates are the fallback only when the shop has no pricing configured.
   const bwPriceText = bwPerPagePaise != null ? `₹${Math.round(bwPerPagePaise / 100)}` : '₹2';
   const colorPriceText = colorPerPagePaise != null ? `₹${Math.round(colorPerPagePaise / 100)}` : '₹10';
+  const doubleBwPriceText = doubleBwPerPagePaise != null ? `₹${Math.round(doubleBwPerPagePaise / 100)}` : null;
 
   // Default to open/accepting when fields are missing (in-memory adapter doesn't
   // always apply Prisma @default(true) — be defensive so demo shops work).
@@ -74,6 +77,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
       retentionHours={shop.retentionHours ?? 24}
       bwPrice={bwPriceText}
       colorPrice={colorPriceText}
+      doubleBwPrice={doubleBwPriceText}
       bwPerPagePaise={bwPerPagePaise}
       colorPerPagePaise={colorPerPagePaise}
       pricesFromConfig={pricesFromConfig}

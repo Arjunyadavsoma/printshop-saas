@@ -5,6 +5,7 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { rateLimit, rateKey } from '@/lib/api/rate-limit';
 import {
+  AppError,
   ValidationError,
   UnauthorizedError,
 } from '@platform/core/errors';
@@ -263,12 +264,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         // The DB UNIQUE index caught a race the pre-flight check missed.
         return conflictResponse(cause);
       }
-      // Non-unique-constraint error — propagate to the outer catch, which
-      // surfaces a generic 500 envelope. But first, best-effort cleanup:
-      // if we created the owner row but the shop insert failed, we don't
-      // want an orphan user with shopId=null lingering in the DB.
-      // (We can't easily delete via the repo API without a deleteWhere
-      // method exposed; this is a best-effort note for reviewers.)
+      // Non-unique-constraint error — best-effort cleanup first: if we
+      // created the owner row but the shop insert failed, delete the
+      // orphan user so a retry does not hit EMAIL_TAKEN for a shop that
+      // was never created. Then propagate to the outer catch, which
+      // surfaces a generic 500 envelope.
+      if (owner) {
+        try {
+          await repos.users.deleteById(owner.id);
+        } catch {
+          // Cleanup is best-effort — the original error is the one to report.
+        }
+      }
       throw cause;
     }
 
@@ -310,6 +317,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
   } catch (cause) {
+    // A server misconfiguration (e.g. a bad PAYMENT_ENCRYPTION_KEY) must
+    // not surface as a generic "Internal server error" — tell the customer
+    // the setup is temporarily unavailable instead of hiding the reason
+    // behind a 500. The UI renders error.message verbatim.
+    if (cause instanceof Error && /PAYMENT_ENCRYPTION_KEY/.test(cause.message)) {
+      console.error('[register] FAILED: server misconfiguration — PAYMENT_ENCRYPTION_KEY invalid');
+      return fail(new AppError('Shop setup is temporarily unavailable — please try again later.', 'SERVER_MISCONFIG', 503));
+    }
     // Log the FULL error server-side so it shows in Vercel logs — the
     // toAppError envelope strips details from the client response.
     console.error('[register] FAILED:', cause instanceof Error ? cause.message : String(cause));

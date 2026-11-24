@@ -17,6 +17,10 @@ export interface ShopOrderPageProps {
       real pricing config (price rules, else pricingConfig). */
   bwPrice: string;
   colorPrice: string;
+  /** Double-sided B&W per-page display string (e.g. "₹1.5"), or null when
+      the shop has no double-sided rate configured — the row then keeps the
+      "Costs less per page" copy instead of showing no price at all. */
+  doubleBwPrice: string | null;
   /** Per-page paise behind the display strings (null when the shop has
       no pricing configured at all — the display strings then fall back
       to the spec rates ₹2 / ₹10). */
@@ -46,7 +50,7 @@ export interface ShopOrderPageProps {
 export function ShopOrderPage(props: ShopOrderPageProps) {
   const {
     shopSlug, shopName, upiId, upiPayeeName, paymentMode, retentionHours,
-    bwPrice, colorPrice, bwPerPagePaise, colorPerPagePaise, pricesFromConfig,
+    bwPrice, colorPrice, doubleBwPrice, bwPerPagePaise, colorPerPagePaise, pricesFromConfig,
     hours, waitMinutes, printerCount, shopPhone, shopAddress, closed,
   } = props;
   const [started, setStarted] = useState(false);
@@ -71,8 +75,12 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
           <span className="text-xl font-bold text-[var(--label)] tnum">{colorPrice}</span>
         </div>
         <div className="flex items-baseline justify-between gap-3 border-t border-[var(--hairline)] py-2">
-          <span className="text-sm text-[var(--label)]">Double-sided</span>
-          <span className="text-[13px] text-[var(--label-2)]">Costs less per page</span>
+          <span className="text-sm text-[var(--label)]">Double-sided <span className="text-[13px] text-[var(--label-2)]">per page</span></span>
+          {doubleBwPrice != null ? (
+            <span className="text-xl font-bold text-[var(--label)] tnum">{doubleBwPrice}</span>
+          ) : (
+            <span className="text-[13px] text-[var(--label-2)]">Costs less per page</span>
+          )}
         </div>
         {!pricesFromConfig && (
           <p className="pt-1 text-xs text-[var(--label-2)]">Standard rates — this shop hasn&apos;t set its own prices yet.</p>

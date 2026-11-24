@@ -19,7 +19,7 @@ import { AlertCircle, FileText, RotateCcw, X } from 'lucide-react';
  * customer is never stuck.
  */
 
-export type FileCardStatus = 'uploading' | 'converting' | 'ready' | 'failed';
+export type FileCardStatus = 'uploading' | 'uploaded' | 'converting' | 'ready' | 'failed';
 
 export interface FileCardFile {
   name: string;
@@ -53,6 +53,7 @@ function formatSize(bytes: number): string {
 
 const STATUS_LABELS: Record<FileCardStatus, string> = {
   uploading: 'Uploading',
+  uploaded: 'Uploading',
   converting: 'Converting',
   ready: 'Ready',
   failed: 'Failed',
@@ -89,7 +90,7 @@ export function FileCard({ file, onRemove, onRetry, className = '', selected = f
         <p className="text-[13px] text-[var(--label-2)] tnum mt-0.5 truncate">
           {formatSize(file.size)}
           {file.pageCount != null ? ` · ${file.pageCount} pages` : ''}
-          {` · ${STATUS_LABELS[file.status]}`}
+          {` · ${STATUS_LABELS[file.status] ?? 'Processing'}`}
         </p>
 
         {inProgress && (

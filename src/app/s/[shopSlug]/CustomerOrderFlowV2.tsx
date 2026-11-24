@@ -60,7 +60,11 @@ import { saveRecentOrder } from '@/lib/customer/recent-orders';
 /** The API uses 'color' (American); the design system uses 'colour' (British). */
 type ApiPageMode = 'color' | 'bw' | 'skip';
 
-type FlowFileStatus = 'uploading' | 'converting' | 'ready' | 'failed';
+/** Client-side file status. 'uploaded' is the intermediate status the
+    server reports between uploads/init and uploads/complete — it is
+    normalised to 'converting' on the next poll (see the poll effect), but
+    the union must admit it or the poll filter won't typecheck. */
+type FlowFileStatus = 'uploading' | 'uploaded' | 'converting' | 'ready' | 'failed';
 
 interface FlowFile {
   fileId: string;
@@ -998,7 +1002,12 @@ export function CustomerOrderFlowV2({
   /* ── Poll converting files until READY ─────────────────────────────── */
 
   useEffect(() => {
-    const pending = files.filter((f) => f.status === 'converting');
+    // Poll files that are still being processed. The server also reports
+    // the intermediate 'uploaded' status (row created by uploads/init,
+    // before uploads/complete flips it to 'converting'); treat any
+    // non-terminal status as 'converting' so polling never stalls and the
+    // row never renders an undefined status label.
+    const pending = files.filter((f) => f.status === 'converting' || f.status === 'uploaded');
     if (pending.length === 0 || !draft) return;
     const t = setTimeout(async () => {
       for (const f of pending) {
@@ -1042,7 +1051,10 @@ export function CustomerOrderFlowV2({
                   : x.pageModes;
               return {
                 ...x,
-                status: d.data!.status,
+                // Map any non-terminal server status ('uploaded',
+                // 'converting', …) to 'converting' so the poll keeps
+                // running and the status label never renders undefined.
+                status: d.data!.status === 'ready' || d.data!.status === 'failed' ? d.data!.status : 'converting',
                 failReason: d.data!.failReason ?? null,
                 pageCount,
                 thumbnails: d.data!.thumbnails ?? [],
@@ -1614,6 +1626,11 @@ export function CustomerOrderFlowV2({
                 setFiles((fs) => fs.filter((f) => f.fileId !== fileId));
                 if (activeIdx >= files.length - 1) setActiveIdx(Math.max(0, activeIdx - 1));
               }}
+              onRetry={(fileId) => {
+                // Re-poll a failed/stuck file: back to 'converting' so the
+                // status poll picks it up again.
+                setFiles((fs) => fs.map((f) => (f.fileId === fileId ? { ...f, status: 'converting', failReason: null } : f)));
+              }}
             />
           )}
         </div>
@@ -1747,6 +1764,9 @@ export function CustomerOrderFlowV2({
                 setFiles((fs) => fs.filter((f) => f.fileId !== fileId));
                 if (activeIdx >= files.length - 1) setActiveIdx(Math.max(0, activeIdx - 1));
               }}
+              onRetry={(fileId) => {
+                setFiles((fs) => fs.map((f) => (f.fileId === fileId ? { ...f, status: 'converting', failReason: null } : f)));
+              }}
               compact
             />
           )}
@@ -1834,7 +1854,7 @@ export function CustomerOrderFlowV2({
       {/* ── StickyActionBar with total + primary CTA ──
           Total is "Estimated" until checkout locks it (placed orders
           show "Confirmed" on the waiting screen instead). Never both. */}
-      {readyFiles.length > 0 && (
+      {files.length > 0 && (
         <StickyActionBar
           caption="Estimated total"
           total={
@@ -1848,7 +1868,12 @@ export function CustomerOrderFlowV2({
           }
           action={
             step === 0 ? (
-              <PrimaryButton onClick={() => setStep(1)}>Continue</PrimaryButton>
+              <PrimaryButton
+                onClick={() => setStep(1)}
+                disabled={readyFiles.length === 0}
+              >
+                Continue
+              </PrimaryButton>
             ) : step === 1 ? (
             <PrimaryButton
               onClick={() => setStep(2)}
@@ -1906,12 +1931,14 @@ function FileList({
   activeIdx,
   onSelect,
   onRemove,
+  onRetry,
   compact = false,
 }: {
   files: FlowFile[];
   activeIdx: number;
   onSelect: (idx: number) => void;
   onRemove: (fileId: string) => void;
+  onRetry?: (fileId: string) => void;
   compact?: boolean;
 }) {
   return (
@@ -1941,7 +1968,7 @@ function FileList({
               <FileCard
                 file={cardFile}
                 onRemove={() => onRemove(f.fileId)}
-                onRetry={undefined}
+                onRetry={onRetry ? () => onRetry(f.fileId) : undefined}
               />
             </button>
           </li>

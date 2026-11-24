@@ -93,4 +93,11 @@ export class UserRepository extends BaseRepository<UserRow> {
     if (!updated) throw new UnauthorizedError(`User ${id} not found`);
     return toDomain(updated);
   }
+
+  /** Delete a user by id. Used only as best-effort cleanup when a
+      registration fails after the owner row was created, so a failed
+      attempt does not poison every retry with EMAIL_TAKEN. */
+  async deleteById(id: string): Promise<void> {
+    await this.deleteWhere({ id });
+  }
 }
