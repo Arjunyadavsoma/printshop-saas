@@ -198,6 +198,21 @@ export type GeolocationFailure = 'denied' | 'unavailable' | 'timeout' | 'unsuppo
  * shop discovery and is faster + cheaper on battery).
  */
 export function requestGeolocation(): Promise<CustomerLocation> {
+  // Inside the companion app, prefer the native geolocation bridge — the
+  // Capacitor plugin drives the proper Android runtime-permission dialog,
+  // which is deterministic across OEMs (the WebView's own
+  // navigator.geolocation prompt is inconsistent and some OEM WebViews
+  // never show it at all). Browsers unaffected: NativeApp is undefined there.
+  const native =
+    typeof window !== 'undefined' ? window.NativeApp?.location : undefined;
+  if (native?.getCurrent) {
+    return native.getCurrent().then((loc) => ({
+      lat: loc.lat,
+      lng: loc.lng,
+      label: 'Your location',
+      accuracy: loc.accuracy,
+    }));
+  }
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
       const err = new Error('Geolocation is not supported by this browser.') as Error & {
@@ -278,6 +293,12 @@ export function deviceLocationGuidance(): string {
 }
 
 export function geolocationErrorMessage(code: GeolocationFailure): string {
+  // Inside the companion app the recovery path is the system app-settings
+  // page (the UI shows an "Open app settings" button for this), not the
+  // browser's site-permission panel.
+  if (code === 'denied' && typeof window !== 'undefined' && window.NativeApp?.permissions) {
+    return 'Location permission is off. Open app settings to allow it, or search by area, city or PIN code below.';
+  }
   switch (code) {
     case 'denied':
       return 'Location permission was denied. You can still search by area, city or PIN code below, or allow location access in your browser settings and try again.';

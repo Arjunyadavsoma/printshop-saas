@@ -30,6 +30,13 @@ export interface UPIPaymentResult {
   error?: string;
 }
 
+/** A device position from the native geolocation bridge. */
+export interface NativeLocationResult {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+}
+
 /** The shape of `window.NativeApp` when the companion app is active. */
 export interface NativeAppBridge {
   version: string;
@@ -50,6 +57,15 @@ export interface NativeAppBridge {
   notifications: {
     schedule(title: string, body: string, id?: number): Promise<number>;
     cancel(id: number): Promise<void>;
+  };
+  /** Native GPS — preferred over navigator.geolocation inside the app. */
+  location: {
+    getCurrent(): Promise<NativeLocationResult>;
+    checkPermission(): Promise<'granted' | 'denied' | 'prompt'>;
+  };
+  /** System app-settings — the recovery path for permanent denials. */
+  permissions: {
+    openSettings(): Promise<void>;
   };
   openExternal(url: string): Promise<void>;
   getInstallReferrer(): Promise<string | null>;

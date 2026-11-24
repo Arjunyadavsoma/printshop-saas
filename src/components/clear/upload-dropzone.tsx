@@ -2,6 +2,7 @@
 
 import { useCallback, useId, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { UploadCloud } from 'lucide-react';
+import type { CapturedDocument } from '@/types/native-app';
 
 /**
  * Clear design system — upload dropzone.
@@ -27,6 +28,14 @@ import { UploadCloud } from 'lucide-react';
 
 const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.docx,.pptx,.xlsx';
 const ACCEPTED_LABEL = 'PDF, JPG, PNG, WebP, HEIC, DOCX, PPTX, XLSX';
+
+/** Convert a native camera capture (base64) into a File for the upload flow. */
+function base64ToFile(shot: CapturedDocument): File {
+  const binary = atob(shot.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], shot.filename, { type: shot.mimeType });
+}
 
 export interface UploadDropzoneProps {
   /** Called with the selected/dropped File[] (always an array). */
@@ -55,8 +64,27 @@ export function UploadDropzone({
 
   const openPicker = useCallback(() => {
     if (disabled) return;
+    // In the companion app, use the native document scanner (CameraX with
+    // the proper runtime-permission prompt and auto-rotate EXIF handling)
+    // instead of the WebView file input. A null result — cancelled, or
+    // permission denied — falls through to the file input, whose Android
+    // chooser still offers Camera and Files, so the flow never dead-ends.
+    const nativeCamera = typeof window !== 'undefined' ? window.NativeApp?.camera : undefined;
+    if (nativeCamera?.scan) {
+      void nativeCamera
+        .scan()
+        .then((shot) => {
+          if (!shot) {
+            inputRef.current?.click();
+            return;
+          }
+          onFiles([base64ToFile(shot)]);
+        })
+        .catch(() => inputRef.current?.click());
+      return;
+    }
     inputRef.current?.click();
-  }, [disabled]);
+  }, [disabled, onFiles]);
 
   const handleFiles = useCallback(
     (list: FileList | null) => {

@@ -53,6 +53,22 @@ public class MainActivity extends BridgeActivity {
         // Register the custom UPI Intent plugin. The string "UPIIntent"
         // MUST match the plugin name in `upi.ts`'s `registerPlugin('UPIIntent')`.
         registerPlugin(UPIIntentPlugin.class);
+        // AppSettings — the web permission flows call
+        // NativeApp.permissions.openSettings() to recover from permanent
+        // permission denials (Android ignores re-prompts after "don't ask again").
+        registerPlugin(AppSettingsPlugin.class);
+
+        // WebView tuning (speed + geolocation):
+        //  - geolocationEnabled lets the WebView-side navigator.geolocation
+        //    work as a fallback; the primary path is the native Geolocation
+        //    plugin bridge (deterministic prompt, OEM-independent).
+        //  - LOAD_DEFAULT keeps normal HTTP caching — repeat visits render
+        //    from cache while revalidating, the fastest safe mode.
+        if (bridge != null && bridge.getWebView() != null) {
+            android.webkit.WebSettings ws = bridge.getWebView().getSettings();
+            ws.setGeolocationEnabled(true);
+            ws.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
+        }
 
         bridgeJs = readAsset("public/native-bridges.js");
         installWebViewClient();

@@ -48,10 +48,15 @@ const config: CapacitorConfig = {
     captureInput: true,
     // Use the Android System WebView (Chrome) — the most compatible option.
     webContentsDebuggingEnabled: false, // set true for `chrome://inspect` debugging
+    // Match the brand ground so the WebView paints the same colour as the
+    // splash + the web app while loading — no white flash between them.
+    backgroundColor: '#F4F6F8',
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 1500,
+      // Shorter than before — the web app shows its own branded header as
+      // soon as the WebView paints, so a long native splash only adds lag.
+      launchShowDuration: 900,
       // Brand ground colour from the consumer redesign (light grey-blue).
       backgroundColor: '#F4F6F8FF',
       androidSplashResourceName: 'splash',

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash ground colour — matches the consumer redesign ground (#F4F6F8)
+         so the splash hands off to the app without a visible tint jump. -->
+    <color name="splash_background">#F4F6F8</color>
+</resources>

@@ -81,6 +81,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Vibrate: for notification haptic feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Location: for the native geolocation bridge ("shops near you").
+         COARSE alone is enough for shop discovery; FINE is requested so the
+         plugin can fall back to GPS when the network fix is unavailable.
+         The web app only asks on an explicit user gesture, never on load. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Camera hardware feature (not required — app works without camera,
          but the document-scan bridge needs it for photo capture) -->

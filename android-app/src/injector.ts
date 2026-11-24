@@ -18,8 +18,10 @@ import { scanDocument, pickDocument } from './bridges/camera';
 import { payWithUPI } from './bridges/upi';
 import { setSecure, getSecure, removeSecure, clearSecure } from './bridges/storage';
 import { scheduleNotification, cancelNotification } from './bridges/notifications';
+import { getCurrentLocation, checkLocationPermission } from './bridges/location';
+import { openAppSettings } from './bridges/settings';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 /** The assembled bridge object attached to window.NativeApp. */
 const NativeApp = {
@@ -47,6 +49,19 @@ const NativeApp = {
     cancel: cancelNotification,
   },
 
+  location: {
+    // Native GPS — the web app uses this instead of navigator.geolocation
+    // inside the app (deterministic permission prompt, OEM-independent).
+    getCurrent: getCurrentLocation,
+    checkPermission: checkLocationPermission,
+  },
+
+  permissions: {
+    // Open the system app-settings page — the only recovery path after a
+    // permanent ("don't ask again") permission denial.
+    openSettings: openAppSettings,
+  },
+
   openExternal: async (url: string): Promise<void> => {
     // Open the URL in the system browser (outside the WebView).
     // In Android, window.open with target=_blank triggers the system
@@ -70,7 +85,13 @@ if (typeof window !== 'undefined') {
 
   // Dispatch a custom event so the web app can know the bridge is ready
   // (it listens for 'nativeapp:ready' if it needs to do async init).
-  window.dispatchEvent(
-    new CustomEvent('nativeapp:ready', { detail: { version: APP_VERSION } }),
-  );
+  // Guarded — a missing/locked-down dispatchEvent must never prevent the
+  // bridge object itself from attaching.
+  try {
+    window.dispatchEvent(
+      new CustomEvent('nativeapp:ready', { detail: { version: APP_VERSION } }),
+    );
+  } catch {
+    /* non-fatal */
+  }
 }

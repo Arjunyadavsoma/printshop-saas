@@ -97,6 +97,20 @@ export function DetectLocationButton({ onDetected, disabled }: DetectLocationBut
           </button>
         </span>
       )}
+      {/* In the companion app, a permanent denial can only be recovered from
+          the system app-settings page — Android ignores re-prompts after
+          "don't ask again". Never shown in browsers (NativeApp absent). */}
+      {error && errorCode === 'denied' && typeof window !== 'undefined' && window.NativeApp?.permissions && (
+        <span>
+          <button
+            type="button"
+            onClick={() => void window.NativeApp!.permissions!.openSettings()}
+            className="inline-flex min-h-[44px] items-center rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--on-accent)]"
+          >
+            Open app settings
+          </button>
+        </span>
+      )}
     </span>
   );
 }

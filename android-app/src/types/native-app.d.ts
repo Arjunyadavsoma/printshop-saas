@@ -77,6 +77,26 @@ export interface NativeAppBridge {
     cancel(id: number): Promise<void>;
   };
 
+  /** Native GPS — preferred over navigator.geolocation inside the app
+   *  (deterministic permission prompt across OEM WebViews). */
+  location: {
+    /** Ask for permission if needed, then return the current position. */
+    getCurrent(): Promise<{
+      lat: number;
+      lng: number;
+      /** GPS accuracy in metres, when known. */
+      accuracy: number | null;
+    }>;
+    /** Current permission state without prompting. */
+    checkPermission(): Promise<'granted' | 'denied' | 'prompt'>;
+  };
+
+  /** System app-settings — the only recovery path after a permanent
+   *  ("don't ask again") permission denial. */
+  permissions: {
+    openSettings(): Promise<void>;
+  };
+
   /** Open a URL in the system browser (outside the WebView). */
   openExternal(url: string): Promise<void>;
 
