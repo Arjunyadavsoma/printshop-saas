@@ -6,18 +6,18 @@ import Link from 'next/link';
 import { Camera, AlertCircle, Keyboard } from 'lucide-react';
 import { CustomerShell } from '@/components/clear/customer-shell';
 import { Input } from '@/components/clear/input';
+import jsQR from 'jsqr';
 
 /**
  * /scan — "Scan QR" consumer tab. Point the camera at a shop's QR code and
  * go straight to that shop's upload page.
  *
- * Scanning uses the native BarcodeDetector API where available
- * (Chrome/Android). Safari/iOS and unsupported browsers get an honest
- * explainer plus the manual-entry fallback (paste the shop link or slug
- * from the poster) — no fabricated scanning states.
+ * Decoding uses jsQR (pure JS, canvas frame grab): works on iOS Safari and
+ * every other mobile browser — not just Chrome's BarcodeDetector. The
+ * manual-entry fallback stays for denied camera permission and desktop use.
  *
- * Only Printelyx shop URLs/slugs are accepted: arbitrary external links
- * are rejected before navigation (open-redirect protection).
+ * Only Printelyx shop URLs/slugs are accepted: arbitrary external links are
+ * rejected before navigation (open-redirect protection).
  */
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,60}$/i;
@@ -41,25 +41,12 @@ export function extractShopSlug(payload: string): string | null {
   }
 }
 
-/** Minimal, dependency-free BarcodeDetector typings (supported: Chrome,
- *  Edge, Android WebView; unsupported: Safari/iOS — feature-detected). */
-interface DetectedBarcode { rawValue: string }
-interface BarcodeDetectorLike {
-  detect(source: HTMLVideoElement): Promise<DetectedBarcode[]>;
-}
-type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
-
-function getBarcodeDetectorCtor(): BarcodeDetectorCtor | null {
-  const w = window as unknown as { BarcodeDetector?: BarcodeDetectorCtor };
-  return typeof w.BarcodeDetector === 'function' ? w.BarcodeDetector : null;
-}
-
 export default function ScanPage() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
-  const [supported, setSupported] = useState<boolean | null>(null);
   const [cameraState, setCameraState] = useState<'idle' | 'starting' | 'live' | 'denied' | 'error'>('idle');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manual, setManual] = useState('');
@@ -81,14 +68,6 @@ export default function ScanPage() {
 
   const startCamera = useCallback(async () => {
     setCameraError(null);
-    const Ctor = getBarcodeDetectorCtor();
-    if (!Ctor) {
-      setSupported(false);
-      setCameraState('error');
-      setCameraError('Live scanning needs a browser with BarcodeDetector support (Chrome, Edge or Android). Use manual entry below.');
-      return;
-    }
-    setSupported(true);
     setCameraState('starting');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -102,24 +81,43 @@ export default function ScanPage() {
       await video.play();
       setCameraState('live');
 
-      const detector = new Ctor({ formats: ['qr_code'] });
-      const tick = async () => {
+      // jsQR decode loop: grab a video frame into an offscreen canvas and
+      // decode. Frames are capped at 640px on the long edge — plenty for a
+      // poster QR, cheap enough for a phone.
+      const canvas = canvasRef.current ?? document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) {
+        setCameraState('error');
+        setCameraError('This browser blocked canvas decoding. Use manual entry below.');
+        return;
+      }
+      let busy = false;
+      const tick = () => {
         if (!streamRef.current || !videoRef.current) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          for (const code of codes) {
-            const slug = extractShopSlug(code.rawValue);
+        if (!busy && videoRef.current.readyState >= 2) {
+          busy = true;
+          const vw = videoRef.current.videoWidth || 640;
+          const vh = videoRef.current.videoHeight || 480;
+          const scale = Math.min(1, 640 / Math.max(vw, vh));
+          canvas.width = Math.round(vw * scale);
+          canvas.height = Math.round(vh * scale);
+          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+          const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(image.data, image.width, image.height, {
+            inversionAttempts: 'dontInvert',
+          });
+          if (code?.data) {
+            const slug = extractShopSlug(code.data);
             if (slug) {
               go(slug);
               return;
             }
           }
-        } catch {
-          // a failed frame detection is not fatal — keep scanning
+          busy = false;
         }
-        rafRef.current = requestAnimationFrame(() => void tick());
+        rafRef.current = requestAnimationFrame(tick);
       };
-      rafRef.current = requestAnimationFrame(() => void tick());
+      rafRef.current = requestAnimationFrame(tick);
     } catch (cause) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -127,6 +125,9 @@ export default function ScanPage() {
       if (name === 'NotAllowedError') {
         setCameraState('denied');
         setCameraError('Camera permission was denied. Allow camera access in your browser settings, or use manual entry below.');
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        setCameraState('error');
+        setCameraError('No camera was found on this device. Use manual entry below.');
       } else {
         setCameraState('error');
         setCameraError('Could not start the camera. Use manual entry below.');

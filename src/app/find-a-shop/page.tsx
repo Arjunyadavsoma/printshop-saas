@@ -63,7 +63,6 @@ const ShopMap = dynamic(() => import('@/components/clear/shop-map').then((m) => 
   ),
 });
 
-const RADIUS_OPTIONS = [1, 3, 5, 10, 25] as const;
 const PAGE_SIZE = 20;
 
 /** Fallback /api/v1/shops shop shape (no coordinates, no openStatus). */
@@ -134,10 +133,14 @@ export default function FindAShopPage() {
   const [placeQuery, setPlaceQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [debouncedPlace, setDebouncedPlace] = useState('');
-  const [openNow, setOpenNow] = useState(false);
-  const [nearMe, setNearMe] = useState(true);
-  const [service, setService] = useState<ServiceFilter>('all');
-  const [radiusKm, setRadiusKm] = useState<number>(10);
+  // Filter pickers were removed per the reference redesign: this tab IS
+  // "Near me" — the list is location-sorted whenever a location is known,
+  // no open/service/radius pickers. The values remain constants so the
+  // nearby fetch + client-side filter contracts are unchanged.
+  const openNow = false;
+  const nearMe = true;
+  const service: ServiceFilter = 'all';
+  const radiusKm = 10;
   const [view, setView] = useState<'list' | 'map'>('list');
   const [shops, setShops] = useState<NearbyShop[]>([]);
   const [total, setTotal] = useState(0);
@@ -153,6 +156,26 @@ export default function FindAShopPage() {
   // Restore a location granted earlier in this tab (sessionStorage only).
   useEffect(() => {
     setLocation(loadStoredLocation());
+  }, []);
+
+  // Auto-detect on first visit — this tab is "Near me", so the location
+  // prompt fires once automatically instead of waiting for the button.
+  // Failures are silent here: the detect button + error copy below stay
+  // as the explicit path (no loop of repeated permission prompts).
+  const autoDetectRef = useRef(false);
+  useEffect(() => {
+    if (autoDetectRef.current) return;
+    autoDetectRef.current = true;
+    if (loadStoredLocation()) return;
+    void (async () => {
+      try {
+        const loc = await requestGeolocation();
+        saveStoredLocation(loc);
+        setLocation(loc);
+      } catch {
+        // No permission / unavailable — the UI below explains the fallback.
+      }
+    })();
   }, []);
 
   // Debounce the two search fields so typing doesn't fire a request per keystroke.
@@ -306,106 +329,11 @@ export default function FindAShopPage() {
           Print shops around you — open hours, prices and distance, no account needed.
         </p>
 
-        <div className="mt-6 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px]">
-          {/* Filters — first on mobile, right sidebar on desktop. */}
-          <aside
-            className="order-1 lg:order-2"
-            aria-label="Filters"
-          >
-            <div className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4 lg:sticky lg:top-6">
-              <h2 className="text-base font-semibold text-[var(--label)]">Filters</h2>
-
-              <label className="mt-4 flex min-h-[48px] cursor-pointer items-center gap-3 text-sm font-medium text-[var(--label)]">
-                <input
-                  type="checkbox"
-                  checked={openNow}
-                  onChange={(e) => setOpenNow(e.target.checked)}
-                  className="size-5 accent-[var(--accent)]"
-                />
-                Open now
-              </label>
-
-              <label className="flex min-h-[48px] cursor-pointer items-center gap-3 text-sm font-medium text-[var(--label)]">
-                <input
-                  type="checkbox"
-                  checked={nearMe}
-                  onChange={(e) => setNearMe(e.target.checked)}
-                  className="size-5 accent-[var(--accent)]"
-                />
-                Near me
-              </label>
-              {nearMe && !location && (
-                <p className="text-[13px] text-[var(--label-2)]">
-                  Detect your location to sort by distance and filter by radius.
-                </p>
-              )}
-
-              <fieldset className="mt-4">
-                <legend className="text-[13px] font-medium text-[var(--label-2)]">Service</legend>
-                <div className="mt-2 flex flex-col gap-1" role="radiogroup" aria-label="Service">
-                  {(
-                    [
-                      ['all', 'All services'],
-                      ['bw', 'B&W printing'],
-                      ['colour', 'Colour printing'],
-                    ] as [ServiceFilter, string][]
-                  ).map(([value, label]) => (
-                    <label
-                      key={value}
-                      className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm text-[var(--label)]"
-                    >
-                      <input
-                        type="radio"
-                        name="service"
-                        value={value}
-                        checked={service === value}
-                        onChange={() => setService(value)}
-                        className="size-5 accent-[var(--accent)]"
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div className="mt-4">
-                <label
-                  htmlFor="radius"
-                  className="text-[13px] font-medium text-[var(--label-2)]"
-                >
-                  Distance
-                </label>
-                <select
-                  id="radius"
-                  value={radiusKm}
-                  disabled={!location}
-                  onChange={(e) => setRadiusKm(Number(e.target.value))}
-                  className="mt-1.5 min-h-[48px] w-full rounded-[var(--radius-input)] border border-transparent bg-[var(--fill)] px-3.5 text-base text-[var(--label)] disabled:opacity-50"
-                >
-                  {RADIUS_OPTIONS.map((km) => (
-                    <option key={km} value={km}>
-                      Within {km} km
-                    </option>
-                  ))}
-                </select>
-                {!location && (
-                  <p className="mt-1 text-[13px] text-[var(--label-2)]">
-                    Detect your location to filter by distance.
-                  </p>
-                )}
-              </div>
-
-              {locatedCount > 0 && (
-                <p className="mt-4 border-t border-[var(--hairline)] pt-3 text-[13px] text-[var(--label-2)]">
-                  {locatedCount} of {shops.length} {shops.length === 1 ? 'shop has' : 'shops have'} a
-                  map location.
-                </p>
-              )}
-            </div>
-          </aside>
-
+        {/* Filter pickers removed per the reference redesign — results
+            only, location auto-detected above. */}
+        <div className="mt-6 flex flex-col gap-6">
           {/* Results column. */}
-          <div className="order-2 min-w-0 lg:order-1">
+          <div className="min-w-0">
             {/* Location */}
             <section
               className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
@@ -551,23 +479,14 @@ export default function FindAShopPage() {
                 <div className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-6 text-center">
                   <p className="text-sm font-medium text-[var(--label)]">
                     {location
-                      ? `No shops within ${radiusKm} km — try a larger radius`
+                      ? `No shops within ${radiusKm} km of you yet`
                       : 'No shops found'}
                   </p>
                   <p className="mt-1 text-[13px] text-[var(--label-2)]">
                     {location
-                      ? 'Widen the distance filter, clear a filter, or search a different area.'
-                      : 'Try a different search, or clear a filter.'}
+                      ? 'New shops appear here as they register — try a search or scan a shop QR code.'
+                      : 'Try a different search, or scan a shop QR code.'}
                   </p>
-                  {location && radiusKm < 25 && (
-                    <button
-                      type="button"
-                      onClick={() => setRadiusKm(25)}
-                      className="mt-3 inline-flex min-h-[44px] items-center rounded-full bg-[var(--accent-tint)] px-4 text-sm font-medium text-[var(--accent-tint-text)]"
-                    >
-                      Show shops within 25 km
-                    </button>
-                  )}
                 </div>
               ) : (
                 <>

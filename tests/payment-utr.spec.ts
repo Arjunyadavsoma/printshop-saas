@@ -71,40 +71,55 @@ test('customer can enter UTR inline after tapping I have paid', async ({ page, r
     }
   }
   await page.goto(`${BASE}/s/${slug}`, { waitUntil: 'networkidle' });
-  await page.getByText('Add files to print').first().click();
+  // The landing shows an "Add files to print" CARD whose CTA is the
+  // "Add files" button (setStarted) — the flow's dropzone mounts only
+  // after that button. Clicking the card heading does nothing, which is
+  // what silently stalled this journey at setInputFiles.
+  await page.getByRole('button', { name: 'Add files', exact: true }).click();
+  await page.locator('input[type="file"]').first().waitFor({ state: 'attached', timeout: 20000 });
 
   // upload a small valid PDF and wait for processing to finish
   await page.locator('input[type="file"]').first().setInputFiles(PDF);
   await page.getByText('Ready').first().waitFor({ state: 'visible', timeout: 45000 });
 
   // files → options (default preset: Mix) → colour-pages screen → review.
-  // The options CTA is "Choose colour pages"; the colour-pages screen's
-  // bottom bar holds the Review button that advances to the review screen.
+  // NOTE: in the rebuilt flow BOTH the files and options steps use a
+  // "Continue" CTA — step 2 IS the review screen (no separate Review
+  // button, unlike the earlier design).
   await page.locator('button:not([disabled]):has-text("Continue")').first().click();
   await page.locator('button:not([disabled]):has-text("Choose colour pages")').first().click();
-  await page.locator('button:not([disabled]):has-text("Review")').first().click({ timeout: 20000 });
+  await page.locator('button:not([disabled]):has-text("Continue")').first().click({ timeout: 20000 });
 
   // review requires a mobile number before Pay unlocks
   const mobile = page.locator('input[type="tel"], input[placeholder*="mobile" i]').first();
   if (await mobile.count()) await mobile.fill('9876543210');
   await page.locator('button:not([disabled]):has-text("Pay")').first().click();
-  await expect(page.getByRole('button', { name: "I've paid" })).toBeVisible({ timeout: 15000 });
 
-  // THE FIX: tapping "I've paid" reveals an INLINE UTR input (no prompt())
-  await page.getByRole('button', { name: "I've paid" }).click();
-  const utrInput = page.getByLabel('12-digit UTR');
+  // The rebuilt payment screen shows the confirmed total + the real UPI
+  // deep-link ("Pay ₹N by UPI") and a 12-digit UTR reference field — there
+  // is no separate "I've paid" tap anymore (the UPI app hand-off IS the
+  // paid action; the reference number is how the shop verifies it).
+  const upiButton = page.getByRole('button', { name: /Pay .* by UPI/ });
+  await expect(upiButton).toBeVisible({ timeout: 15000 });
+  // NOTE: do NOT click it in the test — it navigates to `upi://` (the OS
+  // UPI app hand-off), which leaves a headless page unusable. The UTR
+  // reference below is the verifiable path.
+
+  const utrInput = page.getByLabel(/Enter UTR/i);
   await expect(utrInput).toBeVisible({ timeout: 5000 });
 
   // fewer than 12 digits → Submit disabled
   await utrInput.fill('12345');
   await expect(page.locator('button:not([disabled]):has-text("Submit")')).toHaveCount(0);
 
-  // a full UTR submits and moves to the waiting screen. The UTR is unique
-  // per run: the server rejects a reference already submitted for another
-  // order in the same shop (P0-1 requirement), so a hardcoded UTR would
-  // fail every run after the first.
+  // a full UTR submits and lands on the order tracking page (/o/<token>).
+  // The UTR is unique per run: the server rejects a reference already
+  // submitted for another order in the same shop (P0-1 requirement), so a
+  // hardcoded UTR would fail every run after the first.
   const utr = String(Date.now() % 1_000_000_000_000).padStart(12, '0');
   await utrInput.fill(utr);
   await page.locator('button:not([disabled]):has-text("Submit")').first().click();
-  await expect(page.getByText('Waiting for the shop')).toBeVisible({ timeout: 15000 });
+  await page.waitForURL(/\/o\//, { timeout: 20000 });
+  // The order page shows the awaiting-payment state (UTR entry / status pill).
+  await expect(page.getByText(/UTR|waiting|awaiting/i).first()).toBeVisible({ timeout: 20000 });
 });

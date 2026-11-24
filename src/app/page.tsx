@@ -101,6 +101,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // Tap-to-expand shop cards: the actions row (Upload File / View Shop)
+  // appears only for the tapped shop — one expanded at a time.
+  const [expandedShopId, setExpandedShopId] = useState<string | null>(null);
   // Location granted earlier on /find-a-shop (sessionStorage only) — if
   // present, the list is fetched distance-sorted from /api/shops/nearby
   // instead of the plain list endpoint.
@@ -384,10 +387,12 @@ export default function HomePage() {
         ) : (
           <ul className="divide-y divide-[var(--hairline)]">
             {filtered.map((s) => {
-              // Reference card: name + Open chip, distance · area, live
-              // queue line, View Shop / Upload File actions. The queue
-              // line is honest: only shown when the shop is open, with
-              // the wait estimate only when a printer is actually online.
+              // Reference card: image left, info right; the actions row
+              // (Upload File / View Shop) appears ONLY when the shop is
+              // tapped — one card expanded at a time. The queue line is
+              // honest: only shown when the shop is open, with the wait
+              // estimate only when a printer is actually online.
+              const expanded = expandedShopId === s.id;
               const queueLine = !s.isOpen
                 ? 'Closed — opens at the next opening time.'
                 : s.waitMinutes != null
@@ -395,42 +400,64 @@ export default function HomePage() {
                   : (s.queueCount ?? 0) > 0
                     ? `Queue: ${s.queueCount} waiting`
                     : 'No queue right now';
+              const initial = s.name.trim().charAt(0).toUpperCase() || 'S';
               return (
-                <li key={s.id}>
-                  <div className="flex items-start justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/s/${s.slug}`} className="truncate text-sm font-semibold text-[var(--label)]">
-                          {s.name}
-                        </Link>
+                <li key={s.id} className={expanded ? 'bg-[var(--fill)]' : ''}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedShopId(expanded ? null : s.id)}
+                    aria-expanded={expanded}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left"
+                  >
+                    {s.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- shop logo URLs are operator-provided; next/image config churn not worth it here
+                      <img
+                        src={s.image}
+                        alt=""
+                        className="size-14 shrink-0 rounded-[var(--radius-card)] border border-[var(--hairline)] object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="flex size-14 shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--accent-tint)] text-lg font-extrabold text-[var(--accent-tint-text)]"
+                      >
+                        {initial}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-[var(--label)]">{s.name}</span>
                         {s.isOpen ? (
                           <StatusPill status="ready" label="Open" />
                         ) : (
                           <StatusPill status="error" label="Closed" />
                         )}
-                      </div>
-                      <p className="mt-0.5 truncate text-[13px] text-[var(--label-2)]">
+                      </span>
+                      <span className="mt-0.5 block truncate text-[13px] text-[var(--label-2)]">
                         {[s.distanceLabel, s.address].filter(Boolean).join(' · ') || '—'}
-                      </p>
-                      <p className={`mt-0.5 text-[13px] ${s.isOpen ? 'text-[var(--label-2)]' : 'text-[var(--label-3)]'}`}>
+                      </span>
+                      <span className={`mt-0.5 block truncate text-[13px] ${s.isOpen ? 'text-[var(--label-2)]' : 'text-[var(--label-3)]'}`}>
                         {queueLine}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+                      </span>
+                    </span>
+                  </button>
+                  {expanded && (
+                    <div className="flex gap-2 px-4 pb-3 pl-[76px]">
                       <Link
                         href={`/s/${s.slug}`}
-                        className="inline-flex min-h-[40px] items-center justify-center rounded-full bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--on-accent)]"
+                        className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--on-accent)]"
                       >
                         Upload File
                       </Link>
                       <Link
                         href={`/s/${s.slug}`}
-                        className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--label)]"
+                        className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--label)]"
                       >
                         View Shop
                       </Link>
                     </div>
-                  </div>
+                  )}
                 </li>
               );
             })}
