@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { hasSupportEmail, supportMailto } from '@/lib/customer/support-config';
-import { InfoShell } from '../about/page';
+import { InfoShell } from '@/components/clear/info-shell';
 
 /**
  * /privacy — spec screen 15 copy. The retention numbers are the product's

@@ -7,7 +7,7 @@ import {
   supportMailto,
   supportWhatsAppLink,
 } from '@/lib/customer/support-config';
-import { InfoShell } from '../about/page';
+import { InfoShell } from '@/components/clear/info-shell';
 
 export const metadata: Metadata = {
   title: 'Contact',

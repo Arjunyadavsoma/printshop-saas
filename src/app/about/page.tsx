@@ -1,29 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { SiteHeader } from '@/components/clear/site-header';
-import { SiteFooter } from '@/components/clear/site-footer';
+import { InfoShell } from '@/components/clear/info-shell';
 
 export const metadata: Metadata = {
   title: 'About',
   description: 'What Printelyx is: a direct line from your phone to your local print shop. 0% commission, files deleted after pickup.',
   alternates: { canonical: '/about' },
 };
-
-/** Shared shell: centred 1120px container, 720px readable text column, no void.
- *  Header/footer are the single shared Clear components (site-header /
- *  site-footer) — the inline InfoHeader/InfoFooter duplicates were removed
- *  in the final consistency pass. */
-export function InfoShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[100dvh] flex-col bg-[var(--ground)]">
-      <SiteHeader />
-      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-10 sm:px-6">
-        <div className="max-w-[720px]">{children}</div>
-      </main>
-      <SiteFooter />
-    </div>
-  );
-}
 
 /**
  * /about — spec screen 13 copy: 0% commission, private files, works with
