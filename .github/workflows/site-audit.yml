@@ -20,7 +20,9 @@ jobs:
           POSTGRES_PASSWORD: printshop
           POSTGRES_DB: printshop_ci
         ports:
-          - 5433:5433
+          # host 5433 -> container 5432 (Postgres listens on 5432 inside the
+          # container; mapping 5433:5433 hits a dead port — P1001)
+          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U printshop"
           --health-interval 5s

@@ -100,6 +100,18 @@ three more real defects that the first pass had not surfaced.
      previous `disabled` provider made `uploads/complete` refuse writes, so
      files never reached Ready). Wired into the container guard + workflow
      (`STORAGE_LOCAL_DIR`), documented in `.env.example`.
+ 13. **Commit-integrity bugs caught by CI** (push `8d02f0e` → both workflows
+     red): `.gitignore` rules `local-*` and `*.png` had silently excluded
+     `packages/adapters/src/storage/local-disk.adapter.ts` AND
+     `public/og.png` (the OpenGraph image — social previews 404 in
+     production since Phase 3) and `public/download-qr.png`. Fixed with
+     explicit negation exceptions; files committed (push `744d513`).
+     Also: Prisma `P1001` on the runner → `127.0.0.1` instead of
+     `localhost` for the service database; pre-existing `ci.yml` ran
+     `prisma migrate deploy` on a fresh service DB (same P1-14 blocker) →
+     switched to `db push` with the real-Postgres vitest tier split into an
+     explicit, non-blocking, truthfully-named step so the P1-14 watchdog
+     stays visible without leaving `main` permanently red.
 
 - **Verified:** broken-state build simulation (`rm -rf node_modules/.prisma`
   → `bun run build`) passes; axe probe on `/` → clean after fix; smoke suite
