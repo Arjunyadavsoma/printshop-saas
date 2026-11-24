@@ -50,12 +50,21 @@ if [ -n "${DATABASE_URL:-}" ]; then
   # because there is no migrations/ directory for migrate deploy to apply.
   # No --accept-data-loss: if drift ever requires destructive changes the
   # build logs it loudly instead of silently destroying data.
-  echo "→ Syncing Prisma schema (db push, additive)..."
-  if timeout 60 bunx prisma db push --skip-generate 2>&1 | tail -6; then
-    echo "  ✓ Schema in sync"
-  else
-    echo "  ⚠ db push failed (likely pooled-connection timeout). Run manually:"
+  echo "→ Syncing Prisma schema (db push, additive, up to 3 attempts)..."
+  PUSH_OK=0
+  for ATTEMPT in 1 2 3; do
+    if timeout 60 bunx prisma db push --skip-generate 2>&1 | tail -6; then
+      echo "  ✓ Schema in sync (attempt ${ATTEMPT})"
+      PUSH_OK=1
+      break
+    fi
+    echo "  ⚠ db push attempt ${ATTEMPT} failed (likely pooled-connection timeout) — retrying in 15s..."
+    sleep 15
+  done
+  if [ "$PUSH_OK" -ne 1 ]; then
+    echo "  ⚠ db push failed after 3 attempts. Run manually:"
     echo "  ⚠   DATABASE_URL='<direct-url>' bunx prisma db push"
+    echo "  ⚠ Upload sessions fall back to in-process storage until the tables exist."
   fi
 else
   echo "  ⚠ DATABASE_URL not set — skipping migrations"
