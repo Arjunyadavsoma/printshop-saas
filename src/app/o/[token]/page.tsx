@@ -7,8 +7,6 @@ import {
 } from 'lucide-react';
 
 import { AppBar } from '@/components/clear/app-bar';
-import { TokenSlip } from '@/components/clear/token-slip';
-import { StatusTimeline } from '@/components/clear/status-timeline';
 import { StatusPill } from '@/components/clear/status-pill';
 import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
 import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
@@ -515,7 +513,7 @@ export default function TrackOrderPage() {
   const needsUtr = track.order.status === 'awaiting_payment' || paymentRejected;
 
   return (
-    <div className="customer-flow">
+    <div className="rv">
       <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
       <AppBar
         title={`Order ${orderNumber}`}
@@ -544,15 +542,18 @@ export default function TrackOrderPage() {
           </div>
         )}
 
-        {/* ── Hero: the token slip ── */}
+        {/* ── Hero: the pickup-code slip (.rv dark code card) ── */}
         {track.order.pickupCode && !cancelled ? (
-          <TokenSlip
-            pickupCode={track.order.pickupCode}
-            orderNumber={orderNumber}
-            shopName={shopName}
-            summary={summaryLine || totalRupees}
-            qrUrl={qrDataUrl ?? undefined}
-          />
+          <div className="rv-code-card" aria-label="Pickup code">
+            <p className="text-[13px] font-bold" style={{ color: 'var(--rv-code-blue)' }}>
+              {shopName} · Order {orderNumber}
+            </p>
+            <p className="code">{track.order.pickupCode}</p>
+            <p className="eta">{summaryLine || totalRupees}</p>
+            <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
+              Show this code at the counter
+            </p>
+          </div>
         ) : cancelled ? (
           <section
             className="rounded-[var(--radius-default)] border border-[var(--color-error)]/40 bg-[var(--color-surface)] p-4"
@@ -589,12 +590,49 @@ export default function TrackOrderPage() {
           </section>
         )}
 
-        {/* ── Timeline ── */}
+        {/* ── Timeline (.rv rows with dots) ── */}
         <section aria-labelledby="status-heading">
-          <h2 id="status-heading" className="text-sm font-semibold text-[var(--color-ink)] mb-3">
+          <h2 id="status-heading" className="mb-3 text-[15px] font-extrabold text-[var(--rv-ink)]">
             Status
           </h2>
-          <StatusTimeline steps={timeline} ariaLabel="Order status timeline" />
+          <div className="rv-card">
+            {timeline.map((step, i) => (
+              <div key={step.label} className="rv-row" style={i === timeline.length - 1 ? { borderBottom: 0 } : undefined}>
+                <span className="flex items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="rv-dot"
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      border: `2px solid ${step.status === 'future' ? 'var(--rv-chip-border)' : 'var(--rv-done-green)'}`,
+                      background: step.status === 'done' ? 'var(--rv-done-green)' : 'transparent',
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    {step.status === 'current' && (
+                      <span className="m-auto block size-2 rounded-full" style={{ background: 'var(--rv-accent)' }} />
+                    )}
+                  </span>
+                  <span
+                    className="text-[15px]"
+                    style={{
+                      fontWeight: step.status === 'current' ? 800 : 600,
+                      color: step.status === 'future' ? 'var(--rv-muted)' : 'var(--rv-ink)',
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                </span>
+                {step.timestamp && (
+                  <span className="text-[12px] text-[var(--rv-muted)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {formatStepTimestamp(step.timestamp)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* ── Per-set printing progress (kept terse — shop vocabulary) ── */}

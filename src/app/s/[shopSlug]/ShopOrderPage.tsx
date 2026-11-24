@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { Printer } from 'lucide-react';
 import { CustomerShell } from '@/components/clear/customer-shell';
-import { PrimaryButton } from '@/components/clear/button';
 import { CustomerOrderFlowV2Lazy } from './CustomerOrderFlowV2Lazy';
 
 export interface ShopOrderPageProps {
@@ -38,14 +38,15 @@ export interface ShopOrderPageProps {
 }
 
 /**
- * /s/[shopSlug] — shop home (spec screen 2) + order flow, inside
- * CustomerShell (max-w-[1120px] two-pane desktop / max-w-[640px] mobile).
+ * /s/[shopSlug] — shop home + order flow (Consumer Flow Revamp board 2).
  *
- * The landing card's "Add files" button mounts the flow immediately:
- * tapping it renders CustomerOrderFlowV2 step 0 (UploadDropzone) in the
- * same tick — the upload UI is visible before any network call, so the
- * tap always has visible feedback. The flow itself seeds file rows
- * optimistically on pick (see CustomerOrderFlowV2.onPick).
+ * Landing: .rv hero (Print without the queue + status), .rv price card
+ * (B&W / Colour / Double-sided rows), .rv shop-info card (hours, call,
+ * directions). Tapping "Add files" mounts CustomerOrderFlowV2 step 0 in
+ * the same tick — visible upload UI before any network call.
+ *
+ * The sidebar prop carries the same .rv cards for the desktop two-pane
+ * layout (CustomerShell positions it automatically).
  */
 export function ShopOrderPage(props: ShopOrderPageProps) {
   const {
@@ -60,79 +61,91 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shopAddress)}`
     : undefined;
 
+  /* ── Price card (.rv-card with .rv-row rows) ── */
+  const priceCard = (
+    <div className="rv-card" aria-label="Prices">
+      <div className="rv-row">
+        <span className="text-[15px] text-[var(--rv-ink)]">
+          Black &amp; white <span className="text-[12px] text-[var(--rv-muted)]">per page</span>
+        </span>
+        <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{bwPrice}</b>
+      </div>
+      <div className="rv-row">
+        <span className="text-[15px] text-[var(--rv-ink)]">
+          Colour <span className="text-[12px] text-[var(--rv-muted)]">per page</span>
+        </span>
+        <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{colorPrice}</b>
+      </div>
+      <div className="rv-row">
+        <span className="text-[15px] text-[var(--rv-ink)]">Double-sided</span>
+        {doubleBwPrice != null ? (
+          <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{doubleBwPrice}</b>
+        ) : (
+          <span className="text-[13px] text-[var(--rv-muted)]">Costs less per page</span>
+        )}
+      </div>
+      {!pricesFromConfig && (
+        <p className="pt-2 text-[12px] text-[var(--rv-muted)]">Standard rates — this shop hasn&apos;t set its own prices yet.</p>
+      )}
+    </div>
+  );
+
+  /* ── Shop info card ── */
+  const shopInfoCard = (
+    <div className="rv-card" aria-label="Shop information">
+      <div className="rv-row">
+        <span className="text-[15px] text-[var(--rv-ink)]">Open today</span>
+        <span className="whitespace-nowrap text-[14px] text-[var(--rv-muted)]">{hours}</span>
+      </div>
+      {shopPhone ? (
+        <a href={`tel:${shopPhone}`} className="rv-row no-underline">
+          <span className="text-[15px] font-bold text-[var(--rv-accent)]">Call shop</span>
+          <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
+        </a>
+      ) : null}
+      {directionsUrl ? (
+        <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="rv-row no-underline">
+          <span className="text-[15px] font-bold text-[var(--rv-accent)]">Directions</span>
+          <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
+        </a>
+      ) : null}
+      {shopAddress && (
+        <p className="pt-2 text-[13px] leading-snug text-[var(--rv-muted)]">{shopAddress}</p>
+      )}
+    </div>
+  );
+
   const sidebar = (
     <div className="flex flex-col gap-4">
-      <section
-        className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
-        aria-label="Prices"
-      >
-        <div className="flex items-baseline justify-between gap-3 py-2">
-          <span className="text-sm text-[var(--label)]">Black &amp; white <span className="text-[13px] text-[var(--label-2)]">per page</span></span>
-          <span className="text-xl font-bold text-[var(--label)] tnum">{bwPrice}</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--hairline)] py-2">
-          <span className="text-sm text-[var(--label)]">Colour <span className="text-[13px] text-[var(--label-2)]">per page</span></span>
-          <span className="text-xl font-bold text-[var(--label)] tnum">{colorPrice}</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--hairline)] py-2">
-          <span className="text-sm text-[var(--label)]">Double-sided <span className="text-[13px] text-[var(--label-2)]">per page</span></span>
-          {doubleBwPrice != null ? (
-            <span className="text-xl font-bold text-[var(--label)] tnum">{doubleBwPrice}</span>
-          ) : (
-            <span className="text-[13px] text-[var(--label-2)]">Costs less per page</span>
-          )}
-        </div>
-        {!pricesFromConfig && (
-          <p className="pt-1 text-xs text-[var(--label-2)]">Standard rates — this shop hasn&apos;t set its own prices yet.</p>
-        )}
-      </section>
-
-      <section
-        className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
-        aria-label="Shop info"
-      >
-        <div className="flex items-baseline justify-between gap-3 py-2">
-          <span className="text-sm text-[var(--label)]">Open today</span>
-          <span className="whitespace-nowrap text-sm text-[var(--label-2)]">{hours}</span>
-        </div>
-        <div className="divide-y divide-[var(--hairline)] border-t border-[var(--hairline)]">
-          {shopPhone ? (
-            <a href={`tel:${shopPhone}`} className="flex min-h-[48px] items-center justify-between gap-3 py-2 text-sm font-medium text-[var(--label)]">
-              Call shop <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-            </a>
-          ) : null}
-          {directionsUrl ? (
-            <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="flex min-h-[48px] items-center justify-between gap-3 py-2 text-sm font-medium text-[var(--label)]">
-              Directions <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-            </a>
-          ) : null}
-        </div>
-      </section>
-
-      <p className="px-1 text-[13px] text-[var(--label-2)]">
+      {priceCard}
+      {shopInfoCard}
+      <p className="px-1 text-[13px] leading-relaxed text-[var(--rv-muted)]">
         Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.
       </p>
     </div>
   );
 
   if (closed) {
-    // Spec screen 12 — closed state. No upload entry is offered.
+    // Closed state — no upload entry is offered.
     return (
       <CustomerShell shopName={shopName} status="closed" subtitle={hours} sidebar={sidebar}>
-        <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">Closed right now</h1>
-        <p className="mt-1 text-base text-[var(--label-2)]">Opens at the next opening time.</p>
-        <section
-          className="mt-5 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
-          aria-label="Hours"
-        >
-          <div className="flex items-baseline justify-between gap-3 py-1">
-            <span className="text-sm text-[var(--label)]">Hours</span>
-            <span className="text-sm text-[var(--label-2)]">{hours}</span>
+        <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">Closed right now</h1>
+        <p className="mt-1 text-[15px] text-[var(--rv-muted)]">Opens at the next opening time.</p>
+        <div className="rv-card mt-4" aria-label="Hours">
+          <div className="rv-row">
+            <span className="text-[15px] text-[var(--rv-ink)]">Hours</span>
+            <span className="text-[14px] text-[var(--rv-muted)]">{hours}</span>
           </div>
-        </section>
-        <p className="mt-3 text-[13px] text-[var(--label-2)]">Come back when the shop opens. Nothing is uploaded until then.</p>
-        <p className="mt-4 text-sm">
-          <Link href="/" className="font-medium text-[var(--accent)] underline">Find another shop</Link>
+          {shopPhone ? (
+            <a href={`tel:${shopPhone}`} className="rv-row no-underline">
+              <span className="text-[15px] font-bold text-[var(--rv-accent)]">Call the shop</span>
+              <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
+            </a>
+          ) : null}
+        </div>
+        <p className="mt-3 text-[13px] text-[var(--rv-muted)]">Come back when the shop opens. Nothing is uploaded until then.</p>
+        <p className="mt-4 text-[14px]">
+          <Link href="/" className="font-bold text-[var(--rv-accent)] underline">Find another shop</Link>
         </p>
       </CustomerShell>
     );
@@ -148,19 +161,35 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
     >
       {!started ? (
         <>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">Print without the queue</h1>
-          <p className="mt-1 text-base text-[var(--label-2)]">{statusLine}</p>
+          <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">Print without the queue</h1>
+          <p className="mt-1 text-[15px] text-[var(--rv-muted)]">{statusLine}</p>
+
+          {/* Add-files hero card */}
           <section
-            className="mt-5 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-6 text-center"
+            className="rv-card mt-4 flex flex-col items-center py-8 text-center"
             aria-labelledby="add-files-heading"
           >
-            <h2 id="add-files-heading" className="text-lg font-semibold text-[var(--label)]">Add files to print</h2>
-            <p className="mt-1 text-sm text-[var(--label-2)]">PDF, photos or Word files · up to 50 MB each</p>
-            <PrimaryButton onClick={() => setStarted(true)} className="mt-4 w-full">
+            <span className="rv-ic" aria-hidden="true">
+              <Printer className="size-5" />
+            </span>
+            <h2 id="add-files-heading" className="mt-3 text-[17px] font-extrabold text-[var(--rv-ink)]">
+              Add files to print
+            </h2>
+            <p className="mt-1 text-[14px] text-[var(--rv-muted)]">PDF, photos or Word files · up to 50 MB each</p>
+            <button type="button" className="rv-btn mt-4" onClick={() => setStarted(true)}>
               Add files
-            </PrimaryButton>
+            </button>
           </section>
-          <p className="mt-3 text-[13px] text-[var(--label-2)]">Your files are deleted 24 hours after pickup.</p>
+
+          {/* Mobile: prices + shop info inline (sidebar renders on desktop). */}
+          <div className="mt-4 flex flex-col gap-4 lg:hidden">
+            {priceCard}
+            {shopInfoCard}
+          </div>
+
+          <p className="mt-4 text-[13px] text-[var(--rv-muted)]">
+            Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.
+          </p>
         </>
       ) : (
         <CustomerOrderFlowV2Lazy

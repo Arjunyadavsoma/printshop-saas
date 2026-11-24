@@ -1,10 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Clock, FileText, RotateCcw } from 'lucide-react';
-import { Stepper } from '@/components/clear/stepper';
-import { UploadDropzone } from '@/components/clear/upload-dropzone';
-import { FileCard, type FileCardStatus } from '@/components/clear/file-card';
+import { RotateCcw } from 'lucide-react';
+import { RvStepDots, RvDropzone, RvFileRow, RvBar, RvBarButton, RvBanner, RvField, RvInput, RvMoreOptionsRow } from './RvFlowParts';
 import { PageStrip } from '@/components/clear/page-strip';
 import { ColorSuggestionPrompt } from '@/lib/customer/color-suggestion';
 import { track, ANALYTICS_EVENTS } from '@/lib/customer/analytics';
@@ -19,10 +17,7 @@ import { NumberStepper } from '@/components/clear/number-stepper';
 import { SegmentedControl } from '@/components/clear/segmented-control';
 import { BottomSheet } from '@/components/clear/compat';
 import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
-import { TextField } from '@/components/clear/compat';
-import { PhoneField } from '@/components/clear/compat';
-import { StickyActionBar } from '@/components/clear/compat';
-import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
+
 import { PaymentSheet } from '@/components/clear/payment-sheet';
 import { UTRInput } from '@/components/clear/utr-input';
 import type { PageMode } from '@/components/clear/tokens';
@@ -1629,7 +1624,7 @@ export function CustomerOrderFlowV2({
     <section className="flex flex-col gap-4" aria-labelledby="flow-heading">
       <h2 id="flow-heading" className="sr-only">Order flow</h2>
 
-      <Stepper steps={3} current={step} />
+      <RvStepDots current={step} />
 
       {/* Visible step headings (spec screens 3, 4, 6) — the Stepper bars
           alone carry no step name for sighted users. */}
@@ -1643,12 +1638,7 @@ export function CustomerOrderFlowV2({
       {step === 2 && <StepHeading title="Review order" sub="Step 3 of 3" />}
 
       {error && (
-        <div
-          role="alert"
-          className="rounded-[var(--radius-default)] border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 p-3 text-sm text-[var(--color-error)]"
-        >
-          {error}
-        </div>
+        <RvBanner kind="error">{error}</RvBanner>
       )}
 
       {/* ── Restore offer (from IndexedDB draft recovery) ── */}
@@ -1678,10 +1668,10 @@ export function CustomerOrderFlowV2({
       {/* ── Step 1: Files ── */}
       {step === 0 && (
         <div className="flex flex-col gap-4">
-          <UploadDropzone
+          <RvDropzone
             onFiles={onPick}
             accept={DROPZONE_ACCEPT}
-            acceptedFormatsLabel="PDF, JPG, PNG, WebP, HEIC, DOCX, DOC, PPTX, XLSX · up to 50 MB per file"
+            hint="PDF, JPG, PNG, WebP, HEIC, DOCX · up to 50 MB per file"
           />
           {files.length > 0 && (
             <FileList
@@ -1744,8 +1734,8 @@ export function CustomerOrderFlowV2({
                   />
                 )}
 
-              <p className="text-sm font-medium text-[var(--color-ink)]">Choose a preset:</p>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-[15px] font-extrabold text-[var(--rv-ink)]">Choose a preset:</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {PRESETS.map((preset) => {
                   const selected = active.preset === preset.id;
                   const price = rateCard
@@ -1765,17 +1755,13 @@ export function CustomerOrderFlowV2({
               </div>
 
               {/* "More options" — one row, opens a BottomSheet. */}
-              <button
-                type="button"
+              <RvMoreOptionsRow
+                label="More options — copies, paper, binding"
                 onClick={() => {
                   setMoreOptionsOpen(true);
                   track(ANALYTICS_EVENTS.moreOptionsOpened, { shop_slug: shopSlug });
                 }}
-                className="touch-target flex items-center justify-between w-full min-h-[48px] px-4 rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] text-sm font-medium text-[var(--color-ink)] hover:bg-[var(--color-paper)] active:bg-[var(--color-paper)] transition-colors"
-              >
-                <span>More options</span>
-                <ChevronRight className="size-4 text-[var(--color-muted)]" aria-hidden="true" />
-              </button>
+              />
 
               {/* Color-suggestion prompt (in-Mix variant) — shown ABOVE the
                   page strip when Mix is selected and the customer hasn't
@@ -1843,26 +1829,22 @@ export function CustomerOrderFlowV2({
       {step === 2 && (
         <div className="flex flex-col gap-4">
           {/* File list with mode summary (collapsed). */}
-          <section
-            className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4"
-            aria-label="Files in this order"
-          >
-            <h3 className="text-base font-semibold text-[var(--color-ink)] mb-2">Your files</h3>
-            <ul className="flex flex-col gap-2">
+          <section className="rv-card" aria-label="Files in this order">
+            <h3 className="mb-1 text-[15px] font-extrabold text-[var(--rv-ink)]">Your files</h3>
+            <ul className="flex flex-col">
               {readyFiles.map((f) => {
                 const counts = [...f.pageModes.values()];
                 const bw = counts.filter((m) => m === 'bw').length;
                 const colour = counts.filter((m) => m === 'colour').length;
                 const sidesLabel = f.sides === 'DOUBLE' ? 'Double-sided' : 'One-sided';
                 return (
-                  <li key={f.fileId} className="flex items-start gap-3 py-1">
-                    <FileText className="size-4 shrink-0 mt-1 text-[var(--color-muted)]" aria-hidden="true" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[var(--color-ink)] truncate">{f.name}</p>
-                      <p className="text-xs text-[var(--color-muted)] tnum">
+                  <li key={f.fileId} className="rv-row">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-bold text-[var(--rv-ink)]">{f.name}</span>
+                      <span className="block text-[13px] text-[var(--rv-muted)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         {bw} B&W · {colour} Colour · {sidesLabel} · {f.copies} cop{f.copies === 1 ? 'y' : 'ies'}
-                      </p>
-                    </div>
+                      </span>
+                    </span>
                   </li>
                 );
               })}
@@ -1876,44 +1858,50 @@ export function CustomerOrderFlowV2({
               lines={quoteLinesFromQuote(quote)}
             />
           )}
-          <p className="text-xs text-[var(--color-muted)]">
+          <p className="text-[13px] text-[var(--rv-muted)]">
             Estimated total — the final amount is confirmed when you place the order.
           </p>
 
           {pricesChanged !== null && (
-            <div
-              role="alert"
-              className="rounded-[var(--radius-default)] border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-ink)]"
-            >
+            <RvBanner kind="warning">
               The total is now {formatRupees(pricesChanged)}. Confirm again to place the order.
-            </div>
+            </RvBanner>
           )}
 
           {/* Contact details. */}
-          <PhoneField
-            id="customer-phone"
-            value={customerPhone}
-            onChange={setCustomerPhone}
-          />
-          <TextField
-            id="customer-name"
-            label="Name"
-            value={customerName}
-            onChange={setCustomerName}
-            placeholder="Optional"
-            required={false}
-            autoComplete="name"
-            maxLength={120}
-          />
-          <TextField
-            id="customer-note"
-            label="Note to shop"
-            value={note}
-            onChange={setNote}
-            placeholder="Optional"
-            required={false}
-            maxLength={300}
-          />
+          <div className="rv-card flex flex-col gap-4">
+            <RvField label="Mobile number">
+              <RvInput
+                id="customer-phone"
+                inputMode="numeric"
+                autoComplete="tel"
+                maxLength={10}
+                placeholder="10-digit mobile number"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                style={{ borderColor: customerPhone && !phoneValid ? '#E5484D' : undefined }}
+              />
+            </RvField>
+            <RvField label="Name" optional>
+              <RvInput
+                id="customer-name"
+                autoComplete="name"
+                maxLength={120}
+                placeholder="Optional"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+            </RvField>
+            <RvField label="Note to shop" optional>
+              <RvInput
+                id="customer-note"
+                maxLength={300}
+                placeholder="Optional"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </RvField>
+          </div>
         </div>
       )}
 
@@ -1921,11 +1909,11 @@ export function CustomerOrderFlowV2({
           Total is "Estimated" until checkout locks it (placed orders
           show "Confirmed" on the waiting screen instead). Never both. */}
       {files.length > 0 && (
-        <StickyActionBar
+        <RvBar
           caption="Estimated total"
           total={
             quoting ? (
-              <span className="text-[var(--color-muted)]">Updating…</span>
+              <span className="text-[16px] font-bold text-[var(--rv-muted)]">Updating…</span>
             ) : totalPaise != null ? (
               formatRupees(totalPaise)
             ) : (
@@ -1934,28 +1922,28 @@ export function CustomerOrderFlowV2({
           }
           action={
             step === 0 ? (
-              <PrimaryButton
+              <RvBarButton
                 onClick={() => setStep(1)}
                 disabled={readyFiles.length === 0}
               >
                 Continue
-              </PrimaryButton>
+              </RvBarButton>
             ) : step === 1 ? (
-            <PrimaryButton
-              onClick={() => setStep(2)}
-              disabled={quoting || totalPaise == null}
-            >
-              Continue
-            </PrimaryButton>
-          ) : (
-            <PrimaryButton
-              onClick={place}
-              disabled={!canPlace}
-              loading={placing}
-            >
-              {placing ? 'Placing…' : totalPaise != null ? `Pay ${formatRupees(totalPaise)}` : 'Pay'}
-            </PrimaryButton>
-          )
+              <RvBarButton
+                onClick={() => setStep(2)}
+                disabled={quoting || totalPaise == null}
+              >
+                Continue
+              </RvBarButton>
+            ) : (
+              <RvBarButton
+                onClick={place}
+                disabled={!canPlace}
+                loading={placing}
+              >
+                {placing ? 'Placing…' : totalPaise != null ? `Pay ${formatRupees(totalPaise)}` : 'Pay'}
+              </RvBarButton>
+            )
           }
         />
       )}
@@ -1985,8 +1973,8 @@ export function CustomerOrderFlowV2({
 function StepHeading({ title, sub }: { title: string; sub: string }) {
   return (
     <div>
-      <h2 className="text-2xl font-extrabold tracking-tight text-[var(--color-ink)]">{title}</h2>
-      <p className="mt-0.5 text-sm text-[var(--color-muted)]">{sub}</p>
+      <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">{title}</h1>
+      <p className="mt-1 text-[14px] text-[var(--rv-muted)]">{sub}</p>
     </div>
   );
 }
@@ -2008,38 +1996,22 @@ function FileList({
   compact?: boolean;
 }) {
   return (
-    <ul className={`flex flex-col gap-2 ${compact ? 'mt-2' : ''}`}>
-      {files.map((f, i) => {
-        const cardFile = {
-          name: f.name,
-          size: f.sizeBytes,
-          pageCount: f.pageCount ?? undefined,
-          status: f.status as FileCardStatus,
-          progress: f.progress,
-          error: f.failReason ?? undefined,
-        };
-        return (
-          <li key={f.fileId}>
-            <button
-              type="button"
-              onClick={() => onSelect(i)}
-              className={`block w-full text-left rounded-[var(--radius-default)] border transition-colors ${
-                i === activeIdx && !compact
-                  ? 'border-[var(--color-cyan-ink)]'
-                  : 'border-transparent'
-              } focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-cyan-ink)]`}
-              aria-pressed={i === activeIdx}
-              aria-label={`Select file ${f.name}`}
-            >
-              <FileCard
-                file={cardFile}
-                onRemove={() => onRemove(f.fileId)}
-                onRetry={onRetry ? () => onRetry(f.fileId) : undefined}
-              />
-            </button>
-          </li>
-        );
-      })}
+    <ul className={`flex flex-col gap-3 ${compact ? 'mt-2' : ''}`}>
+      {files.map((f, i) => (
+        <li key={f.fileId}>
+          <RvFileRow
+            name={f.name}
+            sizeLabel={formatBytes(f.sizeBytes)}
+            pageCount={f.pageCount}
+            status={f.status}
+            progress={f.progress}
+            active={i === activeIdx && !compact}
+            onSelect={compact ? undefined : () => onSelect(i)}
+            onRemove={() => onRemove(f.fileId)}
+            onRetry={onRetry ? () => onRetry(f.fileId) : undefined}
+          />
+        </li>
+      ))}
     </ul>
   );
 }
@@ -2055,9 +2027,9 @@ function ActiveFileSummary({
   totals: { bw: number; colour: number; skip: number };
 }) {
   return (
-    <div className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4">
-      <p className="text-sm font-medium text-[var(--color-ink)] truncate">{name}</p>
-      <p className="mt-1 text-xs text-[var(--color-muted)] tnum">
+    <div className="rv-card">
+      <p className="truncate text-[15px] font-bold text-[var(--rv-ink)]">{name}</p>
+      <p className="mt-1 text-[13px] text-[var(--rv-muted)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
         {pageCount} {pageCount === 1 ? 'page' : 'pages'}
         {pageCount > 0 && (
           <> · {totals.bw} B&W · {totals.colour} Colour{totals.skip > 0 ? ` · ${totals.skip} skip` : ''}</>
@@ -2152,19 +2124,25 @@ function PresetCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={[
-        'touch-target flex flex-col items-start gap-1 p-4 min-h-[120px]',
-        'rounded-[var(--radius-default)] border-2 text-left',
-        'transition-colors duration-150',
-        selected
-          ? 'border-[var(--color-cyan-ink)] bg-[var(--color-cyan-ink)]/5'
-          : 'border-[var(--color-border-ink)] bg-[var(--color-surface)] hover:bg-[var(--color-paper)] active:bg-[var(--color-paper)]',
-      ].join(' ')}
+      className="rv-card flex min-h-[120px] flex-col items-start gap-1 text-left transition-colors"
+      style={selected ? { borderColor: 'var(--rv-accent)', borderWidth: 2 } : undefined}
     >
-      <span className="text-base font-semibold text-[var(--color-ink)]">{name}</span>
-      <span className="text-xs text-[var(--color-muted)] flex-1">{description}</span>
+      <span className="flex w-full items-start justify-between gap-2">
+        <span className="text-[15px] font-extrabold text-[var(--rv-ink)]">{name}</span>
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-5 flex-none items-center justify-center rounded-full border-2"
+          style={{
+            borderColor: selected ? 'var(--rv-accent)' : 'var(--rv-chip-border)',
+            background: selected ? 'var(--rv-accent)' : 'transparent',
+          }}
+        >
+          {selected && <span className="size-1.5 rounded-full bg-white" />}
+        </span>
+      </span>
+      <span className="flex-1 text-[13px] leading-snug text-[var(--rv-muted)]">{description}</span>
       {pricePaise != null && (
-        <span className="text-sm font-semibold text-[var(--color-ink)] tnum">
+        <span className="text-[15px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {formatRupees(pricePaise)}
         </span>
       )}
@@ -2236,15 +2214,18 @@ function MoreOptionsContent({
         ]}
       />
 
-      <TextField
-        id="note-to-shop"
-        label="Note to shop"
-        value={file.paperType === 'PLAIN' ? '' : file.paperType}
-        onChange={(v) => onPatch({ paperType: v || 'PLAIN' })}
-        placeholder="Optional"
-        required={false}
-        maxLength={120}
-      />
+      <label className="block">
+        <span className="mb-1.5 block text-[14px] font-bold text-[var(--rv-ink)]">Note to shop</span>
+        <input
+          id="note-to-shop"
+          className="h-12 w-full rounded-[14px] border bg-white px-4 text-[15px] font-semibold text-[var(--rv-ink)] outline-none"
+          style={{ borderColor: 'var(--rv-chip-border)' }}
+          value={file.paperType === 'PLAIN' ? '' : file.paperType}
+          onChange={(e) => onPatch({ paperType: e.target.value || 'PLAIN' })}
+          placeholder="Optional"
+          maxLength={120}
+        />
+      </label>
     </div>
   );
 }
@@ -2338,68 +2319,78 @@ function PaymentWaitingScreen({
 
   return (
     <section className="flex flex-col gap-4" aria-labelledby="waiting-heading">
-      <h2 id="waiting-heading" className="text-lg font-semibold text-[var(--color-ink)]">
-        Waiting for the shop to confirm your payment
-      </h2>
+      <h1 id="waiting-heading" className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">
+        Waiting for the shop
+      </h1>
+      <p className="-mt-2 text-[14px] text-[var(--rv-muted)]">{shopName} will confirm your payment.</p>
 
-      {/* Elapsed timer — gives the customer a sense of time without anxiety. */}
-      <div className="flex flex-col items-center gap-2 py-4">
-        <Clock className="size-6 text-[var(--color-muted)]" aria-hidden="true" />
-        <p className="text-2xl font-bold tnum text-[var(--color-ink)]" aria-live="polite">
-          {timerDisplay}
+      {/* Order slip — dark code card with pickup code + timer. */}
+      <div className="rv-code-card" role="status" aria-live="polite">
+        <p className="text-[13px] font-bold" style={{ color: 'var(--rv-code-blue)' }}>
+          Order #{placed.orderNumber}
         </p>
-        <p className="text-xs text-[var(--color-muted)] tnum">
-          Order #{placed.orderNumber} · Pickup code {placed.pickupCode}
+        <p className="code">{placed.pickupCode}</p>
+        <p className="eta" style={{ fontVariantNumeric: 'tabular-nums' }}>waiting {timerDisplay}</p>
+        <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
+          Show this code at the counter
         </p>
       </div>
 
       {/* Total to pay + UPI deep-link (the real one, not a placeholder). */}
-      <div className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4">
-        <p className="text-xs text-[var(--color-muted)]">Confirmed total to pay</p>
-        <p className="text-2xl font-bold tnum text-[var(--color-ink)]">{formatRupees(placed.totalPaise)}</p>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">
+      <div className="rv-card">
+        <div className="rv-row">
+          <span className="text-[15px] text-[var(--rv-ink)]">Amount to pay</span>
+          <b className="text-[20px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatRupees(placed.totalPaise)}</b>
+        </div>
+        <p className="pt-1 text-[13px] leading-snug text-[var(--rv-muted)]">
           Pay {shopName} directly by UPI. The shop confirms — the app never marks it paid by itself.
         </p>
 
         {paymentMode !== 'PRINT_THEN_PAY' && upiUri && (
-          <PrimaryButton
+          <button
+            type="button"
+            className="rv-btn mt-3"
             onClick={launchUpiApp}
-            className="mt-3 w-full"
             aria-label={`Pay ${formatRupees(placed.totalPaise)} by UPI`}
           >
             Pay {formatRupees(placed.totalPaise)} by UPI
-          </PrimaryButton>
+          </button>
         )}
       </div>
 
-      {/* Reassurance card — never claims payment is verified. */}
-      <div className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4">
-        <p className="text-sm text-[var(--color-muted)] leading-relaxed">
-          The shop will verify your payment. This usually takes 1–2 minutes.
-          If it takes longer, call the shop or enter your UTR again below.
-        </p>
-      </div>
+      {error && <RvBanner kind="error">{error}</RvBanner>}
 
       {/* UTR submission — the customer pastes their 12-digit reference. */}
-      <div className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4 flex flex-col gap-3">
-        <p className="text-sm font-medium text-[var(--color-ink)]">Did you pay?</p>
-        <UTRInput value={utr} onChange={setUtr} onSubmit={onSubmitUtr} error={error ?? undefined} />
-        <PrimaryButton
+      <div className="rv-card flex flex-col gap-3">
+        <p className="text-[15px] font-extrabold text-[var(--rv-ink)]">Did you pay? Enter your reference</p>
+        <UTRInput value={utr} onChange={setUtr} onSubmit={onSubmitUtr} error={undefined} />
+        <button
+          type="button"
+          className="rv-btn"
           onClick={onSubmitUtr}
           disabled={utr.replace(/\D/g, '').length !== 12}
         >
           Submit payment reference
-        </PrimaryButton>
+        </button>
       </div>
 
       {/* Secondary actions. */}
       <div className="flex flex-col gap-2">
-        <SecondaryButton onClick={() => setPaymentSheetOpen(true)} className="w-full">
+        <button
+          type="button"
+          onClick={() => setPaymentSheetOpen(true)}
+          className="h-12 w-full rounded-[14px] border font-extrabold"
+          style={{ borderColor: 'var(--rv-border)', background: '#fff', color: 'var(--rv-ink)', fontSize: 15 }}
+        >
           Open UPI app again
-        </SecondaryButton>
-        <TextButton onClick={onCounterPayment} className="w-full">
+        </button>
+        <button
+          type="button"
+          onClick={onCounterPayment}
+          className="h-12 w-full text-[14px] font-bold text-[var(--rv-muted)] underline"
+        >
           Pay at the counter instead
-        </TextButton>
+        </button>
       </div>
 
       {/* Payment sheet (mobile only — UPI app buttons + copy UPI ID). */}
@@ -2430,7 +2421,7 @@ function PaymentWaitingScreen({
             isDesktop={false}
           />
         ) : (
-          <div className="p-4 text-sm text-[var(--color-muted)]">
+          <div className="p-4 text-sm text-[var(--rv-muted)]">
             This shop has not configured a UPI ID. Pay at the counter.
           </div>
         )}
