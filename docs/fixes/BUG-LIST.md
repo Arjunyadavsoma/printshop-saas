@@ -86,3 +86,33 @@ New during fixes: the customer flow's UPI app rows were static divs (dead UI) �
 - **PWA install on real devices**, OS-level 200% scaling (approximated), real soft-keyboard overlap, back-gesture sheets.
 - **Lighthouse INP** (needs field data; TBT reported), **Lighthouse on `/orders`** (robots).
 - **Vercel preview** — unavailable (no token by rule); local production standalone + dev server used instead.
+
+## Phase 4–5 status (final for this pass)
+
+**Lighthouse (production build, mobile simulated slow-4G):**
+| Page | Perf | A11y | CLS | TBT |
+|---|---|---|---|---|
+| `/` home | **85** (was 69) | **98** (was 94) | **0** (was 0.306) | 587 ms |
+| `/s/[slug]` shop | **94** (was 93) | **100** | **0** | 289 ms |
+
+Home sits just under the 90 target — the remaining gap is main-thread JS
+(TBT 587 ms, ~146 KiB unused chunks). Listed as follow-up work (code-split
+the marketing/home surface); shop page and order-flow landing meet the bar.
+pdf.js is already dynamically imported.
+
+**CI (`.github/workflows/site-audit.yml`):** production build + standalone
+server with disposable test data → Playwright smoke suite
+(`tests/smoke-public.spec.ts`: zero console errors, zero failed requests, no
+horizontal overflow, unique titles, h1 present, axe serious/critical gate,
+placeholder-string ban at 360/390/768/1280) + the UTR journey spec + unit
+tests + Lighthouse budgets (`lighthouserc.json`).
+
+**First smoke run:** 9 of 11 viewport-route groups green; the suite flags
+remaining axe/title issues on `/terms` and `/track` (details in
+`docs/redesign/evidence/playwright/`). Those are the remaining Phase-5
+work items — everything else in this list is addressed above.
+
+**Not fixed / cannot verify (unchanged):** P1-6 QA shops in the production
+datastore (owner action), P1-14 migration chain + seed drift (owner decision,
+documented above), iOS/WebKit specifics (sandbox), real-device payment and
+PWA installs, production-authenticated pages (test env vars never set).

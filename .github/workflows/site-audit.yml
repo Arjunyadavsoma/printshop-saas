@@ -1,0 +1,29 @@
+name: site-audit
+on:
+  push:
+    branches: [main, fix/site-audit]
+  pull_request:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx playwright install chromium --with-deps
+      - name: Build production bundle
+        run: bun run build
+      - name: Start production server (in-memory test data)
+        run: |
+          STORAGE_PROVIDER=disabled REALTIME_EMIT_SECRET=ci-secret-not-for-production \
+          JWT_ACCESS_SECRET=ci-secret-not-for-production JWT_REFRESH_SECRET=ci-secret-not-for-production \
+          DEVICE_TOKEN_PEPPER=ci-secret-not-for-production PAYMENT_ENCRYPTION_KEY=Z0NlRGQwMWQyZjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5 \
+          PORT=3000 bun .next/standalone/server.js &
+          sleep 8
+      - name: Playwright smoke + axe + placeholders + UTR journey
+        run: |
+          bunx playwright test tests/smoke-public.spec.ts tests/payment-utr.spec.ts --project=mobile-360
+      - name: Unit tests
+        run: bun run test:unit
+      - name: Lighthouse budgets
+        run: bunx @lhci/cli autorun --config=./lighthouserc.json || true

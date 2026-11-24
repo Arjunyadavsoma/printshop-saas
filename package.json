@@ -20,7 +20,8 @@
     "build:check": "next build",
     "prisma:validate": "prisma validate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "bun prisma/seed.ts"
+    "db:seed": "bun prisma/seed.ts",
+    "test:audit": "playwright test tests/smoke-public.spec.ts tests/payment-utr.spec.ts --project=mobile-360"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
