@@ -124,6 +124,8 @@ export default function ReportsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange>('30d');
+  // Spec screen 29: table / chart toggle for the per-day breakdown.
+  const [dailyView, setDailyView] = useState<'table' | 'chart'>('table');
 
   useEffect(() => {
     document.title = 'Reports · Printelyx';
@@ -164,6 +166,23 @@ export default function ReportsPage() {
   const rangedOrders = useMemo(
     () => orders.filter((o) => withinRange(o.createdAt, range)),
     [orders, range],
+  );
+
+  // Per-day aggregation of the ranged orders (orders + collected).
+  const daily = useMemo(() => {
+    const map = new Map<string, { date: string; orders: number; collectedPaise: number }>();
+    for (const o of rangedOrders) {
+      const key = new Date(o.createdAt).toISOString().slice(0, 10);
+      const row = map.get(key) ?? { date: key, orders: 0, collectedPaise: 0 };
+      row.orders += 1;
+      if (PAID_STATUSES.has(o.status)) row.collectedPaise += o.totalAmountPaise;
+      map.set(key, row);
+    }
+    return Array.from(map.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+  }, [rangedOrders]);
+  const maxDailyCollected = useMemo(
+    () => daily.reduce((m, d) => Math.max(m, d.collectedPaise), 0),
+    [daily],
   );
 
   // ── Revenue summary ──
@@ -467,6 +486,112 @@ export default function ReportsPage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Per-day breakdown — table / chart toggle (spec screen 29) */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <FileBarChart className="size-4 text-brand" aria-hidden="true" />
+                Per day
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Orders and collected amount for each day in the selected period.
+              </CardDescription>
+            </div>
+            <div className="flex gap-1 rounded-md border p-1" role="tablist" aria-label="Per-day view">
+              <Button
+                variant={dailyView === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                role="tab"
+                aria-selected={dailyView === 'table'}
+                onClick={() => setDailyView('table')}
+                className="min-h-[36px]"
+              >
+                Table
+              </Button>
+              <Button
+                variant={dailyView === 'chart' ? 'default' : 'ghost'}
+                size="sm"
+                role="tab"
+                aria-selected={dailyView === 'chart'}
+                onClick={() => setDailyView('chart')}
+                className="min-h-[36px]"
+              >
+                Chart
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {daily.length === 0 ? (
+            <EmptyState
+              className="px-4 py-12"
+              icon={<FileBarChart className="size-6" />}
+              title="No orders in this period"
+              description="Try a wider date range, or wait for customers to place orders."
+            />
+          ) : dailyView === 'table' ? (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[480px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Day</TableHead>
+                    <TableHead className="text-right">Orders</TableHead>
+                    <TableHead className="pr-4 text-right">Collected</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {daily.map((d) => (
+                    <TableRow key={d.date}>
+                      <TableCell className="pl-4 text-sm">{formatDate(d.date)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {d.orders}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right font-mono font-medium tabular-nums">
+                        {formatINRFromPaise(d.collectedPaise)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="px-4 pb-4">
+              <div
+                className="flex h-48 items-end gap-2"
+                role="img"
+                aria-label={`Bar chart of collected amount per day, ${daily.length} days`}
+              >
+                {daily.map((d) => (
+                  <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      {d.orders}
+                    </span>
+                    <div
+                      className="w-full max-w-[48px] rounded-t bg-brand"
+                      style={{
+                        height: `${maxDailyCollected > 0 ? Math.max(4, Math.round((d.collectedPaise / maxDailyCollected) * 140)) : 4}px`,
+                      }}
+                      title={`${formatDate(d.date)}: ${d.orders} orders, ${formatINRFromPaise(d.collectedPaise)} collected`}
+                    />
+                    <span className="w-full truncate text-center text-[11px] text-muted-foreground">
+                      {new Date(d.date).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="pt-3 text-xs text-muted-foreground">
+                Bar height = collected amount that day; number above each bar = orders.
+              </p>
             </div>
           )}
         </CardContent>

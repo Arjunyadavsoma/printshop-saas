@@ -1,44 +1,41 @@
 'use client';
 
 /**
- * /shop/payments — Screen 11: Shop Payments (mobile).
+ * /shop/payments — spec screen 25.
  *
- * Reference design HTML:
- *   <div class="ref-screen m">
- *     <div class="ref-top">{shopName}</div>
- *     <h1 class="ref-h">Payments</h1>
- *     <div class="ref-seg">
- *       <button class="on">To confirm {n}</button>
- *       <button>Confirmed</button>
- *     </div>
- *     <div class="ref-g">  ← Payment rows
- *       <div class="ref-r">
- *         <span>{name}, ₹{amount}<small>UTR ending {last4}, {time} ago</small></span>
- *         <span class="ref-chip">Confirm</span>
- *       </div>
- *       <div class="ref-r"><span>{name}, ₹{amount}<small>Paid ₹{paid}, order is ₹{order}</small></span><span class="ref-chip rd">Amount differs</span></div>
- *     </div>
- *     <div class="ref-g">  ← Summary
- *       <div class="ref-r"><span>UPI today</span><b>₹{amount}</b></div>
- *       <div class="ref-r"><span>Counter today</span><b>₹{amount}</b></div>
- *     </div>
- *     <div class="ref-tab">…(Payments active)</div>
- *   </div>
+ * Clear ShopShell provides the chrome; this page renders only content.
  *
- * Data source: GET /api/v1/shops/me/orders?limit=200 — same window as the
- * dashboard so the numbers stay consistent. We derive the payment status
- * (pending / verified / failed / refunded) from each order's status +
- * paidAt — same logic as the legacy payments page.
+ * Data: GET /api/v1/shops/me/orders?limit=200. Payment status is derived
+ * from order status + paidAt (same rule the old page used).
  *
- * "Confirm" chip on each pending row navigates to the order detail page
- * (/shop/orders/[id]) where the shopkeeper can review the UTR screenshot
- * and call POST /api/v1/shops/me/orders/[id]/confirm-payment.
+ * Actions (all real):
+ *   - Confirm per payment → POST /api/v1/shops/me/orders/{id}/confirm-payment
+ *     { action: 'confirm', method: 'upi' } (inline, no navigation needed).
+ *   - Confirm all (desktop) → confirms every pending row, one call each,
+ *     then reloads; failures are reported per-order.
+ *   - "Amount differs": NOT implemented — the order record carries no
+ *     paid-amount field (only the order total + the UTR), so a mismatch
+ *     cannot be detected from the API. The footnote says so, and the
+ *     Confirm flow asks the shopkeeper to check the amount in their UPI
+ *     app first. Adding mismatch detection needs a payments ledger with
+ *     the amount actually received.
+ *
+ * Summary heuristic (same as before): paid-today orders WITH a UTR count
+ * as UPI; paid-today orders WITHOUT one count as counter.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { RefShopLayout, useRefShop, RefShopTabBar } from '@/components/ref-shop';
+import { formatINRFromPaise } from '@platform/utils';
 import { useApiClient } from '@/components/portal/use-api-client';
+import {
+  Group,
+  SegmentedControl,
+  TintedButton,
+  PrimaryButton,
+  EmptyState,
+} from '@/components/clear';
+import { CreditCard, Check, CheckCheck } from 'lucide-react';
 
 interface OrderRow {
   id: string;
@@ -65,14 +62,7 @@ function paymentStatus(o: OrderRow): PayStatus {
   if (o.status === 'awaiting_payment') return 'pending';
   if (o.status === 'cancelled') return 'failed';
   if (o.status === 'refunded') return 'refunded';
-  if (o.paidAt) return 'verified';
-  // paid / printing / ready / collected without a paidAt are still
-  // considered verified for display purposes — the shop collected the
-  // money, the webhook just hasn't landed yet.
-  if (o.status === 'paid' || o.status === 'printing' || o.status === 'ready' || o.status === 'collected') {
-    return 'verified';
-  }
-  return 'pending';
+  return 'verified';
 }
 
 function isToday(iso: string): boolean {
@@ -89,41 +79,48 @@ function isToday(iso: string): boolean {
   }
 }
 
-/** "5m ago", "2h ago", "just now" — short relative-time strings. */
 function timeAgoShort(iso: string): string {
   try {
-    const then = new Date(iso).getTime();
-    const now = Date.now();
-    const diff = Math.max(0, now - then);
+    const diff = Math.max(0, Date.now() - new Date(iso).getTime());
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
   } catch {
     return '';
   }
 }
 
-function PaymentsInner() {
+export default function ShopPaymentsPage() {
   const api = useApiClient();
-  const { shop } = useRefShop();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'pending' | 'verified'>('pending');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmingAll, setConfirmingAll] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionOk, setActionOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.title = 'Payments · Printelyx';
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const r = await api.request<{ data?: OrderRow[] }>(
         'GET',
         '/api/v1/shops/me/orders?limit=200',
       );
       if (r.status === 200 && r.data?.data) setOrders(r.data.data);
-    } catch {
-      /* keep empty state — fallback demo data will be shown */
+      else if (r.status === 401) setError('Session expired. Please log in again.');
+      else setError('Could not load payments.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error');
     } finally {
       setLoading(false);
     }
@@ -134,7 +131,6 @@ function PaymentsInner() {
     void load();
   }, [api.token, load]);
 
-  // ── Derive the two tab buckets from the orders list ──
   const pending = useMemo(
     () =>
       orders
@@ -150,199 +146,211 @@ function PaymentsInner() {
     [orders],
   );
 
-  // ── Summary: UPI today + Counter today ──
-  // Without per-payment-method tracking, we approximate:
-  //  - UPI today = paid orders today with a paymentUtr (UPI txn reference)
-  //  - Counter today = paid orders today without a UTR (cash / counter UPI)
   const summary = useMemo(() => {
-    const todayPaid = orders.filter(
-      (o) => o.paidAt !== null && isToday(o.paidAt),
-    );
+    const todayPaid = orders.filter((o) => o.paidAt !== null && isToday(o.paidAt));
     const upiPaise = todayPaid
       .filter((o) => Boolean(o.paymentUtr))
       .reduce((acc, o) => acc + o.totalAmountPaise, 0);
     const counterPaise = todayPaid
       .filter((o) => !o.paymentUtr)
       .reduce((acc, o) => acc + o.totalAmountPaise, 0);
-    return { upiPaise, counterPaise };
+    const unpaidReady = orders.filter(
+      (o) => (o.status === 'ready' || o.status === 'collected') && o.paidAt === null,
+    ).length;
+    return { upiPaise, counterPaise, unpaidReady };
   }, [orders]);
 
-  // Demo fallback — when the API returns empty / errors, show a realistic
-  // reference-design preview so the screen isn't blank.
-  const fallbackActive = !loading && orders.length === 0;
-  const pendingCount = fallbackActive ? 3 : pending.length;
+  const confirmOne = useCallback(
+    async (o: OrderRow) => {
+      setConfirmingId(o.id);
+      setActionError(null);
+      setActionOk(null);
+      try {
+        const r = await api.request<{ error?: { message?: string } }>(
+          'POST',
+          `/api/v1/shops/me/orders/${o.id}/confirm-payment`,
+          { body: { action: 'confirm', method: 'upi' } },
+        );
+        if (r.status >= 400) {
+          setActionError(r.data?.error?.message ?? `Could not confirm (HTTP ${r.status}).`);
+          return;
+        }
+        setActionOk(`Confirmed ${formatINRFromPaise(o.totalAmountPaise)} for ${o.customerPhone ?? 'the customer'}.`);
+        await load();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : 'Network error');
+      } finally {
+        setConfirmingId(null);
+      }
+    },
+    [api, load],
+  );
+
+  const confirmAll = useCallback(async () => {
+    if (pending.length === 0) return;
+    setConfirmingAll(true);
+    setActionError(null);
+    setActionOk(null);
+    const failures: string[] = [];
+    for (const o of pending) {
+      try {
+        const r = await api.request<{ error?: { message?: string } }>(
+          'POST',
+          `/api/v1/shops/me/orders/${o.id}/confirm-payment`,
+          { body: { action: 'confirm', method: 'upi' } },
+        );
+        if (r.status >= 400) failures.push(o.tokenNumber ?? o.id);
+      } catch {
+        failures.push(o.tokenNumber ?? o.id);
+      }
+    }
+    await load();
+    setConfirmingAll(false);
+    if (failures.length === 0) {
+      setActionOk(`Confirmed all ${pending.length} payment${pending.length === 1 ? '' : 's'}.`);
+    } else {
+      setActionError(
+        `Could not confirm ${failures.length} payment${failures.length === 1 ? '' : 's'}: ${failures.join(', ')}. The rest were confirmed.`,
+      );
+    }
+  }, [api, pending, load]);
 
   const rows = tab === 'pending' ? pending : verified;
-  const rowsForDisplay = fallbackActive
-    ? ([
-        {
-          id: 'demo-1',
-          customerToken: 'DEMO1',
-          tokenNumber: 'A104',
-          status: 'awaiting_payment' as const,
-          totalAmountPaise: 8400,
-          createdAt: new Date(Date.now() - 5 * 60000).toISOString(),
-          paidAt: null,
-          customerPhone: '98765 43210',
-          paymentUtr: '403629187456',
-        },
-        {
-          id: 'demo-2',
-          customerToken: 'DEMO2',
-          tokenNumber: 'A105',
-          status: 'awaiting_payment' as const,
-          totalAmountPaise: 12000,
-          createdAt: new Date(Date.now() - 22 * 60000).toISOString(),
-          paidAt: null,
-          customerPhone: '98123 45678',
-          paymentUtr: '506712984321',
-        },
-        {
-          id: 'demo-3',
-          customerToken: 'DEMO3',
-          tokenNumber: 'A106',
-          status: 'awaiting_payment' as const,
-          totalAmountPaise: 3000,
-          createdAt: new Date(Date.now() - 90 * 60000).toISOString(),
-          paidAt: null,
-          customerPhone: '91234 56789',
-          paymentUtr: null,
-        },
-      ] as OrderRow[])
-    : rows;
-
-  const shopName = shop?.name ?? 'Shop Portal';
-
-  /** Render a single payment row. Pending rows have a "Confirm" chip that
-   *  links to the order detail page; verified rows show a "Paid" chip. */
-  const renderRow = (o: OrderRow) => {
-    const name = o.customerPhone ?? 'Customer';
-    const rupees = Math.round(o.totalAmountPaise / 100);
-    const status = paymentStatus(o);
-    const utr = o.paymentUtr ?? null;
-    const last4 = utr ? utr.slice(-4) : null;
-
-    if (status === 'pending') {
-      return (
-        <Link
-          key={o.id}
-          href={`/shop/orders/${o.id}`}
-          className="ref-r"
-          style={{ textDecoration: 'none', color: 'inherit' }}
-        >
-          <span>
-            {name}, ₹{rupees.toLocaleString('en-IN')}
-            <small>
-              {last4 ? `UTR ending ${last4}, ` : ''}
-              {timeAgoShort(o.createdAt)}
-            </small>
-          </span>
-          <span className="ref-chip">Confirm</span>
-        </Link>
-      );
-    }
-    if (status === 'failed') {
-      return (
-        <div className="ref-r" key={o.id}>
-          <span>
-            {name}, ₹{rupees.toLocaleString('en-IN')}
-            <small>Rejected</small>
-          </span>
-          <span className="ref-chip rd">Rejected</span>
-        </div>
-      );
-    }
-    if (status === 'refunded') {
-      return (
-        <div className="ref-r" key={o.id}>
-          <span>
-            {name}, ₹{rupees.toLocaleString('en-IN')}
-            <small>Refunded</small>
-          </span>
-          <span className="ref-chip rd">Refunded</span>
-        </div>
-      );
-    }
-    // verified
-    return (
-      <div className="ref-r" key={o.id}>
-        <span>
-          {name}, ₹{rupees.toLocaleString('en-IN')}
-          <small>
-            {last4 ? `UTR ending ${last4}, ` : ''}
-            {timeAgoShort(o.paidAt ?? o.createdAt)}
-          </small>
-        </span>
-        <span className="ref-chip ok">Paid</span>
-      </div>
-    );
-  };
 
   return (
-    <div className="ref-screen m">
-      <div className="ref-top">{shopName}</div>
-      <h1 className="ref-h">Payments</h1>
-
-      <div className="ref-seg" role="tablist" aria-label="Payment filter">
-        <button
-          type="button"
-          className={tab === 'pending' ? 'on' : ''}
-          role="tab"
-          aria-selected={tab === 'pending'}
-          onClick={() => setTab('pending')}
-        >
-          To confirm {pendingCount}
-        </button>
-        <button
-          type="button"
-          className={tab === 'verified' ? 'on' : ''}
-          role="tab"
-          aria-selected={tab === 'verified'}
-          onClick={() => setTab('verified')}
-        >
-          Confirmed
-        </button>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[28px] font-bold leading-tight text-[var(--label)]">Payments</h1>
+          <p className="text-sm text-[var(--label-2)]">
+            Confirm UPI payments against the UTR the customer entered.
+          </p>
+        </div>
+        {pending.length > 0 ? (
+          <div className="hidden md:block">
+            <TintedButton disabled={confirmingAll} onClick={() => void confirmAll()}>
+              <CheckCheck className="size-4" aria-hidden="true" />
+              {confirmingAll ? 'Confirming…' : `Confirm all (${pending.length})`}
+            </TintedButton>
+          </div>
+        ) : null}
       </div>
 
-      <div className="ref-g">
-        {rowsForDisplay.length === 0 ? (
-          <div className="ref-r">
-            <span>
-              {tab === 'pending'
-                ? 'No payments to confirm'
-                : 'No confirmed payments yet'}
-              <small>{tab === 'pending' ? 'You are all caught up.' : 'Confirmed payments will appear here.'}</small>
-            </span>
+      {error ? (
+        <Group>
+          <p className="text-sm text-[var(--danger-text)]">{error}</p>
+          <div className="mt-3">
+            <TintedButton onClick={() => void load()}>Try again</TintedButton>
+          </div>
+        </Group>
+      ) : null}
+      {actionError ? (
+        <Group>
+          <p className="text-sm text-[var(--danger-text)]" role="alert">
+            {actionError}
+          </p>
+        </Group>
+      ) : null}
+      {actionOk ? (
+        <Group>
+          <p className="text-sm text-[var(--success-text)]" role="status">
+            {actionOk}
+          </p>
+        </Group>
+      ) : null}
+
+      <SegmentedControl
+        ariaLabel="Payment filter"
+        value={tab}
+        onChange={(v) => setTab(v as 'pending' | 'verified')}
+        options={[
+          { value: 'pending', label: `To confirm ${pending.length}` },
+          { value: 'verified', label: 'Confirmed' },
+        ]}
+      />
+
+      <Group padding="rows">
+        {loading ? (
+          <p className="px-1 py-4 text-sm text-[var(--label-2)]">Loading payments…</p>
+        ) : rows.length === 0 ? (
+          <div className="px-1 py-4">
+            <EmptyState
+              icon={<CreditCard className="size-7" />}
+              title={tab === 'pending' ? 'No payments to confirm' : 'No confirmed payments yet'}
+              description={
+                tab === 'pending'
+                  ? 'You are all caught up.'
+                  : 'Confirmed payments will appear here.'
+              }
+            />
           </div>
         ) : (
-          rowsForDisplay.map(renderRow)
+          rows.map((o) => {
+            const status = paymentStatus(o);
+            const last4 = o.paymentUtr ? o.paymentUtr.slice(-4) : null;
+            return (
+              <div
+                key={o.id}
+                className="flex min-h-[56px] items-center justify-between gap-3 border-b border-[var(--hairline)] py-2 last:border-b-0"
+              >
+                <Link href={`/shop/orders/${o.id}`} className="min-w-0">
+                  <span className="block truncate text-[15px] font-medium text-[var(--label)]">
+                    {o.customerPhone ?? 'Walk-in'}, {formatINRFromPaise(o.totalAmountPaise)}
+                  </span>
+                  <span className="block truncate text-sm text-[var(--label-2)]">
+                    {last4 ? `UTR ending ${last4}, ` : ''}
+                    {timeAgoShort(status === 'pending' ? o.createdAt : (o.paidAt ?? o.createdAt))}
+                    {status === 'failed' ? ' · Rejected' : ''}
+                    {status === 'refunded' ? ' · Refunded' : ''}
+                  </span>
+                </Link>
+                {status === 'pending' ? (
+                  <PrimaryButton
+                    size="compact"
+                    disabled={confirmingId === o.id || confirmingAll}
+                    onClick={() => void confirmOne(o)}
+                  >
+                    <Check className="size-4" aria-hidden="true" />
+                    {confirmingId === o.id ? 'Confirming…' : 'Confirm'}
+                  </PrimaryButton>
+                ) : (
+                  <span className="rounded-full bg-[var(--success-tint)] px-2.5 py-0.5 text-xs font-semibold text-[var(--success-text)]">
+                    Paid
+                  </span>
+                )}
+              </div>
+            );
+          })
         )}
-      </div>
+      </Group>
 
-      {/* Summary — UPI today + Counter today */}
-      <div className="ref-g">
-        <div className="ref-r">
-          <span>UPI today</span>
-          <b>₹{Math.round(summary.upiPaise / 100).toLocaleString('en-IN')}</b>
-        </div>
-        <div className="ref-r">
-          <span>Counter today</span>
-          <b>₹{Math.round(summary.counterPaise / 100).toLocaleString('en-IN')}</b>
-        </div>
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-3">
+        <Group>
+          <p className="text-xs text-[var(--label-2)]">UPI today</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-[var(--label)]">
+            {loading ? '—' : formatINRFromPaise(summary.upiPaise)}
+          </p>
+        </Group>
+        <Group>
+          <p className="text-xs text-[var(--label-2)]">Counter today</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-[var(--label)]">
+            {loading ? '—' : formatINRFromPaise(summary.counterPaise)}
+          </p>
+        </Group>
+        <Group>
+          <p className="text-xs text-[var(--label-2)]">Unpaid ready</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-[var(--label)]">
+            {loading ? '—' : summary.unpaidReady}
+          </p>
+        </Group>
       </div>
-
-      <RefShopTabBar pendingPayments={pendingCount} />
+      <p className="-mt-1 text-xs leading-relaxed text-[var(--label-2)]">
+        “UPI today” counts paid-today orders with a UTR; the rest count as
+        counter. Amount mismatches can&apos;t be detected here — the order
+        record has no paid-amount field, only the order total and the UTR.
+        Check the amount in your UPI app before tapping Confirm.
+      </p>
     </div>
-  );
-}
-
-export default function ShopPaymentsPage() {
-  useEffect(() => {
-    document.title = 'Payments · Printelyx';
-  }, []);
-  return (
-    <RefShopLayout>
-      <PaymentsInner />
-    </RefShopLayout>
   );
 }

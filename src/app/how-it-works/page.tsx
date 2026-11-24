@@ -1,35 +1,61 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { InfoShell } from '../about/page';
 
-export const metadata: Metadata = { title: 'How it works' };
+export const metadata: Metadata = {
+  title: 'How it works',
+  description: 'Find a shop, upload files, choose print options, pay by UPI, and collect your prints with a pickup code.',
+  alternates: { canonical: '/how-it-works' },
+};
+
+const STEPS: { title: string; body: string }[] = [
+  {
+    title: 'Find a shop',
+    body: 'Scan the shop QR code or search for a nearby print shop.',
+  },
+  {
+    title: 'Upload files',
+    body: 'Add PDFs, photos, or Word documents. We count the pages and calculate the exact price.',
+  },
+  {
+    title: 'Choose print options',
+    body: 'Pick B&W or colour, single or double-sided, paper size, and copies. Mark specific pages as colour if you want.',
+  },
+  {
+    title: 'Pay by UPI',
+    body: 'Pay the shop directly using GPay, PhonePe, Paytm, or BHIM. Zero commission — no extra fees.',
+  },
+  {
+    title: 'Collect your prints',
+    body: 'Track your order live. When it is ready, show your pickup code at the counter.',
+  },
+];
 
 export default function HowItWorksPage() {
   return (
-    <div className="min-h-[100dvh] bg-[var(--ground)]">
-      <main className="max-w-2xl mx-auto px-5 py-12">
-        <h1 className="text-[24px] font-bold text-[var(--label)] tracking-[-0.01em]">How it works</h1>
-        <div className="mt-6 space-y-6 text-[16px] text-[var(--label-2)] leading-[1.5]">
-          <div>
-            <h2 className="text-[17px] font-semibold text-[var(--label)]">1. Find a shop</h2>
-            <p>Scan the shop QR code or search for a nearby print shop.</p>
-          </div>
-          <div>
-            <h2 className="text-[17px] font-semibold text-[var(--label)]">2. Upload files</h2>
-            <p>Add PDFs, photos, or Word documents. We count the pages and calculate the exact price.</p>
-          </div>
-          <div>
-            <h2 className="text-[17px] font-semibold text-[var(--label)]">3. Choose print options</h2>
-            <p>Pick B&W or colour, single or double-sided, paper size, and copies. Mark specific pages as colour if you want.</p>
-          </div>
-          <div>
-            <h2 className="text-[17px] font-semibold text-[var(--label)]">4. Pay by UPI</h2>
-            <p>Pay the shop directly using GPay, PhonePe, Paytm, or BHIM. Zero commission — no extra fees.</p>
-          </div>
-          <div>
-            <h2 className="text-[17px] font-semibold text-[var(--label)]">5. Collect your prints</h2>
-            <p>Track your order live. When it is ready, show your pickup code at the counter.</p>
-          </div>
-        </div>
-      </main>
-    </div>
+    <InfoShell>
+      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">How it works</h1>
+      <ol className="mt-6 space-y-6">
+        {STEPS.map((step, i) => (
+          <li key={step.title} className="flex gap-4">
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-[15px] font-bold text-white"
+              aria-hidden="true"
+            >
+              {i + 1}
+            </span>
+            <div>
+              <h2 className="text-[18px] font-semibold text-[var(--label)]">{step.title}</h2>
+              <p className="mt-1 text-[16px] leading-[1.6] text-[var(--label-2)]">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-10 text-[15px] leading-[1.6] text-[var(--label-2)]">
+        <Link href="/" className="text-[var(--accent)] underline">Find a shop</Link> to start, check{' '}
+        <Link href="/pricing" className="text-[var(--accent)] underline">typical prices</Link>, or{' '}
+        <Link href="/track" className="text-[var(--accent)] underline">track an order</Link> you already placed.
+      </p>
+    </InfoShell>
   );
 }

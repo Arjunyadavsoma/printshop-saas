@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
 import {
   Store,
   Loader2,
@@ -29,6 +28,8 @@ import {
   Wrench,
   ClipboardCheck,
   AlertCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface AccountStep {
@@ -120,6 +121,12 @@ function passwordStrength(p: string): { score: number; label: string; color: str
   return { score, label: labels[score] ?? 'Too short', color: colors[score] ?? 'bg-danger' };
 }
 
+// Subscription-price note: this page says "no credit card, no commission"
+// and states NO fee amount — deliberately. The codebase confirms only
+// tier names (free/starter/pro/enterprise, packages/core enums) and the
+// design PDF's Billing screen says "Flat monthly fee" with no ₹ amount
+// anywhere. Do not invent a price here; a fee amount needs a product
+// decision + a priced tier source first.
 export default function ShopRegisterPage() {
   const api = useApiClient();
   const [step, setStep] = useState<StepId>('account');
@@ -130,6 +137,21 @@ export default function ShopRegisterPage() {
 
   // Slug uniqueness probe state.
   const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'taken' | 'ok' | 'invalid'>('idle');
+
+  // Error-display gating (diagnosis §4.2 fix): validation errors are
+  // computed from state as before, but NOTHING is shown on first paint.
+  // A field's error appears only after the field is blurred, or after the
+  // user tries to continue from that step. `canAdvance` still uses the
+  // raw errors, so the Continue button stays disabled until the step is
+  // actually valid.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [attempted, setAttempted] = useState<Partial<Record<StepId, boolean>>>({});
+  const markTouched = (field: string) =>
+    setTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  const showErr = (stepId: StepId, field: string) => Boolean(attempted[stepId] || touched[field]);
+
+  // Show/hide toggle shared by both password fields.
+  const [showPassword, setShowPassword] = useState(false);
 
   // Auto-fill slug from shop name (until the user manually edits the slug field).
   const [slugTouched, setSlugTouched] = useState(false);
@@ -243,7 +265,11 @@ export default function ShopRegisterPage() {
   })();
 
   const advance = () => {
-    if (!canAdvance) return;
+    if (!canAdvance) {
+      // Show this step's errors now that the user tried to continue.
+      setAttempted((prev) => ({ ...prev, [step]: true }));
+      return;
+    }
     const idx = STEPS.findIndex((s) => s.id === step);
     if (idx < STEPS.length - 1) setStep(STEPS[idx + 1].id);
   };
@@ -324,17 +350,22 @@ export default function ShopRegisterPage() {
   // ── Render ──
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-6 sm:py-8">
-      {/* Theme toggle (top-right corner) */}
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
-      </div>
       <div className="w-full max-w-2xl">
+        <Link
+          href="/"
+          className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← Back to Printelyx
+        </Link>
         {/* Brand */}
         <div className="mb-5 flex flex-col items-center text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
             <Store className="size-6" />
           </div>
-          <h1 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl">Start your print shop</h1>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Printelyx for shops
+          </p>
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Start your print shop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Set up your shop in four quick steps — no credit card, no commission.
           </p>
@@ -396,8 +427,9 @@ export default function ShopRegisterPage() {
                     label="Your name"
                     value={state.account.name}
                     onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, name: v } }))}
-                    error={accountErrors.name}
-                    placeholder="Priya Sharma"
+                    onBlur={() => markTouched('name')}
+                    error={showErr('account', 'name') ? accountErrors.name : undefined}
+                    placeholder="e.g. Priya Sharma"
                     disabled={submitting}
                   />
                   <Field
@@ -405,8 +437,9 @@ export default function ShopRegisterPage() {
                     label="Phone (Indian mobile)"
                     value={state.account.phone}
                     onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, phone: v } }))}
-                    error={accountErrors.phone}
-                    placeholder="+919876543210"
+                    onBlur={() => markTouched('phone')}
+                    error={showErr('account', 'phone') ? accountErrors.phone : undefined}
+                    placeholder="e.g. 98765 43210"
                     disabled={submitting}
                   />
                 </div>
@@ -416,8 +449,9 @@ export default function ShopRegisterPage() {
                   type="email"
                   value={state.account.email}
                   onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, email: v } }))}
-                  error={accountErrors.email}
-                  placeholder="owner@myprintshop.com"
+                  onBlur={() => markTouched('email')}
+                  error={showErr('account', 'email') ? accountErrors.email : undefined}
+                  placeholder="e.g. owner@myprintshop.com"
                   disabled={submitting}
                   autoComplete="email"
                 />
@@ -426,14 +460,27 @@ export default function ShopRegisterPage() {
                     <Field
                       id="password"
                       label="Password"
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       value={state.account.password}
                       onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, password: v } }))}
-                      error={accountErrors.password}
-                      placeholder="At least 8 characters"
+                      onBlur={() => markTouched('password')}
+                      error={showErr('account', 'password') ? accountErrors.password : undefined}
+                      placeholder="e.g. MyShop@2026"
                       disabled={submitting}
                       autoComplete="new-password"
+                      trailing={
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((s) => !s)}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          aria-controls="password"
+                          className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                        </button>
+                      }
                     />
+                    <p className="text-xs text-muted-foreground">At least 8 characters.</p>
                     {state.account.password && (
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
@@ -451,13 +498,25 @@ export default function ShopRegisterPage() {
                   <Field
                     id="passwordConfirm"
                     label="Confirm password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={state.account.passwordConfirm}
                     onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, passwordConfirm: v } }))}
-                    error={accountErrors.passwordConfirm}
-                    placeholder="Re-enter password"
+                    onBlur={() => markTouched('passwordConfirm')}
+                    error={showErr('account', 'passwordConfirm') ? accountErrors.passwordConfirm : undefined}
+                    placeholder="e.g. MyShop@2026"
                     disabled={submitting}
                     autoComplete="new-password"
+                    trailing={
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((s) => !s)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-controls="passwordConfirm"
+                        className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                      </button>
+                    }
                   />
                 </div>
               </>
@@ -476,8 +535,9 @@ export default function ShopRegisterPage() {
                   label="Shop name"
                   value={state.business.shopName}
                   onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, shopName: v } }))}
-                  error={businessErrors.shopName}
-                  placeholder="Sharma Xerox & Print Hub"
+                  onBlur={() => markTouched('shopName')}
+                  error={showErr('business', 'shopName') ? businessErrors.shopName : undefined}
+                  placeholder="e.g. Sharma Xerox & Print Hub"
                   disabled={submitting}
                 />
                 <div className="space-y-1.5">
@@ -493,7 +553,8 @@ export default function ShopRegisterPage() {
                         setSlugTouched(true);
                         setState((s) => ({ ...s, business: { ...s.business, slug: e.target.value.toLowerCase() } }));
                       }}
-                      placeholder="sharma-print"
+                      onBlur={() => markTouched('slug')}
+                      placeholder="e.g. sharma-print"
                       disabled={submitting}
                       className="h-11 flex-1 text-base sm:h-10"
                     />
@@ -516,7 +577,7 @@ export default function ShopRegisterPage() {
                   {slugStatus === 'invalid' && (
                     <p className="text-xs text-danger">Lowercase letters, digits and hyphens only.</p>
                   )}
-                  {businessErrors.slug && slugStatus === 'idle' && (
+                  {showErr('business', 'slug') && businessErrors.slug && slugStatus === 'idle' && (
                     <p className="text-xs text-danger">{businessErrors.slug}</p>
                   )}
                   {state.business.slug && slugStatus !== 'invalid' && (
@@ -531,7 +592,7 @@ export default function ShopRegisterPage() {
                     id="description"
                     value={state.business.description}
                     onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, description: e.target.value } }))}
-                    placeholder="A short bio shown on your public shop page."
+                    placeholder="e.g. A short bio shown on your public shop page."
                     rows={3}
                     disabled={submitting}
                     maxLength={2000}
@@ -542,8 +603,9 @@ export default function ShopRegisterPage() {
                   label="UPI ID (where customers pay you)"
                   value={state.business.upiId}
                   onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, upiId: v } }))}
-                  error={businessErrors.upiId}
-                  placeholder="myshop@okaxis"
+                  onBlur={() => markTouched('upiId')}
+                  error={showErr('business', 'upiId') ? businessErrors.upiId : undefined}
+                  placeholder="e.g. myshop@okaxis"
                   disabled={submitting}
                 />
                 <Field
@@ -551,7 +613,9 @@ export default function ShopRegisterPage() {
                   label="Address (optional)"
                   value={state.business.address}
                   onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, address: v } }))}
-                  placeholder="Shop 12, MG Road, Bengaluru"
+                  onBlur={() => markTouched('address')}
+                  error={undefined}
+                  placeholder="e.g. Shop 12, MG Road, Bengaluru"
                   disabled={submitting}
                 />
 
@@ -744,36 +808,46 @@ function Field({
   label,
   value,
   onChange,
+  onBlur,
   error,
   placeholder,
   type = 'text',
   disabled,
   autoComplete,
+  trailing,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
+  /** Marks the field touched so its error may be shown (blur-gating). */
+  onBlur?: () => void;
   error?: string;
   placeholder?: string;
   type?: string;
   disabled?: boolean;
   autoComplete?: string;
+  /** Optional trailing control (e.g. password show/hide eye). */
+  trailing?: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        autoComplete={autoComplete}
-        aria-invalid={Boolean(error)}
-        className="h-11 text-base sm:h-10"
-      />
+      <div className={trailing ? 'relative' : undefined}>
+        <Input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete={autoComplete}
+          aria-invalid={Boolean(error)}
+          className={`h-11 text-base sm:h-10 ${trailing ? 'pr-10' : ''}`}
+        />
+        {trailing}
+      </div>
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );

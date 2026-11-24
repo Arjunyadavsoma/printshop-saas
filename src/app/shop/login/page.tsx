@@ -14,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
 import {
   Loader2, ArrowRight, ShieldCheck, UserPlus, Eye, EyeOff,
 } from 'lucide-react';
@@ -101,22 +100,30 @@ export default function ShopLoginPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      {/* Theme toggle (top-right corner) */}
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
-      </div>
 
       <div className="w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← Back to Printelyx
+        </Link>
         <Card className="border-border bg-surface shadow-sm">
           <CardHeader className="space-y-3">
-            <div
-              className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
-              aria-hidden="true"
-            >
-              <span className="text-xl font-bold">P</span>
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
+                aria-hidden="true"
+              >
+                <span className="text-xl font-bold">P</span>
+              </div>
+              <span className="text-lg font-bold tracking-tight text-foreground">Printelyx</span>
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-lg font-semibold text-foreground">Sign in to your shop</CardTitle>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Printelyx for shops
+              </p>
+              <CardTitle className="text-lg font-semibold text-foreground">Log in</CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
                 Use your shop owner email and password to manage your queue, orders, and printer agent.
               </CardDescription>
@@ -126,6 +133,12 @@ export default function ShopLoginPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+                {/* Placeholder-clipping check (diagnosis §4.3): NOT
+                    reproducible from code — this input is h-11 (44px),
+                    px-3, w-full inside a max-w-md card, and the ui Input
+                    sets min-w-0 with no truncation. "you@example.com"
+                    (15 chars, ~120px) cannot clip in a ~380px field.
+                    Left unchanged; needs a live screenshot if it recurs. */}
                 <Input
                   id="email"
                   type="email"

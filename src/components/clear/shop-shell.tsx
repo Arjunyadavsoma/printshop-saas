@@ -120,6 +120,15 @@ export function ShopSidebar({ activePath, shopName, orderCount = 0, paymentCount
  * ShopShell — wraps shopkeeper pages with responsive navigation.
  * Mobile: top bar + bottom tab bar.
  * Desktop: sidebar.
+ *
+ * SINGLE-MOUNT: `{children}` is rendered exactly once, in the single
+ * `<main>` below; the breakpoint chrome is switched with CSS visibility
+ * only (`lg:hidden` / `hidden lg:flex`). Never mount the page inside
+ * ShopShellMobile + ShopShellTablet + ShopShellDesktop at the same time —
+ * that mounts the page three times (effects and fetches fire 3x). The
+ * per-breakpoint shells are chrome variants, not wrappers to compose.
+ * Breakpoint partition (kept in sync with the three shells):
+ * mobile <768px, tablet 768–1023px, desktop >=1024px.
  */
 export function ShopShell({ shopName, activePath, children, orderCount, paymentCount }: { shopName: string; activePath: string; children: ReactNode; orderCount?: number; paymentCount?: number }) {
   return (

@@ -13,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { Loader2, ArrowLeft, ArrowRight, MailCheck } from 'lucide-react';
 
 /**
@@ -62,23 +61,33 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
-      </div>
 
       <div className="w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← Back to Printelyx
+        </Link>
         <Card className="border-border bg-surface shadow-sm">
           <CardHeader className="space-y-3">
-            <div
-              className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
-              aria-hidden="true"
-            >
-              <span className="text-xl font-bold">P</span>
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
+                aria-hidden="true"
+              >
+                <span className="text-xl font-bold">P</span>
+              </div>
+              <span className="text-lg font-bold tracking-tight text-foreground">Printelyx</span>
             </div>
             <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Printelyx for shops
+              </p>
               <CardTitle className="text-lg font-semibold text-foreground">Reset your password</CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
                 Enter your shop account email and we&apos;ll send you a link to choose a new password.
+                The link lasts 15 minutes and can only be used once.
               </CardDescription>
             </div>
           </CardHeader>
@@ -96,7 +105,9 @@ export default function ForgotPasswordPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Didn&apos;t get the email? Check your spam folder, then{' '}
+                Didn&apos;t get the email? Check your spam and promotions folders — the link
+                expires 15 minutes after it is sent. If it still hasn&apos;t arrived after a
+                few minutes, you can request a new one (up to 5 requests every 15 minutes), then{' '}
                 <button
                   type="button"
                   onClick={() => setSubmitted(false)}
@@ -159,6 +170,10 @@ export default function ForgotPasswordPage() {
           >
             <ArrowLeft className="size-3" aria-hidden="true" />
             Back to sign in
+          </Link>
+          {' · '}
+          <Link href="/" className="font-medium text-brand hover:underline">
+            Back to Printelyx
           </Link>
         </div>
       </div>

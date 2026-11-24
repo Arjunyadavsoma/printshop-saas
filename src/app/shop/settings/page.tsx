@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import {
   Card,
@@ -46,6 +47,14 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  LogOut,
+  ChevronRight,
+  CircleHelp,
+  FileBarChart,
+  Users,
+  Wrench,
+  FileText,
+  ScrollText,
 } from 'lucide-react';
 import { formatINRFromPaise } from '@platform/utils';
 import type { ShopPricingConfig } from '@platform/core/domain';
@@ -153,6 +162,29 @@ export default function ShopSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState('profile');
+
+  // Spec screen 30 ordering-rules toggles. There are NO server fields
+  // for these (no "manual printing from phones" / "hold unpaid orders"
+  // columns on the shop, and PATCH /api/v1/shops/me does not accept
+  // them), so they persist on this device only (localStorage) and say
+  // so. Default ON, matching the PDF (all toggles shown ON).
+  const [manualPhonePrinting, setManualPhonePrinting] = useState(true);
+  const [holdUnpaid, setHoldUnpaid] = useState(true);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const m = window.localStorage.getItem('printshop:manual-phone-printing');
+    if (m !== null) setManualPhonePrinting(m === '1');
+    const h = window.localStorage.getItem('printshop:hold-unpaid-orders');
+    if (h !== null) setHoldUnpaid(h === '1');
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('printshop:manual-phone-printing', manualPhonePrinting ? '1' : '0');
+  }, [manualPhonePrinting]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('printshop:hold-unpaid-orders', holdUnpaid ? '1' : '0');
+  }, [holdUnpaid]);
 
   // ── Deep-link support ────────────────────────────────────────────────
   // Allow /shop/settings#profile, #hours, #payment, #qr (or #upi-qr,
@@ -1194,6 +1226,122 @@ export default function ShopSettingsPage() {
           <ChangePasswordCard />
         </TabsContent>
       </Tabs>
+
+      {/* ── Ordering rules (spec screen 30) ── */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Tag className="size-4 text-brand" aria-hidden="true" /> Ordering rules
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            How orders from phones are handled. These switches are saved on
+            this device only — there is no server setting for them yet, so
+            they do not change how the website treats orders.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex min-h-[48px] items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Manual printing from phones</p>
+              <p className="text-xs text-muted-foreground">
+                Let the shop print phone orders by hand instead of auto-dispatch.
+              </p>
+            </div>
+            <Switch
+              checked={manualPhonePrinting}
+              onCheckedChange={setManualPhonePrinting}
+              aria-label="Manual printing from phones"
+            />
+          </div>
+          <div className="flex min-h-[48px] items-center justify-between gap-3 border-t pt-4">
+            <div>
+              <p className="text-sm font-medium">Hold unpaid orders</p>
+              <p className="text-xs text-muted-foreground">
+                Keep unpaid orders on hold instead of queueing them for print.
+              </p>
+            </div>
+            <Switch
+              checked={holdUnpaid}
+              onCheckedChange={setHoldUnpaid}
+              aria-label="Hold unpaid orders"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── More (spec screen 34) — the mobile overflow menu, as a card.
+          The bottom tab bar's "More" tab lands on this page, so the menu
+          lives here. Audit log has no shopkeeper API (only the admin
+          /api/v1/admin/audit exists), so it is honestly marked coming soon. */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Store className="size-4 text-brand" aria-hidden="true" /> More
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Pricing, reports, customers, walk-ins, QR, billing and help.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ul>
+            {[
+              { href: '/shop/services', label: 'Pricing', icon: <Wrench className="size-4" aria-hidden="true" /> },
+              { href: '/shop/reports', label: 'Reports', icon: <FileBarChart className="size-4" aria-hidden="true" /> },
+              { href: '/shop/customers', label: 'Customers', icon: <Users className="size-4" aria-hidden="true" /> },
+              { href: '/shop/walk-in', label: 'Print a file', icon: <FileText className="size-4" aria-hidden="true" /> },
+              { href: '/shop/qr-poster', label: 'QR poster', icon: <QrCode className="size-4" aria-hidden="true" /> },
+              { href: '/shop/billing', label: 'Billing', icon: <CreditCard className="size-4" aria-hidden="true" /> },
+              { href: '/help', label: 'Help', icon: <CircleHelp className="size-4" aria-hidden="true" /> },
+            ].map((item) => (
+              <li key={item.href} className="border-b last:border-b-0">
+                <Link
+                  href={item.href}
+                  className="flex min-h-[48px] items-center gap-3 px-4 py-2 text-sm font-medium hover:bg-muted"
+                >
+                  <span className="text-muted-foreground">{item.icon}</span>
+                  <span className="flex-1">{item.label}</span>
+                  <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+            <li className="flex min-h-[48px] items-center gap-3 px-4 py-2 text-sm">
+              <span className="text-muted-foreground">
+                <ScrollText className="size-4" aria-hidden="true" />
+              </span>
+              <span className="flex-1">
+                Audit log
+                <span className="block text-xs text-muted-foreground">
+                  Coming soon — no shopkeeper audit API exists yet.
+                </span>
+              </span>
+              <Badge variant="outline">Soon</Badge>
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
+
+      {/* ── Sign out (the Clear shell has no logout button) ── */}
+      <Card className="bg-surface">
+        <CardContent className="flex items-center justify-between gap-3 p-4">
+          <div>
+            <p className="text-sm font-medium">Sign out</p>
+            <p className="text-xs text-muted-foreground">
+              Signed in as {shop?.name ?? 'shop owner'}.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-h-[44px] gap-1.5"
+            onClick={async () => {
+              await api.logout();
+              window.location.href = '/shop/login';
+            }}
+          >
+            <LogOut className="size-4" aria-hidden="true" /> Sign out
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
