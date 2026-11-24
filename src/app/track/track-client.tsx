@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { CustomerShell } from '@/components/clear/customer-shell';
+import { Search } from 'lucide-react';
 
 /**
  * /track — order lookup by tracking link or order token.
- * Clear design (no dedicated board — derived from the site-page pattern:
- * top bar, heading, card with a labelled input, pill button).
+ * Uses CustomerShell + .rv-* classes for visual consistency with the
+ * rest of the consumer flow (home, shop, orders, profile, scan).
  */
 export function TrackPageClient() {
   const router = useRouter();
@@ -43,53 +45,58 @@ export function TrackPageClient() {
     setError('That does not look like a valid tracking link. Check your receipt for the link.');
   };
 
-  const form = (inputId: string) => (
-    <form onSubmit={handleSubmit}>
-      <div className="g p">
-        <label htmlFor={inputId} style={{ fontSize: 14, fontWeight: 600, display: 'block', marginTop: 12 }}>
-          Tracking link or order number
-        </label>
-        <input
-          id={inputId}
-          className="in"
-          type="text"
-          placeholder="https://printelyx.cc.cd/o/…"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        {error && <p className="cap" role="alert" style={{ color: '#9C1F18' }}>{error}</p>}
-        <button type="submit" className="btn" style={{ width: '100%', marginTop: 16 }}>Track order</button>
-      </div>
-    </form>
-  );
-
   return (
-    <>
-      <div className="x m">
-        <div className="top"><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
-        <h1 className="h">Track your order</h1>
-        <p className="sub">Paste your tracking link from your receipt, or your order number.</p>
-        {form('track-input')}
-        <div className="g">
-          <Link href="/orders" className="r"><span>My orders</span><span className="v">›</span></Link>
-          <Link href="/help" className="r"><span>Help</span><span className="v">›</span></Link>
+    <CustomerShell shopName="Printelyx">
+      <div className="rv-g" style={{ gap: 14 }}>
+        <div>
+          <h1 className="text-[27px]">Track your order</h1>
+          <p className="rv-t" style={{ margin: '6px 0 0' }}>
+            Paste your tracking link from your receipt, or your order number.
+          </p>
         </div>
-        <p className="cap" />
-      </div>
 
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />Printelyx</b>
-          <Link href="/help" className="v">Help</Link>
-        </div>
-        <div className="wrap">
-          <div className="l">
-            <h1 className="h1">Track your order</h1>
-            <p className="s2">Paste your tracking link from your receipt, or your order number.</p>
-            {form('track-input-d')}
+        <form onSubmit={handleSubmit}>
+          <div style={{ position: 'relative' }}>
+            <span
+              aria-hidden="true"
+              style={{ position: 'absolute', left: 13, top: 13, color: 'var(--rv-muted,#566274)' }}
+            >
+              <Search className="size-[22px]" strokeWidth={2} />
+            </span>
+            <label className="rv-t" htmlFor="track-input" style={{ position: 'absolute', left: -9999 }}>
+              Tracking link or order number
+            </label>
+            <input
+              id="track-input"
+              className="rv-input"
+              type="text"
+              placeholder="https://printelyx.cc.cd/o/…"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoComplete="off"
+            />
           </div>
+          {error && (
+            <p className="rv-t mt-2" role="alert" style={{ color: 'var(--danger,#B3261E)' }}>
+              {error}
+            </p>
+          )}
+          <button type="submit" className="rv-btn mt-4">
+            Track order
+          </button>
+        </form>
+
+        <div className="rv-card" style={{ padding: 0 }}>
+          <Link href="/orders" className="rv-row">
+            <span>My orders</span>
+            <span className="rv-t" aria-hidden="true">›</span>
+          </Link>
+          <Link href="/help" className="rv-row">
+            <span>Help</span>
+            <span className="rv-t" aria-hidden="true">›</span>
+          </Link>
         </div>
       </div>
-    </>
+    </CustomerShell>
   );
 }

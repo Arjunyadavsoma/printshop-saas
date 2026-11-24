@@ -33,7 +33,6 @@ import {
   Group,
   Switch,
   StatusPill,
-  PrimaryButton,
   TintedButton,
   EmptyState,
 } from '@/components/clear';
@@ -452,14 +451,6 @@ export default function ShopDashboardPage() {
           </Link>
         </div>
       </Group>
-
-      <div className="flex justify-center pb-2 lg:hidden">
-        <Link href="/shop/walk-in">
-          <PrimaryButton>
-            <Plus className="size-4" aria-hidden="true" /> Add walk-in
-          </PrimaryButton>
-        </Link>
-      </div>
     </div>
   );
 }

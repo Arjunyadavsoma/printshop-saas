@@ -45,7 +45,7 @@ export function AppBar({ title, subtitle, status, onBack, actions }: AppBarProps
                 </span>
               </span>
             )}
-            <h1 className="text-[15px] font-semibold text-[var(--label)] truncate">{title}</h1>
+            <div className="text-[15px] font-semibold text-[var(--label)] truncate">{title}</div>
           </div>
           {subtitle && (
             <p className="text-[14px] text-[var(--label-2)] truncate mt-0.5 tnum">{subtitle}</p>

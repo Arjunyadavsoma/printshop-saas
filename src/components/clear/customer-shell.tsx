@@ -55,14 +55,14 @@ export function CustomerShell({ shopName, status, subtitle, children, sidebar, p
         // Desktop two-pane layout (right summary sidebar); single column
         // capped at 640px below the lg breakpoint.
         <div className="mx-auto w-full max-w-[640px] lg:max-w-[1120px] px-4 lg:px-8 py-6 lg:pb-10">
-          <div className="flex flex-col lg:flex-row gap-6 pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-10">
+          <div className="flex flex-col lg:flex-row gap-6 pb-[calc(72px+env(safe-area-inset-bottom))] lg:pb-10">
             <div className="flex-1 min-w-0">{children}</div>
             <div className="lg:w-[360px] lg:sticky lg:top-[80px] lg:self-start">{sidebar}</div>
           </div>
         </div>
       ) : (
         // Mobile single column
-        <div className="mx-auto max-w-[640px] px-5 py-6 pb-[calc(88px+env(safe-area-inset-bottom))]">{children}</div>
+        <div className="mx-auto max-w-[640px] px-5 py-6 pb-[calc(72px+env(safe-area-inset-bottom))]">{children}</div>
       )}
 
       {/* Sticky frosted PriceBar. With a sidebar the desktop CTA lives in

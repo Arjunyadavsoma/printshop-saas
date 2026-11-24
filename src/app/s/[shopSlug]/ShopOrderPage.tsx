@@ -116,7 +116,7 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
   );
 
   const sidebar = (
-    <div className="flex flex-col gap-4">
+    <div className="hidden lg:flex flex-col gap-4">
       {priceCard}
       {shopInfoCard}
       <p className="px-1 text-[13px] leading-relaxed text-[var(--rv-muted)]">
@@ -162,7 +162,6 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
       {!started ? (
         <>
           <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">Print without the queue</h1>
-          <p className="mt-1 text-[15px] text-[var(--rv-muted)]">{statusLine}</p>
 
           {/* Add-files hero card */}
           <section
@@ -187,7 +186,7 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
             {shopInfoCard}
           </div>
 
-          <p className="mt-4 text-[13px] text-[var(--rv-muted)]">
+          <p className="mt-4 text-[13px] text-[var(--rv-muted)] lg:hidden">
             Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.
           </p>
         </>

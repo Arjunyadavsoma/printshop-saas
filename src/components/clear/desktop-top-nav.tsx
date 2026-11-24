@@ -51,8 +51,8 @@ export function DesktopTopNav() {
 
   return (
     <div className="hidden lg:block border-b border-[var(--hairline)] frosted-bar" role="banner">
-      <div className="mx-auto flex min-h-[64px] max-w-[1120px] items-center gap-6 px-8">
-        <Link href="/" className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-[var(--label)]">
+      <div className="mx-auto flex min-h-[64px] max-w-[1120px] items-center gap-4 px-6">
+        <Link href="/" className="flex items-center gap-2 text-base font-extrabold tracking-tight text-[var(--label)] whitespace-nowrap">
           <span className="flex size-7 items-center justify-center rounded-lg bg-[var(--accent)] text-[var(--on-accent)]" aria-hidden="true">
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9 3 12l9 6 9-6-3-3" />
@@ -62,45 +62,45 @@ export function DesktopTopNav() {
           Printelyx
         </Link>
 
-        <nav className="flex items-center gap-1" aria-label="Primary">
+        <nav className="flex items-center gap-0.5" aria-label="Primary">
           {LINKS.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className="rounded-full px-3 py-2 text-sm font-medium text-[var(--label-2)] hover:bg-[var(--fill)] hover:text-[var(--label)]"
+              className="rounded-full px-2.5 py-2 text-[13px] font-medium text-[var(--label-2)] hover:bg-[var(--fill)] hover:text-[var(--label)] whitespace-nowrap"
             >
               {l.label}
             </Link>
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => void detect()}
             disabled={locating}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--label)] hover:bg-[var(--fill)] disabled:opacity-60"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--label)] hover:bg-[var(--fill)] disabled:opacity-60 whitespace-nowrap"
           >
-            <Crosshair className="size-4" strokeWidth={1.75} aria-hidden="true" />
-            {locating ? 'Detecting…' : 'Detect Location'}
+            <Crosshair className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            {locating ? 'Detecting…' : 'Detect'}
           </button>
           <Link
             href="/shop/register"
-            className="inline-flex min-h-[40px] items-center rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--on-accent)]"
+            className="inline-flex min-h-[36px] items-center rounded-full bg-[var(--accent)] px-3 text-[13px] font-semibold text-[var(--on-accent)] whitespace-nowrap"
           >
-            Register Your Shop
+            Register Shop
           </Link>
           <Link
             href="/shop/login"
-            className="inline-flex min-h-[40px] items-center rounded-full px-3 text-sm font-medium text-[var(--label-2)] hover:text-[var(--label)]"
+            className="inline-flex min-h-[36px] items-center rounded-full px-2.5 text-[13px] font-medium text-[var(--label-2)] hover:text-[var(--label)] whitespace-nowrap"
           >
-            Shopkeeper login
+            Login
           </Link>
           <Link
             href="/orders"
-            className="inline-flex min-h-[40px] items-center rounded-full px-3 text-sm font-medium text-[var(--label)] hover:bg-[var(--fill)]"
+            className="inline-flex min-h-[36px] items-center rounded-full px-2.5 text-[13px] font-medium text-[var(--label)] hover:bg-[var(--fill)] whitespace-nowrap"
           >
-            My Orders
+            Orders
           </Link>
         </div>
       </div>

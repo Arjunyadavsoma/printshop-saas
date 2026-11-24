@@ -1,5 +1,6 @@
 import { SiteHeader } from '@/components/clear/site-header';
 import { SiteFooter } from '@/components/clear/site-footer';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
 
 /**
  * InfoShell — shared shell for the public info pages (About, Contact,
@@ -7,7 +8,8 @@ import { SiteFooter } from '@/components/clear/site-footer';
  *
  * Centred 1120px container, 720px readable text column, no void.
  * Header/footer are the single shared Clear components (site-header /
- * site-footer).
+ * site-footer). Includes the ConsumerTabBar on mobile for navigation
+ * consistency with the flow pages (home, shop, orders, profile, scan).
  *
  * NOTE: this lives in components/clear, NOT in src/app/about/page.tsx.
  * It used to be exported from about/page.tsx, but help/page.tsx is a
@@ -21,10 +23,11 @@ export function InfoShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[var(--ground)]">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-10 sm:px-6">
+      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-10 pb-[calc(72px+env(safe-area-inset-bottom))] sm:px-6">
         <div className="max-w-[720px]">{children}</div>
       </main>
       <SiteFooter />
+      <ConsumerTabBar />
     </div>
   );
 }

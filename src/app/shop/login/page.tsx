@@ -264,8 +264,8 @@ export default function ShopLoginPage() {
                 </button>
               ))}
             </CardContent>
-            <CardFooter className="pt-0 text-xs text-muted-foreground">
-              Admin accounts are redirected to <code className="font-mono">/admin</code> after login.
+            <CardFooter className="pt-0 text-xs text-muted-foreground leading-relaxed">
+              Admin accounts are redirected to <code className="font-mono whitespace-nowrap">/admin</code> after login.
             </CardFooter>
           </Card>
         )}

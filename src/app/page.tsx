@@ -48,9 +48,16 @@ interface ShopListItem {
  * one of these slugs would be hidden too; the proper fix is an
  * `isTest`/`isDemo` flag on the Shop model + API filter (backend work,
  * out of scope for this consumer-flow rebuild).
+ *
+ * In development the demo shops are the ONLY shops available, so filtering
+ * them all out leaves the homepage empty ("No shops found"). The filter is
+ * now relaxed in dev — demo shops are shown so the full UI (cards, rates,
+ * status pills) can be exercised end-to-end.
  */
+const IS_DEV = process.env.NODE_ENV !== 'production';
 const DEMO_SHOP_SLUGS = new Set(['quickprint', 'copycenter', 'prinithub']);
 function isDemoOrTestShop(s: ShopListItem): boolean {
+  if (IS_DEV) return false; // dev: show everything so the UI isn't empty
   if (DEMO_SHOP_SLUGS.has(s.slug.toLowerCase())) return true;
   if (s.slug.toLowerCase().startsWith('test-')) return true;
   if (/demo shop/i.test(s.name)) return true;
@@ -264,7 +271,7 @@ export default function HomePage() {
   const openCount = useMemo(() => shops.filter(s => s.isOpen).length, [shops]);
 
   const sidebar = (
-    <div className="rv flex flex-col gap-4" style={{ display: 'block' }}>
+    <div className="flex flex-col gap-4">
       <section className="rv-card" aria-labelledby="qr-heading">
         <h2 id="qr-heading" className="text-center">Scan a shop QR code</h2>
         <p className="rv-t mt-1 text-center">

@@ -69,7 +69,7 @@ export function SiteFooter({ className = '' }: SiteFooterProps) {
         .join(' ')
         .trim()}
     >
-      <div className="mx-auto w-full max-w-[1120px] px-4 py-10 lg:px-8">
+      <div className="mx-auto w-full max-w-[1120px] px-4 pt-10 pb-[calc(84px+env(safe-area-inset-bottom))] lg:pb-10 lg:px-8">
         <div className="flex flex-col gap-8 md:flex-row md:justify-between">
           {/* Brand */}
           <div className="max-w-[280px]">
