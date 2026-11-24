@@ -24,7 +24,7 @@ import { shopOpenStatus } from '@/lib/location/opening-hours';
  *   - openNow: "true" — only shops open right now (schedule + manual flags).
  *   - service: only shops listing this service in servicesJson
  *     (e.g. bw_print, color_print, scan, laminate, binding).
- *   - sort: "nearest" (default, requires lat/lng) | "name".
+ *   - sort: "nearest" (default with lat/lng) | "name" (default without).
  *   - page: 1-based (default 1). limit: page size (default 20, max 50).
  *
  * No PostGIS: the DB query filters active shops (+ text search) and the
@@ -173,7 +173,11 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
     const search = (params.get('search') ?? '').trim();
     const openNow = parseBoolParam(params.get('openNow'), 'openNow') ?? false;
     const service = (params.get('service') ?? '').trim() || null;
-    const sort = (params.get('sort') ?? 'nearest').trim().toLowerCase();
+    // Default sort is "nearest" when coordinates are given, "name" in
+    // search mode (no coordinates) — "nearest" without lat/lng is
+    // meaningless, so fall back instead of 400ing a plain text search.
+    const sortParam = params.get('sort')?.trim().toLowerCase();
+    const sort = sortParam ?? (hasCoords ? 'nearest' : 'name');
     if (sort !== 'nearest' && sort !== 'name') {
       throw new ValidationError('sort must be "nearest" or "name"');
     }
