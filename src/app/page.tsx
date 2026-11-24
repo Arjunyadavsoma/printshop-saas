@@ -4,11 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CustomerShell } from '@/components/clear/customer-shell';
-import { Input } from '@/components/clear/input';
-import { StatusPill } from '@/components/clear/status-pill';
 import { readRecentOrders, type RecentOrderSummary } from '@/lib/customer/recent-orders';
 import { readPendingOrder, type PendingOrder } from '@/lib/customer/order-restore';
 import { formatRupees } from '@/components/clear/price-breakdown';
+import { Search, ScanLine, Printer } from 'lucide-react';
 import {
   geolocationErrorMessage,
   loadStoredLocation,
@@ -35,6 +34,8 @@ interface ShopListItem {
   queueCount?: number | null;
   /** Pre-formatted distance ("1.2 km") when the customer's location is known. */
   distanceLabel?: string | null;
+  /** Raw distance (km) — used by the Nearest chip to sort. */
+  distanceKm?: number | null;
   image?: string | null;
   pricingSummary: { bwA4PerPage: number; colorA4PerPage: number; minOrderValue: number };
 }
@@ -104,6 +105,11 @@ export default function HomePage() {
   // Tap-to-expand shop cards: the actions row (Upload File / View Shop)
   // appears only for the tapped shop — one expanded at a time.
   const [expandedShopId, setExpandedShopId] = useState<string | null>(null);
+  // Discover chips (Consumer Flow Revamp board 1). "Open now" is ON in the
+  // reference; all three are real filters/sorts backed by live data.
+  const [openNowChip, setOpenNowChip] = useState(true);
+  const [nearestChip, setNearestChip] = useState(false);
+  const [colourChip, setColourChip] = useState(false);
   // Location granted earlier on /find-a-shop (sessionStorage only) — if
   // present, the list is fetched distance-sorted from /api/shops/nearby
   // instead of the plain list endpoint.
@@ -154,6 +160,7 @@ export default function HomePage() {
               waitMinutes: s.waitMinutes ?? null,
               queueCount: s.queueCount ?? null,
               distanceLabel: s.distanceLabel ?? null,
+              distanceKm: s.distanceKm ?? null,
               image: s.image ?? null,
               pricingSummary: {
                 bwA4PerPage: s.pricingSummary?.bwA4PerPage ?? 200,
@@ -241,45 +248,46 @@ export default function HomePage() {
   }, [router]);
 
   const filtered = useMemo(() => {
+    let list = shops;
     const q = query.trim().toLowerCase();
-    if (!q) return shops;
-    return shops.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
-  }, [shops, query]);
+    if (q) list = list.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+    if (openNowChip) list = list.filter(s => s.isOpen);
+    if (colourChip) list = list.filter(s => s.pricingSummary.colorA4PerPage > 0);
+    if (nearestChip) {
+      // Nearest first — only meaningful with a known location; without one
+      // the server order (name) is kept.
+      list = [...list].sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
+    }
+    return list;
+  }, [shops, query, openNowChip, colourChip, nearestChip]);
+
+  const openCount = useMemo(() => shops.filter(s => s.isOpen).length, [shops]);
 
   const sidebar = (
-    <div className="flex flex-col gap-4">
-      <section
-        className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
-        aria-labelledby="qr-heading"
-      >
-        <h2 id="qr-heading" className="text-sm font-semibold text-[var(--label)] text-center">
-          Scan a shop QR code
-        </h2>
-        {/* Placeholder, not a QR code: the QR payload/URL format is
-            unspecified in the spec (§D.5), so no fake scannable code is
-            rendered. Point the camera at the QR code at the shop counter. */}
-        <div
-          className="mt-3 flex min-h-[120px] items-center justify-center rounded-[var(--radius-default)] border-2 border-dashed border-[var(--hairline)] bg-[var(--fill)] px-4 text-center text-sm text-[var(--label-2)]"
-          aria-hidden="true"
-        >
+    <div className="rv flex flex-col gap-4" style={{ display: 'block' }}>
+      <section className="rv-card" aria-labelledby="qr-heading">
+        <h2 id="qr-heading" className="text-center">Scan a shop QR code</h2>
+        <p className="rv-t mt-1 text-center">
           Point your camera at a shop&apos;s QR code to go straight to its page.
-        </div>
+        </p>
+        <Link
+          href="/scan"
+          className="rv-btn mt-4"
+          style={{ width: '100%' }}
+        >
+          Open Scanner
+        </Link>
       </section>
 
-      <section
-        className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4"
-        aria-labelledby="run-shop-heading"
-      >
-        <h2 id="run-shop-heading" className="text-base font-semibold text-[var(--label)]">
-          Run a print shop?
-        </h2>
-        <p className="mt-0.5 text-sm text-[var(--label-2)]">Get a QR code and start taking orders.</p>
-        <div className="mt-3 divide-y divide-[var(--hairline)]">
-          <Link href="/shop/register" className="flex min-h-[48px] items-center justify-between gap-3 py-2 text-sm font-medium text-[var(--label)]">
-            Register your shop <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
+      <section className="rv-card" aria-labelledby="run-shop-heading">
+        <h2 id="run-shop-heading">Run a print shop?</h2>
+        <p className="rv-t mt-0.5">Get a QR code and start taking orders.</p>
+        <div className="mt-3 divide-y divide-[var(--rv-hairline)]">
+          <Link href="/shop/register" className="rv-row">
+            Register your shop <span className="rv-t" aria-hidden="true">›</span>
           </Link>
-          <Link href="/shop/login" className="flex min-h-[48px] items-center justify-between gap-3 py-2 text-sm font-medium text-[var(--label)]">
-            Shopkeeper login <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
+          <Link href="/shop/login" className="rv-row">
+            Shopkeeper login <span className="rv-t" aria-hidden="true">›</span>
           </Link>
         </div>
       </section>
@@ -288,171 +296,192 @@ export default function HomePage() {
 
   return (
     <CustomerShell shopName="Printelyx" sidebar={sidebar}>
-      <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">Print without the queue</h1>
-      <p className="mt-1 text-base text-[var(--label-2)]">Find a shop near you, or scan its QR code.</p>
-
-      {/* Find a shop near me — map + distance search on /find-a-shop. */}
-      <div className="mt-5 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4">
-        <Link href="/find-a-shop" className="flex min-h-[48px] items-center justify-between gap-3">
-          <span className="min-w-0">
-            <span className="block text-base font-semibold text-[var(--label)]">Find a shop near me</span>
-            <span className="block text-[13px] text-[var(--label-2)]">
-              {savedLocation
-                ? 'Your location is saved for this tab — see shops by distance.'
-                : 'See shops on a map, sorted by distance.'}
-            </span>
-          </span>
-          <span aria-hidden="true" className="shrink-0 text-[var(--label-3)]">›</span>
-        </Link>
-        <button
-          type="button"
-          onClick={() => void handleDetectAndFind()}
-          disabled={locating}
-          className="mt-3 inline-flex min-h-[48px] items-center justify-center rounded-full bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--on-accent)] disabled:opacity-60"
-        >
-          {locating ? 'Detecting your location…' : 'Detect my location'}
-        </button>
-        {locError && (
-          <p className="mt-2 text-[13px] text-[var(--label-2)]" role="alert">
-            {locError}
+      <div className="rv-g" style={{ gap: 14 }}>
+        <div>
+          <h1 className="text-[27px]">Find a print shop</h1>
+          <p className="rv-t" style={{ margin: '6px 0 0' }}>
+            {openCount === 0
+              ? 'No shops open right now'
+              : `${openCount} ${openCount === 1 ? 'shop' : 'shops'} open near you`}
           </p>
-        )}
-      </div>
+        </div>
 
-      <div className="mt-5 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-4">
-        <Input
-          id="shop-search"
-          label="Search shops"
-          value={query}
-          onChange={setQuery}
-          placeholder="Search by shop name or area"
-          autoComplete="off"
-        />
-      </div>
+        {/* Search — icon-left input per the board. */}
+        <div style={{ position: 'relative' }}>
+          <span
+            aria-hidden="true"
+            style={{ position: 'absolute', left: 13, top: 13, color: 'var(--rv-muted,#566274)' }}
+          >
+            <Search className="size-[22px]" strokeWidth={2} />
+          </span>
+          <label className="rv-t" htmlFor="shop-search" style={{ position: 'absolute', left: -9999 }}>
+            Search shops
+          </label>
+          <input
+            id="shop-search"
+            className="rv-input"
+            placeholder="Search by shop or area"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
 
-      {pendingOrder && (
-        <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)]">
-          <Link href={`/s/${pendingOrder.shopSlug}`} className="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3">
+        {/* Scan the shop QR — hero card (board 1). */}
+        <div className="rv-card rv-hero rv-r" style={{ padding: 18 }}>
+          <div className="rv-g" style={{ gap: 4 }}>
+            <h2 style={{ fontSize: 18 }}>Scan the shop QR</h2>
+            <span style={{ fontSize: 13, opacity: 0.9, lineHeight: 1.4 }}>
+              Start an order in seconds, no searching.
+            </span>
+          </div>
+          <Link
+            href="/scan"
+            aria-label="Open scanner"
+            className="sp ml-auto flex items-center justify-center"
+            style={{ width: 52, height: 52, borderRadius: 16, background: '#fff', color: 'var(--rv-accent,#2447F5)' }}
+          >
+            <ScanLine className="size-[26px]" strokeWidth={2} aria-hidden="true" />
+          </Link>
+        </div>
+
+        {/* Filter chips — Open now · Nearest · Colour. */}
+        <div className="rv-r" style={{ gap: 8, overflowX: 'auto' }}>
+          <button type="button" className={`rv-chip${openNowChip ? ' on' : ''}`} aria-pressed={openNowChip} onClick={() => setOpenNowChip(v => !v)}>
+            Open now
+          </button>
+          <button type="button" className={`rv-chip${nearestChip ? ' on' : ''}`} aria-pressed={nearestChip} onClick={() => setNearestChip(v => !v)}>
+            Nearest
+          </button>
+          <button type="button" className={`rv-chip${colourChip ? ' on' : ''}`} aria-pressed={colourChip} onClick={() => setColourChip(v => !v)}>
+            Colour
+          </button>
+        </div>
+
+        {pendingOrder && (
+          <Link href={`/s/${pendingOrder.shopSlug}`} className="rv-card rv-row">
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-[var(--label)]">
+              <span className="block truncate text-sm font-bold text-[var(--rv-ink,#0F172A)]">
                 Continue paying — Order {pendingOrder.orderNumber ?? '—'} · {formatRupees(pendingOrder.totalPaise)}
               </span>
-              <span className="block truncate text-[13px] text-[var(--label-2)]">
+              <span className="block truncate text-[13px] text-[var(--rv-muted,#566274)]">
                 {pendingOrder.shopName ?? ''} — your payment was interrupted
               </span>
             </span>
-            <span aria-hidden="true" className="shrink-0 text-[var(--label-3)]">›</span>
+            <span className="rv-t" aria-hidden="true">›</span>
           </Link>
-        </div>
-      )}
+        )}
 
-      {recentOrder && pendingOrder?.token !== recentOrder.token && (
-        <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)]">
-          <Link href={`/o/${recentOrder.token}`} className="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3">
+        {recentOrder && pendingOrder?.token !== recentOrder.token && (
+          <Link href={`/o/${recentOrder.token}`} className="rv-card rv-row">
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-[var(--label)]">
+              <span className="block truncate text-sm font-bold text-[var(--rv-ink,#0F172A)]">
                 Order {recentOrder.orderNumber ?? '—'}
               </span>
-              <span className="block truncate text-[13px] text-[var(--label-2)]">
+              <span className="block truncate text-[13px] text-[var(--rv-muted,#566274)]">
                 {recentOrder.shopName ?? ''} — track your order
               </span>
             </span>
-            <span aria-hidden="true" className="shrink-0 text-[var(--label-3)]">›</span>
+            <span className="rv-t" aria-hidden="true">›</span>
           </Link>
-        </div>
-      )}
+        )}
 
-      <section className="mt-4 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)]" aria-label="Shops">
         {error ? (
-          <div className="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3" role="alert">
-            <span className="text-sm text-[var(--label)]">
+          <div className="rv-card rv-r" role="alert">
+            <span className="text-sm text-[var(--rv-ink,#0F172A)]">
               Couldn&apos;t load shops
-              <span className="block text-[13px] text-[var(--label-2)]">This is usually temporary. Try again.</span>
+              <span className="block text-[13px] text-[var(--rv-muted,#566274)]">This is usually temporary. Try again.</span>
             </span>
             <button
               type="button"
               onClick={() => void loadShops()}
-              className="inline-flex min-h-[44px] shrink-0 items-center rounded-full bg-[var(--accent-tint)] px-4 text-sm font-medium text-[var(--accent-tint-text)]"
+              className="rv-chip ml-auto"
             >
               Try again
             </button>
           </div>
         ) : loading ? (
-          <div className="px-4 py-3 text-sm text-[var(--label-2)]" aria-busy="true">Looking for shops nearby…</div>
+          <div className="rv-t px-1 py-3" aria-busy="true">Looking for shops nearby…</div>
         ) : filtered.length === 0 ? (
-          <div className="px-4 py-3 text-sm text-[var(--label)]">
-            No shops found{query ? ' for your search' : ''}
-            <span className="block text-[13px] text-[var(--label-2)]">Scan a shop&apos;s QR code to go straight to its page.</span>
+          <div className="rv-card px-4 py-4">
+            <p className="text-sm font-bold text-[var(--rv-ink,#0F172A)]">
+              No shops found{query ? ' for your search' : ''}
+            </p>
+            <p className="rv-t mt-0.5">
+              Scan a shop&apos;s QR code to go straight to its page, or turn off the Open now filter.
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-[var(--hairline)]">
+          <ul className="rv-g" style={{ gap: 12 }}>
             {filtered.map((s) => {
-              // Reference card: image left, info right; the actions row
-              // (Upload File / View Shop) appears ONLY when the shop is
-              // tapped — one card expanded at a time. The queue line is
-              // honest: only shown when the shop is open, with the wait
-              // estimate only when a printer is actually online.
+              // Board 1 card: logo tile left, name + status pill, area ·
+              // distance, rates line; right column = pill + live wait.
+              // Actions appear only when the card is tapped (kept from the
+              // previous iteration).
               const expanded = expandedShopId === s.id;
-              const queueLine = !s.isOpen
-                ? 'Closed — opens at the next opening time.'
-                : s.waitMinutes != null
-                  ? `Queue: ${s.queueCount ?? 0} waiting · Ready in ~${s.waitMinutes} mins`
-                  : (s.queueCount ?? 0) > 0
-                    ? `Queue: ${s.queueCount} waiting`
-                    : 'No queue right now';
               const initial = s.name.trim().charAt(0).toUpperCase() || 'S';
+              const bw = formatRupees(s.pricingSummary.bwA4PerPage);
+              const colour = formatRupees(s.pricingSummary.colorA4PerPage);
+              const statusPill = !s.isOpen ? (
+                <span className="rv-pill gy">Closed</span>
+              ) : (s.waitMinutes ?? 0) > 8 ? (
+                <span className="rv-pill am">Busy</span>
+              ) : (
+                <span className="rv-pill">Open</span>
+              );
+              const waitText = !s.isOpen
+                ? 'Opens at the next opening time'
+                : s.waitMinutes != null
+                  ? `~${s.waitMinutes} min wait`
+                  : (s.queueCount ?? 0) > 0
+                    ? `${s.queueCount} in queue`
+                    : 'No wait';
               return (
-                <li key={s.id} className={expanded ? 'bg-[var(--fill)]' : ''}>
+                <li key={s.id}>
                   <button
                     type="button"
                     onClick={() => setExpandedShopId(expanded ? null : s.id)}
                     aria-expanded={expanded}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left"
+                    className="rv-card rv-r w-full text-left"
+                    style={{ alignItems: 'flex-start' }}
                   >
-                    {s.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- shop logo URLs are operator-provided; next/image config churn not worth it here
-                      <img
-                        src={s.image}
-                        alt=""
-                        className="size-14 shrink-0 rounded-[var(--radius-card)] border border-[var(--hairline)] object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span
-                        aria-hidden="true"
-                        className="flex size-14 shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--accent-tint)] text-lg font-extrabold text-[var(--accent-tint-text)]"
-                      >
-                        {initial}
+                    <span className="rv-ic">
+                      {s.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- operator-provided logo URLs
+                        <img src={s.image} alt="" loading="lazy" />
+                      ) : (
+                        <Printer className="size-[22px]" strokeWidth={2} aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="rv-g" style={{ gap: 3, minWidth: 0, flex: 1 }}>
+                      <span className="rv-r" style={{ gap: 8 }}>
+                        <h2 className="truncate">{s.name}</h2>
                       </span>
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate text-sm font-semibold text-[var(--label)]">{s.name}</span>
-                        {s.isOpen ? (
-                          <StatusPill status="ready" label="Open" />
-                        ) : (
-                          <StatusPill status="error" label="Closed" />
-                        )}
+                      <span className="rv-t truncate">
+                        {[s.address.split(',')[0]?.trim(), s.distanceLabel].filter(Boolean).join(' · ') || '—'}
                       </span>
-                      <span className="mt-0.5 block truncate text-[13px] text-[var(--label-2)]">
-                        {[s.distanceLabel, s.address].filter(Boolean).join(' · ') || '—'}
+                      <span className="rv-t truncate">
+                        B/W {bw} · Colour {colour} per page
                       </span>
-                      <span className={`mt-0.5 block truncate text-[13px] ${s.isOpen ? 'text-[var(--label-2)]' : 'text-[var(--label-3)]'}`}>
-                        {queueLine}
-                      </span>
+                    </span>
+                    <span className="rv-g ml-auto" style={{ alignItems: 'flex-end', gap: 6, flex: 'none' }}>
+                      {statusPill}
+                      <span className="rv-t" style={{ whiteSpace: 'nowrap' }}>{waitText}</span>
                     </span>
                   </button>
                   {expanded && (
-                    <div className="flex gap-2 px-4 pb-3 pl-[76px]">
+                    <div className="flex gap-2 px-4 pb-3 pl-[68px]">
                       <Link
                         href={`/s/${s.slug}`}
-                        className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--on-accent)]"
+                        className="rv-btn"
+                        style={{ height: 44, flex: 1, borderRadius: 22 }}
                       >
                         Upload File
                       </Link>
                       <Link
                         href={`/s/${s.slug}`}
-                        className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--label)]"
+                        className="rv-chip"
+                        style={{ height: 44, flex: 'none' }}
                       >
                         View Shop
                       </Link>
@@ -463,19 +492,17 @@ export default function HomePage() {
             })}
           </ul>
         )}
-      </section>
 
-      <p className="mt-3 text-[13px] text-[var(--label-2)]">Scan a shop&apos;s QR code to go straight to its page.</p>
-
-      <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[var(--label-2)]" aria-label="Site">
-        <Link href="/orders" className="underline hover:text-[var(--label)]">My orders</Link>
-        <span aria-hidden="true">·</span>
-        <Link href="/track" className="underline hover:text-[var(--label)]">Track your order</Link>
-        <span aria-hidden="true">·</span>
-        <Link href="/help" className="underline hover:text-[var(--label)]">Help</Link>
-        <span aria-hidden="true">·</span>
-        <Link href="/about" className="underline hover:text-[var(--label)]">About</Link>
-      </nav>
+        <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pb-2 text-xs text-[var(--rv-muted,#566274)]" aria-label="Site">
+          <Link href="/orders" className="underline hover:text-[var(--rv-ink,#0F172A)]">My orders</Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/track" className="underline hover:text-[var(--rv-ink,#0F172A)]">Track your order</Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/help" className="underline hover:text-[var(--rv-ink,#0F172A)]">Help</Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/about" className="underline hover:text-[var(--rv-ink,#0F172A)]">About</Link>
+        </nav>
+      </div>
     </CustomerShell>
   );
 }

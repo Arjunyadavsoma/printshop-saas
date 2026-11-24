@@ -39,7 +39,7 @@ interface CustomerShellProps {
 
 export function CustomerShell({ shopName, status, subtitle, children, sidebar, priceBar, onBack }: CustomerShellProps) {
   return (
-    <div className="min-h-[100dvh] bg-[var(--ground)]">
+    <div className="rv min-h-[100dvh] bg-[var(--ground)]">
       {/* Desktop top navigation (≥1024px). Flow pages keep the compact
           AppBar with their back button instead. */}
       {!onBack && <DesktopTopNav />}

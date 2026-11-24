@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans } from "next/font/google";
+import { Instrument_Sans, Manrope } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import "./clear.css";
@@ -11,11 +11,20 @@ import { ThemeProvider } from "next-themes";
 /**
  * Printelyx "Clear" design system — Instrument Sans only (English only).
  * Replaces Anek Latin + Devanagari + Telugu (Hindi/Telugu content removed).
+ * Manrope is the consumer-flow face (Consumer Flow Revamp boards).
  */
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-instrument",
+  display: "swap",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-manrope",
   display: "swap",
   fallback: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
 });
@@ -85,7 +94,7 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className={`${instrumentSans.variable} antialiased bg-background text-foreground`}
+        className={`${instrumentSans.variable} ${manrope.variable} antialiased bg-background text-foreground`}
       >
         <AuthProvider>
           {/*

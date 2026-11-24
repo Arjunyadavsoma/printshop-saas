@@ -471,3 +471,62 @@
 /* NOTE: the .ref-* reference-design classes were removed in the Clear rebuild
    (rebuild/clear-final). No route uses them any more — the consumer flow runs on
    CustomerOrderFlowV2 + Clear components and the shop portal on ShopShell. */
+
+/* ── Consumer Flow Revamp (.rv-*) — 1:1 port of the "Consumer Flow Revamp"
+   boards. Tokens are the design's exact values: Manrope face, #F4F6F8
+   ground, #0F172A ink, #2447F5 accent, 16px cards, 14px buttons/pills.
+   Scoped to the consumer pages via ConsumerShell — the shop portal's
+   legacy styles are untouched. ─────────────────────────────────────── */
+.rv {
+  --rv-bg: #F4F6F8;
+  --rv-ink: #0F172A;
+  --rv-muted: #566274;
+  --rv-accent: #2447F5;
+  --rv-accent-soft: #E8EDFF;
+  --rv-card: #FFFFFF;
+  --rv-border: #E1E6EE;
+  --rv-hairline: #EDF0F5;
+  --rv-chip-border: #CBD3DF;
+  --rv-green-bg: #DDF5EA;
+  --rv-green-ink: #0B6B47;
+  --rv-amber-bg: #FFEDD0;
+  --rv-amber-ink: #8A4B00;
+  --rv-code-blue: #9FB4FF;
+  --rv-done-green: #12805C;
+  font-family: var(--font-manrope), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--rv-ink);
+  background: var(--rv-bg);
+  min-height: 100dvh;
+}
+.rv h1, .rv h2, .rv h3 { margin: 0; letter-spacing: -0.02em; }
+.rv h1 { font-size: 27px; font-weight: 800; }
+.rv h2 { font-size: 16px; font-weight: 800; }
+.rv-p { padding: 24px 20px 0; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.rv-t { font-size: 13px; color: var(--rv-muted); line-height: 1.4; }
+.rv-card { background: var(--rv-card); border: 1px solid var(--rv-border); border-radius: 16px; padding: 16px; }
+.rv-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; padding: 11px 0; border-bottom: 1px solid var(--rv-hairline); }
+.rv-row:last-child { border-bottom: 0; }
+.rv-g { display: flex; flex-direction: column; gap: 10px; }
+.rv-r { display: flex; align-items: center; gap: 12px; }
+.rv-btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border: 0; border-radius: 14px; background: var(--rv-accent); color: #fff; font: 800 16px var(--font-manrope), sans-serif; width: 100%; }
+.rv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rv-ic { width: 44px; height: 44px; border-radius: 12px; background: var(--rv-accent-soft); color: var(--rv-accent); display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
+.rv-ic img { width: 100%; height: 100%; object-fit: cover; }
+.rv-chip { height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--rv-chip-border); background: #fff; font: 700 13px var(--font-manrope), sans-serif; color: var(--rv-ink); display: inline-flex; align-items: center; gap: 8px; }
+.rv-chip.on { background: var(--rv-ink); color: #fff; border-color: var(--rv-ink); }
+.rv-pill { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 12px; background: var(--rv-green-bg); color: var(--rv-green-ink); white-space: nowrap; }
+.rv-pill.am { background: var(--rv-amber-bg); color: var(--rv-amber-ink); }
+.rv-pill.gy { background: #E9EDF3; color: var(--rv-muted); }
+.rv-seg { display: flex; background: #E9EDF3; border-radius: 12px; padding: 4px; gap: 4px; }
+.rv-seg button { flex: 1; height: 40px; border: 0; border-radius: 9px; background: transparent; font: 700 14px var(--font-manrope), sans-serif; color: var(--rv-muted); }
+.rv-seg button.on { background: #fff; color: var(--rv-ink); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
+.rv-bk { width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--rv-border); background: #fff; display: flex; align-items: center; justify-content: center; color: var(--rv-ink); }
+.rv-bar { background: #fff; border-top: 1px solid var(--rv-border); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); position: sticky; bottom: 0; z-index: 30; }
+.rv-input { height: 48px; border: 1px solid var(--rv-chip-border); border-radius: 14px; padding: 0 14px 0 44px; font: 600 15px var(--font-manrope), sans-serif; width: 100%; background: #fff; color: var(--rv-ink); outline: none; }
+.rv-input:focus-visible { border-color: var(--rv-accent); }
+.rv-code-card { background: var(--rv-ink); border: 0; color: #fff; text-align: center; padding: 22px; border-radius: 16px; }
+.rv-code-card .code { font-size: 48px; font-weight: 800; letter-spacing: 0.18em; margin: 8px 0 4px; }
+.rv-code-card .eta { font-size: 13px; color: var(--rv-code-blue); font-weight: 700; }
+.rv-dot { width: 28px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; border: 2px solid transparent; }
+.rv-hero { background: var(--rv-accent); border: 0; color: #fff; padding: 18px; }
+.rv-hero button { width: 52px; height: 52px; border-radius: 16px; border: 0; background: #fff; color: var(--rv-accent); display: flex; align-items: center; justify-content: center; }
