@@ -11,7 +11,7 @@ jobs:
       # current schema — the migration chain cannot be replayed on a fresh
       # DB (misdated 20251124000001_* references a later migration, see
       # docs/fixes/BUG-LIST.md P1-14) so migrate deploy is not usable here.
-      DATABASE_URL: postgresql://printshop:printshop@localhost:5433/printshop_ci
+      DATABASE_URL: postgresql://printshop:printshop@127.0.0.1:5433/printshop_ci
     services:
       postgres:
         image: postgres:16-alpine

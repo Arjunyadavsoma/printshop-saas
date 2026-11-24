@@ -56,11 +56,18 @@ yarn-error.log*
 
 # Screenshots from browser verification
 *.png
+# Required public assets referenced by the app — never ignore these:
+# og.png (OpenGraph/Twitter previews, referenced in layout metadata)
+# download-qr.png (/download-app static QR)
+!public/og.png
+!public/download-qr.png
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 local-*
+# exception: the local-disk storage adapter (source code, not local config)
+!packages/adapters/src/storage/local-disk.adapter.ts
 .claude
 .z-ai-config
 *.log
