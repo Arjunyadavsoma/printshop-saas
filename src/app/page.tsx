@@ -31,6 +31,11 @@ interface ShopListItem {
   isActive: boolean;
   isOpen: boolean;
   waitMinutes: number | null;
+  /** Live queue (orders waiting to print) — from the nearby endpoint. */
+  queueCount?: number | null;
+  /** Pre-formatted distance ("1.2 km") when the customer's location is known. */
+  distanceLabel?: string | null;
+  image?: string | null;
   pricingSummary: { bwA4PerPage: number; colorA4PerPage: number; minOrderValue: number };
 }
 
@@ -143,7 +148,10 @@ export default function HomePage() {
               subscriptionTier: '',
               isActive: true,
               isOpen: parseOpenStatus(s.openStatus).isOpen ?? true,
-              waitMinutes: null,
+              waitMinutes: s.waitMinutes ?? null,
+              queueCount: s.queueCount ?? null,
+              distanceLabel: s.distanceLabel ?? null,
+              image: s.image ?? null,
               pricingSummary: {
                 bwA4PerPage: s.pricingSummary?.bwA4PerPage ?? 200,
                 colorA4PerPage: s.pricingSummary?.colorA4PerPage ?? 500,
@@ -376,28 +384,53 @@ export default function HomePage() {
         ) : (
           <ul className="divide-y divide-[var(--hairline)]">
             {filtered.map((s) => {
-              const statusLine = !s.isOpen
-                ? 'Closed'
-                : s.waitMinutes == null
-                  ? 'Open'
-                  : s.waitMinutes === 0
-                    ? 'Open, no wait'
-                    : `Open, about ${s.waitMinutes} min wait`;
+              // Reference card: name + Open chip, distance · area, live
+              // queue line, View Shop / Upload File actions. The queue
+              // line is honest: only shown when the shop is open, with
+              // the wait estimate only when a printer is actually online.
+              const queueLine = !s.isOpen
+                ? 'Closed — opens at the next opening time.'
+                : s.waitMinutes != null
+                  ? `Queue: ${s.queueCount ?? 0} waiting · Ready in ~${s.waitMinutes} mins`
+                  : (s.queueCount ?? 0) > 0
+                    ? `Queue: ${s.queueCount} waiting`
+                    : 'No queue right now';
               return (
                 <li key={s.id}>
-                  <Link href={`/s/${s.slug}`} className="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-[var(--label)]">{s.name}</span>
-                      <span className="block truncate text-[13px] text-[var(--label-2)]">{statusLine}</span>
-                    </span>
-                    <span className="shrink-0">
-                      {s.isOpen ? (
-                        <StatusPill status="ready" label="Open" />
-                      ) : (
-                        <StatusPill status="error" label="Closed" />
-                      )}
-                    </span>
-                  </Link>
+                  <div className="flex items-start justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/s/${s.slug}`} className="truncate text-sm font-semibold text-[var(--label)]">
+                          {s.name}
+                        </Link>
+                        {s.isOpen ? (
+                          <StatusPill status="ready" label="Open" />
+                        ) : (
+                          <StatusPill status="error" label="Closed" />
+                        )}
+                      </div>
+                      <p className="mt-0.5 truncate text-[13px] text-[var(--label-2)]">
+                        {[s.distanceLabel, s.address].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                      <p className={`mt-0.5 text-[13px] ${s.isOpen ? 'text-[var(--label-2)]' : 'text-[var(--label-3)]'}`}>
+                        {queueLine}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+                      <Link
+                        href={`/s/${s.slug}`}
+                        className="inline-flex min-h-[40px] items-center justify-center rounded-full bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--on-accent)]"
+                      >
+                        Upload File
+                      </Link>
+                      <Link
+                        href={`/s/${s.slug}`}
+                        className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--label)]"
+                      >
+                        View Shop
+                      </Link>
+                    </div>
+                  </div>
                 </li>
               );
             })}

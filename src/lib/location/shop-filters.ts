@@ -51,8 +51,14 @@ export interface NearbyShop {
   acceptingOrders?: boolean | null;
   /** Shop logo URL when the shopkeeper uploaded one; null otherwise. */
   logoUrl?: string | null;
+  /** Card image alias returned by the nearby API (same as logoUrl). */
+  image?: string | null;
   /** Real rating ONLY when the API returns a non-null number; otherwise null (no stars rendered). */
   rating?: number | null;
+  /** Print jobs waiting in the shop's queue (live, from the nearby API). */
+  queueCount?: number | null;
+  /** Estimated minutes until the shop could start this customer's job; null = no online printer. */
+  waitMinutes?: number | null;
 }
 
 export type ServiceFilter = 'all' | 'bw' | 'colour';

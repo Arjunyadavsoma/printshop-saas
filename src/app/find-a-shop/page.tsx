@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/clear/site-header';
 import { SiteFooter } from '@/components/clear/site-footer';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
 import { Input } from '@/components/clear/input';
 import { StatusPill } from '@/components/clear/status-pill';
 import { SkeletonCard } from '@/components/clear/skeleton';
@@ -297,7 +298,7 @@ export default function FindAShopPage() {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[var(--ground)]">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 pb-[calc(76px+env(safe-area-inset-bottom))] py-6 lg:px-8 lg:pb-6">
         <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">
           Find a shop near you
         </h1>
@@ -715,6 +716,9 @@ export default function FindAShopPage() {
         </div>
       </main>
       <SiteFooter />
+      {/* Persistent consumer tab bar — same navigation model as every
+          other consumer screen (mobile only; lg handled by SiteHeader). */}
+      <ConsumerTabBar />
     </div>
   );
 }

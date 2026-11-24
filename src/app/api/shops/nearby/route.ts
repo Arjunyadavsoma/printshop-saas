@@ -66,6 +66,8 @@ interface ShopLocationRow {
   longitude: number | null;
   fullAddress: string | null;
   city: string | null;
+  minutesPerPageBw: number | null;
+  minutesPerPageColor: number | null;
 }
 
 // The generated Prisma client in node_modules predates the location columns
@@ -228,6 +230,8 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
         longitude: true,
         fullAddress: true,
         city: true,
+        minutesPerPageBw: true,
+        minutesPerPageColor: true,
       },
       orderBy: { createdAt: 'desc' },
       take: FETCH_CAP,
@@ -312,9 +316,50 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const pageRows = enriched.slice((page - 1) * limit, page * limit);
 
+    // ── Live queue per shop on this page ──────────────────────────────
+    // The customer-facing "Queue: N waiting · Ready in ~M mins" line.
+    // Same formula as the public shops list (/api/v1/shops): queued
+    // sheets × minutes-per-page ÷ online printers, ceil. Best-effort —
+    // any failure leaves the fields null and the card falls back to the
+    // plain Open/Closed chip.
+    const queueByShop = new Map<string, { queueCount: number; waitMinutes: number | null }>();
+    await Promise.all(
+      pageRows.map(async ({ row }) => {
+        try {
+          const printers = await db.printer.findMany({ where: { shopId: row.id } });
+          const online = printers.filter((p) => p.enabled && p.status === 'ONLINE');
+          const queued = await db.printJob.findMany({
+            where: { shopId: row.id, status: 'queued' },
+            take: 50,
+          });
+          const waiting = queued.length;
+          if (online.length === 0) {
+            queueByShop.set(row.id, { queueCount: waiting, waitMinutes: null });
+            return;
+          }
+          const minBw = row.minutesPerPageBw ?? 1;
+          const minColor = row.minutesPerPageColor ?? 2;
+          const minPerPp = Math.max(1, Math.round((minBw + minColor) / 2));
+          const sheets = queued.reduce(
+            (sum, t) => sum + (t.sheetCount ?? 1) * (t.copies ?? 1),
+            0,
+          );
+          queueByShop.set(row.id, {
+            queueCount: waiting,
+            waitMinutes: Math.ceil((sheets * minPerPp) / online.length),
+          });
+        } catch {
+          // Queue data is optional decoration — never fail the directory.
+          queueByShop.set(row.id, { queueCount: 0, waitMinutes: null });
+        }
+      }),
+    );
+
     return ok({
       locatedCount,
-      shops: pageRows.map(({ row, distanceKm, status }) => ({
+      shops: pageRows.map(({ row, distanceKm, status }) => {
+        const queue = queueByShop.get(row.id) ?? { queueCount: 0, waitMinutes: null };
+        return {
         id: row.id,
         name: row.name,
         slug: row.slug,
@@ -335,7 +380,10 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
         pricingSummary: parsePricing(row.pricingConfig),
         phone: maskPhone(row.phone),
         acceptingOrders: row.acceptingOrders ?? true,
-      })),
+        queueCount: queue.queueCount,
+        waitMinutes: queue.waitMinutes,
+        };
+      }),
       pagination: {
         page,
         limit,
