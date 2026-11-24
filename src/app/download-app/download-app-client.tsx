@@ -61,9 +61,11 @@ const RELEASE_PAGE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/rele
 export function DownloadAppClient() {
   const releasePageUrl = RELEASE_PAGE_URL;
   // The QR code encodes the stable releases/latest URL so a phone camera
-  // lands on the newest APK. api.qrserver.com returns a PNG image (an <img>
-  // load, not an API fetch — allowed by CSP).
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(releasePageUrl)}`;
+  // lands on the newest APK. It is a pre-generated static asset
+  // (public/download-qr.png) — the previous api.qrserver.com image failed
+  // to load wherever that third-party service is unreachable and logged
+  // console errors on the page.
+  const qrUrl = '/download-qr.png';
 
   return (
     <div className="min-h-screen bg-page">

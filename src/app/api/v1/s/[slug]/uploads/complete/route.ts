@@ -70,25 +70,24 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
       throw new ValidationError('This order exceeds the 200 MB limit. Split it into more than one order.');
     }
 
-    // magic bytes vs declared type
-    // In dev mode (in-memory DB), relax the type check so demo uploads work
-    // even with non-standard files. Production keeps strict validation.
-    const isDevMode = process.env.DATABASE_PROVIDER === 'memory' || process.env.NODE_ENV !== 'production';
+    // magic bytes vs declared type — enforced in EVERY environment. The
+    // previous dev relaxation (`DATABASE_PROVIDER=memory`/`NODE_ENV!=='production'`
+    // skipped the check) meant demo/test uploads could mismatch their
+    // declared type; that is exactly the class of dishonest validation
+    // fixed in BUG-LIST P0-2. Demo uploads should upload real files.
     const sniffed = sniffKind(bytes);
     const declared = detectKind(s.mimeType, s.filename);
-    if (!isDevMode) {
-      if (declared === 'office' && sniffed !== 'zip') {
-        throw new NormalizeError('TYPE_MISMATCH', 'The file content does not match its extension. Upload the real .docx/.pptx/.xlsx file.');
-      }
-      if (declared === 'pdf' && sniffed !== 'pdf') {
-        throw new NormalizeError('TYPE_MISMATCH', 'This is not a PDF file (content check failed).');
-      }
-      if (declared === 'image' && !['image', 'heic'].includes(sniffed)) {
-        throw new NormalizeError('TYPE_MISMATCH', 'This is not an image file (content check failed).');
-      }
-      if (sniffed === 'unknown') {
-        throw new NormalizeError('UNSUPPORTED_TYPE', 'Unsupported file type. Upload a PDF, image, or Office document.');
-      }
+    if (declared === 'office' && sniffed !== 'zip') {
+      throw new NormalizeError('TYPE_MISMATCH', 'The file content does not match its extension. Upload the real .docx/.pptx/.xlsx file.');
+    }
+    if (declared === 'pdf' && sniffed !== 'pdf') {
+      throw new NormalizeError('TYPE_MISMATCH', 'This is not a PDF file (content check failed).');
+    }
+    if (declared === 'image' && !['image', 'heic'].includes(sniffed)) {
+      throw new NormalizeError('TYPE_MISMATCH', 'This is not an image file (content check failed).');
+    }
+    if (sniffed === 'unknown') {
+      throw new NormalizeError('UNSUPPORTED_TYPE', 'Unsupported file type. Upload a PDF, image, or Office document.');
     }
 
     const originalKey = `shops/${s.shopId}/orders/${s.orderId}/orig/${s.fileId}_${s.filename}`;

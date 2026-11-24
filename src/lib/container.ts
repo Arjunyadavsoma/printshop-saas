@@ -35,6 +35,7 @@ import {
   S3StorageAdapter,
   SupabaseStorageAdapter,
   DisabledStorageAdapter,
+  LocalDiskStorageAdapter,
   UpstashCacheAdapter,
 } from '@platform/adapters';
 import { PrismaDatabaseAdapter } from '@/lib/adapters/prisma-database.adapter';
@@ -94,6 +95,8 @@ function requireSecret(key: string): string {
  * Supported production providers:
  *   - 'supabase' → SupabaseStorageAdapter (Supabase Storage — free 1GB)
  *   - 'r2'       → R2StorageAdapter  (Cloudflare R2)
+ *   - 'local'    → LocalDiskStorageAdapter (STORAGE_LOCAL_DIR on the server's
+ *                  disk — self-hosted single-box deployments and CI)
  *   - 'disabled' → DisabledStorageAdapter (uploads explicitly unavailable —
  *                  the app runs but file upload/download returns a clear error.
  *                  Use this when S3/R2 credentials are not yet verified.)
@@ -101,7 +104,7 @@ function requireSecret(key: string): string {
 function validateStorageProvider(): string {
   const provider = env('STORAGE_PROVIDER', 'memory');
   if (process.env.NODE_ENV === 'production' && provider === 'memory') {
-    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=supabase, STORAGE_PROVIDER=s3, STORAGE_PROVIDER=r2, or STORAGE_PROVIDER=disabled.');
+    throw new Error('FATAL: STORAGE_PROVIDER=memory in production — customer documents would be lost on restart. Set STORAGE_PROVIDER=supabase, STORAGE_PROVIDER=s3, STORAGE_PROVIDER=r2, STORAGE_PROVIDER=local, or STORAGE_PROVIDER=disabled.');
   }
   return provider;
 }
@@ -336,6 +339,8 @@ function buildContainer(): Container {
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
       bucket: env('R2_BUCKET'),
+    }) : effectiveStorageProvider === 'local' ? new LocalDiskStorageAdapter({
+      rootDir: env('STORAGE_LOCAL_DIR', './storage-data'),
     }) : effectiveStorageProvider === 'disabled' ? new DisabledStorageAdapter()
     : new InMemoryStorageAdapter();
 

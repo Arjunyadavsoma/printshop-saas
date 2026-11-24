@@ -53,8 +53,12 @@ for (const route of ROUTES) {
 
       const title = await page.title();
       expect.soft(title.length, `title on ${route}`).toBeGreaterThan(0);
+      // Retry-safe: a retried test re-runs the same route — only a DIFFERENT
+      // route reusing the title is a real duplicate.
       const prev = titles.get(title);
-      expect.soft(prev ?? null, `duplicate title "${title}" on ${route} and ${prev ?? '?'}`).toBeFalsy();
+      if (prev && prev !== route) {
+        expect.soft(prev, `duplicate title "${title}" on ${route} and ${prev}`).toBeFalsy();
+      }
       titles.set(title, route);
 
       expect.soft(await page.locator('h1').count(), `h1 on ${route}`).toBeGreaterThanOrEqual(1);

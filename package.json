@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --reporter=dot",
     "test:integration": "vitest run src/lib/pricing/ src/lib/payments/ --reporter=dot",
-    "test:postgres": "vitest run src/lib/pricing/checkout-real-postgres.test.ts src/lib/pricing/app-webhook-integration.test.ts src/lib/pricing/app-checkout-concurrency.test.ts --reporter=dot",
+    "test:postgres": "vitest run --config vitest.postgres.config.ts --reporter=dot",
     "test:e2e": "playwright test --project=chromium",
     "typecheck": "tsc --noEmit",
     "build:check": "next build",

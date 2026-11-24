@@ -1,41 +1,91 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
-    "frontend-design": {
-      "source": "huang-x-h/z-skills",
+    "emil-design-eng": {
+      "source": "emilkowalski/skills",
+      "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
       "sourceType": "github",
-      "skillPath": "frontend-design/SKILL.md",
-      "computedHash": "3f9011d1eb0508234e8738c87f4d39ffd206c86013880011df68d3b6cf5dceef"
+      "skillPath": "skills/emil-design-eng/SKILL.md",
+      "computedHash": "e1b377ccde1d32743d1d3f7d8626629deb8055c9114d180c184697928cc66cc6"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c"
+    },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "08bd5bf141cb507f46bd8347890cd985865606f15adf88295ed3a73bc9ad5d96"
     },
     "neon-postgres": {
       "source": "neondatabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/neon-postgres/SKILL.md",
-      "computedHash": "0d936096676b18674d47828a87b21fcabf37cf0d7e3ed002e46e169eb7e0a7da"
+      "computedHash": "d1672f8d0fe1a2bf7450a9cdc59b2ecab2231b0c30f00a66d9f262b145c6c6cc"
     },
     "search-expert": {
       "source": "tianxiao1430-jpg/zai-skills",
       "sourceType": "github",
       "skillPath": "skills/search-expert/SKILL.md",
-      "computedHash": "d327d8f01a01f7353b56af0bfc0769c045c619f86a612c8d8ea959224b78f4f1"
+      "computedHash": "ede38563d4796579469e3725c524763f590d0a0d0b4641da1e375b427d02ac35"
+    },
+    "shadcn": {
+      "source": "shadcn-ui/ui",
+      "commit": "055aa6b7837b1808456a24beb4c97a677864aa82",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "388962d16c7a4f13aaeee0d8f128e50a87df8553d42ef7988c39c0e1c74a40e8"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "f2f7266b07805025421611656045e9b44b41e2eb",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "b2defbac0cde30996f120c953d243b5ccd396c55e550a98a08d4206eaadac670"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "7991ed4fbecdac23f47c1a40c243e00a212a9e7f3604db93959b3ae11dffe299"
     },
     "vision-expert": {
       "source": "tianxiao1430-jpg/zai-skills",
       "sourceType": "github",
       "skillPath": "skills/vision-expert/SKILL.md",
-      "computedHash": "79ad10efaf58f7d0b5bd6c4b90e0e333aa329eac55323df0931932c2a7e600ed"
+      "computedHash": "aa753d45b022000a982d6d4fa79db6e2e953ea6e04a0bc1f9367cdf680285d8d"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "5994e4cfd86144903d2ba750f862b9e36af15e3297aac983679e347b99f6cb71"
+    },
+    "webapp-testing": {
+      "source": "anthropics/skills",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+      "sourceType": "github",
+      "skillPath": "skills/webapp-testing/SKILL.md",
+      "computedHash": "48cd9a742a59250edec6db89cf081ef5465f365e2133f6d6c5e29c380b754b7d"
     },
     "zai-orchestrator": {
       "source": "tianxiao1430-jpg/zai-skills",
       "sourceType": "github",
       "skillPath": "skills/zai-orchestrator/SKILL.md",
-      "computedHash": "c1ebd41f5df317bd51a9dce94170f01559bf233b8b858d73c9ae63a152228b0f"
+      "computedHash": "28f63922b12e840094ccd8092eb869f3e23e7cd533b7a54fc78b7ad7ee2da982"
     },
     "zread-expert": {
       "source": "tianxiao1430-jpg/zai-skills",
       "sourceType": "github",
       "skillPath": "skills/zread-expert/SKILL.md",
-      "computedHash": "029990dedcf3bd66e8840f42ccea3e4e4fb98c06911bfc8dfdf7864a2e9a64b5"
+      "computedHash": "3a416d3a5e312cd6e146f2ee06e635c6acc0dd1098966c1dbd9692c46fb04701"
     }
   }
 }

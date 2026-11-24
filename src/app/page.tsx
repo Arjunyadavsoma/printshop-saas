@@ -229,7 +229,6 @@ function ShopRow({ shop }: { shop: ShopListItem }) {
       href={`/s/${shop.slug}`}
       className="ref-g"
       style={{ textDecoration: 'none', color: 'inherit', display: 'block', padding: 0 }}
-      aria-label={`Visit ${shop.name}`}
     >
       {/* Row 1: Shop name + tier badge */}
       <div className="ref-r" style={{ minHeight: '52px', alignItems: 'center' }}>

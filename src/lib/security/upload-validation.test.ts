@@ -269,15 +269,23 @@ describe('Upload validation — magic bytes vs declared MIME', () => {
 
   it('rejects an unknown file type (random bytes, no magic match)', async () => {
     const junk = Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a]);
-    const init = await initUpload({
-      filename: 'random.bin',
-      mimeType: 'application/octet-stream',
-      sizeBytes: junk.length,
-    });
-    await uploadOneChunk(init.uploadId, junk);
-    const { status, json } = await completeUpload(init.uploadId);
-    expect(status).toBeGreaterThanOrEqual(400);
-    expect(json.success).toBe(false);
+    // Rejection may happen at init (the MIME allowlist refuses
+    // application/octet-stream outright) or at complete (magic sniff) —
+    // the file must never reach Ready either way.
+    let rejected = false;
+    try {
+      const init = await initUpload({
+        filename: 'random.bin',
+        mimeType: 'application/octet-stream',
+        sizeBytes: junk.length,
+      });
+      await uploadOneChunk(init.uploadId, junk);
+      const { status, json } = await completeUpload(init.uploadId);
+      rejected = status >= 400 && json.success === false;
+    } catch (cause) {
+      rejected = /init failed: 4\d\d/.test(String(cause));
+    }
+    expect(rejected).toBe(true);
   });
 });
 

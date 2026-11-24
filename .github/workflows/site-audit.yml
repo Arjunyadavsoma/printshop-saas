@@ -6,16 +6,43 @@ on:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    env:
+      # Ephemeral CI database (service below). `prisma db push` syncs the
+      # current schema — the migration chain cannot be replayed on a fresh
+      # DB (misdated 20251124000001_* references a later migration, see
+      # docs/fixes/BUG-LIST.md P1-14) so migrate deploy is not usable here.
+      DATABASE_URL: postgresql://printshop:printshop@localhost:5433/printshop_ci
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: printshop
+          POSTGRES_PASSWORD: printshop
+          POSTGRES_DB: printshop_ci
+        ports:
+          - 5433:5433
+        options: >-
+          --health-cmd "pg_isready -U printshop"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
+      # bun does not run dependency postinstall scripts (prisma client generator) — generate explicitly
+      - run: bunx prisma generate
+      - name: Schema + seed (ephemeral CI database)
+        run: |
+          bunx prisma db push --skip-generate
+          bun prisma/seed.ts
       - run: bunx playwright install chromium --with-deps
       - name: Build production bundle
         run: bun run build
       - name: Start production server (in-memory test data)
         run: |
-          STORAGE_PROVIDER=disabled REALTIME_EMIT_SECRET=ci-secret-not-for-production \
+          STORAGE_PROVIDER=local STORAGE_LOCAL_DIR=/tmp/pshop-storage \
+          REALTIME_EMIT_SECRET=ci-secret-not-for-production \
           JWT_ACCESS_SECRET=ci-secret-not-for-production JWT_REFRESH_SECRET=ci-secret-not-for-production \
           DEVICE_TOKEN_PEPPER=ci-secret-not-for-production PAYMENT_ENCRYPTION_KEY=Z0NlRGQwMWQyZjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5 \
           PORT=3000 bun .next/standalone/server.js &
