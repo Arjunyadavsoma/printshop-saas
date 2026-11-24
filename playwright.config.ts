@@ -12,6 +12,11 @@ export default defineConfig({
   fullyParallel: false, // Sequential — the dev server can't handle parallel
   retries: 1,
   workers: 1,
+  // CI runners (2 cores) need more than Playwright's 30s default: the
+  // upload→pay→track journey does init+chunk+complete + pipeline
+  // processing end-to-end, and site-audit was red on every commit with
+  // the 30s default while the same journey passes locally in under 30s.
+  timeout: 120_000,
   reporter: [['html', { outputDir: './docs/redesign/evidence/playwright-report' }], ['list']],
   use: {
     baseURL: 'http://localhost:3000',
