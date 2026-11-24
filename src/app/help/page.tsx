@@ -9,7 +9,7 @@ import {
   supportMailto,
   supportWhatsAppLink,
 } from '@/lib/customer/support-config';
-import { InfoShell } from '../about/page';
+import { InfoShell } from '@/components/clear/info-shell';
 
 /**
  * /help — spec screen 14: FAQ accordion ("+" at right, answer as sub-text

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { InfoShell } from '../about/page';
+import { InfoShell } from '@/components/clear/info-shell';
 
 export const metadata: Metadata = {
   title: 'Terms',

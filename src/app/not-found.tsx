@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { InfoShell } from './about/page';
+import { InfoShell } from '@/components/clear/info-shell';
 
 export const metadata = {
   title: 'Page not found',
