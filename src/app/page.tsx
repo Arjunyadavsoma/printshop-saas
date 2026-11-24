@@ -67,6 +67,18 @@ export default function HomePage() {
     setError(null);
     try {
       const r = await api.request<{ data?: { shops: ShopListItem[] }; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
+      if (r.status === 429) {
+        // Rate-limited (shared bucket) — one retry after a short delay
+        // instead of immediately showing the "Couldn't load shops" card.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const retry = await api.request<{ data?: { shops: ShopListItem[] }; error?: { message?: string } }>('GET', '/api/v1/shops?limit=50');
+        if (retry.status >= 400 || !retry.data?.data) {
+          setError('load-failed');
+        } else {
+          setShops(retry.data.data.shops.filter((s) => !isDemoOrTestShop(s)));
+        }
+        return;
+      }
       if (r.status >= 400 || !r.data?.data) {
         setError('load-failed');
       } else {

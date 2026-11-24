@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
@@ -133,8 +133,11 @@ export const POST = withRateLimit('uploads-complete', 60, 60, async (req: NextRe
       const file = await repos.files.findById(s.fileId);
       return ok({ fileId: s.fileId, status: result.status, failReason: result.failReason ?? null, file });
     }
-    // background — surface failures through the status endpoint
-    run.catch(() => {});
+    // background — surface failures through the status endpoint. Use
+    // after() so Vercel keeps the function alive until processing finishes;
+    // a bare unawaited promise can be frozen after the response, leaving
+    // the file stuck in 'converting' forever.
+    after(() => run.catch(() => {}));
     return ok({ fileId: s.fileId, status: 'converting' });
   } catch (cause) {
     return fail(toAppError(cause));

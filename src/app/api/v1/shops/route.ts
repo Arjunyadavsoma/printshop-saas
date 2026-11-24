@@ -58,7 +58,7 @@ function maskPhone(phone: string | null | undefined): string {
  * Phone numbers are masked (first 4 + last 4 digits, middle asterisked) to
  * prevent directory-scraping for PII.
  */
-export const GET = withRateLimit('shops-list', 60, 60, async (req) => {
+export const GET = withRateLimit('shops-list', 300, 60, async (req) => {
   try {
     const url = req.nextUrl;
     const q = (url.searchParams.get('q') ?? '').trim();

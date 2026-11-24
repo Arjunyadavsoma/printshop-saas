@@ -99,8 +99,19 @@ function toRow(input: Partial<Shop>): Partial<ShopRow> {
       if (v && Object.keys(v as Record<string, unknown>).length > 0) {
         out[k] = encryptCredentials(v as Record<string, unknown>); // encrypt at rest
       } else {
-        // The DB column is NOT NULL — store an encrypted empty object instead of undefined.
-        out[k] = encryptCredentials({});
+        // Empty credentials (e.g. self-registration — the shopkeeper adds
+        // real ones via /shop/settings later). Do NOT call the encryptor
+        // for an empty object: a missing/malformed PAYMENT_ENCRYPTION_KEY
+        // in production made every registration 500 ("Internal server
+        // error") even though there is nothing secret to encrypt. Store
+        // '{}' exactly like the seed does; toDomain() already treats a
+        // non-v1: blob as empty credentials.
+        try {
+          out[k] = encryptCredentials({});
+        } catch (e) {
+          console.warn('[shop.repository] credential encryption unavailable — storing empty credentials unencrypted:', e instanceof Error ? e.message : String(e));
+          out[k] = '{}';
+        }
       }
     } else if (k === 'pricingConfig') {
       out[k] = v ? JSON.stringify(v) : undefined;
