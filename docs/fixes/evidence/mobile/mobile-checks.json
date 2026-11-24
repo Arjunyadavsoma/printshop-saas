@@ -1,0 +1,84 @@
+{
+  "webkit": "CANNOT VERIFY — system libraries missing in sandbox (no sudo); approximated with Chromium Android emulation",
+  "/": {
+    "route": "/",
+    "css": {
+      "uses100vh": true,
+      "uses100dvh": true,
+      "usesSafeArea": true
+    },
+    "landscapeOverflow": 0,
+    "zoom200": 0,
+    "bottomBarInfo": {
+      "bar": null,
+      "inputsInView": 1,
+      "inputBottom": 223
+    },
+    "overscroll": {
+      "behavior": "auto",
+      "html": "auto"
+    },
+    "offline": {
+      "text": "Current theme: light\nPrintelyx\nPrint without the queue\n\nScan a shop QR or browse below\n\nLoading shops…\n\nHow it works\n\n1. Find a shop\nOr scan the shop's QR code\n2. Upload files\nPDF, photos, or Word doc",
+      "looksHandled": false
+    },
+    "slow3G": {
+      "domContentLoadedMs": 134,
+      "textAfter5s": "Current theme: light\nPrintelyx\nPrint without the queue\n\n6 shops nearby\n\nQA Shop 1795101109\nQA Test Address 1\nFree\nB&W ₹2\nColour ₹6\nMin ₹5\nVisit shop →"
+    }
+  },
+  "/help": {
+    "route": "/help",
+    "css": {
+      "uses100vh": true,
+      "uses100dvh": true,
+      "usesSafeArea": true
+    },
+    "landscapeOverflow": 0,
+    "zoom200": 0,
+    "bottomBarInfo": {
+      "bar": null,
+      "inputsInView": 0,
+      "inputBottom": null
+    },
+    "overscroll": {
+      "behavior": "auto",
+      "html": "auto"
+    },
+    "offline": {
+      "text": "Loading…",
+      "looksHandled": false
+    },
+    "slow3G": {
+      "domContentLoadedMs": 127,
+      "textAfter5s": "Help\n\nFrequently asked questions\n\nFrequently asked questions\nHow do I pay?\n\nTap a UPI app (GPay, PhonePe, Paytm). After paying, enter the 12-digit UTR"
+    }
+  },
+  "/track": {
+    "route": "/track",
+    "css": {
+      "uses100vh": true,
+      "uses100dvh": true,
+      "usesSafeArea": true
+    },
+    "landscapeOverflow": 0,
+    "zoom200": 0,
+    "bottomBarInfo": {
+      "bar": null,
+      "inputsInView": 1,
+      "inputBottom": 240
+    },
+    "overscroll": {
+      "behavior": "auto",
+      "html": "auto"
+    },
+    "offline": {
+      "text": "Loading…",
+      "looksHandled": false
+    },
+    "slow3G": {
+      "domContentLoadedMs": 127,
+      "textAfter5s": "Track your order\n\nPaste your tracking link from your receipt, or your order number.\n\nTracking link or order number\nTrack order"
+    }
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "log": [
+    {
+      "step": "1:landing",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sid"
+    },
+    {
+      "step": "landing-buttons",
+      "buttons": [
+        "Add files",
+        "Call shop",
+        "Directions"
+      ]
+    },
+    {
+      "step": "2:files-step",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | Processing… | Processing | Add more files | 1 file | Processing… | Waiting for files…"
+    },
+    {
+      "step": "files-buttons",
+      "buttons": [
+        "Add more files",
+        "Waiting for files…"
+      ]
+    },
+    {
+      "step": "3:options-step",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | Processing… | Processing | Add more files | 1 file | Processing… | Waiting for files…"
+    },
+    {
+      "step": "options-buttons",
+      "buttons": [
+        "Add more files",
+        "Waiting for files…"
+      ]
+    },
+    {
+      "step": "4:review-step",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | Processing… | Processing | Add more files | 1 file | Processing… | Waiting for files…"
+    },
+    {
+      "step": "review-buttons",
+      "buttons": [
+        "Add more files",
+        "Waiting for files…"
+      ]
+    },
+    {
+      "step": "5:pay-step",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | Processing… | Processing | Add more files | 1 file | Processing… | Waiting for files…"
+    },
+    {
+      "step": "pay-buttons",
+      "buttons": [
+        "Add more files",
+        "Waiting for files…"
+      ]
+    },
+    {
+      "step": "pay-info",
+      "upiLinks": [],
+      "utrInput": []
+    },
+    {
+      "step": "6:waiting",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | 3 pages, 1 KB | Ready | Add more files | 1 file | 3 pages | Continue"
+    },
+    {
+      "step": "7:after-waiting",
+      "note": "",
+      "url": "/s/quickprint",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | 3 pages, 1 KB | Ready | Add more files | 1 file | 3 pages | Continue"
+    },
+    {
+      "step": "final-buttons",
+      "buttons": [
+        "Add more files",
+        "Continue"
+      ]
+    },
+    {
+      "step": "8:my-orders",
+      "note": "",
+      "url": "/orders",
+      "text": "My orders | Orders placed on this device | Recent on this device | No orders yet | Scan a shop's QR code to start your first print order. | Find a shop | Look up by phone | Enter your phone number to see all orders acros"
+    },
+    {
+      "step": "9:track",
+      "note": "",
+      "url": "/track",
+      "text": "Track your order | Paste your tracking link from your receipt, or your order number. | Tracking link or order number | Track order"
+    }
+  ],
+  "apiErrors": []
+}

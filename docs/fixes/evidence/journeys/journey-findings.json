@@ -1,0 +1,339 @@
+{
+  "findings": [
+    {
+      "step": "1:customer-shop-open",
+      "url": "/s/quickprint",
+      "note": "shop link opens; services + CTA visible?",
+      "shot": "01-customer-shop-open.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "shop CTAs",
+      "ctas": [
+        "Add files",
+        "Call shop",
+        "Directions"
+      ]
+    },
+    {
+      "step": "2:customer-flow-entry",
+      "url": "/s/quickprint",
+      "note": "clicked \"NO CTA FOUND\"",
+      "shot": "02-customer-flow-entry.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "file-input",
+      "count": 1
+    },
+    {
+      "step": "upload-pdf",
+      "error": "Error: ENOENT: no such file or directory, stat '/tmp/journey-files/sample.pdf'"
+    },
+    {
+      "step": "3:upload-valid-pdf",
+      "url": "/s/quickprint",
+      "note": "valid 1-page PDF",
+      "shot": "03-upload-valid-pdf.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "4:upload-wrong-type",
+      "url": "/s/quickprint",
+      "note": "plain .txt (should be rejected with clear error)",
+      "shot": "04-upload-wrong-type.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "5:upload-corrupt-pdf",
+      "url": "/s/quickprint",
+      "note": "corrupt pdf",
+      "shot": "05-upload-corrupt-pdf.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "6:upload-too-big",
+      "url": "/s/quickprint",
+      "note": "oversized pdf (limit?)",
+      "shot": "06-upload-too-big.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "7:options-view",
+      "url": "/s/quickprint",
+      "note": "print style / colour picker / copies visible?",
+      "shot": "07-options-view.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "option-controls",
+      "selects": [],
+      "buttons": [
+        "Add files"
+      ],
+      "checkboxes": 0
+    },
+    {
+      "step": "8:review-step",
+      "url": "/s/quickprint",
+      "note": "review shows price breakdown?",
+      "shot": "08-review-step.png",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | 9:00–21:00 · Sun c"
+    },
+    {
+      "step": "payment-visible",
+      "payVisible": false
+    },
+    {
+      "step": "9:track-empty-no-token",
+      "url": "/track",
+      "note": "/track without token",
+      "shot": "09-track-empty-no-token.png",
+      "text": "Track your order | Paste your tracking link from your receipt, or your order number. | Tracking link or order number | Track order"
+    },
+    {
+      "step": "10:my-orders",
+      "url": "/orders",
+      "note": "/orders recent list + lookup state",
+      "shot": "10-my-orders.png",
+      "text": "My orders | Orders placed on this device | Recent on this device | No orders yet | Scan a shop's QR code to start your first print order. | Find a shop | Look up by phone | Enter your phone number to see all orders across devices. (Coming soon — for now, open"
+    },
+    {
+      "step": "11:shop-login-page",
+      "url": "/shop/login",
+      "note": "",
+      "shot": "11-shop-login-page.png",
+      "text": "Current theme: light | P | Sign in to your shop | Use your shop owner email and password to manage your queue, orders, and printer agent. | Email | Password | Forgot password? | Sign in | Don't have a shop account? | Set up your print shop in minutes — 0% commission"
+    },
+    {
+      "step": "12:shop-login-filled",
+      "url": "/shop/login",
+      "note": "",
+      "shot": "12-shop-login-filled.png",
+      "text": "Current theme: light | P | Sign in to your shop | Use your shop owner email and password to manage your queue, orders, and printer agent. | Email | Password | Forgot password? | Sign in | Don't have a shop account? | Set up your print shop in minutes — 0% commission"
+    },
+    {
+      "step": "13:shop-after-login",
+      "url": "/shop/dashboard",
+      "note": "dashboard/checklist state",
+      "shot": "13-shop-after-login.png",
+      "text": "QuickPrint Demo Shop | Today | Open for orders | Accepting new orders | 3 payments to confirm | Review | Colour printer is offline | Fix | Orders today | 5 | Collected so far | ₹0 | Colour pages | 0 | Home | Orders | Payments | Printers | More"
+    },
+    {
+      "step": "14:shopkeeper-/shop/dashboard",
+      "url": "/shop/dashboard",
+      "note": "state + console errors captured globally",
+      "shot": "14-shopkeeper-/shop/dashboard.png",
+      "text": "QuickPrint Demo Shop | Today | Open for orders | Accepting new orders | 3 payments to confirm | Review | Colour printer is offline | Fix | Orders today | 5 | Collected so far | ₹0 | Colour pages | 0 | Home | Orders | Payments | Printers | More"
+    },
+    {
+      "step": "15:shopkeeper-/shop/orders",
+      "url": "/shop/orders",
+      "note": "state + console errors captured globally",
+      "shot": "15-shopkeeper-/shop/orders.png",
+      "text": "Orders | Orders | 9876543210, ₹6 | Order 904, 3m ago | To confirm | 9876543210, ₹6 | Order 903, 5m ago | To confirm | 9876543210, ₹6 | Order 902, 7m ago | To confirm | Home | Orders | Payments | Printers | More"
+    },
+    {
+      "step": "16:shopkeeper-/shop/payments",
+      "url": "/shop/payments",
+      "note": "state + console errors captured globally",
+      "shot": "16-shopkeeper-/shop/payments.png",
+      "text": "QuickPrint Demo Shop | Payments | To confirm 5 | Confirmed | 9876543210, ₹6 | 3m ago | Confirm | 9876543210, ₹6 | 5m ago | Confirm | 9876543210, ₹6 | 7m ago | Confirm | Customer, ₹0 | 8m ago | Confirm | Customer, ₹0 | 11m ago | Confirm | UPI today | ₹0 | Counter today | ₹0 | Home | Orders | Payments"
+    },
+    {
+      "step": "17:shopkeeper-/shop/print-jobs",
+      "url": "/",
+      "note": "state + console errors captured globally",
+      "shot": "17-shopkeeper-/shop/print-jobs.png",
+      "text": "Current theme: light | Printelyx | Print without the queue | 3 shops nearby | PrintHub Express | 78 Park Street, Kolkata, WB | Free | B&W ₹2 | Colour ₹6 | Min ₹5 | Visit shop → | CopyCenter | 45 Anna Salai, Chennai, TN | Pro | B&W ₹2 | Colour ₹6 | Min ₹5 | Visit shop → | QuickPrint D"
+    },
+    {
+      "step": "18:shopkeeper-/shop/printer",
+      "url": "/shop/devices",
+      "note": "state + console errors captured globally",
+      "shot": "18-shopkeeper-/shop/printer.png",
+      "text": "QuickPrint Demo Shop | Devices & Printers | Manage connected PrintEXE companion PCs | Add Computer | No devices connected | Click 'Add Computer' to pair your first PrintEXE PC. Once paired, it will appear here and start receiving print jobs. | Add Computer | "
+    },
+    {
+      "step": "19:shopkeeper-/shop/services",
+      "url": "/shop/services",
+      "note": "state + console errors captured globally",
+      "shot": "19-shopkeeper-/shop/services.png",
+      "text": "QuickPrint Demo Shop | Services & Pricing | Set the per-page rates and discount rules customers see when ordering. | Reload | Per-page rates | Prices are in rupees. Internally stored as integer paise (1 INR = 100 paise). | Paper size\tB&W (per page)\tColour (per"
+    },
+    {
+      "step": "20:shopkeeper-/shop/reports",
+      "url": "/shop/reports",
+      "note": "state + console errors captured globally",
+      "shot": "20-shopkeeper-/shop/reports.png",
+      "text": "QuickPrint Demo Shop | Reports | Revenue, order status, and top customers for the selected period. | Last 30 days | Showing 5 orders for Last 30 days. | Total revenue | ₹0.00 | 0 paid orders | Pending revenue | ₹18.00 | 3 awaiting payment | Refunded | ₹0.00 | 0 refunded ord"
+    },
+    {
+      "step": "21:shopkeeper-/shop/settings",
+      "url": "/shop/settings",
+      "note": "state + console errors captured globally",
+      "shot": "21-shopkeeper-/shop/settings.png",
+      "text": "QuickPrint Demo Shop | Settings | Edit your shop profile, business hours, pricing, payment, and QR codes. | Reload | Profile | Business Hours | Payment | UPI QR | Shop QR | Security | Shop profile | Changes here update what customers see when they scan your shop QR code"
+    },
+    {
+      "step": "22:shopkeeper-/shop/customers",
+      "url": "/shop/customers",
+      "note": "state + console errors captured globally",
+      "shot": "22-shopkeeper-/shop/customers.png",
+      "text": "Loading shop portal…"
+    },
+    {
+      "step": "goto /shop/devices",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/shop/devices\nCall log:\n  - navigating to \"http://"
+    },
+    {
+      "step": "23:shopkeeper-/shop/devices",
+      "url": "chrome-error://chromewebdata/",
+      "note": "state + console errors captured globally",
+      "shot": "23-shopkeeper-/shop/devices.png",
+      "text": ""
+    },
+    {
+      "step": "goto /shop/staff",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/shop/staff\nCall log:\n  - navigating to \"http://lo"
+    },
+    {
+      "step": "24:shopkeeper-/shop/staff",
+      "url": "chrome-error://chromewebdata/",
+      "note": "state + console errors captured globally",
+      "shot": "24-shopkeeper-/shop/staff.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin/login",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin/login\nCall log:\n  - navigating to \"http://l"
+    },
+    {
+      "step": "25:admin-login",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "25-admin-login.png",
+      "text": ""
+    },
+    {
+      "step": "26:admin-after-login",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "26-admin-after-login.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin\nCall log:\n  - navigating to \"http://localho"
+    },
+    {
+      "step": "27:admin-/admin",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "27-admin-/admin.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin/orders",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin/orders\nCall log:\n  - navigating to \"http://"
+    },
+    {
+      "step": "28:admin-/admin/orders",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "28-admin-/admin/orders.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin/shops",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin/shops\nCall log:\n  - navigating to \"http://l"
+    },
+    {
+      "step": "29:admin-/admin/shops",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "29-admin-/admin/shops.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin/analytics",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin/analytics\nCall log:\n  - navigating to \"http"
+    },
+    {
+      "step": "30:admin-/admin/analytics",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "30-admin-/admin/analytics.png",
+      "text": ""
+    },
+    {
+      "step": "goto /admin/monitoring",
+      "error": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3010/admin/monitoring\nCall log:\n  - navigating to \"htt"
+    },
+    {
+      "step": "31:admin-/admin/monitoring",
+      "url": "chrome-error://chromewebdata/",
+      "note": "",
+      "shot": "31-admin-/admin/monitoring.png",
+      "text": ""
+    }
+  ],
+  "errors": [
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "page": "http://localhost:3010/shop/customers",
+      "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    }
+  ]
+}

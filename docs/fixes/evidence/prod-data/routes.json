@@ -1,0 +1,20 @@
+{
+  "routes": [
+    "/",
+    "/about",
+    "/help",
+    "/privacy",
+    "/contact",
+    "/how-it-works",
+    "/pricing",
+    "/refund-policy",
+    "/terms",
+    "/download-app",
+    "/track",
+    "/shops",
+    "__WRONG_URL__",
+    "/s/qa-shop-1795101109"
+  ],
+  "shopSlugRoute": "/s/qa-shop-1795101109",
+  "robots": "prod crawl limited to robots-allowed paths"
+}

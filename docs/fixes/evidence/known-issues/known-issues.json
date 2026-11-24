@@ -1,0 +1,202 @@
+{
+  "a_homeShops": {
+    "loadingVisible": false,
+    "shopLinks": 6,
+    "hasSkeleton": false,
+    "retry": false,
+    "search": true,
+    "textSample": "Current theme: light\nPrintelyx\nPrint without the queue\n\n6 shops nearby\n\nQA Shop 1795101109\nQA Test Address 1\nFree\nB&W ₹2\nColour ₹6\nMin ₹5\nVisit shop →\nQA Shop 1795101062\nQA Test Address 1\nFree\nB&W ₹2\nColour ₹6\nMin ₹5\nVisit shop →\nQA Shop 1795100335\nQA Test Address 1\nFree\nB&W ₹2\nColour ₹6\nMin ₹5\nVisit shop →\nArjun Print Hub\n1/19, surangal\nFree\nB&W ₹2\nColour ₹6\nMin ₹5\nVisit shop →\nQA Shop 1795100317"
+  },
+  "b_currentTheme": "Current theme: light",
+  "g_whatsapp": [],
+  "j_footer": {
+    "dots": 3,
+    "arrows": 7,
+    "sample": "r scan the shop's QR code\n2. Upload files\nPDF, photos, or Word docs\n3. Pay by UPI\nDirect to shopkeeper, 0% commission\n4. Pick up\nShow your code at the counter\n\nRun a print shop?\n\nGet your QR code and start taking orders.\n\nRegister your shop\nShopkeeper login →\nPrintelyx · 0% commission · Help · About"
+  },
+  "d_head": {
+    "/": {
+      "title": "Printelyx — Local Printing Marketplace",
+      "desc": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track",
+      "og": false
+    },
+    "/help": {
+      "title": "Printelyx — Local Printing Marketplace",
+      "desc": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track",
+      "og": false
+    },
+    "/track": {
+      "title": "Track your order · Printelyx",
+      "desc": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track",
+      "og": false
+    },
+    "/about": {
+      "title": "about · Printelyx",
+      "desc": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track",
+      "og": false
+    },
+    "/privacy": {
+      "title": "Privacy · Printelyx",
+      "desc": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track",
+      "og": false
+    }
+  },
+  "c_themeColor": {
+    "/": [
+      {
+        "c": "#0A58D6",
+        "media": "(prefers-color-scheme: light)"
+      },
+      {
+        "c": "#0B0B0D",
+        "media": "(prefers-color-scheme: dark)"
+      }
+    ],
+    "/help": [
+      {
+        "c": "#0A58D6",
+        "media": "(prefers-color-scheme: light)"
+      },
+      {
+        "c": "#0B0B0D",
+        "media": "(prefers-color-scheme: dark)"
+      }
+    ],
+    "/about": [
+      {
+        "c": "#0A58D6",
+        "media": "(prefers-color-scheme: light)"
+      },
+      {
+        "c": "#0B0B0D",
+        "media": "(prefers-color-scheme: dark)"
+      }
+    ]
+  },
+  "e_about": {
+    "text": "about\n\nThis page is being written. For questions, visit Help.",
+    "h1": "about"
+  },
+  "f_dotLocal": {
+    "/help": [],
+    "/privacy": [
+      "printshop.local."
+    ],
+    "/contact": []
+  },
+  "h_ordersProd": "robots.txt Disallow /orders/ — tested on local build (see local-audit results)",
+  "i_helpSSR": {
+    "status": 200,
+    "loadingInHTML": true,
+    "excerpt": "8.56\"></path></svg><p class=\"text-sm text-muted-foreground\">Loading…</p></div></div><!--/$--><sec"
+  },
+  "k_privacy": {
+    "lastUpdated": "last updated on the build date of this app.",
+    "hasContact": true
+  },
+  "probe": {
+    "/robots.txt": 200,
+    "/sitemap.xml": 404,
+    "/manifest.webmanifest": 200,
+    "/dev/ui": 200,
+    "/dev/funnel": 200,
+    "/shops": 404,
+    "/offline": 404
+  },
+  "manifest": {
+    "name": "Printelyx — Local Printing Marketplace",
+    "short_name": "Printelyx",
+    "description": "Scan a shop QR, upload files, choose print options, pay via UPI (0% commission), and track your order until pickup.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "display_override": [
+      "standalone",
+      "minimal-ui"
+    ],
+    "orientation": "any",
+    "background_color": "#F7F8FA",
+    "theme_color": "#006FA6",
+    "lang": "en",
+    "dir": "ltr",
+    "categories": [
+      "business",
+      "productivity",
+      "utilities",
+      "shopping"
+    ],
+    "icons": [
+      {
+        "src": "/icons/icon-192.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-maskable-192.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "maskable"
+      },
+      {
+        "src": "/icons/icon-maskable-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "maskable"
+      },
+      {
+        "src": "/icon-source.svg",
+        "sizes": "any",
+        "type": "image/svg+xml",
+        "purpose": "any"
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "My Orders",
+        "short_name": "Orders",
+        "description": "Track your recent print orders",
+        "url": "/orders",
+        "icons": [
+          {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192"
+          }
+        ]
+      },
+      {
+        "name": "Shopkeeper Login",
+        "short_name": "Login",
+        "description": "Open the shopkeeper portal login page",
+        "url": "/shop/login",
+        "icons": [
+          {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192"
+          }
+        ]
+      },
+      {
+        "name": "Help",
+        "short_name": "Help",
+        "description": "FAQs and support",
+        "url": "/help",
+        "icons": [
+          {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192"
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "related_applications": [],
+    "prefer_related_applications": false
+  }
+}

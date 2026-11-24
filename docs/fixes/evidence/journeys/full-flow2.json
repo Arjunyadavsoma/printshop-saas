@@ -1,0 +1,111 @@
+{
+  "log": [
+    {
+      "step": "1:landing",
+      "note": "",
+      "text": "QuickPrint Demo Shop, open | Print without the queue | 1 printer online, about 1 min wait | Add files to print | PDF, photos or Word files | Add files | Black & white | per page | ₹2 | Colour | per page | ₹6 | Double-sided | Costs less per page | Open today | "
+    },
+    {
+      "clicked": "enter",
+      "label": "Add files"
+    },
+    {
+      "step": "2:files-uploading",
+      "note": "",
+      "text": "QuickPrint Demo Shop | Your files | Step 1 of 3 | 📄 valid-3p.pdf | Processing… | Processing | Add more files | 1 file | Processing… | Waiting for files…"
+    },
+    {
+      "clicked": "files→options",
+      "label": "Continue"
+    },
+    {
+      "step": "3:options",
+      "note": "",
+      "text": "QuickPrint Demo Shop | How should we print it? | Step 2 of 3, valid-3p.pdf | Notes | Black & white, double-sided | ₹4 | Colour everything | All pages in colour | ₹18 | Photo or ID copy | Single-sided, best quality | ₹6 | Mix | Some pages look colourful | ₹6 | "
+    },
+    {
+      "step": "options-text",
+      "text": "QuickPrint Demo Shop\nHow should we print it?\n\nStep 2 of 3, valid-3p.pdf\n\nNotes\nBlack & white, double-sided\n₹4\nColour everything\nAll pages in colour\n₹18\nPhoto or ID copy\nSingle-sided, best quality\n₹6\nMix\nSome pages look colourful\n₹6\nPages\nAll 3\nMore options\nCopies, paper, binding\n1 copy\n3 B&W, 0 colo"
+    },
+    {
+      "clicked": "preset",
+      "label": null
+    },
+    {
+      "clicked": "picker",
+      "label": "Choose colour pages"
+    },
+    {
+      "step": "4:colour-picker",
+      "note": "",
+      "text": "QuickPrint Demo Shop, open | Choose colour pages | Step 2 of 3 | All B&W | Mixed | All colour | valid-3p.pdf | 3 pages | 1 | B&W | 2 | B&W | 3 | B&W | 0 pages look colourful, so they are set to colour. Tap any page to switch it. | 3 B&W, 0 colour | ₹6 | Review"
+    },
+    {
+      "step": "5:options-chosen",
+      "note": "",
+      "text": "QuickPrint Demo Shop, open | Choose colour pages | Step 2 of 3 | All B&W | Mixed | All colour | valid-3p.pdf | 3 pages | 1 | B&W | 2 | B&W | 3 | B&W | 0 pages look colourful, so they are set to colour. Tap any page to switch it. | 3 B&W, 0 colour | ₹6 | Review"
+    },
+    {
+      "clicked": "options→review",
+      "label": "Review"
+    },
+    {
+      "step": "6:review",
+      "note": "",
+      "text": "QuickPrint Demo Shop | Review order | Step 3 of 3 | valid-3p.pdf | 3 pages · 3 B&W · 0 colour | ₹6 | Total | ₹6 | Mobile number | Name (optional) | You pay the shop directly by UPI. No extra fees. | 1 files, 3 pages | ₹6 | Pay ₹6"
+    },
+    {
+      "step": "review-text",
+      "text": "QuickPrint Demo Shop\nReview order\n\nStep 3 of 3\n\nvalid-3p.pdf\n3 pages · 3 B&W · 0 colour\n₹6\nTotal\n₹6\nMobile number\nName (optional)\n\nYou pay the shop directly by UPI. No extra fees.\n\n1 files, 3 pages\n₹6\nPay ₹6"
+    },
+    {
+      "clicked": "review→pay",
+      "label": "Pay"
+    },
+    {
+      "step": "7:pay",
+      "note": "",
+      "text": "QuickPrint Demo Shop | Review order | Step 3 of 3 | valid-3p.pdf | 3 pages · 3 B&W · 0 colour | ₹6 | Total | ₹6 | Mobile number | Name (optional) | You pay the shop directly by UPI. No extra fees. | 1 files, 3 pages | ₹6 | Placing…"
+    },
+    {
+      "step": "pay-info",
+      "upiLinks": [],
+      "inputs": [
+        ""
+      ]
+    },
+    {
+      "clicked": "ive-paid",
+      "label": "I've paid"
+    },
+    {
+      "clicked": "utr-submit",
+      "label": null
+    },
+    {
+      "step": "8:waiting",
+      "note": "",
+      "text": "QuickPrint Demo Shop | Pay ₹6 | Choose your UPI app | Google Pay | Open | PhonePe | Open | Paytm | Open | BHIM | Open | Other UPI apps | Choose | Shop UPI ID | quickprint@okaxis | Copy | After you pay, come back here and tap I've paid. | Pay at counter | I've "
+    },
+    {
+      "step": "9:resolved",
+      "note": "",
+      "text": "QuickPrint Demo Shop | Pay ₹6 | Choose your UPI app | Google Pay | Open | PhonePe | Open | Paytm | Open | BHIM | Open | Other UPI apps | Choose | Shop UPI ID | quickprint@okaxis | Copy | After you pay, come back here and tap I've paid. | Pay at counter | I've "
+    },
+    {
+      "step": "resolved-text",
+      "text": "QuickPrint Demo Shop\nPay ₹6\n\nChoose your UPI app\n\nGoogle Pay\nOpen\nPhonePe\nOpen\nPaytm\nOpen\nBHIM\nOpen\nOther UPI apps\nChoose\nShop UPI ID\nquickprint@okaxis\nCopy\n\nAfter you pay, come back here and tap I've paid.\n\nPay at counter\nI've paid"
+    },
+    {
+      "step": "10:my-orders",
+      "note": "",
+      "text": "My orders | Orders placed on this device | Recent on this device | No orders yet | Scan a shop's QR code to start your first print order. | Find a shop | Look up by phone | Enter your phone number to see all orders across devices. (Coming soon — for now, open "
+    },
+    {
+      "step": "11:track",
+      "note": "",
+      "text": "Track your order | Paste your tracking link from your receipt, or your order number. | Tracking link or order number | Track order"
+    }
+  ],
+  "apiErrors": []
+}
