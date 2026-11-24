@@ -43,13 +43,39 @@ if [ -n "${DATABASE_URL:-}" ]; then
     echo "  ⚠ Continuing build — migration columns were manually applied to production."
   fi
 
+  # Surgical table creation FIRST (prisma db execute — idempotent DDL, no
+  # data-loss classification): `prisma db push` is all-or-nothing, and the
+  # production database currently has an unrelated drift (it wants to add
+  # the Order.[shopId, customerToken] unique constraint → db push refuses
+  # without --accept-data-loss and would skip creating ANY new tables).
+  # The upload-session registry must exist for durable sessions, so create
+  # it directly from scripts/ensure-upload-tables.sql (CREATE TABLE IF NOT
+  # EXISTS — safe to run on every deploy, touches nothing else).
+  echo "→ Ensuring upload-session tables (idempotent SQL)..."
+  SQL_OK=0
+  for ATTEMPT in 1 2 3; do
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-upload-tables.sql 2>&1 | tail -3; then
+      echo "  ✓ Upload-session tables present (attempt ${ATTEMPT})"
+      SQL_OK=1
+      break
+    fi
+    echo "  ⚠ db execute attempt ${ATTEMPT} failed — retrying in 15s..."
+    sleep 15
+  done
+  if [ "$SQL_OK" -ne 1 ]; then
+    echo "  ⚠ Could not create upload-session tables — uploads fall back to in-process storage."
+  fi
+
   # Schema sync (db push) — this project manages its schema via
   # prisma/schema.prisma + db push (CI + local do the same). Without this,
   # NEW tables (e.g. the DB-backed UploadSession/UploadChunk registry that
   # fixed production uploads) would never reach the production database,
   # because there is no migrations/ directory for migrate deploy to apply.
   # No --accept-data-loss: if drift ever requires destructive changes the
-  # build logs it loudly instead of silently destroying data.
+  # build logs it loudly instead of silently destroying data. NOTE: a
+  # refusal due to data-loss warnings (e.g. the Order.customerToken unique
+  # constraint drift) does NOT affect the upload tables — they were created
+  # by the surgical SQL above.
   echo "→ Syncing Prisma schema (db push, additive, up to 3 attempts)..."
   PUSH_OK=0
   for ATTEMPT in 1 2 3; do
@@ -58,13 +84,14 @@ if [ -n "${DATABASE_URL:-}" ]; then
       PUSH_OK=1
       break
     fi
-    echo "  ⚠ db push attempt ${ATTEMPT} failed (likely pooled-connection timeout) — retrying in 15s..."
+    echo "  ⚠ db push attempt ${ATTEMPT} failed (data-loss refusal or connection issue) — retrying in 15s..."
     sleep 15
   done
   if [ "$PUSH_OK" -ne 1 ]; then
-    echo "  ⚠ db push failed after 3 attempts. Run manually:"
-    echo "  ⚠   DATABASE_URL='<direct-url>' bunx prisma db push"
-    echo "  ⚠ Upload sessions fall back to in-process storage until the tables exist."
+    echo "  ⚠ db push skipped — the production DB has schema drift (Order.[shopId, customerToken]"
+    echo "  ⚠ unique constraint). Fix separately with a DIRECT (non-pooled) DATABASE_URL:"
+    echo "  ⚠   DATABASE_URL='postgresql://...@db.PROJECT.supabase.co:5432/postgres' bunx prisma db push"
+    echo "  ⚠ Upload sessions already ensured via scripts/ensure-upload-tables.sql."
   fi
 else
   echo "  ⚠ DATABASE_URL not set — skipping migrations"
