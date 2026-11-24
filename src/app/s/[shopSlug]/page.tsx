@@ -26,9 +26,15 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   if (!shop) notFound();
 
   // Live status: printers online + queue depth → honest wait estimate.
-  const printers = await repos.printers.listForShop(shop.id);
+  // The three shop-scoped reads are independent — run them in parallel.
+  // They used to run sequentially and the shop page took 2–3s to answer
+  // on production, which read on a phone as "the shop is not opening".
+  const [printers, queued, rateRows] = await Promise.all([
+    repos.printers.listForShop(shop.id),
+    repos.printJobs.findQueuedByShop(shop.id, 50),
+    repos.priceRules.activeForShop(shop.id),
+  ]);
   const onlinePrinters = printers.filter(p => p.enabled && p.status === 'ONLINE');
-  const queued = await repos.printJobs.findQueuedByShop(shop.id, 50);
   const queuedSheets = queued.reduce((sum, t) => sum + (t.sheetCount ?? 1) * (t.copies ?? 1), 0);
   // Default minutes-per-page to 1/2 when fields missing (in-memory adapter
   // doesn't apply Prisma @default). Avoids NaN in wait calculation.
@@ -38,9 +44,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const waitMinutes = Math.ceil((queuedSheets * minPerPp) / Math.max(1, onlinePrinters.length));
 
   // Rate board — pulls the cheapest single-side A4 slab per colour mode
-  // from the active price rules. Falls back to the shop's pricingConfig
-  // when no price rules exist (e.g. in-memory dev DB after seeding).
-  const rateRows = await repos.priceRules.activeForShop(shop.id);
+  // from the active price rules (fetched above, in parallel).
   const bwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'SINGLE');
   const colorRule = rateRows.find(r => r.colorMode === 'COLOR' && r.paperSize === 'A4' && r.sides === 'SINGLE');
   const doubleBwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'DOUBLE');

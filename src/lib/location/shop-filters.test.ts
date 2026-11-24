@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   filterShops,
+  geolocationErrorMessage,
   parseOpenStatus,
+  requestGeolocation,
   type NearbyShop,
 } from './shop-filters';
 
@@ -120,5 +122,48 @@ describe('filterShops', () => {
       radiusKm: 10,
     }).map((s) => s.id);
     expect(out).toEqual(['1']);
+  });
+});
+
+describe('requestGeolocation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function mockGeolocation(
+    impl: (ok: (pos: unknown) => void, err: (e: unknown) => void) => void,
+  ) {
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: impl } });
+  }
+
+  it('resolves with lat/lng and the reported accuracy', async () => {
+    mockGeolocation((ok) =>
+      ok({ coords: { latitude: 17.385, longitude: 78.4867, accuracy: 25 } }),
+    );
+    const loc = await requestGeolocation();
+    expect(loc.lat).toBe(17.385);
+    expect(loc.lng).toBe(78.4867);
+    expect(loc.accuracy).toBe(25);
+  });
+
+  it('maps numeric code 1 to a denied error (no reliance on err.PERMISSION_DENIED)', async () => {
+    mockGeolocation((_ok, err) => err({ code: 1, message: 'User denied Geolocation' }));
+    await expect(requestGeolocation()).rejects.toMatchObject({ code: 'denied' });
+    expect(geolocationErrorMessage('denied')).toMatch(/denied/i);
+  });
+
+  it('maps numeric code 3 to a timeout error', async () => {
+    mockGeolocation((_ok, err) => err({ code: 3, message: 'Timeout expired' }));
+    await expect(requestGeolocation()).rejects.toMatchObject({ code: 'timeout' });
+  });
+
+  it('rejects as unsupported when the browser has no geolocation', async () => {
+    vi.stubGlobal('navigator', {});
+    await expect(requestGeolocation()).rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('unavailable message tells the user to turn device location on', () => {
+    expect(geolocationErrorMessage('unavailable')).toMatch(/turn on/i);
+    expect(geolocationErrorMessage('unavailable')).toMatch(/Try again/i);
   });
 });

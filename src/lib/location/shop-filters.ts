@@ -176,6 +176,8 @@ export interface CustomerLocation {
   lng: number;
   /** Human label when known ("Your location" / the manual place text). */
   label: string;
+  /** GPS accuracy in metres, when the browser reports it. */
+  accuracy?: number | null;
 }
 
 export const STORED_LOCATION_KEY = 'printelyx:find-location';
@@ -199,23 +201,74 @@ export function requestGeolocation(): Promise<CustomerLocation> {
       reject(err);
       return;
     }
+    let settled = false;
+    // Some Android WebViews never invoke the callback even though a
+    // timeout was set — this watchdog guarantees the button never spins
+    // forever and the user gets a usable error instead of silence.
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const err = new Error('Locating you timed out.') as Error & {
+        code: GeolocationFailure;
+      };
+      err.code = 'timeout';
+      reject(err);
+    }, 12_000);
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      fn();
+    };
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'Your location' }),
-      (err) => {
-        const typed = new Error(err.message || 'Could not get your location.') as Error & {
-          code: GeolocationFailure;
-        };
-        typed.code =
-          err.code === err.PERMISSION_DENIED
-            ? 'denied'
-            : err.code === err.TIMEOUT
-              ? 'timeout'
-              : 'unavailable';
-        reject(typed);
-      },
+      (pos) =>
+        settle(() =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            label: 'Your location',
+            accuracy:
+              typeof pos.coords.accuracy === 'number'
+                ? Math.round(pos.coords.accuracy)
+                : null,
+          }),
+        ),
+      (err) =>
+        settle(() => {
+          const typed = new Error(err.message || 'Could not get your location.') as Error & {
+            code: GeolocationFailure;
+          };
+          // Numeric codes only: 1 = denied, 2 = unavailable, 3 = timeout.
+          // The named constants (err.PERMISSION_DENIED etc.) are NOT
+          // guaranteed on the error instance in every browser/WebView,
+          // which used to misclassify denials as "unavailable".
+          typed.code = err.code === 1 ? 'denied' : err.code === 3 ? 'timeout' : 'unavailable';
+          reject(typed);
+        }),
       { timeout: 10_000, enableHighAccuracy: false, maximumAge: 60_000 },
     );
   });
+}
+
+/**
+ * Device-specific guidance for turning location services back on.
+ * Used when geolocation fails because the device itself has location
+ * turned off — the browser permission prompt never appears in that
+ * case, so the user needs to be told where the switch lives.
+ * Falls back to generic wording when the platform can't be detected.
+ */
+export function deviceLocationGuidance(): string {
+  const ua =
+    typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
+      ? navigator.userAgent
+      : '';
+  if (/Android/i.test(ua)) {
+    return 'Turn on Location: swipe down from the top of the screen and tap Location, or open Settings → Location and switch it on. Then tap Try again.';
+  }
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    return 'Turn on Location Services: Settings → Privacy & Security → Location Services → On, and allow this browser. Then tap Try again.';
+  }
+  return 'Turn on location services in your device settings, then tap Try again.';
 }
 
 export function geolocationErrorMessage(code: GeolocationFailure): string {
@@ -228,7 +281,10 @@ export function geolocationErrorMessage(code: GeolocationFailure): string {
       return 'This browser does not support location detection. Search by area, city or PIN code instead.';
     case 'unavailable':
     default:
-      return 'Your location is unavailable right now. Search by area, city or PIN code instead.';
+      // Most often this means device location services are switched off:
+      // the browser never even shows its permission prompt then, so tell
+      // the user where the switch lives instead of a bare error.
+      return `Your location is unavailable right now — your device location may be turned off. ${deviceLocationGuidance()}`;
   }
 }
 

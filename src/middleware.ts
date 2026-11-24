@@ -94,7 +94,14 @@ export function middleware(req: NextRequest) {
   res.headers.set('X-Frame-Options', 'DENY');
   res.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // Permissions-Policy: camera and microphone stay fully disabled, but
+  // geolocation MUST be allowed for our own origin — /find-a-shop's
+  // "Detect my location" uses navigator.geolocation, and `geolocation=()`
+  // makes getCurrentPosition fail instantly with PERMISSION_DENIED on
+  // every browser (no prompt is ever shown). That header was the reason
+  // location detection never worked on real phones. No third-party
+  // origin gets geolocation access — (self) only.
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
   // HSTS — enforce HTTPS for 2 years (includes subdomains). Vercel already
   // sets this, but being explicit here ensures it's always present even
   // if the Vercel config changes.
