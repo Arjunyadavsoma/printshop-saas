@@ -33,9 +33,14 @@ import { shopOpenStatus } from '@/lib/location/opening-hours';
  *
  * Response: only public fields. rating is always null and reviewCount
  * always 0 — there is no ratings/reviews table, so nothing is invented.
- * Shops without coordinates are included ONLY in search mode (no lat/lng),
- * with distanceKm null and no fabricated distance. Phone is masked exactly
- * like GET /api/v1/shops (first 4 + last 4 digits).
+ * Shops without coordinates are included in BOTH modes, with distanceKm
+ * null and no fabricated distance — they sort after located shops in
+ * nearest mode. Excluding them in location mode used to empty the whole
+ * list after a successful location detect (no shop has coordinates yet),
+ * which read on the phone as "location detection doesn't work".
+ * `locatedCount` tells the client how many results actually have a map
+ * location, so the page can say so plainly instead of going blank.
+ * Phone is masked exactly like GET /api/v1/shops (first 4 + last 4 digits).
  */
 
 const ALLOWED_RADII = [1, 3, 5, 10, 25] as const;
@@ -261,8 +266,10 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
         return { row: s, hasShopCoords, distanceKm, status };
       })
       .filter(({ row, hasShopCoords, distanceKm }) => {
-        // Shops without coordinates: only in search mode (no lat/lng).
-        if (hasCoords && !hasShopCoords) return false;
+        // Shops without coordinates are NOT excluded when the customer
+        // gave a location: they sort last with distanceKm null (see sort
+        // below). Dropping them emptied the list entirely while no shop
+        // has coordinates yet — the "location doesn't work" report.
         if (hasCoords && box && hasShopCoords) {
           if (
             !isInsideBoundingBox(
@@ -301,10 +308,12 @@ export const GET = withRateLimit('shops-nearby', 300, 60, async (req) => {
 
     // ── Paginate (in memory — the geo filter already ran) ─────────────
     const total = enriched.length;
+    const locatedCount = enriched.filter((e) => e.hasShopCoords).length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const pageRows = enriched.slice((page - 1) * limit, page * limit);
 
     return ok({
+      locatedCount,
       shops: pageRows.map(({ row, distanceKm, status }) => ({
         id: row.id,
         name: row.name,

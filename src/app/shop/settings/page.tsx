@@ -67,6 +67,7 @@ import {
 } from '@/lib/location/validation';
 import { PaymentProviderSettings } from '@/components/portal/payment-provider-settings';
 import { ChangePasswordCard } from '@/components/portal/change-password-card';
+import { DetectLocationButton } from '@/components/clear/detect-location-button';
 import { PageHeader } from '@/components/shared/page-header';
 import { CardSkeleton } from '@/components/shared/loading-skeleton';
 
@@ -501,6 +502,12 @@ export default function ShopSettingsPage() {
 
   // Typing coordinates by hand can never leave the location "verified":
   // only a fresh geocode result (or an untouched verified save) counts.
+  // Detected coordinates count as hand-entered for the same reason — the
+  // device position is accurate only if the shopkeeper is at the shop.
+  const onDetectedLocation = (loc: { lat: number; lng: number }) => {
+    onLatitudeChange(String(loc.lat.toFixed(6)));
+    onLongitudeChange(String(loc.lng.toFixed(6)));
+  };
   const onLatitudeChange = (v: string) => {
     setLatitude(v);
     if (locationVerified) setLocationVerified(false);
@@ -1080,6 +1087,10 @@ export default function ShopSettingsPage() {
                   {geocoding ? <Loader2 className="size-4 animate-spin" /> : <MapPin className="size-4" />}
                   {geocoding ? 'Finding on map…' : 'Find on map'}
                 </Button>
+                <DetectLocationButton
+                  disabled={savingLocation}
+                  onDetected={onDetectedLocation}
+                />
                 {locationVerified ? (
                   <Badge variant="outline" className="gap-1 self-start border-success/30 bg-success-soft text-success sm:self-auto">
                     <CheckCircle2 className="size-3" /> Location verified

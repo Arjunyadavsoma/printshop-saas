@@ -128,6 +128,7 @@ export default function FindAShopPage() {
   const [location, setLocation] = useState<CustomerLocation | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+  const [locErrorCode, setLocErrorCode] = useState<GeolocationFailure | null>(null);
   const [query, setQuery] = useState('');
   const [placeQuery, setPlaceQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -247,12 +248,14 @@ export default function FindAShopPage() {
   const handleDetectLocation = useCallback(async () => {
     setLocating(true);
     setLocError(null);
+    setLocErrorCode(null);
     try {
       const loc = await requestGeolocation();
       saveStoredLocation(loc);
       setLocation(loc);
     } catch (cause) {
       const code = (cause as { code?: GeolocationFailure })?.code ?? 'unavailable';
+      setLocErrorCode(code);
       setLocError(geolocationErrorMessage(code));
     } finally {
       setLocating(false);
@@ -263,6 +266,7 @@ export default function FindAShopPage() {
     clearStoredLocation();
     setLocation(null);
     setLocError(null);
+    setLocErrorCode(null);
   }, []);
 
   const handleSelect = useCallback((id: string) => {
@@ -437,6 +441,18 @@ export default function FindAShopPage() {
                       {locError}
                     </p>
                   )}
+                  {locError && (locErrorCode === 'unavailable' || locErrorCode === 'timeout') && (
+                    <span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDetectLocation()}
+                        disabled={locating}
+                        className="inline-flex min-h-[44px] items-center rounded-full bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--on-accent)] disabled:opacity-60"
+                      >
+                        {locating ? 'Detecting…' : 'Try again'}
+                      </button>
+                    </span>
+                  )}
                   <p className="text-[13px] text-[var(--label-2)]">
                     Or enter an area, city or PIN code below — no location permission needed.
                   </p>
@@ -559,6 +575,12 @@ export default function FindAShopPage() {
                     {location ? ` within ${radiusKm} km` : ''}
                     {usedFallback ? ' — distances unavailable' : ''}
                   </p>
+                  {location && locatedCount === 0 && (
+                    <p className="mb-3 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-3 text-[13px] text-[var(--label-2)]" role="status">
+                      No shops near you have shared a map location yet — showing all shops below
+                      without distances. Ask a shop to add its location, or search by area instead.
+                    </p>
+                  )}
                   <ul className="flex flex-col gap-3">
                     {visible.map((shop) => {
                       const { isOpen, closesAt } = parseOpenStatus(shop.openStatus);

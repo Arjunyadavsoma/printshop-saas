@@ -32,6 +32,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { validateShopLocation } from '@/lib/location/validation';
+import { DetectLocationButton } from '@/components/clear/detect-location-button';
 
 interface AccountStep {
   email: string;
@@ -701,8 +702,23 @@ export default function ShopRegisterPage() {
                     disabled={submitting}
                   />
                 </div>
+                <div className="mt-3">
+                  <DetectLocationButton
+                    disabled={submitting}
+                    onDetected={(loc) =>
+                      setState((s) => ({
+                        ...s,
+                        business: {
+                          ...s.business,
+                          latitude: String(loc.lat.toFixed(6)),
+                          longitude: String(loc.lng.toFixed(6)),
+                        },
+                      }))
+                    }
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Location is optional — leave it blank and add it later from Settings. Coordinates entered here are saved as unverified; use “Find on map” in Settings for verified coordinates.
+                  Location is optional — leave it blank and add it later from Settings. Coordinates entered here are saved as unverified; use “Find on map” in Settings for verified coordinates. Detect location works only while you are at the shop — it fills in your device&apos;s current position.
                 </p>
 
                 {/* Payment method selection — audit H6: 'split' option removed

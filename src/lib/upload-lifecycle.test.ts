@@ -217,7 +217,7 @@ describe('CSP middleware — Supabase origin in connect-src (ROOT CAUSE FIX)', (
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
     expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
-    expect(res.headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()');
+    expect(res.headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=(self)');
   });
 
   it('handles an invalid SUPABASE_URL gracefully (no crash, no Supabase in CSP)', async () => {
