@@ -138,16 +138,18 @@ public class MainActivity extends BridgeActivity {
         }
 
         if (target == null) return;
+        // Lambdas below capture this — must be effectively final (target is
+        // reassigned while resolving, so copy it).
+        final String targetUrl = target;
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView == null) {
             // Bridge not ready yet (cold start) — retry once the app resumes.
-            final String pending = target;
-            runOnUiThread(() -> webViewPost(pending));
+            runOnUiThread(() -> webViewPost(targetUrl));
             return;
         }
         String current = webView.getUrl();
-        if (current == null || !current.equals(target)) {
-            webView.post(() -> webView.loadUrl(target));
+        if (current == null || !current.equals(targetUrl)) {
+            webView.post(() -> webView.loadUrl(targetUrl));
         }
     }
 
