@@ -19,7 +19,7 @@ import { payWithUPI } from './bridges/upi';
 import { setSecure, getSecure, removeSecure, clearSecure } from './bridges/storage';
 import { scheduleNotification, cancelNotification } from './bridges/notifications';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 /** The assembled bridge object attached to window.NativeApp. */
 const NativeApp = {

@@ -6,7 +6,7 @@
   // The imports in the TS source (@capacitor/camera, etc.) resolve to these.
   const Capacitor = window.Capacitor;
   if (!Capacitor) {
-    console.debug('[NativeApp] Capacitor runtime not loaded — bridges disabled.');
+    console.warn('[NativeApp] Capacitor runtime not loaded — bridges disabled.');
     return;
   }
 /**
@@ -29,7 +29,7 @@
 // (import stripped — resolved by bundler)
 // (import stripped — resolved by bundler)
 // (import stripped — resolved by bundler)
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 /** The assembled bridge object attached to window.NativeApp. */
 const NativeApp = {
     version: APP_VERSION,

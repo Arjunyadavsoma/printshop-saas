@@ -24,7 +24,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * If unset, defaults to the placeholder below (you MUST change it before
  * building a distributable APK).
  */
-const WEB_URL = process.env.PRINTSHOP_WEB_URL ?? 'https://printshop-saas-arjunyadav35763-gmailcoms-projects.vercel.app';
+const WEB_URL = process.env.PRINTSHOP_WEB_URL ?? 'https://printelyx.cc.cd';
 
 const config: CapacitorConfig = {
   appId: 'app.printshop.companion',
@@ -52,7 +52,8 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       launchShowDuration: 1500,
-      backgroundColor: '#ffffffff',
+      // Brand ground colour from the consumer redesign (light grey-blue).
+      backgroundColor: '#F4F6F8FF',
       androidSplashResourceName: 'splash',
       showSpinner: false,
     },

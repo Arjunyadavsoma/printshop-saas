@@ -36,12 +36,18 @@
                 <data android:scheme="printshop" android:host="shop" />
             </intent-filter>
 
-            <!-- App Link: HTTPS URLs for the deployed web app open in the
-                 companion app instead of the browser. This requires the
-                 deployed web app to serve an assetlinks.json file at
-                 /.well-known/assetlinks.json (Phase 2 — for now, the intent
-                 filter is declared but the assetlinks.json isn't hosted, so
-                 Android falls back to the browser). -->
+            <!-- App Link: HTTPS URLs for the production storefront open in the
+                 companion app instead of the browser. Verification requires
+                 the web app to serve /.well-known/assetlinks.json containing
+                 the signing certificate's SHA-256 (ANDROID_CERT_SHA256 env →
+                 the route below). The preview host is kept for existing
+                 installs built against the old URL. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="printelyx.cc.cd" />
+            </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
