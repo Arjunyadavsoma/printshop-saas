@@ -2,14 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PrimaryButton } from '@/components/clear/button';
-import { Input } from '@/components/clear/input';
+import Link from 'next/link';
 
 /**
  * /track — order lookup by tracking link or order token.
- *
- * Customers paste their tracking link (from the receipt or SMS) or their
- * order token to find their order.
+ * Clear design (no dedicated board — derived from the site-page pattern:
+ * top bar, heading, card with a labelled input, pill button).
  */
 export function TrackPageClient() {
   const router = useRouter();
@@ -45,25 +43,53 @@ export function TrackPageClient() {
     setError('That does not look like a valid tracking link. Check your receipt for the link.');
   };
 
+  const form = (inputId: string) => (
+    <form onSubmit={handleSubmit}>
+      <div className="g p">
+        <label htmlFor={inputId} style={{ fontSize: 14, fontWeight: 600, display: 'block', marginTop: 12 }}>
+          Tracking link or order number
+        </label>
+        <input
+          id={inputId}
+          className="in"
+          type="text"
+          placeholder="https://printelyx.cc.cd/o/…"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {error && <p className="cap" role="alert" style={{ color: '#9C1F18' }}>{error}</p>}
+        <button type="submit" className="btn" style={{ width: '100%', marginTop: 16 }}>Track order</button>
+      </div>
+    </form>
+  );
+
   return (
-    <div className="min-h-[100dvh] bg-[var(--ground)]">
-      <main className="max-w-md mx-auto px-5 py-12">
-        <h1 className="text-[24px] font-bold text-[var(--label)] tracking-[-0.01em]">Track your order</h1>
-        <p className="mt-2 text-[16px] text-[var(--label-2)]">
-          Paste your tracking link from your receipt, or your order number.
-        </p>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <Input
-            id="track-input"
-            label="Tracking link or order number"
-            placeholder="https://printelyx.app/o/..."
-            value={value}
-            onChange={(v) => setValue(v)}
-            error={error ?? undefined}
-          />
-          <PrimaryButton className="w-full">Track order</PrimaryButton>
-        </form>
-      </main>
-    </div>
+    <>
+      <div className="x m">
+        <div className="top"><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
+        <h1 className="h">Track your order</h1>
+        <p className="sub">Paste your tracking link from your receipt, or your order number.</p>
+        {form('track-input')}
+        <div className="g">
+          <Link href="/orders" className="r"><span>My orders</span><span className="v">›</span></Link>
+          <Link href="/help" className="r"><span>Help</span><span className="v">›</span></Link>
+        </div>
+        <p className="cap" />
+      </div>
+
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />Printelyx</b>
+          <Link href="/help" className="v">Help</Link>
+        </div>
+        <div className="wrap">
+          <div className="l">
+            <h1 className="h1">Track your order</h1>
+            <p className="s2">Paste your tracking link from your receipt, or your order number.</p>
+            {form('track-input-d')}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

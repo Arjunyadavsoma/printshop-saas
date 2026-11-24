@@ -72,8 +72,32 @@ export const GET = withRateLimit('shops-list', 60, 60, async (req) => {
     const total = await repos.shops.countActiveWithQuery(q);
     const hasNext = offset + limit < total;
 
+    // Live wait estimate per shop (design board 13/31 shows "Open, 6 min
+    // wait" on the directory cards). Same formula as the shop landing page:
+    // queued sheets × minutes-per-page ÷ online printers, ceil.
+    const withStatus = await Promise.all(page.map(async (s) => {
+      const minutesPerPageBw = (s as { minutesPerPageBw?: number }).minutesPerPageBw ?? 1;
+      const minutesPerPageColor = (s as { minutesPerPageColor?: number }).minutesPerPageColor ?? 2;
+      const minPerPp = Math.max(1, Math.round((minutesPerPageBw + minutesPerPageColor) / 2));
+      let waitMinutes: number | null = null;
+      try {
+        const printers = await repos.printers.listForShop(s.id);
+        const online = printers.filter((p) => p.enabled && p.status === 'ONLINE');
+        if (online.length > 0) {
+          const queued = await repos.printJobs.findQueuedByShop(s.id, 50);
+          const sheets = queued.reduce((sum, t) => sum + (t.sheetCount ?? 1) * (t.copies ?? 1), 0);
+          waitMinutes = Math.ceil((sheets * minPerPp) / online.length);
+        }
+      } catch { /* status is best-effort — directory must not fail on it */ }
+      return {
+        ...s,
+        isOpen: (s as { isOpen?: boolean }).isOpen ?? true,
+        waitMinutes,
+      };
+    }));
+
     return ok({
-      shops: page.map((s) => ({
+      shops: withStatus.map((s) => ({
         id: s.id,
         name: s.name,
         slug: s.slug,
@@ -84,6 +108,10 @@ export const GET = withRateLimit('shops-list', 60, 60, async (req) => {
         paymentProvider: s.paymentProvider,
         subscriptionTier: s.subscriptionTier,
         isActive: s.isActive,
+        isOpen: s.isOpen,
+        // Live wait estimate (design board 13/31) — null when all printers
+        // are offline or the shop has none (card falls back to "Open").
+        waitMinutes: s.waitMinutes,
         createdAt: s.createdAt,
         // Pricing summary — base rate per page for bw + color
         pricingSummary: {

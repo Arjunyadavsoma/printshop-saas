@@ -51,12 +51,25 @@ if (!existsSync(PDF)) {
 }
 
 test('customer can enter UTR inline after tapping I have paid', async ({ page, request }) => {
-  // Resolve any active seeded shop at runtime (slug differs between seeds).
+  // Resolve a seeded shop that actually accepts orders at runtime (slug and
+  // payment mode differ between seeds — e.g. leftover test shops may be
+  // active but counter-payment/closed). Try the first active shops until
+  // one shows the upload CTA.
   const shopsRes = await request.get(`${BASE}/api/v1/shops?limit=5`);
   expect(shopsRes.ok(), 'shops API reachable').toBeTruthy();
   const shops: Array<{ slug: string; isActive: boolean }> = (await shopsRes.json())?.data?.shops ?? [];
-  const slug = shops.find((s) => s.isActive)?.slug;
-  test.skip(!slug, 'no active shop seeded');
+  const candidates = shops.filter((s) => s.isActive).slice(0, 3).map((s) => s.slug);
+  test.skip(candidates.length === 0, 'no active shop seeded');
+
+  let slug = candidates[0]!;
+  for (const candidate of candidates) {
+    await page.goto(`${BASE}/s/${candidate}`, { waitUntil: 'networkidle' });
+    const cta = page.getByText('Add files to print').first();
+    if (await cta.isVisible({ timeout: 4000 }).catch(() => false)) {
+      slug = candidate;
+      break;
+    }
+  }
   await page.goto(`${BASE}/s/${slug}`, { waitUntil: 'networkidle' });
   await page.getByText('Add files to print').first().click();
 

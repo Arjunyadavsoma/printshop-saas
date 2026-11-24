@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import "./clear.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/portal/auth-context";
 import { PWARegister } from "@/components/pwa/pwa-register";

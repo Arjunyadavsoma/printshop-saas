@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { Search, AlertCircle, Store } from 'lucide-react';
 import { readRecentOrders, type RecentOrderSummary } from '@/lib/customer/recent-orders';
 
 interface ShopListItem {
@@ -16,9 +15,16 @@ interface ShopListItem {
   upiId: string;
   subscriptionTier: string;
   isActive: boolean;
+  isOpen: boolean;
+  waitMinutes: number | null;
   pricingSummary: { bwA4PerPage: number; colorA4PerPage: number; minOrderValue: number };
 }
 
+/**
+ * Site home — 1:1 replica of the "Clear" design screens:
+ * mobile board 13 (Site: home) and desktop board 31 (Desktop: site home).
+ * Real data: live shop list, per-device recent order, offline error state.
+ */
 export default function HomePage() {
   const api = useApiClient();
   const [shops, setShops] = useState<ShopListItem[]>([]);
@@ -65,194 +71,132 @@ export default function HomePage() {
     return shops.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
   }, [shops, query]);
 
-  return (
-    <div className="ref-screen m">
-      {/* Theme toggle */}
-      <div className="absolute right-4 top-4 z-10">
-        <ThemeToggle />
-      </div>
-
-      {/* Top bar */}
-      <div className="ref-top">
-        <i className="ref-dot"></i>
-        Printelyx
-      </div>
-
-      {/* Hero */}
-      <h1 className="ref-h">Print without the queue</h1>
-      <p className="ref-sub">
-        {shops.length > 0 ? `${shops.length} shops nearby` : 'Scan a shop QR or browse below'}
-      </p>
-
-      {/* Search */}
-      <div className="ref-g" style={{ marginTop: '16px', padding: '0 16px' }}>
-        <div style={{ position: 'relative', height: '48px', display: 'flex', alignItems: 'center' }}>
-          <Search className="absolute left-3 size-4 text-[#5B5F66]" aria-hidden="true" />
-          <input
-            type="search"
-            placeholder="Search by shop name or area…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            style={{
-              width: '100%',
-              height: '48px',
-              border: '0',
-              background: 'transparent',
-              fontSize: '16px',
-              paddingLeft: '36px',
-              fontFamily: 'inherit',
-              outline: 'none',
-              color: '#1C1C1E',
-            }}
-            aria-label="Search print shops"
-          />
-        </div>
-      </div>
-
-      {/* Returning customer: shortcut to the most recent order on this device */}
-      {recentOrder && (
-        <div className="ref-g" style={{ marginTop: '16px', padding: 0 }}>
-          <Link
-            href={`/o/${recentOrder.token}`}
-            className="ref-r"
-            style={{ textDecoration: 'none', color: 'inherit', minHeight: '52px', alignItems: 'center' }}
-            aria-label={`Track your recent order from ${recentOrder.shopName}`}
-          >
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: '13px', color: '#5B5F66', display: 'block' }}>Your recent order</span>
-              <span style={{ fontSize: '16px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {recentOrder.shopName}
-                {recentOrder.orderNumber ? ` · ${recentOrder.orderNumber}` : ''}
-              </span>
+  const shopRows = (as: 'g' | 'gg') => {
+    if (error) {
+      return (
+        <div className={as === 'g' ? 'g' : 'gg'} key="err">
+          <div className="r">
+            <span>Couldn&apos;t load shops<small>This is usually temporary. Try again.</small></span>
+            <span className="v">
+              <button type="button" className="chip rd" onClick={() => void loadShops()}>Try again</button>
             </span>
-            <span className="ref-chip">Track</span>
+          </div>
+        </div>
+      );
+    }
+    if (loading) {
+      return (
+        <div className={as === 'g' ? 'g' : 'gg'} key="loading">
+          <div className="r"><span>Looking for shops nearby…</span><span className="v" /></div>
+        </div>
+      );
+    }
+    if (filtered.length === 0) {
+      return (
+        <div className={as === 'g' ? 'g' : 'gg'} key="empty">
+          <div className="r">
+            <span>No shops found{query ? ' for your search' : ''}<small>Scan a shop&apos;s QR code to go straight to its page.</small></span>
+          </div>
+        </div>
+      );
+    }
+    return filtered.map(s => {
+      // Design boards 13/31: the second line is the LIVE status
+      // ("Open, about 6 min wait" / "Open, no wait" / "Closed"), not the
+      // address. Wait estimate comes from the shops API.
+      const statusLine = !s.isOpen
+        ? 'Closed'
+        : s.waitMinutes == null
+          ? 'Open'
+          : s.waitMinutes === 0
+            ? 'Open, no wait'
+            : `Open, about ${s.waitMinutes} min wait`;
+      return (
+        <div className={as === 'g' ? 'g' : 'gg'} key={s.id}>
+          <Link href={`/s/${s.slug}`} className="r" style={{ minHeight: 60 }}>
+            <span>{s.name}<small>{statusLine}</small></span>
+            <span className="v"><span className={`chip ${s.isOpen ? 'ok' : 'a'}`}>{s.isOpen ? 'Open' : 'Closed'}</span></span>
           </Link>
         </div>
-      )}
+      );
+    });
+  };
 
-      {/* Shops list */}
-      <div style={{ marginTop: '8px' }}>
-        {loading ? (
-          // Skeleton rows sized like real shop rows (reserves layout space —
-          // no CLS when the list resolves; no "Loading…" dead text).
-          <div className="ref-g" style={{ padding: '8px 16px' }} aria-hidden="true">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="ref-r" style={{ minHeight: '96px', alignItems: 'center' }}>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', height: '16px', width: '55%', borderRadius: '8px', background: 'var(--hairline, #E4E6EB)' }} />
-                  <span style={{ display: 'block', height: '12px', width: '75%', borderRadius: '8px', background: 'var(--hairline, #E4E6EB)', marginTop: '8px' }} />
-                </span>
-                <span style={{ flex: 'none', width: '64px', height: '24px', borderRadius: '9999px', background: 'var(--hairline, #E4E6EB)' }} />
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="ref-g" style={{ padding: '24px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#B3261E' }}>
-              <AlertCircle className="size-5" aria-hidden="true" />
-              <span style={{ fontSize: '16px', fontWeight: 600 }}>Couldn&apos;t load shops</span>
-            </div>
-            <p className="ref-v" style={{ marginTop: '4px' }}>This is usually temporary. Try again.</p>
-            <button className="ref-btn" style={{ marginTop: '12px', width: '100%' }} onClick={loadShops}>
-              Try again
-            </button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="ref-g p" style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <Store className="mx-auto size-8 text-[#5B5F66]" aria-hidden="true" />
-            <p style={{ fontSize: '17px', fontWeight: 600, marginTop: '8px' }}>
-              {shops.length === 0 ? 'No shops available yet' : 'No shops match your search'}
-            </p>
-            <p className="ref-v" style={{ textAlign: 'center', marginTop: '4px' }}>
-              {shops.length === 0 ? 'Ask your local print shop to sign up.' : 'Try a different name or area.'}
-            </p>
-          </div>
-        ) : (
-          filtered.map(shop => <ShopRow key={shop.id} shop={shop} />)
-        )}
-      </div>
-
-      {/* How it works */}
-      <div className="ref-g p" style={{ marginTop: '16px' }}>
-        <p style={{ fontSize: '17px', fontWeight: 600 }}>How it works</p>
-        <div className="ref-r" style={{ marginTop: '8px' }}>
-          <span>1. Find a shop<small>Or scan the shop&apos;s QR code</small></span>
-        </div>
-        <div className="ref-r">
-          <span>2. Upload files<small>PDF, photos, or Word docs</small></span>
-        </div>
-        <div className="ref-r">
-          <span>3. Pay by UPI<small>Direct to shopkeeper, 0% commission</small></span>
-        </div>
-        <div className="ref-r">
-          <span>4. Pick up<small>Show your code at the counter</small></span>
-        </div>
-      </div>
-
-      {/* Shopkeeper CTA */}
-      <div className="ref-g p" style={{ marginTop: '16px', textAlign: 'center' }}>
-        <p style={{ fontSize: '15px', fontWeight: 600 }}>Run a print shop?</p>
-        <p className="ref-v" style={{ textAlign: 'center', marginTop: '4px' }}>
-          Get your QR code and start taking orders.
-        </p>
-        <Link href="/shop/register" style={{ display: 'block', marginTop: '12px' }}>
-          <span className="ref-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-            Register your shop
-          </span>
-        </Link>
-        <Link href="/shop/login" style={{ display: 'block', marginTop: '8px', textAlign: 'center', fontSize: '14px', color: '#0A58D6', textDecoration: 'none' }}>
-          Shopkeeper login
-        </Link>
-      </div>
-
-      {/* Footer */}
-      <footer className="ref-cap" style={{ textAlign: 'center', marginTop: '24px', marginBottom: '32px', color: '#5B5F66' }}>
-        <span style={{ display: 'block', marginBottom: '6px' }}>Printelyx — 0% commission</span>
-        <span style={{ display: 'inline-flex', gap: '12px', justifyContent: 'center' }}>
-          <Link href="/help" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>Help</Link>
-          <Link href="/about" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>About</Link>
-          <Link href="/contact" style={{ color: '#0A58D6', display: 'inline-flex', alignItems: 'center', minHeight: '48px', padding: '0 6px' }}>Contact</Link>
-        </span>
-      </footer>
+  const recentOrderRow = (
+    <div className="g" style={{ marginTop: 0 }}>
+      <Link href={`/o/${recentOrder?.token}`} className="r">
+        <span>Order {recentOrder?.orderNumber ?? '—'}<small>{recentOrder?.shopName ?? ''} — track your order</small></span>
+        <span className="v">›</span>
+      </Link>
     </div>
   );
-}
 
-function ShopRow({ shop }: { shop: ShopListItem }) {
-  const bwPrice = Math.round(shop.pricingSummary.bwA4PerPage / 100);
-  const colorPrice = Math.round(shop.pricingSummary.colorA4PerPage / 100);
-  const minOrder = Math.round(shop.pricingSummary.minOrderValue / 100);
-  const tierLabel = shop.subscriptionTier.charAt(0).toUpperCase() + shop.subscriptionTier.slice(1);
+  const searchBlock = (cls: string, id: string) => (
+    <div className={cls}>
+      <label htmlFor={id} style={{ fontSize: 14, fontWeight: 600, display: 'block', marginTop: 12 }}>Search shops</label>
+      <input
+        id={id}
+        className="in"
+        type="text"
+        placeholder="Search by shop name or area"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+      />
+    </div>
+  );
+
+  const registerRows = (cls: string) => (
+    <div className={cls}>
+      <div className="r">
+        <span>Run a print shop?<small>Get a QR code and start taking orders.</small></span>
+        <span className="v" />
+      </div>
+      <Link href="/shop/register" className="r"><span>Register your shop</span><span className="v">›</span></Link>
+      <Link href="/shop/login" className="r"><span>Shopkeeper login</span><span className="v">›</span></Link>
+    </div>
+  );
 
   return (
-    <Link
-      href={`/s/${shop.slug}`}
-      className="ref-g"
-      style={{ textDecoration: 'none', color: 'inherit', display: 'block', padding: 0 }}
-    >
-      {/* Row 1: Shop name + tier badge */}
-      <div className="ref-r" style={{ minHeight: '52px', alignItems: 'center' }}>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: '16px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-            {shop.name}
-          </span>
-          <small style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
-            {shop.address}
-          </small>
-        </span>
-        <span className="ref-chip" style={{ flex: 'none', marginLeft: '8px', alignSelf: 'center' }}>{tierLabel}</span>
+    <>
+      {/* ── Mobile (design board 13: Site home) ─────────────────────── */}
+      <div className="x m">
+        <div className="top">
+          <b style={{ color: '#1C1C1E', fontSize: 17, display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>Printelyx</b>
+          <ThemeToggle />
+        </div>
+        <h1 className="h">Print without the queue</h1>
+        <p className="sub">Find a shop near you, or scan its QR code.</p>
+        {searchBlock('g p', 'q')}
+        {recentOrder && <div style={{ marginTop: 16 }}>{recentOrderRow}</div>}
+        {shopRows('g')}
+        <p className="cap">Scan a shop&apos;s QR code to go straight to its page.</p>
+        {registerRows('g')}
+        <p className="cap" />
       </div>
-      {/* Row 2: Pricing summary */}
-      <div className="ref-r" style={{ minHeight: '44px', fontSize: '15px' }}>
-        <span style={{ flex: 1 }}>
-          <small style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <span>B&amp;W ₹{bwPrice}</span>
-            <span>Colour ₹{colorPrice}</span>
-            <span>Min ₹{minOrder}</span>
-          </small>
-        </span>
-        <span className="ref-v" style={{ flex: 'none', whiteSpace: 'nowrap' }}>Visit shop</span>
+
+      {/* ── Desktop (design board 31: Desktop site home) ────────────── */}
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />Printelyx</b>
+          <Link href="/help" className="v">Help</Link>
+        </div>
+        <div className="wrap">
+          <div className="l">
+            <h1 className="h1">Print without the queue</h1>
+            <p className="s2">Find a shop near you, or scan its QR code.</p>
+            {searchBlock('gg p', 'q-d')}
+            {recentOrder && <div style={{ marginTop: 0 }}>{recentOrderRow}</div>}
+            {shopRows('gg')}
+          </div>
+          <div className="rt">
+            <div className="gg p">
+              <div className="v" style={{ textAlign: 'center' }}>Scan a shop QR code</div>
+              <div className="qr" aria-hidden="true" />
+            </div>
+            {registerRows('gg')}
+          </div>
+        </div>
       </div>
-    </Link>
+    </>
   );
 }

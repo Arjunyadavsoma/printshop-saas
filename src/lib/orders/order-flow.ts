@@ -206,7 +206,11 @@ export async function placeOrder(shop: Record<string, unknown>, order: { id: str
   }
 
   const paymentMode = (shop.paymentMode as string) ?? 'UPI_THEN_PRINT';
-  const nextStatus = paymentMode === 'UPI_THEN_PRINT' ? 'awaiting_payment' : 'queued';
+  // 'BOTH' shops offer UPI AND counter payment — the customer chooses on the
+  // pay screen, so the order waits for a payment submission (UTR or
+  // counter). Only a mode that explicitly excludes online payment (none
+  // exist today; guarded for future 'COUNTER'-prefixed modes) skips to queued.
+  const nextStatus = /^COUNTER/i.test(paymentMode) ? 'queued' : 'awaiting_payment';
   assertOrderTransition(order.status as Parameters<typeof assertOrderTransition>[0], nextStatus as Parameters<typeof assertOrderTransition>[0]);
 
   const orderNumber = String(4000 + Math.floor(Math.random() * 5999));

@@ -66,6 +66,7 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
       <main className="flex-1 w-full">
         {closed ? (
           <ClosedShopCard
+            shopName={shop.name}
             hoursText={hoursText}
             address={shop.address}
             phone={shop.phone}
@@ -111,24 +112,45 @@ function formatOpeningHours(hours: unknown): string {
   return 'Mon–Sat 9:00–21:00, Sun closed';
 }
 
-/** Closed-shop card — explains + shows the hours + offers Call. */
-function ClosedShopCard({ hoursText, address, phone }: { hoursText: string; address: string; phone: string }) {
+/** Closed-shop card — 1:1 replica of design board 18 (Customer: shop closed). */
+function ClosedShopCard({ shopName, hoursText, address, phone }: { shopName: string; hoursText: string; address: string; phone: string }) {
+  const shortHours = hoursText.length > 30 ? '9 am to 9 pm' : hoursText;
+  const rows = (
+    <>
+      <div className="r"><span>Hours</span><span className="v">{shortHours}</span></div>
+      <a className="r" href={phone ? `tel:${phone}` : '#'}><span>Call shop</span><span className="v">›</span></a>
+      <a
+        className="r"
+        href={address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '#'}
+        target="_blank"
+        rel="noopener noreferrer"
+      ><span>Directions</span><span className="v">›</span></a>
+    </>
+  );
+
   return (
-    <section
-      className="mt-4 rounded-[var(--radius-default)] border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-4"
-      aria-labelledby="closed-heading"
-    >
-      <h2 id="closed-heading" className="text-base font-semibold text-[var(--color-ink)]">
-        This shop is not accepting orders right now
-      </h2>
-      <p className="mt-1 text-sm text-[var(--color-muted)]">
-        Hours: {hoursText}
-      </p>
-      <p className="mt-1 text-sm text-[var(--color-muted)]">{address}</p>
-      <p className="mt-2 text-sm text-[var(--color-muted)]">
-        You can still call the shop at{' '}
-        <a className="underline text-[var(--color-cyan-ink)]" href={`tel:${phone}`}>{phone}</a>.
-      </p>
-    </section>
+    <>
+      <div className="x m">
+        <div className="top"><i className="dot" />{shopName}</div>
+        <h1 className="h">Closed right now</h1>
+        <p className="sub">Opens at the next opening time.</p>
+        <div className="g">{rows}</div>
+        <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
+      </div>
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />{shopName}</b>
+          <a className="v" href="/help" style={{ textDecoration: 'none' }}>Help</a>
+        </div>
+        <div className="wrap">
+          <div className="l">
+            <h1 className="h1">Closed right now</h1>
+            <p className="s2">Opens at the next opening time.</p>
+            <div className="gg">{rows}</div>
+            <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
