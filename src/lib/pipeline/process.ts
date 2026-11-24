@@ -3,6 +3,7 @@ import { repos } from '@/lib/repositories';
 import { normalizeDocument, NormalizeError } from './normalize';
 import { suggestColors } from './color-suggest';
 import { renderThumbnails } from './thumbnails';
+import { parsePageCount } from '@/lib/services/parse-page-count';
 
 /**
  * Upload processing orchestrator (Phase 2).
@@ -53,39 +54,41 @@ export async function processUpload(fileId: string): Promise<{ status: 'READY' |
     } as never);
     return { status: 'READY' };
   } catch (cause) {
-    // Dev-mode fallback: when the real pipeline fails (missing LibreOffice,
-    // pdfjs, sharp, etc.), simulate processing so the customer flow works
-    // end-to-end. Estimate page count from file type/size and mark as ready.
-    if (process.env.NODE_ENV !== 'production') {
+    const code = cause instanceof NormalizeError ? cause.code : 'PROCESSING_FAILED';
+    // Dev-mode fallback: when the real pipeline hits an INFRASTRUCTURE gap
+    // (missing LibreOffice or the image library), simulate a usable document
+    // so the customer flow works end-to-end without native tooling.
+    // AUDIT P0-2/P0-3 rules for this fallback:
+    //   1. Validation failures (unsupported type, corrupt/encrypted PDF,
+    //      broken image) are NOT simulated — the file fails in dev exactly
+    //      like production, so upload validation is testable locally.
+    //   2. The page count always comes from the real parser
+    //      (parsePageCount) — never estimated from file size — so quoted
+    //      prices stay truthful. If the count can't be determined, the file
+    //      fails instead of being priced on an invented number.
+    const INFRA_CODES = new Set(['IMAGE_PIPE_UNAVAILABLE', 'OFFICE_CONV_UNAVAILABLE']);
+    if (process.env.NODE_ENV !== 'production' && INFRA_CODES.has(code)) {
       const isDev = process.env.DATABASE_PROVIDER === 'memory' || !process.env.DATABASE_URL || process.env.DATABASE_URL?.startsWith('file:');
       if (isDev) {
-        const mimeType = (file as { mimeType?: string }).mimeType ?? '';
-        const filename = (file as { originalFilename?: string }).originalFilename ?? '';
-        const sizeBytes = (file as { sizeBytes?: number }).sizeBytes ?? 0;
-        // Estimate page count: 1 for images, ~5-12 for documents based on size
-        let estPages = 1;
-        if (mimeType.includes('pdf') || filename.toLowerCase().endsWith('.pdf')) {
-          estPages = Math.max(1, Math.round(sizeBytes / 50000)); // ~50KB per page
-        } else if (mimeType.includes('image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)) {
-          estPages = 1;
-        } else if (mimeType.includes('officedocument') || /\.(docx|pptx|xlsx|doc|ppt|xls)$/i.test(filename)) {
-          estPages = Math.max(1, Math.round(sizeBytes / 30000)); // ~30KB per page
+        const original = (await storage.getBytes?.((file as { storageKey?: string }).storageKey ?? ''))?.bytes ?? null;
+        const realPages = await parsePageCount((file as { mimeType?: string }).mimeType ?? '', original);
+        if (realPages != null && realPages > 0) {
+          await repos.files.update(fileId, {
+            status: 'ready',
+            pageCount: realPages,
+            pageWidthPt: 595,
+            pageHeightPt: 842,
+            colorSuggestion: null,
+            processingError: 'dev-simulated (no native converters on this machine)',
+            failReason: null,
+          } as never);
+          return { status: 'READY' };
         }
-        // Simulate a few colour pages for documents
-        const colorPages = estPages > 3 ? Array.from({ length: Math.ceil(estPages / 4) }, (_, i) => i * 3 + 1) : [];
-        await repos.files.update(fileId, {
-          status: 'ready',
-          pageCount: estPages,
-          pageWidthPt: 595,
-          pageHeightPt: 842,
-          colorSuggestion: colorPages.map((p) => ({ page: p, isColor: true })),
-          processingError: null,
-          failReason: null,
-        } as never);
-        return { status: 'READY' };
+        // Cannot determine the page count honestly — fail instead of
+        // pricing the order on an invented number.
+        return { status: 'FAILED', failReason: 'Page count could not be determined for this file.' };
       }
     }
-    const code = cause instanceof NormalizeError ? cause.code : 'PROCESSING_FAILED';
     const msg = cause instanceof Error ? cause.message : String(cause);
     await repos.files.update(fileId, {
       status: 'failed',

@@ -5,6 +5,7 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { createSession, MAX_FILE_BYTES } from '@/lib/pipeline/upload-sessions';
+import { detectKind } from '@/lib/pipeline/normalize';
 import { NotFoundError, ValidationError } from '@platform/core/errors';
 
 /**
@@ -37,6 +38,13 @@ export const POST = withRateLimit('uploads-init', 30, 60, async (req: NextReques
     }
     if (body.sizeBytes > MAX_FILE_BYTES) {
       throw new ValidationError(`File is too large. The limit is 50 MB per file.`);
+    }
+    // AUDIT P0-2: gate the file type at session start — same supported set
+    // as the normalize pipeline (its own UNSUPPORTED_TYPE message). Without
+    // this, an unsupported file reached the queue in dev, where the
+    // simulate fallback marked it "Ready" with an invented page count.
+    if (detectKind(body.mimeType, body.filename) === 'unsupported') {
+      throw new ValidationError('Unsupported file type. Supported: PDF, JPG, PNG, WEBP, HEIC, DOCX, DOC, PPTX, XLSX.');
     }
 
     // Resolve or create the customer's draft order.

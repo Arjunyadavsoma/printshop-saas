@@ -136,13 +136,6 @@ async function sha256Hex(blob: Blob): Promise<string> {
     .join('');
 }
 
-/** A 12-digit UPI UTR — generate a realistic-looking one for the placeholder path. */
-function genUtr(): string {
-  let s = '';
-  for (let i = 0; i < 12; i++) s += Math.floor(Math.random() * 10).toString();
-  return s;
-}
-
 /** Map a server order status to a customer-facing label. */
 function statusLabel(status: string): string {
   switch (status) {
@@ -305,11 +298,21 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
       const list = Array.from(picked);
       if (list.length === 0) return;
       setError(null);
+      // AUDIT P0-2: client-side type gate. The accept attribute only filters
+      // the OS picker — drag-and-drop and programmatic picks bypass it, so
+      // validate the extension here (same supported set as the pipeline).
+      const SUPPORTED_EXT = /\.(pdf|jpe?g|png|webp|heic|heif|docx?|pptx?|xlsx?)$/i;
+      const rejected = list.filter((f) => !SUPPORTED_EXT.test(f.name));
+      if (rejected.length > 0) {
+        setError(`Unsupported file type: ${rejected.map((f) => f.name).join(', ')}. Supported: PDF, JPG, PNG, WEBP, HEIC, DOCX, DOC, PPTX, XLSX.`);
+        if (rejected.length === list.length) return;
+      }
+      const uploadable = list.filter((f) => SUPPORTED_EXT.test(f.name));
       try {
         let handle = draft;
         if (!handle) {
           // init creates the draft order on the first file
-          const first = list[0]!;
+          const first = uploadable[0]!;
           const initRes = await fetch(`/api/v1/s/${shopSlug}/uploads/init`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -385,12 +388,12 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
           }
 
           // Upload any remaining picked files via the multi-file path.
-          for (const f of list.slice(1)) {
+          for (const f of uploadable.slice(1)) {
             await uploadOne(f, handle);
           }
         } else {
           // Existing draft — upload every picked file.
-          for (const f of list) {
+          for (const f of uploadable) {
             await uploadOne(f, handle);
           }
         }
@@ -655,12 +658,12 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
 
   /* ── Pay: submit UTR via /o/{token}/payment ── */
   const submitPayment = useCallback(
-    async (utrValue: string) => {
-      if (!placed || submitting) return;
+    async (utrValue: string): Promise<boolean> => {
+      if (!placed || submitting) return false;
       const clean = utrValue.replace(/\D/g, '').slice(0, 12);
       if (clean.length !== 12) {
         setError('Enter the 12-digit UTR / reference number from your UPI app.');
-        return;
+        return false;
       }
       setSubmitting(true);
       setError(null);
@@ -680,8 +683,10 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
         }
         setUtr(clean);
         setStep('waiting');
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not submit the payment');
+        return false;
       } finally {
         setSubmitting(false);
       }
@@ -803,31 +808,22 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
     }
   }, [placed]);
 
-  /* ── UTR prompt (I've paid) ── */
-  const onIPaid = useCallback(() => {
-    if (!placed) return;
-    const input = window.prompt(
-      `Enter the 12-digit UTR / reference number from your UPI app.\n(For demo: leave blank to auto-generate.)`,
-      '',
-    );
-    if (input === null) return; // cancelled
-    const clean = input.replace(/\D/g, '').slice(0, 12);
-    const final = clean.length === 12 ? clean : genUtr();
-    void submitPayment(final);
-  }, [placed, submitPayment]);
+  /* ── UTR entry (I've paid / re-enter) — inline sheet. This replaces
+     window.prompt(): prompt() is suppressed by several mobile in-app
+     browsers and by automated browsers, which made "I've paid" look dead.
+     The API contract is unchanged (POST /o/{token}/payment). ── */
+  const [utrSheetOpen, setUtrSheetOpen] = useState(false);
+  const [utrDraft, setUtrDraft] = useState('');
 
-  /* ── Re-enter UTR from waiting screen ── */
-  const onReenterUtr = useCallback(() => {
-    if (!placed) return;
-    const input = window.prompt('Re-enter the 12-digit UTR / reference number.', utr);
-    if (input === null) return;
-    const clean = input.replace(/\D/g, '').slice(0, 12);
-    if (clean.length !== 12) {
-      setError('Enter a 12-digit UTR.');
-      return;
-    }
-    void submitPayment(clean);
-  }, [placed, submitPayment, utr]);
+  const openUtrSheet = useCallback(() => {
+    setUtrDraft(utr);
+    setUtrSheetOpen(true);
+  }, [utr]);
+
+  const submitUtrFromSheet = useCallback(async () => {
+    const ok = await submitPayment(utrDraft);
+    if (ok) setUtrSheetOpen(false);
+  }, [submitPayment, utrDraft]);
 
   /* ── Copy shop UPI ID to clipboard ── */
   const copyUpiId = useCallback(() => {
@@ -1313,7 +1309,7 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
               type="button"
               className="ref-btn"
               disabled={submitting}
-              onClick={onIPaid}
+              onClick={openUtrSheet}
             >
               {submitting ? 'Submitting…' : "I've paid"}
             </button>
@@ -1350,9 +1346,45 @@ export function ReferenceCustomerFlow(props: ReferenceCustomerFlowProps) {
             }}>
               Call shop
             </button>
-            <button type="button" className="ref-btn k" onClick={onReenterUtr}>
+            <button type="button" className="ref-btn k" onClick={openUtrSheet}>
               Enter UTR again
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── UTR entry sheet (inline — replaces window.prompt) ── */}
+      {utrSheetOpen && placed && (
+        <div className="ref-utrsheet" role="dialog" aria-modal="true" aria-label="Enter UTR">
+          <div className="ref-utrsheet-card">
+            <h2 className="ref-h" style={{ fontSize: 20, margin: 0 }}>Enter UTR</h2>
+            <p className="ref-cap">The 12-digit reference number shown in your UPI app after payment.</p>
+            <input
+              className="ref-in"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={12}
+              placeholder="12-digit UTR"
+              aria-label="12-digit UTR"
+              value={utrDraft}
+              autoFocus
+              onChange={(e) => setUtrDraft(e.target.value.replace(/\D/g, '').slice(0, 12))}
+            />
+            {error && <p className="ref-cap" role="alert">{error}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="ref-btn s" style={{ flex: 1 }} onClick={() => setUtrSheetOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ref-btn"
+                style={{ flex: 1 }}
+                disabled={utrDraft.length !== 12 || submitting}
+                onClick={() => void submitUtrFromSheet()}
+              >
+                {submitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
           </div>
         </div>
       )}

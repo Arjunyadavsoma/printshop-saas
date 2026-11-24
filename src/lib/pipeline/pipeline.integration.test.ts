@@ -225,6 +225,53 @@ describe('processUpload — end to end through the pipeline', () => {
     expect(updated?.status).toBe('failed');
     expect(updated?.failReason).toContain('NOT_A_PDF');
   });
+
+  // AUDIT P0-2 regression: an unsupported file type (plain text) must FAIL —
+  // the old dev fallback marked it "Ready — 1 page".
+  it('a .txt upload lands FAILED (unsupported type), never Ready', async () => {
+    const bytes = new TextEncoder().encode('plain notes, not a document');
+    const file = await repos.files.create({
+      orderId: draftOrderId,
+      originalFilename: 'notes.txt',
+      storageKey: `shops/${shopId}/orders/${draftOrderId}/orig/notes.txt`,
+      mimeType: 'text/plain',
+      sizeBytes: bytes.length,
+      pageCount: null,
+      status: 'uploaded',
+    });
+    await getContainerForTest().storage.put?.(file.storageKey, bytes, 'text/plain');
+    const result = await processUpload(file.id);
+    expect(result.status).toBe('FAILED');
+    const updated = await repos.files.findById(file.id);
+    expect(updated?.status).toBe('failed');
+    expect(updated?.failReason).toMatch(/UNSUPPORTED|NOT_A_PDF/);
+  });
+
+  // AUDIT P0-3 regression: a large garbage "PDF" must FAIL — the old dev
+  // fallback estimated pageCount from byte size (15 MB → "318 pages") and
+  // priced the order on the invented number.
+  it('a 15 MB garbage "PDF" lands FAILED with no fabricated page count', async () => {
+    const bytes = new Uint8Array(15 * 1024 * 1024);
+    for (let off = 0; off < bytes.length; off += 65536) {
+      crypto.getRandomValues(bytes.subarray(off, Math.min(off + 65536, bytes.length)));
+    }
+    const file = await repos.files.create({
+      orderId: draftOrderId,
+      originalFilename: 'garbage.pdf',
+      storageKey: `shops/${shopId}/orders/${draftOrderId}/orig/garbage.pdf`,
+      mimeType: 'application/pdf',
+      sizeBytes: bytes.length,
+      pageCount: null,
+      status: 'uploaded',
+    });
+    await getContainerForTest().storage.put?.(file.storageKey, bytes, 'application/pdf');
+    const result = await processUpload(file.id);
+    expect(result.status).toBe('FAILED');
+    const updated = await repos.files.findById(file.id);
+    expect(updated?.status).toBe('failed');
+    expect(updated?.pageCount ?? 0).toBeLessThanOrEqual(0);
+    expect(updated?.failReason).toMatch(/CORRUPT_PDF|NOT_A_PDF/);
+  });
 });
 
 // tiny helper so the tests above read cleanly

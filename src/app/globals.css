@@ -559,3 +559,23 @@
 .ref-ch { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 15px; margin: 2px 4px 10px; }
 .ref-card { background: #fff; border-radius: 14px; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; align-items: flex-start; cursor: pointer; }
 .ref-card small { font-size: 13px; color: #5B5F66; }
+
+/* UTR entry sheet — inline replacement for window.prompt (audit P0-1).
+   Overlay is tap-to-dismiss-free on purpose: the UTR is required evidence,
+   so the card has an explicit Cancel. Safe-area aware for iPhone home bar. */
+.ref-utrsheet {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(10, 11, 13, 0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.ref-utrsheet-card {
+  width: 100%; max-width: 480px;
+  background: #fff; border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ref-utrsheet-card .ref-in { margin: 0; }
+@media (min-width: 768px) {
+  .ref-utrsheet { align-items: center; }
+  .ref-utrsheet-card { border-radius: 20px; max-width: 420px; }
+}
