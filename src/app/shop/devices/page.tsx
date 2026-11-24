@@ -65,6 +65,7 @@ import {
   Cpu,
   TerminalSquare,
   History,
+  QrCode,
 } from 'lucide-react';
 
 /**
@@ -605,6 +606,102 @@ export default function ShopDevicesPage() {
           />
         </div>
       )}
+
+      {/* Add printer (spec screen 27) — the four connection options,
+          wired to what actually exists. "Add by address" has no backend:
+          there is no endpoint for registering a printer by IP, so it is
+          shown as unavailable instead of a dead button. */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Printer className="size-4 text-brand" aria-hidden="true" />
+            Add printer
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Choose how to connect. Phones can print to printers that support
+            network printing. Others go through the shop PC.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ul>
+            <li className="flex min-h-[56px] items-center gap-3 border-b px-4 py-2">
+              <Wifi className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">Find on Wi-Fi</span>
+                <span className="block text-xs text-muted-foreground">
+                  Printers on this network — asks a paired PC to re-scan.
+                </span>
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  devices.filter((d) => d.isOnline && d.isEnabled).length === 0 ||
+                  sendingCommand !== null
+                }
+                onClick={() => {
+                  const online = devices.find((d) => d.isOnline && d.isEnabled);
+                  if (online) void sendCommand(online, 'refresh_printers');
+                }}
+                className="min-h-[44px] gap-1.5"
+              >
+                <RefreshCw className="size-4" aria-hidden="true" />
+                Scan
+              </Button>
+            </li>
+            <li className="flex min-h-[56px] items-center gap-3 border-b px-4 py-2">
+              <Monitor className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">Add by address</span>
+                <span className="block text-xs text-muted-foreground">
+                  Enter its IP address.
+                </span>
+              </span>
+              <Badge variant="outline">Not available</Badge>
+            </li>
+            <li className="flex min-h-[56px] items-center gap-3 border-b px-4 py-2">
+              <span className="flex-1">
+                <span className="block text-sm font-medium">This PC</span>
+                <span className="block text-xs text-muted-foreground">
+                  Use printers installed on the shop PC.
+                </span>
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPairingOpen(true)}
+                className="min-h-[44px] gap-1.5"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Pair PC
+              </Button>
+            </li>
+            <li className="flex min-h-[56px] items-center gap-3 px-4 py-2">
+              <span className="flex-1">
+                <span className="block text-sm font-medium">This phone</span>
+                <span className="block text-xs text-muted-foreground">
+                  Pair with the QR code.
+                </span>
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPairingOpen(true)}
+                className="min-h-[44px] gap-1.5"
+              >
+                <QrCode className="size-4" aria-hidden="true" />
+                Pair phone
+              </Button>
+            </li>
+          </ul>
+          {devices.filter((d) => d.isOnline && d.isEnabled).length === 0 ? (
+            <p className="border-t px-4 py-3 text-xs text-muted-foreground">
+              Wi-Fi scan needs a paired PC that is online — pair one first
+              with “Pair PC” above.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {/* Empty state — no devices paired yet. */}
       {devices.length === 0 ? (

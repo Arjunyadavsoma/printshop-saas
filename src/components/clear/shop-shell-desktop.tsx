@@ -73,7 +73,7 @@ export function ShopShellDesktop({
   ];
 
   return (
-    <div className="hidden md:flex min-h-dvh bg-[var(--ground)]">
+    <div className="hidden lg:flex min-h-dvh bg-[var(--ground)]">
       {/* Sidebar */}
       <aside
         className="w-[256px] shrink-0 h-dvh sticky top-0 bg-[var(--surface)] border-r border-[var(--hairline)] flex flex-col"

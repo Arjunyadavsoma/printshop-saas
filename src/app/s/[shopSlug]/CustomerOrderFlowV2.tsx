@@ -118,6 +118,18 @@ interface Quote {
 
 const CHUNK = 2 * 1024 * 1024;
 const QUOTE_DEBOUNCE_MS = 400;
+/** Per-file size limit — must match the pipeline: src/lib/pipeline/upload-sessions.ts MAX_FILE_BYTES (50 MB). */
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/**
+ * Client-side extension gate — must match what the server pipeline
+ * accepts (src/lib/pipeline/normalize.ts detectKind: pdf, jpg/jpeg, png,
+ * webp, heic/heif, doc/docx, pptx, xlsx). Legacy .ppt/.xls are NOT
+ * accepted server-side, so they are not pickable here either.
+ */
+const SUPPORTED_EXT = /\.(pdf|jpe?g|png|webp|heic|heif|docx?|pptx|xlsx)$/i;
+const SUPPORTED_LABEL = 'PDF, JPG, PNG, WebP, HEIC, DOCX, DOC, PPTX, XLSX';
+/** accept attribute for the dropzone input — same set as SUPPORTED_EXT. */
+const DROPZONE_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.doc,.docx,.pptx,.xlsx';
 const FILE_POLL_MS = 1200;
 const PLACED_SESSION_KEY = 'printshop:placed-order';
 const DRAFT_LOCAL_KEY = 'printshop:customer-draft';
@@ -277,6 +289,41 @@ function pageModesFromArray(arr: Array<[number, PageMode]>): Map<number, PageMod
   return new Map(arr);
 }
 
+/** Optimistic row for a file picked by the customer, seeded BEFORE any
+    network call so the tap always has visible feedback (diagnosis §4.4).
+    Replaced with the real fileId once uploads/init resolves. */
+function tempRow(file: globalThis.File, tempId: string): FlowFile {
+  return {
+    fileId: tempId,
+    uploadId: '',
+    name: file.name,
+    sizeBytes: file.size,
+    progress: 0,
+    status: 'uploading',
+    pageCount: null,
+    thumbnails: [],
+    suggestion: null,
+    pageModes: new Map<number, PageMode>(),
+    copies: 1,
+    sides: 'SINGLE',
+    pagesPerSheet: 1,
+    paperSize: 'A4',
+    paperType: 'PLAIN',
+    collate: true,
+    preset: null,
+  };
+}
+
+/** A picked file the pipeline won't accept, shown as a failed row with a
+    plain-language reason (spec screen 36) instead of a bare banner. */
+function failedRow(file: globalThis.File, reason: string): FlowFile {
+  return {
+    ...tempRow(file, `rejected-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`),
+    status: 'failed',
+    failReason: reason,
+  };
+}
+
 /* ── Component ───────────────────────────────────────────────────────── */
 
 export interface CustomerOrderFlowV2Props {
@@ -286,6 +333,11 @@ export interface CustomerOrderFlowV2Props {
   upiPayeeName: string;
   paymentMode: string;
   retentionHours: number;
+  /** Per-page paise from the shop's real pricing config (server page).
+      Used for preset price badges + the client-side estimate fallback.
+      Null when the shop has no pricing configured. */
+  bwPerPagePaise?: number | null;
+  colorPerPagePaise?: number | null;
 }
 
 export function CustomerOrderFlowV2({
@@ -294,6 +346,8 @@ export function CustomerOrderFlowV2({
   upiId,
   upiPayeeName,
   paymentMode,
+  bwPerPagePaise,
+  colorPerPagePaise,
 }: CustomerOrderFlowV2Props) {
   const [draft, setDraft] = useState<{ orderId: string; orderToken: string } | null>(null);
   const [files, setFiles] = useState<FlowFile[]>([]);
@@ -312,7 +366,16 @@ export function CustomerOrderFlowV2({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pricesChanged, setPricesChanged] = useState<number | null>(null);
-  const [rateCard, setRateCard] = useState<{ bwPerPagePaise: number; colorPerPagePaise: number } | null>(null);
+  // Rate card for preset price badges + the client-side estimate fallback.
+  // Seeded from the server page's real pricing config when available; the
+  // fetch below is only a fallback (it used to read rateBwPerPagePaise /
+  // rateColorPerPagePaise, which GET /api/v1/shops/[slug] never returns —
+  // that endpoint returns pricingConfig — so the badges never showed).
+  const [rateCard, setRateCard] = useState<{ bwPerPagePaise: number; colorPerPagePaise: number } | null>(
+    bwPerPagePaise != null && colorPerPagePaise != null
+      ? { bwPerPagePaise, colorPerPagePaise }
+      : null,
+  );
   /** fileIds whose color-suggestion prompt the customer has dismissed. */
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(() => new Set());
   /** Whether we've already applied the saved last-choices preset to a new file. */
@@ -530,10 +593,19 @@ export function CustomerOrderFlowV2({
       try {
         const res = await fetch(`/api/v1/shops/${shopSlug}`);
         if (!res.ok) return;
-        const d = (await res.json()) as { data?: { rateBwPerPagePaise?: number; rateColorPerPagePaise?: number } };
+        const d = (await res.json()) as {
+          data?: {
+            rateBwPerPagePaise?: number;
+            rateColorPerPagePaise?: number;
+            pricingConfig?: string | { bw_a4_per_page?: number; color_a4_per_page?: number };
+          };
+        };
         if (cancelled || !d.data) return;
-        const bw = d.data.rateBwPerPagePaise;
-        const color = d.data.rateColorPerPagePaise;
+        const cfg = typeof d.data.pricingConfig === 'string'
+          ? (() => { try { return JSON.parse(d.data.pricingConfig) as { bw_a4_per_page?: number; color_a4_per_page?: number }; } catch { return undefined; } })()
+          : d.data.pricingConfig;
+        const bw = d.data.rateBwPerPagePaise ?? cfg?.bw_a4_per_page;
+        const color = d.data.rateColorPerPagePaise ?? cfg?.color_a4_per_page;
         if (typeof bw === 'number' && typeof color === 'number') {
           setRateCard({ bwPerPagePaise: bw, colorPerPagePaise: color });
         }
@@ -547,6 +619,79 @@ export function CustomerOrderFlowV2({
   }, [shopSlug]);
 
   /* ── Upload (init → chunked PUT → complete) ────────────────────────── */
+
+  /**
+   * uploadChunks — stream a file's chunks (with checksum + retry) into an
+   * already-created upload session, then complete it. Shared by uploadOne
+   * and by the first-file path in onPick, which reuses the session its
+   * single init call created instead of init-ing twice.
+   */
+  const uploadChunks = useCallback(
+    async (
+      file: globalThis.File,
+      uploadId: string,
+      fileId: string,
+      missingChunks: number[] | null,
+    ) => {
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+      const indicesToUpload =
+        missingChunks && missingChunks.length > 0
+          ? missingChunks
+          : Array.from({ length: totalChunks }, (_, i) => i);
+
+      for (const index of indicesToUpload) {
+        const start = index * CHUNK;
+        const end = Math.min(start + CHUNK, file.size);
+        const chunk = file.slice(start, end);
+        const checksum = await sha256Hex(chunk);
+
+        await retryWithBackoff(async () => {
+          const res = await fetch(
+            `/api/v1/s/${shopSlug}/uploads/chunk?uploadId=${uploadId}&index=${index}&checksum=${checksum}`,
+            { method: 'PUT', body: chunk },
+          );
+          if (!res.ok) {
+            const e = (await res.json().catch(() => null)) as {
+              error?: { message?: string; code?: string };
+            };
+            const msg = e?.error?.message ?? 'Upload failed';
+            const err = new Error(msg);
+            // Attach the code so retryWithBackoff can decide whether to retry.
+            if (e?.error?.code) (err as Error & { code?: string }).code = e.error.code;
+            throw err;
+          }
+        });
+
+        // Update progress — `end` is the byte offset after this chunk.
+        setFiles((fs) =>
+          fs.map((f) =>
+            f.fileId === fileId
+              ? { ...f, progress: Math.round((end / file.size) * 100) }
+              : f,
+          ),
+        );
+      }
+
+      // Complete → triggers server-side assembly + size verification.
+      setFiles((fs) => fs.map((f) => (f.fileId === fileId ? { ...f, status: 'converting' } : f)));
+      const compRes = await fetch(`/api/v1/s/${shopSlug}/uploads/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadId }),
+      });
+      if (!compRes.ok) {
+        const e = (await compRes.json().catch(() => null)) as {
+          error?: { message?: string; code?: string };
+        };
+        // UPLOAD_INCOMPLETE (409) — the server says some chunks are missing
+        // (shouldn't happen here since we just uploaded them all, but a race
+        // with the janitor is possible). Surface the error; the customer can
+        // retry — the resume logic will pick up where we left off.
+        throw new Error(e?.error?.message ?? 'Processing failed');
+      }
+    },
+    [shopSlug],
+  );
 
   /**
    * uploadOne — upload a single file via the chunked protocol.
@@ -570,7 +715,7 @@ export function CustomerOrderFlowV2({
    *    partial bytes server-side (so the janitor doesn't have to).
    */
   const uploadOne = useCallback(
-    async (file: globalThis.File, orderId: string, orderToken: string) => {
+    async (file: globalThis.File, orderId: string, orderToken: string, tempId?: string) => {
       // ── 1. Resume check: is there an in-progress session for this file? ──
       let uploadId: string | null = null;
       let fileId: string | null = null;
@@ -639,9 +784,12 @@ export function CustomerOrderFlowV2({
         throw new Error('Upload session could not be established');
       }
 
-      // Add the file to the UI list (or update the existing row if resuming).
+      // Swap the optimistic temp row (if any) for the real file row, or
+      // update the existing row when resuming.
       setFiles((fs) => {
-        const existingIdx = fs.findIndex((f) => f.fileId === activeFileId);
+        const existingIdx = fs.findIndex(
+          (f) => (tempId != null && f.fileId === tempId) || f.fileId === activeFileId,
+        );
         const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
         const alreadyDone = missingChunks ? totalChunks - missingChunks.length : 0;
         const initialProgress = Math.round((alreadyDone / totalChunks) * 100);
@@ -671,66 +819,10 @@ export function CustomerOrderFlowV2({
         return [...fs, row];
       });
 
-      // ── 3. Compute the chunk indices to upload. ──
-      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK));
-      const indicesToUpload =
-        missingChunks && missingChunks.length > 0
-          ? missingChunks
-          : Array.from({ length: totalChunks }, (_, i) => i);
-
-      // ── 4. Upload each chunk (with checksum + retry). ──
-      for (const index of indicesToUpload) {
-        const start = index * CHUNK;
-        const end = Math.min(start + CHUNK, file.size);
-        const chunk = file.slice(start, end);
-        const checksum = await sha256Hex(chunk);
-
-        await retryWithBackoff(async () => {
-          const res = await fetch(
-            `/api/v1/s/${shopSlug}/uploads/chunk?uploadId=${activeUploadId}&index=${index}&checksum=${checksum}`,
-            { method: 'PUT', body: chunk },
-          );
-          if (!res.ok) {
-            const e = (await res.json().catch(() => null)) as {
-              error?: { message?: string; code?: string };
-            };
-            const msg = e?.error?.message ?? 'Upload failed';
-            const err = new Error(msg);
-            // Attach the code so retryWithBackoff can decide whether to retry.
-            if (e?.error?.code) (err as Error & { code?: string }).code = e.error.code;
-            throw err;
-          }
-        });
-
-        // Update progress — `end` is the byte offset after this chunk.
-        setFiles((fs) =>
-          fs.map((f) =>
-            f.fileId === activeFileId
-              ? { ...f, progress: Math.round((end / file.size) * 100) }
-              : f,
-          ),
-        );
-      }
-
-      // ── 5. Complete → triggers server-side assembly + size verification. ──
-      setFiles((fs) => fs.map((f) => (f.fileId === activeFileId ? { ...f, status: 'converting' } : f)));
-      const compRes = await fetch(`/api/v1/s/${shopSlug}/uploads/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadId: activeUploadId }),
-      });
-      if (!compRes.ok) {
-        const e = (await compRes.json().catch(() => null)) as {
-          error?: { message?: string; code?: string };
-        };
-        // UPLOAD_INCOMPLETE (409) — the server says some chunks are missing
-        // (shouldn't happen here since we just uploaded them all, but a race
-        // with the janitor is possible). Surface the error; the customer can
-        // retry — the resume logic will pick up where we left off.
-        throw new Error(e?.error?.message ?? 'Processing failed');
-      }
+      // ── 3. Stream the chunks, then complete. ──
+      await uploadChunks(file, activeUploadId, activeFileId, missingChunks);
     },
-    [shopSlug],
+    [shopSlug, uploadChunks],
   );
 
   /**
@@ -765,23 +857,86 @@ export function CustomerOrderFlowV2({
     async (picked: File[]) => {
       if (picked.length === 0) return;
       setError(null);
+      // ── Optimistic UI (diagnosis §4.4): seed a row for every picked
+      // file + switch to the files step BEFORE any network call, so the
+      // tap always has visible feedback. Client-side validation runs
+      // first (same extension set + 50 MB limit the server enforces);
+      // rejected files become failed rows with a plain-language reason
+      // (spec screen 36). No server order exists until the first valid
+      // file's init call below.
+      setStep(0);
+      const stamp = Date.now().toString(36);
+      const tempIds = new Map<File, string>();
+      const rejectedRows: FlowFile[] = [];
+      const uploadable: File[] = [];
+      for (const [i, f] of picked.entries()) {
+        if (!SUPPORTED_EXT.test(f.name)) {
+          rejectedRows.push(failedRow(f, `Not supported. Use a ${SUPPORTED_LABEL} file.`));
+        } else if (f.size > MAX_FILE_BYTES) {
+          rejectedRows.push(failedRow(f, 'Too big. The limit is 50 MB.'));
+        } else {
+          const tempId = `temp-${stamp}-${i}`;
+          tempIds.set(f, tempId);
+          uploadable.push(f);
+        }
+      }
+      if (rejectedRows.length > 0) setFiles((fs) => [...fs, ...rejectedRows]);
+      if (uploadable.length > 0) {
+        setFiles((fs) => [...fs, ...uploadable.map((f) => tempRow(f, tempIds.get(f)!))]);
+      }
+      if (uploadable.length === 0) {
+        setError(
+          `Couldn't add ${rejectedRows.length === 1 ? 'that file' : 'those files'}. See the reason on each file and try again with a supported file.`,
+        );
+        return;
+      }
       // Analytics: upload_started — file_count + total size bucket (no file names).
-      const totalBytes = picked.reduce((s, f) => s + f.size, 0);
+      const totalBytes = uploadable.reduce((s, f) => s + f.size, 0);
       const sizeBucket =
         totalBytes < 512 * 1024 ? '<512KB' :
         totalBytes < 2 * 1024 * 1024 ? '512KB-2MB' :
         totalBytes < 10 * 1024 * 1024 ? '2MB-10MB' : '10MB+';
       track(ANALYTICS_EVENTS.uploadStarted, {
         shop_slug: shopSlug,
-        file_count: picked.length,
+        file_count: uploadable.length,
         size_bucket: sizeBucket,
       });
-      try {
-        let current = draft;
-        if (!current) {
-          // init creates the draft order on the first file
-          const first = picked[0]!;
-          const initRes = await fetch(`/api/v1/s/${shopSlug}/uploads/init`, {
+      // Mark one file's row failed. Matches by temp id, or — once init has
+      // swapped the temp id for the real fileId — by name + size while the
+      // row is still in flight.
+      const markFailed = (file: File, err: unknown) => {
+        const reason = err instanceof Error ? err.message : 'Upload failed';
+        const bucket =
+          /network|fetch|failed to fetch/i.test(reason) ? 'network' :
+          /size|too large|quota/i.test(reason) ? 'size' :
+          /mime|type|unsupported/i.test(reason) ? 'mime' : 'server';
+        track(ANALYTICS_EVENTS.uploadFailed, {
+          shop_slug: shopSlug,
+          reason: bucket,
+          file_count: 1,
+        });
+        const tempId = tempIds.get(file);
+        setFiles((fs) =>
+          fs.map((x) =>
+            x.fileId === tempId ||
+            (x.name === file.name &&
+              x.sizeBytes === file.size &&
+              (x.status === 'uploading' || x.status === 'converting'))
+              ? { ...x, status: 'failed' as FlowFileStatus, failReason: reason }
+              : x,
+          ),
+        );
+      };
+
+      let current = draft;
+      if (!current) {
+        // ONE init for the first file: it creates the draft order AND the
+        // file row. (Previously this called init here and then uploadOne
+        // called init again, orphaning a never-completed file row.)
+        const first = uploadable[0]!;
+        let initRes: Response;
+        try {
+          initRes = await fetch(`/api/v1/s/${shopSlug}/uploads/init`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -790,32 +945,54 @@ export function CustomerOrderFlowV2({
               sizeBytes: first.size,
             }),
           });
-          const init = (await initRes.json()) as { data?: { orderId: string; orderToken: string }; error?: { message?: string } };
-          if (!initRes.ok || !init.data) throw new Error(init?.error?.message ?? 'Upload failed');
-          current = { orderId: init.data.orderId, orderToken: init.data.orderToken };
-          setDraft(current);
-          await uploadOne(first, current.orderId, current.orderToken);
-          for (const f of picked.slice(1)) await uploadOne(f, current.orderId, current.orderToken);
-        } else {
-          for (const f of picked) await uploadOne(f, current.orderId, current.orderToken);
+        } catch (e) {
+          markFailed(first, e);
+          setError(e instanceof Error ? e.message : 'Upload failed');
+          return;
         }
-      } catch (e) {
-        // Analytics: upload_failed — bucket the reason (no raw error text —
-        // it may include a filename or path from the server).
-        const reason =
-          e instanceof Error && /network|fetch|failed to fetch/i.test(e.message) ? 'network' :
-          e instanceof Error && /size|too large|quota/i.test(e.message) ? 'size' :
-          e instanceof Error && /mime|type|unsupported/i.test(e.message) ? 'mime' :
-          'server';
-        track(ANALYTICS_EVENTS.uploadFailed, {
-          shop_slug: shopSlug,
-          reason,
-          file_count: picked.length,
-        });
-        setError(e instanceof Error ? e.message : 'Upload failed');
+        const init = (await initRes.json()) as {
+          data?: { orderId: string; orderToken: string; fileId: string; uploadId: string };
+          error?: { message?: string };
+        };
+        if (!initRes.ok || !init.data) {
+          const err = new Error(init?.error?.message ?? 'Upload failed');
+          markFailed(first, err);
+          setError(err.message);
+          return;
+        }
+        current = { orderId: init.data.orderId, orderToken: init.data.orderToken };
+        setDraft(current);
+        // Swap the temp row for the real file row, then stream its chunks.
+        setFiles((fs) =>
+          fs.map((x) =>
+            x.fileId === tempIds.get(first)
+              ? { ...x, fileId: init.data!.fileId, uploadId: init.data!.uploadId }
+              : x,
+          ),
+        );
+        try {
+          await uploadChunks(first, init.data.uploadId, init.data.fileId, null);
+        } catch (e) {
+          markFailed(first, e);
+        }
+        for (const f of uploadable.slice(1)) {
+          try {
+            await uploadOne(f, current.orderId, current.orderToken, tempIds.get(f));
+          } catch (e) {
+            markFailed(f, e);
+          }
+        }
+      } else {
+        for (const f of uploadable) {
+          try {
+            await uploadOne(f, current.orderId, current.orderToken, tempIds.get(f));
+          } catch (e) {
+            markFailed(f, e);
+          }
+        }
       }
     },
-    [draft, shopSlug, uploadOne],
+    [draft, shopSlug, uploadOne, uploadChunks],
   );
 
   /* ── Poll converting files until READY ─────────────────────────────── */
@@ -882,13 +1059,10 @@ export function CustomerOrderFlowV2({
     return () => clearTimeout(t);
   }, [files, draft, shopSlug]);
 
-  /* ── Auto-advance to Options when the first file is READY ──────────── */
-
-  useEffect(() => {
-    if (step !== 0) return;
-    const anyReady = files.some((f) => f.status === 'ready');
-    if (anyReady) setStep(1);
-  }, [files, step]);
+  /* ── No auto-advance: the customer moves Files → Options with the
+     explicit Continue button (spec screen 3 sticky bar). Auto-advancing
+     on the first READY file yanked the customer away from the file list
+     while other files were still uploading. ─────────────────────────── */
 
   /* ── Debounced server quote ────────────────────────────────────────── */
 
@@ -1170,7 +1344,7 @@ export function CustomerOrderFlowV2({
           customerName: customerName || null,
           customerPhone: customerPhone.replace(/\D/g, '') || null,
           note: note || null,
-          clientTotalPaise: quote?.totalPaise ?? null,
+          clientTotalPaise: totalPaise,
         }),
       });
       const d = (await res.json()) as {
@@ -1330,8 +1504,26 @@ export function CustomerOrderFlowV2({
   }, [active?.pageModes]);
 
   const phoneValid = /^[6-9]\d{9}$/.test(customerPhone);
-  const canPlace = readyFiles.length > 0 && phoneValid && !placing && quote?.totalPaise != null;
-  const totalPaise = placed?.totalPaise ?? quote?.totalPaise ?? null;
+  /**
+   * Client-side estimate fallback — used ONLY when the server quote has
+   * no total (e.g. the shop has no price rules configured). Same per-page
+   * rates as the shop home; the server quote is authoritative whenever
+   * it returns a total, and the placed order's server total replaces
+   * this estimate at checkout. Labelled "Estimated" in the UI until then.
+   */
+  const fallbackTotalPaise = useMemo(() => {
+    if (!rateCard || readyFiles.length === 0) return null;
+    let total = 0;
+    for (const f of readyFiles) {
+      const modes = [...f.pageModes.values()];
+      const bw = modes.filter((m) => m === 'bw').length;
+      const colour = modes.filter((m) => m === 'colour').length;
+      total += (bw * rateCard.bwPerPagePaise + colour * rateCard.colorPerPagePaise) * f.copies;
+    }
+    return total;
+  }, [rateCard, readyFiles]);
+  const totalPaise = placed?.totalPaise ?? quote?.totalPaise ?? fallbackTotalPaise;
+  const canPlace = readyFiles.length > 0 && phoneValid && !placing && totalPaise != null;
 
   /* ── Payment screen (after order placed) ───────────────────────────── */
 
@@ -1359,7 +1551,18 @@ export function CustomerOrderFlowV2({
     <section className="flex flex-col gap-4" aria-labelledby="flow-heading">
       <h2 id="flow-heading" className="sr-only">Order flow</h2>
 
-      <Stepper steps={3} current={step}  />
+      <Stepper steps={3} current={step} />
+
+      {/* Visible step headings (spec screens 3, 4, 6) — the Stepper bars
+          alone carry no step name for sighted users. */}
+      {step === 0 && <StepHeading title="Your files" sub="Step 1 of 3" />}
+      {step === 1 && (
+        <StepHeading
+          title="How should we print it?"
+          sub={`Step 2 of 3${active ? `, ${active.name}` : ''}`}
+        />
+      )}
+      {step === 2 && <StepHeading title="Review order" sub="Step 3 of 3" />}
 
       {error && (
         <div
@@ -1397,7 +1600,11 @@ export function CustomerOrderFlowV2({
       {/* ── Step 1: Files ── */}
       {step === 0 && (
         <div className="flex flex-col gap-4">
-          <UploadDropzone onFiles={onPick} />
+          <UploadDropzone
+            onFiles={onPick}
+            accept={DROPZONE_ACCEPT}
+            acceptedFormatsLabel="PDF, JPG, PNG, WebP, HEIC, DOCX, DOC, PPTX, XLSX · up to 50 MB per file"
+          />
           {files.length > 0 && (
             <FileList
               files={files}
@@ -1583,6 +1790,9 @@ export function CustomerOrderFlowV2({
               lines={quoteLinesFromQuote(quote)}
             />
           )}
+          <p className="text-xs text-[var(--color-muted)]">
+            Estimated total — the final amount is confirmed when you place the order.
+          </p>
 
           {pricesChanged !== null && (
             <div
@@ -1621,9 +1831,12 @@ export function CustomerOrderFlowV2({
         </div>
       )}
 
-      {/* ── StickyActionBar with total + primary CTA ── */}
-      {step > 0 && readyFiles.length > 0 && (
+      {/* ── StickyActionBar with total + primary CTA ──
+          Total is "Estimated" until checkout locks it (placed orders
+          show "Confirmed" on the waiting screen instead). Never both. */}
+      {readyFiles.length > 0 && (
         <StickyActionBar
+          caption="Estimated total"
           total={
             quoting ? (
               <span className="text-[var(--color-muted)]">Updating…</span>
@@ -1634,10 +1847,12 @@ export function CustomerOrderFlowV2({
             )
           }
           action={
-            step === 1 ? (
+            step === 0 ? (
+              <PrimaryButton onClick={() => setStep(1)}>Continue</PrimaryButton>
+            ) : step === 1 ? (
             <PrimaryButton
               onClick={() => setStep(2)}
-              disabled={quoting || quote?.totalPaise == null}
+              disabled={quoting || totalPaise == null}
             >
               Continue
             </PrimaryButton>
@@ -1674,6 +1889,16 @@ export function CustomerOrderFlowV2({
 }
 
 /* ── Sub-components ──────────────────────────────────────────────────── */
+
+/** Visible step heading + "Step N of 3" subtitle (spec screens 3, 4, 6). */
+function StepHeading({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div>
+      <h2 className="text-2xl font-extrabold tracking-tight text-[var(--color-ink)]">{title}</h2>
+      <p className="mt-0.5 text-sm text-[var(--color-muted)]">{sub}</p>
+    </div>
+  );
+}
 
 /** Collapsed list of files (used in step 1 and the bottom of step 2). */
 function FileList({
@@ -2032,7 +2257,7 @@ function PaymentWaitingScreen({
 
       {/* Total to pay + UPI deep-link (the real one, not a placeholder). */}
       <div className="rounded-[var(--radius-default)] bg-[var(--color-surface)] border border-[var(--color-border-ink)] p-4">
-        <p className="text-xs text-[var(--color-muted)]">Total to pay</p>
+        <p className="text-xs text-[var(--color-muted)]">Confirmed total to pay</p>
         <p className="text-2xl font-bold tnum text-[var(--color-ink)]">{formatRupees(placed.totalPaise)}</p>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           Pay {shopName} directly by UPI. The shop confirms — the app never marks it paid by itself.

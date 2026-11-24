@@ -14,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { Loader2, ArrowLeft, ArrowRight, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
 
 /**
@@ -99,23 +98,33 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
-      </div>
 
       <div className="w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+        >
+          ← Back to Printelyx
+        </Link>
         <Card className="border-border bg-surface shadow-sm">
           <CardHeader className="space-y-3">
-            <div
-              className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
-              aria-hidden="true"
-            >
-              <span className="text-xl font-bold">P</span>
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
+                aria-hidden="true"
+              >
+                <span className="text-xl font-bold">P</span>
+              </div>
+              <span className="text-lg font-bold tracking-tight text-foreground">Printelyx</span>
             </div>
             <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Printelyx for shops
+              </p>
               <CardTitle className="text-lg font-semibold text-foreground">Choose a new password</CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
-                Enter a new password for your Printelyx account. This link can only be used once.
+                Enter a new password for your Printelyx account. This link can only be used once
+                and expires 15 minutes after it was sent.
               </CardDescription>
             </div>
           </CardHeader>
@@ -127,7 +136,11 @@ export default function ResetPasswordPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-foreground">Invalid reset link</p>
                   <p className="text-sm text-muted-foreground">
-                    The reset link is missing its token. Use the link from your reset email, or request a new one.
+                    The reset link is missing its token. Use the link from your reset email, or{' '}
+                    <Link href="/shop/forgot-password" className="font-medium text-brand hover:underline">
+                      request a new one
+                    </Link>
+                    . Links expire 15 minutes after they are sent and can only be used once.
                   </p>
                 </div>
               </div>
@@ -190,17 +203,28 @@ export default function ResetPasswordPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm new password</Label>
-                  <Input
-                    id="confirmPassword"
-                    type={showPassword ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter the new password"
-                    autoComplete="new-password"
-                    required
-                    disabled={submitting}
-                    className="h-11 text-base"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter the new password"
+                      autoComplete="new-password"
+                      required
+                      disabled={submitting}
+                      className="h-11 pr-10 text-base"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((s) => !s)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      aria-controls="confirmPassword"
+                      className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                    </button>
+                  </div>
                 </div>
                 {error && (
                   <div
@@ -236,6 +260,10 @@ export default function ResetPasswordPage() {
           >
             <ArrowLeft className="size-3" aria-hidden="true" />
             Back to sign in
+          </Link>
+          {' · '}
+          <Link href="/" className="font-medium text-brand hover:underline">
+            Back to Printelyx
           </Link>
         </div>
       </div>

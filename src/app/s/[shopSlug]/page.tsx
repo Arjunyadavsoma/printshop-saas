@@ -1,15 +1,17 @@
 import { notFound } from 'next/navigation';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { ReferenceCustomerFlow } from './ReferenceCustomerFlow';
+import { ShopOrderPage } from './ShopOrderPage';
 
 /**
  * /s/[shopSlug] — the QR landing. Server Component.
  *
- * Loads the shop from the DB and renders the reference-design customer flow
- * (ReferenceCustomerFlow) which 1:1 matches the .ref-* CSS classes in
- * globals.css. Closed shops get an explanatory card with the opening hours
- * + a Call button — the customer is never left staring at a dead dropzone.
+ * Loads the shop from the DB and renders the Clear customer flow
+ * (CustomerOrderFlowV2 inside CustomerShell, via ShopOrderPage).
+ * Pricing comes from the shop's real config: active A4 single-side
+ * price rules first, then the shop pricingConfig. Only when neither
+ * exists do the display strings fall back to the spec rates
+ * (B&W ₹2 / Colour ₹10 per page) — and the page says so.
  */
 export default async function ShopLanding({ params }: { params: Promise<{ shopSlug: string }> }) {
   const { shopSlug } = await params;
@@ -35,9 +37,8 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const minPerPp = Math.max(1, Math.round((minBw + minColor) / 2));
   const waitMinutes = Math.ceil((queuedSheets * minPerPp) / Math.max(1, onlinePrinters.length));
 
-  // Rate board — one line, "B&W ₹2 · Colour ₹8 /page" per the DESIGN-PLAN
-  // wireframe screen 1. Pulls the cheapest single-side A4 slab per colour
-  // mode from the active price rules. Falls back to the shop's pricingConfig
+  // Rate board — pulls the cheapest single-side A4 slab per colour mode
+  // from the active price rules. Falls back to the shop's pricingConfig
   // when no price rules exist (e.g. in-memory dev DB after seeding).
   const rateRows = await repos.priceRules.activeForShop(shop.id);
   const bwRule = rateRows.find(r => r.colorMode === 'BW' && r.paperSize === 'A4' && r.sides === 'SINGLE');
@@ -47,8 +48,10 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
     : shop.pricingConfig;
   const bwPerPagePaise = bwRule?.slabs[0]?.perPagePaise ?? pricingCfg?.bw_a4_per_page ?? null;
   const colorPerPagePaise = colorRule?.slabs[0]?.perPagePaise ?? pricingCfg?.color_a4_per_page ?? null;
+  const pricesFromConfig = bwPerPagePaise != null && colorPerPagePaise != null;
 
-  // Format the per-page rates as the reference design strings (e.g. "₹2").
+  // Format the per-page rates as display strings (e.g. "₹2"). The spec
+  // rates are the fallback only when the shop has no pricing configured.
   const bwPriceText = bwPerPagePaise != null ? `₹${Math.round(bwPerPagePaise / 100)}` : '₹2';
   const colorPriceText = colorPerPagePaise != null ? `₹${Math.round(colorPerPagePaise / 100)}` : '₹10';
 
@@ -62,31 +65,25 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const shortHours = hoursText.length > 30 ? '9 am – 9 pm' : hoursText.replace('Mon–Sat ', '').replace(', Sun closed', ' · Sun closed');
 
   return (
-    <div className="customer-flow min-h-dvh flex flex-col items-center">
-      <main className="flex-1 w-full">
-        {closed ? (
-          <ClosedShopCard
-            shopName={shop.name}
-            hoursText={hoursText}
-            address={shop.address}
-            phone={shop.phone}
-          />
-        ) : (
-          <ReferenceCustomerFlow
-            shopSlug={shop.slug}
-            shopName={shop.name}
-            upiId={shop.upiId}
-            bwPrice={bwPriceText}
-            colorPrice={colorPriceText}
-            hours={shortHours}
-            waitMinutes={Math.max(1, waitMinutes)}
-            printerCount={Math.max(1, onlinePrinters.length)}
-            shopPhone={shop.phone}
-            shopAddress={shop.address}
-          />
-        )}
-      </main>
-    </div>
+    <ShopOrderPage
+      shopSlug={shop.slug}
+      shopName={shop.name}
+      upiId={shop.upiId}
+      upiPayeeName={shop.upiPayeeName ?? shop.name}
+      paymentMode={shop.paymentMode}
+      retentionHours={shop.retentionHours ?? 24}
+      bwPrice={bwPriceText}
+      colorPrice={colorPriceText}
+      bwPerPagePaise={bwPerPagePaise}
+      colorPerPagePaise={colorPerPagePaise}
+      pricesFromConfig={pricesFromConfig}
+      hours={shortHours}
+      waitMinutes={Math.max(1, waitMinutes)}
+      printerCount={Math.max(1, onlinePrinters.length)}
+      shopPhone={shop.phone}
+      shopAddress={shop.address}
+      closed={closed}
+    />
   );
 }
 
@@ -110,47 +107,4 @@ function formatOpeningHours(hours: unknown): string {
     if (entries.length > 0) return entries.map(([k, v]) => `${k} ${v}`).join(', ');
   }
   return 'Mon–Sat 9:00–21:00, Sun closed';
-}
-
-/** Closed-shop card — 1:1 replica of design board 18 (Customer: shop closed). */
-function ClosedShopCard({ shopName, hoursText, address, phone }: { shopName: string; hoursText: string; address: string; phone: string }) {
-  const shortHours = hoursText.length > 30 ? '9 am to 9 pm' : hoursText;
-  const rows = (
-    <>
-      <div className="r"><span>Hours</span><span className="v">{shortHours}</span></div>
-      <a className="r" href={phone ? `tel:${phone}` : '#'}><span>Call shop</span><span className="v">›</span></a>
-      <a
-        className="r"
-        href={address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '#'}
-        target="_blank"
-        rel="noopener noreferrer"
-      ><span>Directions</span><span className="v">›</span></a>
-    </>
-  );
-
-  return (
-    <>
-      <div className="x m">
-        <div className="top"><i className="dot" />{shopName}</div>
-        <h1 className="h">Closed right now</h1>
-        <p className="sub">Opens at the next opening time.</p>
-        <div className="g">{rows}</div>
-        <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
-      </div>
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />{shopName}</b>
-          <a className="v" href="/help" style={{ textDecoration: 'none' }}>Help</a>
-        </div>
-        <div className="wrap">
-          <div className="l">
-            <h1 className="h1">Closed right now</h1>
-            <p className="s2">Opens at the next opening time.</p>
-            <div className="gg">{rows}</div>
-            <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
-          </div>
-        </div>
-      </div>
-    </>
-  );
 }

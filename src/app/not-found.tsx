@@ -1,43 +1,49 @@
 import Link from 'next/link';
+import { InfoShell } from './about/page';
 
 export const metadata = {
   title: 'Page not found',
   robots: { index: false, follow: false },
 };
 
-/** 1:1 replica of design board 22 (Site: page not found). */
+/**
+ * 404 — spec screen 17: "Page not found", "The link may be old or
+ * mistyped.", link rows Find a shop / My orders / Help, plus the
+ * reference code line from the spec. Never a bare 404 with no way back.
+ */
 export default function NotFound() {
-  const rows = (
-    <>
-      <Link href="/" className="r"><span>Find a shop</span><span className="v">›</span></Link>
-      <Link href="/orders" className="r"><span>My orders</span><span className="v">›</span></Link>
-      <Link href="/help" className="r"><span>Help</span><span className="v">›</span></Link>
-    </>
-  );
+  const rows = [
+    { href: '/', label: 'Find a shop' },
+    { href: '/orders', label: 'My orders' },
+    { href: '/help', label: 'Help' },
+  ];
 
   return (
-    <>
-      <div className="x m">
-        <div className="top"><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
-        <h1 className="h">Page not found</h1>
-        <p className="sub">The link may be old or mistyped.</p>
-        <div className="g">{rows}</div>
-        <p className="cap" />
+    <InfoShell>
+      <p className="text-sm font-semibold text-[var(--label-2)]">Printelyx</p>
+      <h1 className="mt-2 text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Page not found</h1>
+      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+        The link may be old or mistyped.
+      </p>
+
+      <div className="mt-6 overflow-hidden rounded-[14px] bg-[var(--surface)]">
+        {rows.map((row, i) => (
+          <Link
+            key={row.href}
+            href={row.href}
+            className={`flex min-h-[56px] items-center justify-between gap-3 px-4 text-[16px] font-medium text-[var(--label)] ${
+              i < rows.length - 1 ? 'border-b border-border' : ''
+            }`}
+          >
+            {row.label}
+            <span className="text-[var(--label-2)]" aria-hidden="true">›</span>
+          </Link>
+        ))}
       </div>
 
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />Printelyx</b>
-          <Link href="/help" className="v">Help</Link>
-        </div>
-        <div className="wrap">
-          <div className="l">
-            <h1 className="h1">Page not found</h1>
-            <p className="s2">The link may be old or mistyped.</p>
-            <div className="gg">{rows}</div>
-          </div>
-        </div>
-      </div>
-    </>
+      <p className="mt-6 text-[14px] leading-[1.5] text-[var(--label-2)]">
+        Reference 7F3A21. Share it if you ask for help.
+      </p>
+    </InfoShell>
   );
 }

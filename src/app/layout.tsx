@@ -57,10 +57,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0A58D6" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B0B0D" },
-  ],
+  // Single light entry: the Clear design has no dark mode (the PDF is
+  // light-only and .ref-* hardcodes light colours), so the browser chrome
+  // must never advertise a dark theme.
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#0A58D6" }],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -75,31 +75,29 @@ export default function RootLayout({
       <head>
         {/* Native bridges for the Printelyx Companion Android app. */}
         <Script src="/native-bridges.js" strategy="beforeInteractive" />
-        {/* FOUC prevention: set dark class before paint */}
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var stored = localStorage.getItem('theme');
-                  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                  var isDark = stored === 'dark' || (!stored && prefersDark);
-                  if (isDark) document.documentElement.classList.add('dark');
-                  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
+        {/*
+          No theme-init script: the previous script added the `dark` class
+          whenever the OS preferred dark mode (or a stored 'dark' theme
+          existed), which painted the ground outside the light-only
+          `.ref-*` / Clear surfaces near-black (#0B0B0D). The Clear design
+          has no dark mode, so dark must never be auto-enabled.
+        */}
       </head>
       <body
         suppressHydrationWarning
         className={`${instrumentSans.variable} antialiased bg-background text-foreground`}
       >
         <AuthProvider>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>{children}</ThemeProvider>
+          {/*
+            Light is forced: `forcedTheme="light"` makes next-themes ignore
+            both the OS preference and any stored 'dark' choice, and renders
+            any ThemeToggle inert. A manual dark toggle cannot work without
+            breaking the light-only Clear design (light-only `.ref-*`
+            surfaces inside a dark app), so there is no working toggle by
+            design. Revisit only if a real dark mode is designed — the
+            `.dark` token block in globals.css is kept for that day.
+          */}
+          <ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>{children}</ThemeProvider>
         </AuthProvider>
         <Toaster />
         <PWARegister />

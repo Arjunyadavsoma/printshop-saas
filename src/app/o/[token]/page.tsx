@@ -388,7 +388,7 @@ export default function TrackOrderPage() {
       <div className="customer-flow">
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Order not found" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl">
+        <main className="mx-auto max-w-xl px-4 py-6">
           <ErrorState
             message="We couldn't find this order."
             fix="Check your link — the order token may have expired or be incomplete. Open the link from your receipt."
@@ -404,7 +404,7 @@ export default function TrackOrderPage() {
       <div className="customer-flow">
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Order tracking" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl">
+        <main className="mx-auto max-w-xl px-4 py-6">
           <ErrorState
             message="We couldn't load this order."
             fix="Check your connection and try again. If the problem persists, open the link from your receipt."
@@ -421,7 +421,7 @@ export default function TrackOrderPage() {
     return (
       <div className="customer-flow">
         <AppBar title="Order tracking" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl">
+        <main className="mx-auto max-w-xl px-4 py-6">
           <ErrorState message="We couldn't load this order." onRetry={() => refresh()} />
         </main>
       </div>

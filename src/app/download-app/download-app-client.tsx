@@ -68,13 +68,34 @@ export function DownloadAppClient() {
   const qrUrl = '/download-qr.png';
 
   return (
-    <div className="min-h-screen bg-page">
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:py-16">
+    <div className="flex min-h-screen flex-col bg-page">
+      <header className="border-b border-border bg-[var(--surface)]">
+        <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
+          <Link href="/" className="text-[17px] font-bold tracking-tight text-foreground">
+            Printelyx
+          </Link>
+          <nav className="flex items-center gap-4 text-sm sm:gap-5" aria-label="Main">
+            <Link href="/how-it-works" className="text-muted-foreground hover:text-foreground">
+              How it works
+            </Link>
+            <Link href="/pricing" className="text-muted-foreground hover:text-foreground">
+              Pricing
+            </Link>
+            <Link href="/help" className="text-muted-foreground hover:text-foreground">
+              Help
+            </Link>
+          </nav>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:py-16">
         {/* Header */}
         <div className="text-center space-y-4 mb-10">
-          <div className="inline-flex size-16 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-lg">
-            <span className="text-2xl font-bold">P</span>
+          <div className="inline-flex items-center gap-2.5">
+            <div className="inline-flex size-16 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-lg">
+              <span className="text-2xl font-bold">P</span>
+            </div>
           </div>
+          <p className="text-sm font-semibold tracking-tight text-muted-foreground">Printelyx</p>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
             Printelyx Companion
           </h1>
@@ -105,6 +126,10 @@ export function DownloadAppClient() {
               <>
                 <div className="flex flex-col sm:flex-row gap-6 items-start">
                   {/* QR code */}
+                  {/* QR code — the white tile is intentional: a QR code
+                      needs a white background to scan, in either theme.
+                      (Diagnosis §4.1 flagged bg-white here; changing it
+                      to the dark surface token would break scanning.) */}
                   {qrUrl && (
                     <div className="flex flex-col items-center gap-2 shrink-0">
                       <div className="size-60 rounded-lg border border-border bg-white p-3 flex items-center justify-center">
@@ -221,6 +246,19 @@ export function DownloadAppClient() {
           </Link>
         </div>
       </main>
+      <footer className="border-t border-border bg-[var(--surface)]">
+        <div className="mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-6 text-sm text-muted-foreground sm:px-6">
+          <Link href="/" className="hover:text-foreground">Find a shop</Link>
+          <Link href="/how-it-works" className="hover:text-foreground">How it works</Link>
+          <Link href="/pricing" className="hover:text-foreground">Pricing</Link>
+          <Link href="/track" className="hover:text-foreground">Track an order</Link>
+          <Link href="/help" className="hover:text-foreground">Help</Link>
+          <Link href="/contact" className="hover:text-foreground">Contact</Link>
+          <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+          <Link href="/terms" className="hover:text-foreground">Terms</Link>
+          <Link href="/refund-policy" className="hover:text-foreground">Refund policy</Link>
+        </div>
+      </footer>
     </div>
   );
 }

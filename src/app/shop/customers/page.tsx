@@ -35,6 +35,7 @@ import {
   Phone,
   ArrowRight,
   IndianRupee,
+  Download,
 } from 'lucide-react';
 
 interface OrderRow {
@@ -209,27 +210,62 @@ export default function ShopCustomersPage() {
   // ── Summary stats ──
   const totalValuePaise = customers.reduce((acc, c) => acc + c.totalValuePaise, 0);
 
+  // ── CSV export of the filtered customers (spec screen 31) ──
+  const exportCSV = () => {
+    const header = 'Phone,Orders,Total value (INR),Last order,Last status';
+    const rows = filtered.map((c) =>
+      [
+        `"${c.phone}"`,
+        String(c.totalOrders),
+        (c.totalValuePaise / 100).toFixed(2),
+        formatDate(c.lastOrderAt),
+        c.lastStatus,
+      ].join(','),
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `customers-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Customers"
         description="Every customer who has placed an order at your shop, grouped by phone number."
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            className="min-h-[44px] gap-1.5"
-            aria-label="Refresh customers"
-          >
-            {refreshing ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCSV}
+              disabled={filtered.length === 0}
+              className="min-h-[44px] gap-1.5"
+              aria-label="Download customers CSV"
+            >
+              <Download className="size-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load(true)}
+              disabled={refreshing}
+              className="min-h-[44px] gap-1.5"
+              aria-label="Refresh customers"
+            >
+              {refreshing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+          </div>
         }
       />
 

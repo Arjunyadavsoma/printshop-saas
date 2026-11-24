@@ -1,24 +1,56 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { InfoShell } from '../about/page';
 
-export const metadata: Metadata = { title: 'Refund policy' };
+export const metadata: Metadata = {
+  title: 'Refund policy',
+  description: 'How refunds work on Printelyx: you pay the shop directly by UPI, so the shop issues any refund.',
+  alternates: { canonical: '/refund-policy' },
+};
+
+/** /refund-policy — short numbered sections. Printelyx never holds money,
+ *  so refunds always come from the shop, back to the customer's UPI account. */
+const SECTIONS: { title: string; body: string }[] = [
+  {
+    title: 'Who holds your money',
+    body: 'Payment is made directly to the print shop via UPI. Printelyx does not hold or process your money.',
+  },
+  {
+    title: 'If prints are incorrect',
+    body: 'If your prints have errors caused by the shop (wrong pages, wrong colour, missing pages), ask the shop to reprint them at no charge.',
+  },
+  {
+    title: 'If you paid but did not receive prints',
+    body: 'Contact the shop directly with your UTR number and order number. If unresolved, contact Printelyx support with the same details — see the Contact page.',
+  },
+  {
+    title: 'Cancellation',
+    body: 'You can cancel an order any time before printing starts. After printing starts, cancellation is at the shop\u2019s discretion.',
+  },
+  {
+    title: 'Refunds',
+    body: 'Refunds are issued directly by the shop to your UPI account. Printelyx facilitates the request but does not process refunds.',
+  },
+];
 
 export default function RefundPolicyPage() {
   return (
-    <div className="min-h-[100dvh] bg-[var(--ground)]">
-      <main className="max-w-2xl mx-auto px-5 py-12">
-        <h1 className="text-[24px] font-bold text-[var(--label)] tracking-[-0.01em]">Refund policy</h1>
-        <div className="mt-6 space-y-4 text-[16px] text-[var(--label-2)] leading-[1.5]">
-          <p>Payment is made directly to the print shop via UPI. Printelyx does not hold or process your money.</p>
-          <h2 className="text-[17px] font-semibold text-[var(--label)]">If prints are incorrect</h2>
-          <p>If your prints have errors caused by the shop (wrong pages, wrong colour, missing pages), ask the shop to reprint them at no charge.</p>
-          <h2 className="text-[17px] font-semibold text-[var(--label)]">If you paid but did not receive prints</h2>
-          <p>Contact the shop directly with your UTR number and order number. If unresolved, contact Printelyx support with the same details.</p>
-          <h2 className="text-[17px] font-semibold text-[var(--label)]">Cancellation</h2>
-          <p>You can cancel an order any time before printing starts. After printing starts, cancellation is at the shop's discretion.</p>
-          <h2 className="text-[17px] font-semibold text-[var(--label)]">Refunds</h2>
-          <p>Refunds are issued directly by the shop to your UPI account. Printelyx facilitates the request but does not process refunds.</p>
-        </div>
-      </main>
-    </div>
+    <InfoShell>
+      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Refund policy</h1>
+      <ol className="mt-6 space-y-6">
+        {SECTIONS.map((section, i) => (
+          <li key={section.title}>
+            <h2 className="text-[18px] font-semibold text-[var(--label)]">
+              {i + 1}. {section.title}
+            </h2>
+            <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">{section.body}</p>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-10 text-[15px] leading-[1.6] text-[var(--label-2)]">
+        Also see the <Link href="/terms" className="text-[var(--accent)] underline">Terms of use</Link> and{' '}
+        <Link href="/help" className="text-[var(--accent)] underline">Help</Link> page.
+      </p>
+    </InfoShell>
   );
 }

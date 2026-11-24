@@ -41,8 +41,9 @@ export function CustomerShell({ shopName, status, subtitle, children, sidebar, p
 
       {/* Content */}
       {sidebar ? (
-        // Desktop two-pane layout
-        <div className="mx-auto max-w-[1120px] px-4 lg:px-8 py-6">
+        // Desktop two-pane layout (right summary sidebar); single column
+        // capped at 640px below the lg breakpoint.
+        <div className="mx-auto w-full max-w-[640px] lg:max-w-[1120px] px-4 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 min-w-0">{children}</div>
             <div className="lg:w-[360px] lg:sticky lg:top-[80px] lg:self-start">{sidebar}</div>
@@ -53,9 +54,11 @@ export function CustomerShell({ shopName, status, subtitle, children, sidebar, p
         <div className="mx-auto max-w-[640px] px-5 py-6">{children}</div>
       )}
 
-      {/* Sticky frosted PriceBar (mobile only — desktop uses sidebar CTA) */}
-      {priceBar && !sidebar && (
-        <div className="sticky bottom-0 z-10">
+      {/* Sticky frosted PriceBar. With a sidebar the desktop CTA lives in
+          the sidebar, so the bar is mobile-only then (lg:hidden); without
+          a sidebar it is the CTA on every viewport. */}
+      {priceBar && (
+        <div className={sidebar ? 'sticky bottom-0 z-10 lg:hidden' : 'sticky bottom-0 z-10'}>
           <PriceBar caption={priceBar.caption} total={priceBar.total} action={priceBar.action} />
         </div>
       )}

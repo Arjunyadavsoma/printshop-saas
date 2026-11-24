@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
 
 /**
  * /admin/login — platform admin login.
@@ -79,17 +78,28 @@ export default function AdminLoginPage() {
     }
   }
 
-  // No access key → show a "not found" page (not the login form).
+  // No access key → explain plainly instead of a fake 404. A bare link
+  // to /admin/login (e.g. from a footer) must not look like a broken
+  // page: the portal is real, it is just invite-only. The key is still
+  // required to see the sign-in form.
   if (keyValid === false) {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-page px-4">
-        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-          <ThemeToggle />
-        </div>
-        <div className="text-center">
+        <div className="max-w-sm text-center">
           <Lock className="mx-auto size-12 text-muted-foreground" aria-hidden="true" />
-          <h1 className="mt-4 text-xl font-semibold text-foreground">404</h1>
-          <p className="mt-1 text-sm text-muted-foreground">This page does not exist.</p>
+          <h1 className="mt-4 text-xl font-semibold text-foreground">Admin portal</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Sign-in is by invitation link only. If you are a platform admin,
+            open the link you were sent (it includes an access key). If you
+            followed a plain link here, the portal is not broken — it just
+            needs that key.
+          </p>
+          <Link
+            href="/"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline"
+          >
+            Back to landing page <ArrowRight className="size-3" aria-hidden="true" />
+          </Link>
         </div>
       </div>
     );
@@ -99,9 +109,6 @@ export default function AdminLoginPage() {
   if (keyValid === null) {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-page">
-        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-          <ThemeToggle />
-        </div>
         <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
       </div>
     );
@@ -110,9 +117,6 @@ export default function AdminLoginPage() {
   // Key valid → show the login form.
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
-      </div>
       <div className="w-full max-w-md">
         <Card className="border-border bg-surface shadow-sm">
           <CardHeader className="space-y-3">

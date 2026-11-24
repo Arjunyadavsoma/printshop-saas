@@ -20,6 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import type { ShopPricingConfig } from '@platform/core/domain';
 import { formatINRFromPaise } from '@platform/utils';
 import { toast } from 'sonner';
+import { SegmentedControl } from '@/components/clear';
 import {
   Loader2,
   Save,
@@ -31,6 +32,7 @@ import {
   FileStack,
   AlertCircle,
   CheckCircle2,
+  Calculator,
 } from 'lucide-react';
 
 /**
@@ -120,6 +122,15 @@ export default function ShopServicesPage() {
   const [bulkDiscountPct, setBulkDiscountPct] = useState('0');
   const [minOrderRupees, setMinOrderRupees] = useState('0.00');
 
+  // Spec screen 28: A4 / A3 / A5 segmented control. The price list has
+  // NO A5 rates (the pricing config only keys A4/A3/Letter/Legal), so
+  // A5 shows the A4 row with a note that A5 prints at A4 rates — no
+  // invented A5 price.
+  const [sizeFilter, setSizeFilter] = useState<'all' | 'A4' | 'A3' | 'A5'>('all');
+  // Price-check preview inputs (spec example: 9 B&W + 3 colour = ₹48).
+  const [checkBw, setCheckBw] = useState('9');
+  const [checkColor, setCheckColor] = useState('3');
+
   useEffect(() => {
     document.title = 'Services & Pricing · Printelyx';
   }, []);
@@ -204,6 +215,33 @@ export default function ShopServicesPage() {
       (k) => next[k] !== prev[k],
     );
   }, [shop, buildPricingConfig]);
+
+  // Effective bulk B&W rate (spec screen 28 desktop bulk row), computed
+  // from the current draft: A4 B&W rate minus the bulk discount, and
+  // minus the duplex discount for the both-sides figure.
+  const bulkRates = useMemo(() => {
+    const bwPaise = rupeesToPaise(rateDraft.bw_a4_per_page ?? '0');
+    const bulkPct = parseIntClamped(bulkDiscountPct, 0, 100);
+    const duplexPct = parseIntClamped(duplexDiscount, 0, 100);
+    const oneSide = Math.round(bwPaise * (1 - bulkPct / 100));
+    const bothSides = Math.round(oneSide * (1 - duplexPct / 100));
+    return { oneSide, bothSides };
+  }, [rateDraft, bulkDiscountPct, duplexDiscount]);
+
+  // Price-check preview (spec screen 28): pages × current draft rates.
+  // A5 uses A4 rates (see the note above). Single-sided; duplex/bulk
+  // discounts apply at checkout, not in this preview.
+  const priceCheck = useMemo(() => {
+    const bwKey: PriceKey = sizeFilter === 'A3' ? 'bw_a3_per_page' : 'bw_a4_per_page';
+    const colorKey: PriceKey =
+      sizeFilter === 'A3' ? 'color_a3_per_page' : 'color_a4_per_page';
+    const bwPages = Math.max(0, parseInt(checkBw, 10) || 0);
+    const colorPages = Math.max(0, parseInt(checkColor, 10) || 0);
+    const total =
+      bwPages * rupeesToPaise(rateDraft[bwKey] ?? '0') +
+      colorPages * rupeesToPaise(rateDraft[colorKey] ?? '0');
+    return { bwPages, colorPages, total };
+  }, [rateDraft, checkBw, checkColor, sizeFilter]);
 
   const save = async () => {
     if (!shop) return;
@@ -313,6 +351,23 @@ export default function ShopServicesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <SegmentedControl
+            ariaLabel="Paper size"
+            value={sizeFilter}
+            onChange={(v) => setSizeFilter(v as 'all' | 'A4' | 'A3' | 'A5')}
+            options={[
+              { value: 'all', label: 'All sizes' },
+              { value: 'A4', label: 'A4' },
+              { value: 'A3', label: 'A3' },
+              { value: 'A5', label: 'A5' },
+            ]}
+          />
+          {sizeFilter === 'A5' ? (
+            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+              There is no separate A5 rate in the price list — A5 prints are
+              charged at the A4 rates shown below.
+            </p>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-separate border-spacing-y-2">
               <thead>
@@ -323,7 +378,11 @@ export default function ShopServicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {PAPER_GROUPS.map(({ size, bwKey, colorKey }) => (
+                {PAPER_GROUPS.filter(({ size }) => {
+                  if (sizeFilter === 'all') return true;
+                  if (sizeFilter === 'A5') return size === 'A4';
+                  return size === sizeFilter;
+                }).map(({ size, bwKey, colorKey }) => (
                   <tr key={size}>
                     <td className="px-2">
                       <div className="flex items-center gap-2">
@@ -355,6 +414,75 @@ export default function ShopServicesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Bulk row (spec screen 28, desktop) */}
+          <Separator />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="font-medium">
+              Bulk, {parseIntClamped(bulkThreshold, 0, Number.MAX_SAFE_INTEGER)}+ pages B&amp;W
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {formatINRFromPaise(bulkRates.oneSide)} / page one side ·{' '}
+              {formatINRFromPaise(bulkRates.bothSides)} / page both sides
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Bulk rate = A4 B&amp;W rate after the bulk discount; both-sides
+            also takes the duplex discount. Edit the discounts below.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Price check preview (spec screen 28) */}
+      <Card className="bg-surface">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Calculator className="size-4 text-brand" aria-hidden="true" />
+            Price check
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Preview what a job costs at the rates above
+            {sizeFilter === 'A3' ? ' (A3 rates)' : sizeFilter === 'A5' ? ' (A5 uses A4 rates)' : ' (A4 rates)'}.
+            Single-sided; discounts apply at checkout.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <FieldLabel label="B&W pages">
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                value={checkBw}
+                onChange={(e) => setCheckBw(e.target.value)}
+                disabled={saving}
+                className="h-11 text-base tabular-nums sm:h-9 sm:text-sm"
+                aria-label="Black and white pages for price check"
+              />
+            </FieldLabel>
+            <FieldLabel label="Colour pages">
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                value={checkColor}
+                onChange={(e) => setCheckColor(e.target.value)}
+                disabled={saving}
+                className="h-11 text-base tabular-nums sm:h-9 sm:text-sm"
+                aria-label="Colour pages for price check"
+              />
+            </FieldLabel>
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground">
+              {priceCheck.bwPages} B&amp;W and {priceCheck.colorPages} colour pages
+            </span>
+            <span className="text-xl font-semibold tabular-nums">
+              {formatINRFromPaise(priceCheck.total)}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">Effective from — Today.</p>
         </CardContent>
       </Card>
 

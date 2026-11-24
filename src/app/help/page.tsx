@@ -9,13 +9,13 @@ import {
   supportMailto,
   supportWhatsAppLink,
 } from '@/lib/customer/support-config';
+import { InfoShell } from '../about/page';
 
 /**
- * /help — 1:1 replica of design board 15 (Site: help): FAQ rows in a card
- * (answer shown under the question when open), "Need a person?" card.
- * Real behavior: the full FAQ answers, support controls render only when
- * configured (NEXT_PUBLIC_SUPPORT_EMAIL / NEXT_PUBLIC_SUPPORT_WHATSAPP —
- * no broken links, no .local addresses, audit P2-3).
+ * /help — spec screen 14: FAQ accordion ("+" at right, answer as sub-text
+ * under the question when open) + "Need a person?" card. Answers are the
+ * product's real behaviour; support controls render only when configured
+ * (NEXT_PUBLIC_SUPPORT_EMAIL / NEXT_PUBLIC_SUPPORT_WHATSAPP).
  */
 
 interface FaqItem {
@@ -27,6 +27,10 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     q: 'How do I pay?',
     a: 'Tap your UPI app, then enter the 12-digit UTR. You pay the shop directly — Printelyx never touches your money.',
+  },
+  {
+    q: 'How do I track my order?',
+    a: 'Open the tracking link from your receipt, or use "Track an order" and paste your order link or token. The page shows the live step — Order placed, Payment confirmed, Printing, Ready for pickup — and your pickup code.',
   },
   {
     q: 'When will my prints be ready?',
@@ -45,6 +49,10 @@ const FAQ_ITEMS: FaqItem[] = [
     a: 'Yes, before printing starts. Tap "Cancel order" on the tracking page. After that, paper and ink are used.',
   },
   {
+    q: 'What if my prints are wrong?',
+    a: 'If the shop printed the wrong pages, wrong colour, or missed pages, ask the shop to reprint them at no charge. If the shop will not fix it, contact Printelyx support from the Contact page with your order token and UTR.',
+  },
+  {
     q: 'I paid but it says pending',
     a: 'The shop verifies your UTR manually — usually within 1–2 minutes. You can call the shop from your order page or re-enter the UTR if it was rejected.',
   },
@@ -60,97 +68,84 @@ const FAQ_ITEMS: FaqItem[] = [
 
 function FaqRow({ item, open, onToggle }: { item: FaqItem; open: boolean; onToggle: () => void }) {
   return (
-    <button
-      type="button"
-      className="r"
-      style={{ cursor: 'pointer' }}
-      aria-expanded={open}
-      onClick={onToggle}
-    >
-      <span>{item.q}{open && <small>{item.a}</small>}</span>
-      <span className="v" aria-hidden="true">{open ? '−' : '+'}</span>
-    </button>
-  );
-}
-
-function FaqCard({ cls }: { cls: 'g' | 'gg' }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(0);
-
-  return (
-    <div className={cls}>
-      {FAQ_ITEMS.map((item, idx) => (
-        <FaqRow
-          key={idx}
-          item={item}
-          open={openIdx === idx}
-          onToggle={() => setOpenIdx(openIdx === idx ? null : idx)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ContactCard({ cls }: { cls: 'g' | 'gg' }) {
-  return (
-    <div className={cls}>
-      <div className="r">
-        <span>Need a person?<small>For order questions, call the shop from your order page.</small></span>
-        <span className="v" />
-      </div>
-      {hasSupportEmail() && (
-        <a
-          className="r"
-          href={supportMailto('Printelyx customer report', 'Describe what happened. If about an order, paste your order token here.')}
-        >
-          <span>Email support</span>
-          <span className="v">›</span>
-        </a>
-      )}
-      {hasSupportWhatsApp() && (
-        <a
-          className="r"
-          href={supportWhatsAppLink('Hello Printelyx support')}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span>WhatsApp us</span>
-          <span className="v">›</span>
-        </a>
-      )}
-      <Link href="/orders" className="r">
-        <span>Find my order</span>
-        <span className="v">›</span>
-      </Link>
+    <div className="border-b border-border last:border-b-0">
+      <button
+        type="button"
+        className="flex w-full min-h-[56px] cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="text-[16px] font-medium text-[var(--label)]">
+          {item.q}
+          {open && (
+            <span className="mt-1 block text-[15px] font-normal leading-[1.5] text-[var(--label-2)]">
+              {item.a}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-[18px] text-[var(--label-2)]" aria-hidden="true">
+          {open ? '−' : '+'}
+        </span>
+      </button>
     </div>
   );
 }
 
 export default function HelpPage() {
+  const [openIdx, setOpenIdx] = useState<number | null>(0);
+
   return (
-    <>
-      <div className="x m">
-        <div className="top"><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
-        <h1 className="h">Help</h1>
-        <p className="sub">Quick answers</p>
-        <FaqCard cls="g" />
-        <ContactCard cls="g" />
-        <p className="cap" />
+    <InfoShell>
+      <p className="text-sm font-semibold text-[var(--label-2)]">Printelyx</p>
+      <h1 className="mt-2 text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Help</h1>
+      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">Quick answers</p>
+
+      <div className="mt-6 overflow-hidden rounded-[14px] bg-[var(--surface)]">
+        {FAQ_ITEMS.map((item, idx) => (
+          <FaqRow
+            key={item.q}
+            item={item}
+            open={openIdx === idx}
+            onToggle={() => setOpenIdx(openIdx === idx ? null : idx)}
+          />
+        ))}
       </div>
 
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />Printelyx</b>
-          <span className="v">Help</span>
+      <div className="mt-4 overflow-hidden rounded-[14px] bg-[var(--surface)]">
+        <div className="border-b border-border px-4 py-4">
+          <p className="text-[16px] font-semibold text-[var(--label)]">Need a person?</p>
+          <p className="mt-0.5 text-[15px] leading-[1.5] text-[var(--label-2)]">
+            For order questions, call the shop from your order page.
+          </p>
         </div>
-        <div className="wrap">
-          <div className="l">
-            <h1 className="h1">Help</h1>
-            <p className="s2">Quick answers</p>
-            <FaqCard cls="gg" />
-            <ContactCard cls="gg" />
-          </div>
-        </div>
+        {hasSupportEmail() && (
+          <a
+            href={supportMailto('Printelyx customer report', 'Describe what happened. If about an order, paste your order token here.')}
+            className="flex min-h-[48px] items-center justify-between gap-3 border-b border-border px-4 text-[15px] font-medium text-[var(--label)]"
+          >
+            Email support
+            <span className="text-[var(--label-2)]" aria-hidden="true">›</span>
+          </a>
+        )}
+        {hasSupportWhatsApp() && (
+          <a
+            href={supportWhatsAppLink('Hello Printelyx support')}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-[48px] items-center justify-between gap-3 border-b border-border px-4 text-[15px] font-medium text-[var(--label)]"
+          >
+            WhatsApp us
+            <span className="text-[var(--label-2)]" aria-hidden="true">›</span>
+          </a>
+        )}
+        <Link
+          href="/track"
+          className="flex min-h-[48px] items-center justify-between gap-3 px-4 text-[15px] font-medium text-[var(--label)]"
+        >
+          Find my order
+          <span className="text-[var(--label-2)]" aria-hidden="true">›</span>
+        </Link>
       </div>
-    </>
+    </InfoShell>
   );
 }

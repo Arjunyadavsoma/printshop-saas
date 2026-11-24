@@ -128,6 +128,9 @@ export {
 
 // ── Shells ──
 export { CustomerShell } from './customer-shell';
+export { SiteHeader, type SiteHeaderProps } from './site-header';
+export { SiteFooter, type SiteFooterProps } from './site-footer';
+export { ShopShell } from './shop-shell';
 export { ShopShellMobile, type ShopShellMobileProps } from './shop-shell-mobile';
 export { ShopShellDesktop, type ShopShellDesktopProps } from './shop-shell-desktop';
 export { ShopShellTablet, type ShopShellTabletProps } from './shop-shell-tablet';
