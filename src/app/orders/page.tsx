@@ -13,10 +13,10 @@ const OTP_ENABLED = process.env.NEXT_PUBLIC_OTP_ENABLED === 'true';
 
 /** Status chip class — maps pill status to the Clear chip colours */
 function chipFor(status: string): string {
-  const pill = mapToPill(status as never);
-  if (pill === 'success') return 'chip ok';
-  if (pill === 'warning') return 'chip a';
-  if (pill === 'danger') return 'chip rd';
+  const pill = mapToPill(status);
+  if (pill === 'ready' || pill === 'collected') return 'chip ok';
+  if (pill === 'error') return 'chip rd';
+  if (pill === 'pending' || pill === 'printing') return 'chip a';
   return 'chip';
 }
 
