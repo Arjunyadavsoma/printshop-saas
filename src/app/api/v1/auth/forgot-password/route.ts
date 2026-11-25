@@ -141,7 +141,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     try {
       await container.email.send({
         to: user.email,
-        from: process.env.EMAIL_FROM ?? 'no-reply@printshop.app',
+        // Sender must be verified in Resend (EMAIL_PROVIDER=resend):
+        // an address on the verified printelyx.cc.cd domain. Until the
+        // domain is verified, set EMAIL_FROM to Resend's
+        // onboarding@resend.dev (delivers only to the account owner).
+        from: process.env.EMAIL_FROM ?? 'no-reply@printelyx.cc.cd',
         subject: 'Reset your Printelyx password',
         text: [
           `Hello,`,
@@ -165,8 +169,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           `<p>— Printelyx</p>`,
         ].join('\n'),
       });
-    } catch {
-      // Email send failure — best-effort. Don't leak to the caller.
+    } catch (cause) {
+      // Email send failure — best-effort (anti-enumeration: the caller
+      // still gets success). Log it so a broken sender config is visible
+      // in Vercel logs instead of failing silently.
+      console.error('[forgot-password] email send failed', cause);
     }
 
     // Audit log (best-effort).

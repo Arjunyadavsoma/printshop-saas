@@ -7,6 +7,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/portal/auth-context";
 import { PWARegister } from "@/components/pwa/pwa-register";
 import { ThemeProvider } from "next-themes";
+import { ClerkProvider } from "@clerk/nextjs";
+import { isClerkEnabled } from "@/lib/clerk";
 
 /**
  * Printelyx "Clear" design system — Instrument Sans only (English only).
@@ -106,7 +108,21 @@ export default function RootLayout({
             design. Revisit only if a real dark mode is designed — the
             `.dark` token block in globals.css is kept for that day.
           */}
-          <ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>{children}</ThemeProvider>
+          <ThemeProvider attribute="class" forcedTheme="light" disableTransitionOnChange>
+            {/*
+              Clerk (Google sign-in) is mounted only when its keys are set
+              (`isClerkEnabled()` — see src/lib/clerk.ts). Without keys the
+              tree renders exactly as before: the JWT email+password login
+              is the only sign-in, and no Clerk SDK code runs. Clerk is an
+              additional way in during the migration, not a replacement —
+              the JWT session behind `withAuth` is unchanged.
+            */}
+            {isClerkEnabled() ? (
+              <ClerkProvider>{children}</ClerkProvider>
+            ) : (
+              children
+            )}
+          </ThemeProvider>
         </AuthProvider>
         <Toaster />
         <PWARegister />

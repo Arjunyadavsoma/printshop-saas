@@ -101,6 +101,7 @@ model User {
   name         String?
   lastLoginAt  DateTime?
   shopId       String?
+  clerkId      String?    @unique // Clerk user id (user_…) when linked to Clerk sign-in; null for password-only accounts
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   auditLogs    AuditLog[]
