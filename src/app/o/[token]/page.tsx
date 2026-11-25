@@ -6,16 +6,15 @@ import {
   Phone, MapPin, Share2, XCircle, AlertTriangle, Loader2, CheckCircle2,
 } from 'lucide-react';
 
-import { AppBar } from '@/components/clear/app-bar';
 import { StatusPill } from '@/components/clear/status-pill';
 import { PriceBreakdown, formatRupees, type PriceLine } from '@/components/clear/price-breakdown';
-import { PrimaryButton, SecondaryButton, TextButton } from '@/components/clear/compat';
-import { SkeletonBox, SkeletonText } from '@/components/clear/compat';
-import { ErrorState } from '@/components/clear/compat';
-import { OfflineBanner } from '@/components/clear/compat';
-import { Toast } from '@/components/clear/compat';
+import { PrimaryButton, TintedButton as SecondaryButton, TextButton } from '@/components/clear/button';
+import { SkeletonBox, SkeletonLabel as SkeletonText } from '@/components/clear/skeleton';
+import { ErrorState } from '@/components/clear/error-state';
+import { Banner as OfflineBanner } from '@/components/clear/banner';
+import { Toast } from '@/components/clear/toast';
 import { UTRInput } from '@/components/clear/utr-input';
-import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
+import { ConsumerPage } from '@/components/clear/consumer-page';
 
 import { useTrackPoll, type FetchResult } from '@/lib/hooks/use-track-poll';
 import { useOrderRealtime } from '@/lib/hooks/use-order-realtime';
@@ -414,10 +413,9 @@ export default function TrackOrderPage() {
   // ── Loading skeleton (first load only) ──
   if (phase === 'loading' && !track) {
     return (
-      <div className="customer-flow">
+      <ConsumerPage onBack={() => router.back()}>
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
-        <AppBar title="Loading order" onBack={() => router.back()} />
-        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))] space-y-6" aria-busy="true" aria-live="polite">
+        <div className="space-y-6" aria-busy="true" aria-live="polite">
           {/* TokenSlip skeleton */}
           <div className="rounded-[var(--radius-soft)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-6">
             <SkeletonBox width="short" height={20} className="self-center" />
@@ -445,57 +443,51 @@ export default function TrackOrderPage() {
               </div>
             ))}
           </div>
-        </main>
-        <ConsumerTabBar />
-      </div>
+        </div>
+      </ConsumerPage>
     );
   }
 
   // ── Invalid token: dedicated "Order not found" panel ──
   if (notFound) {
     return (
-      <div className="customer-flow">
+      <ConsumerPage onBack={() => router.push('/')}>
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
-        <AppBar title="Order not found" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))]">
+        <div>
           <ErrorState
             message="We couldn't find this order."
             fix="Check your link — the order token may have expired or be incomplete. Open the link from your receipt."
           />
-        </main>
-        <ConsumerTabBar />
-      </div>
+        </div>
+      </ConsumerPage>
     );
   }
 
   // ── Generic error (network / server) ──
   if (phase === 'error' && !track) {
     return (
-      <div className="customer-flow">
+      <ConsumerPage onBack={() => router.push('/')}>
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
-        <AppBar title="Order tracking" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl px-4 py-6">
+        <div>
           <ErrorState
             message="We couldn't load this order."
             fix="Check your connection and try again. If the problem persists, open the link from your receipt."
             onRetry={() => refresh()}
           />
-        </main>
+        </div>
         <Toast variant="error" message={error ?? ''} onDismiss={() => {}} />
-      </div>
+      </ConsumerPage>
     );
   }
 
   if (!track) {
     // Defensive — shouldn't reach here, but render a stable fallback.
     return (
-      <div className="customer-flow">
-        <AppBar title="Order tracking" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))]">
+      <ConsumerPage onBack={() => router.push('/')}>
+        <div>
           <ErrorState message="We couldn't load this order." onRetry={() => refresh()} />
-        </main>
-        <ConsumerTabBar />
-      </div>
+        </div>
+      </ConsumerPage>
     );
   }
 
@@ -517,24 +509,17 @@ export default function TrackOrderPage() {
   const needsUtr = track.order.status === 'awaiting_payment' || paymentRejected;
 
   return (
-    <div className="rv">
+    <ConsumerPage
+      shopName={shopName}
+      onBack={() => router.back()}
+      actions={
+        <span aria-live="polite" aria-atomic="true" className="inline-flex items-center gap-1">
+          <StatusPill status={pillVariant} label={pillLabel} />
+        </span>
+      }
+    >
       <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
-      <AppBar
-        title={`Order ${orderNumber}`}
-        subtitle={shopName}
-        onBack={() => router.back()}
-        actions={
-          <span
-            aria-live="polite"
-            aria-atomic="true"
-            className="inline-flex items-center gap-1"
-          >
-            <StatusPill status={pillVariant} label={pillLabel} />
-          </span>
-        }
-      />
-
-      <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))] space-y-6 safe-bottom">
+      <div className="rv space-y-6">
         {/* Urgent badge — if the order is marked urgent, call it out up top */}
         {track.order.urgent && (
           <div
@@ -976,14 +961,13 @@ export default function TrackOrderPage() {
           <span aria-hidden="true">·</span>
           <a href="/privacy" className="underline hover:text-[var(--color-ink)]">Privacy</a>
         </nav>
-      </main>
+      </div>
 
       <Toast
         variant={toast.variant}
         message={toast.message}
         onDismiss={() => setToast({ variant: 'info', message: '' })}
       />
-      <ConsumerTabBar />
-    </div>
+    </ConsumerPage>
   );
 }

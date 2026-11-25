@@ -45,7 +45,7 @@ export default function PrivacyPage() {
   return (
     <InfoShell>
       <p className="text-sm font-semibold text-[var(--label-2)]">Printelyx</p>
-      <h1 className="mt-2 text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Privacy</h1>
+      <h1 className="mt-2 type-page">Privacy</h1>
       {/* Left-aligned, like all other body text — never centred. */}
       <p className="mt-2 text-left text-[16px] leading-[1.6] text-[var(--label-2)]">
         Last updated {LAST_UPDATED}

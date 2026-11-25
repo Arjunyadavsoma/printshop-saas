@@ -36,6 +36,39 @@
   --color-track: var(--track);
   --color-fill: var(--fill);
 
+  /* ── Halo identity tokens (from the shop sign-in screen, PR #10) ──
+     Single shared source for the dark halo surfaces: the sign-in page,
+     and any future dark hero, reads these — never hardcoded hex.
+     Mode-independent: halo screens are dark by design in both modes. */
+  --color-halo-surface: var(--halo-surface);
+  --color-halo-card: var(--halo-card);
+  --color-halo-card-hover: var(--halo-card-hover);
+  --color-halo-border: var(--halo-border);
+  --color-halo-border-strong: var(--halo-border-strong);
+  --color-halo-border-soft: var(--halo-border-soft);
+  --color-halo-border-25: var(--halo-border-25);
+  --color-halo-fill: var(--halo-fill);
+  --color-halo-fill-strong: var(--halo-fill-strong);
+  --color-halo-fill-3: var(--halo-fill-3);
+  --color-halo-fill-5: var(--halo-fill-5);
+  --color-halo-fill-7: var(--halo-fill-7);
+  --color-halo-fill-10: var(--halo-fill-10);
+  --color-halo-text: var(--halo-text);
+  --color-halo-text-2: var(--halo-text-2);
+  --color-halo-text-3: var(--halo-text-3);
+  --color-halo-text-4: var(--halo-text-4);
+  --color-halo-text-5: var(--halo-text-5);
+  --color-halo-text-50: var(--halo-text-50);
+  --color-halo-text-60: var(--halo-text-60);
+  --color-halo-text-70: var(--halo-text-70);
+  --color-halo-live: var(--halo-live);
+  --color-halo-pill: var(--halo-pill);
+  --color-halo-ink: var(--halo-ink);
+  --color-halo-ink-soft: var(--halo-ink-soft);
+  --color-halo-danger: var(--halo-danger);
+  --color-halo-danger-soft: var(--halo-danger-soft);
+  --color-halo-danger-text: var(--halo-danger-text);
+
   /* ── Status colours (each = colour + icon + text, never colour alone) ── */
   --color-success: var(--success);
   --color-success-tint: var(--success-tint);
@@ -146,6 +179,41 @@
   --on-accent: #FFFFFF;
   --accent-tint: #E6EEFB;
   --accent-tint-text: #0A4CB8;
+
+  /* Halo identity (dark sign-in screen, PR #10) — mode-independent:
+     halo screens are dark by design in both modes. The login page and
+     any future dark hero read these, never hardcoded hex. */
+  --halo-surface: #0B0B0D;
+  --halo-card: #1C1C1F;
+  --halo-card-hover: #232327;
+  --halo-glow-blue: rgba(10, 88, 214, 0.28);
+  --halo-glow-blue-soft: rgba(10, 88, 214, 0.08);
+  --halo-glow-green: rgba(30, 138, 86, 0.12);
+  --halo-live: #34D399;
+  --halo-pill: rgba(255, 255, 255, 0.85);
+  --halo-ink: #1C1C1E;
+  --halo-ink-soft: rgba(28, 28, 30, 0.70);
+  --halo-border: rgba(255, 255, 255, 0.15);
+  --halo-border-strong: rgba(255, 255, 255, 0.20);
+  --halo-border-soft: rgba(255, 255, 255, 0.10);
+  --halo-border-25: rgba(255, 255, 255, 0.25);
+  --halo-fill: rgba(255, 255, 255, 0.04);
+  --halo-fill-strong: rgba(255, 255, 255, 0.06);
+  --halo-fill-3: rgba(255, 255, 255, 0.03);
+  --halo-fill-5: rgba(255, 255, 255, 0.05);
+  --halo-fill-7: rgba(255, 255, 255, 0.07);
+  --halo-fill-10: rgba(255, 255, 255, 0.10);
+  --halo-text: #FFFFFF;
+  --halo-text-2: rgba(255, 255, 255, 0.80);
+  --halo-text-3: rgba(255, 255, 255, 0.55);
+  --halo-text-4: rgba(255, 255, 255, 0.45);
+  --halo-text-5: rgba(255, 255, 255, 0.35);
+  --halo-text-50: rgba(255, 255, 255, 0.50);
+  --halo-text-60: rgba(255, 255, 255, 0.60);
+  --halo-text-70: rgba(255, 255, 255, 0.70);
+  --halo-danger: #E5484D;
+  --halo-danger-soft: rgba(229, 72, 77, 0.15);
+  --halo-danger-text: #FFB4AE;
 
   /* Status */
   --success: #1E8A56;
@@ -408,6 +476,63 @@
   /* Dense table metadata */
   .text-table-meta {
     @apply text-xs text-muted-foreground;
+  }
+
+  /* ── Shared consumer type scale (one source — every consumer page
+        uses these instead of per-page font sizes) ──
+     .type-hero   page hero headline: 34px mobile, 44px desktop
+     .type-page   plain page title (info pages, tracking): 28px bold
+     .type-section section heading inside a page: 18px semibold
+     .type-sub    subtitle under a headline: 16px, label-2
+     .type-body   body copy: 16px / 1.6, label-2
+     .type-caption small caption text: 14px / 1.45, label-2 */
+  .type-hero {
+    font-size: 34px;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    color: var(--label);
+  }
+  @media (min-width: 1024px) {
+    .type-hero { font-size: 44px; }
+  }
+  .type-page {
+    font-size: 28px;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-weight: 700;
+    color: var(--label);
+  }
+  .type-section {
+    font-size: 18px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+    color: var(--label);
+  }
+  .type-sub {
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--label-2);
+  }
+  .type-body {
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--label-2);
+  }
+  .type-caption {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--label-2);
+  }
+
+  /* Halo ambient glows — the sign-in screen's restrained lighting,
+     reusable by any dark halo surface. */
+  .halo-glow-top {
+    background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--halo-glow-blue) 0%, var(--halo-glow-blue-soft) 45%, transparent 70%);
+  }
+  .halo-glow-bottom {
+    background: radial-gradient(ellipse 50% 60% at 50% 110%, var(--halo-glow-green) 0%, transparent 65%);
   }
 }
 

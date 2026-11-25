@@ -28,15 +28,15 @@ const ROWS: { type: string; a4: string; a3: string }[] = [
 export default function PricingPage() {
   return (
     <InfoShell>
-      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Pricing</h1>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h1 className="type-page">Pricing</h1>
+      <p className="mt-2 type-body">
         Printelyx adds nothing to your print cost. Every shop sets its own rates, and you see
         them before you pay — on the shop&apos;s page, and again as a line-by-line total on the
         review screen of your order.
       </p>
 
-      <h2 className="mt-8 text-[18px] font-semibold text-[var(--label)]">Typical rates per page</h2>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h2 className="mt-8 type-section">Typical rates per page</h2>
+      <p className="mt-2 type-body">
         These are the platform&apos;s default rates. Prices are set by each shop; your shop&apos;s
         exact prices are shown on its page.
       </p>
@@ -62,7 +62,7 @@ export default function PricingPage() {
         </table>
       </div>
 
-      <h2 className="mt-8 text-[18px] font-semibold text-[var(--label)]">Discounts</h2>
+      <h2 className="mt-8 type-section">Discounts</h2>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-[16px] leading-[1.6] text-[var(--label-2)]">
         <li>
           <span className="font-medium text-[var(--label)]">Double-sided: 10% off</span> the
@@ -78,15 +78,15 @@ export default function PricingPage() {
         </li>
       </ul>
 
-      <h2 className="mt-8 text-[18px] font-semibold text-[var(--label)]">Worked example</h2>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h2 className="mt-8 type-section">Worked example</h2>
+      <p className="mt-2 type-body">
         9 black &amp; white pages and 3 colour pages, A4, one side: 9 × ₹2 + 3 × ₹6 ={' '}
         <span className="font-semibold text-[var(--label)]">₹36</span>. The same file printed
         double-sided costs 10% less.
       </p>
 
-      <h2 className="mt-8 text-[18px] font-semibold text-[var(--label)]">How payment works</h2>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h2 className="mt-8 type-section">How payment works</h2>
+      <p className="mt-2 type-body">
         You pay the shop directly by UPI, using the shop&apos;s own UPI ID. Printelyx never handles
         your money and charges 0% commission. The shop confirms your payment by matching the
         UTR number from your UPI receipt before printing starts.
