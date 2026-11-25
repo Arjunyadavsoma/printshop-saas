@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/clear/compat';
 import { OfflineBanner } from '@/components/clear/compat';
 import { Toast } from '@/components/clear/compat';
 import { UTRInput } from '@/components/clear/utr-input';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
 
 import { useTrackPoll, type FetchResult } from '@/lib/hooks/use-track-poll';
 import { useOrderRealtime } from '@/lib/hooks/use-order-realtime';
@@ -416,7 +417,7 @@ export default function TrackOrderPage() {
       <div className="customer-flow">
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Loading order" onBack={() => router.back()} />
-        <main className="mx-auto max-w-xl px-4 py-6 space-y-6" aria-busy="true" aria-live="polite">
+        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))] space-y-6" aria-busy="true" aria-live="polite">
           {/* TokenSlip skeleton */}
           <div className="rounded-[var(--radius-soft)] border border-[var(--color-border-ink)] bg-[var(--color-surface)] p-6">
             <SkeletonBox width="short" height={20} className="self-center" />
@@ -445,6 +446,7 @@ export default function TrackOrderPage() {
             ))}
           </div>
         </main>
+        <ConsumerTabBar />
       </div>
     );
   }
@@ -455,12 +457,13 @@ export default function TrackOrderPage() {
       <div className="customer-flow">
         <OfflineBanner variant="offline" show={!online}>You are offline.</OfflineBanner>
         <AppBar title="Order not found" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl px-4 py-6">
+        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))]">
           <ErrorState
             message="We couldn't find this order."
             fix="Check your link — the order token may have expired or be incomplete. Open the link from your receipt."
           />
         </main>
+        <ConsumerTabBar />
       </div>
     );
   }
@@ -488,9 +491,10 @@ export default function TrackOrderPage() {
     return (
       <div className="customer-flow">
         <AppBar title="Order tracking" onBack={() => router.push('/')} />
-        <main className="mx-auto max-w-xl px-4 py-6">
+        <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))]">
           <ErrorState message="We couldn't load this order." onRetry={() => refresh()} />
         </main>
+        <ConsumerTabBar />
       </div>
     );
   }
@@ -530,7 +534,7 @@ export default function TrackOrderPage() {
         }
       />
 
-      <main className="mx-auto max-w-xl px-4 py-6 space-y-6 safe-bottom">
+      <main className="mx-auto max-w-xl px-4 py-6 pb-[calc(80px+env(safe-area-inset-bottom))] space-y-6 safe-bottom">
         {/* Urgent badge — if the order is marked urgent, call it out up top */}
         {track.order.urgent && (
           <div
@@ -979,6 +983,7 @@ export default function TrackOrderPage() {
         message={toast.message}
         onDismiss={() => setToast({ variant: 'info', message: '' })}
       />
+      <ConsumerTabBar />
     </div>
   );
 }

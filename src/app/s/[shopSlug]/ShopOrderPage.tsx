@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Printer } from 'lucide-react';
-import { CustomerShell } from '@/components/clear/customer-shell';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
+import { SiteFooter } from '@/components/clear/site-footer';
 import { CustomerOrderFlowV2Lazy } from './CustomerOrderFlowV2Lazy';
 
 export interface ShopOrderPageProps {
@@ -13,21 +13,11 @@ export interface ShopOrderPageProps {
   upiPayeeName: string;
   paymentMode: string;
   retentionHours: number;
-  /** Pre-formatted display strings, e.g. "₹2" / "₹10" — from the shop's
-      real pricing config (price rules, else pricingConfig). */
   bwPrice: string;
   colorPrice: string;
-  /** Double-sided B&W per-page display string (e.g. "₹1.5"), or null when
-      the shop has no double-sided rate configured — the row then keeps the
-      "Costs less per page" copy instead of showing no price at all. */
   doubleBwPrice: string | null;
-  /** Per-page paise behind the display strings (null when the shop has
-      no pricing configured at all — the display strings then fall back
-      to the spec rates ₹2 / ₹10). */
   bwPerPagePaise: number | null;
   colorPerPagePaise: number | null;
-  /** True when the display prices came from the shop's own config; false
-      when they are the spec fallback rates. */
   pricesFromConfig: boolean;
   hours: string;
   waitMinutes: number;
@@ -38,15 +28,15 @@ export interface ShopOrderPageProps {
 }
 
 /**
- * /s/[shopSlug] — shop home + order flow (Consumer Flow Revamp board 2).
+ * /s/[shopSlug] — shop landing + order flow.
+ * Clear design (matches the reference "Customer: shop landing" screen):
+ *   Mobile: top bar (shop name + open) → "Print without the queue" → status
+ *   → add-files card → prices card → shop-info card → retention caption.
+ *   Desktop: dtop bar + two-column (content left, sidebar right).
  *
- * Landing: .rv hero (Print without the queue + status), .rv price card
- * (B&W / Colour / Double-sided rows), .rv shop-info card (hours, call,
- * directions). Tapping "Add files" mounts CustomerOrderFlowV2 step 0 in
- * the same tick — visible upload UI before any network call.
- *
- * The sidebar prop carries the same .rv cards for the desktop two-pane
- * layout (CustomerShell positions it automatically).
+ * Tapping "Add files" mounts CustomerOrderFlowV2 (the multi-step upload →
+ * options → pay flow). The flow keeps its .rv-* internals (now using
+ * Instrument Sans for font consistency).
  */
 export function ShopOrderPage(props: ShopOrderPageProps) {
   const {
@@ -61,147 +51,154 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shopAddress)}`
     : undefined;
 
-  /* ── Price card (.rv-card with .rv-row rows) ── */
-  const priceCard = (
-    <div className="rv-card" aria-label="Prices">
-      <div className="rv-row">
-        <span className="text-[15px] text-[var(--rv-ink)]">
-          Black &amp; white <span className="text-[12px] text-[var(--rv-muted)]">per page</span>
-        </span>
-        <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{bwPrice}</b>
+  /* ── Prices card (Clear .g with .r rows) ── */
+  const priceCard = (isDesktop = false) => (
+    <div className={isDesktop ? 'gg' : 'g'}>
+      <div className="r">
+        <span>Black &amp; white<small>per page</small></span>
+        <b style={{ fontSize: 16, fontWeight: 600 }}>{bwPrice}</b>
       </div>
-      <div className="rv-row">
-        <span className="text-[15px] text-[var(--rv-ink)]">
-          Colour <span className="text-[12px] text-[var(--rv-muted)]">per page</span>
-        </span>
-        <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{colorPrice}</b>
+      <div className="r">
+        <span>Colour<small>per page</small></span>
+        <b style={{ fontSize: 16, fontWeight: 600 }}>{colorPrice}</b>
       </div>
-      <div className="rv-row">
-        <span className="text-[15px] text-[var(--rv-ink)]">Double-sided</span>
-        {doubleBwPrice != null ? (
-          <b className="text-[18px] font-extrabold text-[var(--rv-ink)]" style={{ fontVariantNumeric: 'tabular-nums' }}>{doubleBwPrice}</b>
-        ) : (
-          <span className="text-[13px] text-[var(--rv-muted)]">Costs less per page</span>
-        )}
+      <div className="r">
+        <span>Double-sided</span>
+        <span className="v">{doubleBwPrice != null ? doubleBwPrice : 'Costs less per page'}</span>
       </div>
       {!pricesFromConfig && (
-        <p className="pt-2 text-[12px] text-[var(--rv-muted)]">Standard rates — this shop hasn&apos;t set its own prices yet.</p>
+        <p className="cap" style={{ margin: '8px 0 0' }}>Standard rates — this shop hasn&apos;t set its own prices yet.</p>
       )}
     </div>
   );
 
   /* ── Shop info card ── */
-  const shopInfoCard = (
-    <div className="rv-card" aria-label="Shop information">
-      <div className="rv-row">
-        <span className="text-[15px] text-[var(--rv-ink)]">Open today</span>
-        <span className="whitespace-nowrap text-[14px] text-[var(--rv-muted)]">{hours}</span>
+  const shopInfoCard = (isDesktop = false) => (
+    <div className={isDesktop ? 'gg' : 'g'}>
+      <div className="r">
+        <span>Open today</span>
+        <span className="v">{hours}</span>
       </div>
-      {shopPhone ? (
-        <a href={`tel:${shopPhone}`} className="rv-row no-underline">
-          <span className="text-[15px] font-bold text-[var(--rv-accent)]">Call shop</span>
-          <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
-        </a>
-      ) : null}
-      {directionsUrl ? (
-        <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="rv-row no-underline">
-          <span className="text-[15px] font-bold text-[var(--rv-accent)]">Directions</span>
-          <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
-        </a>
-      ) : null}
+      <div className="r">
+        <span>Contact</span>
+        <span className="v" style={{ display: 'flex', gap: 12 }}>
+          {shopPhone ? <a href={`tel:${shopPhone}`} style={{ color: '#0A58D6', textDecoration: 'none', fontSize: 15 }}>Call shop</a> : null}
+          {directionsUrl ? <a href={directionsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#0A58D6', textDecoration: 'none', fontSize: 15 }}>Directions</a> : null}
+        </span>
+      </div>
       {shopAddress && (
-        <p className="pt-2 text-[13px] leading-snug text-[var(--rv-muted)]">{shopAddress}</p>
+        <p className="cap" style={{ margin: '8px 0 0' }}>{shopAddress}</p>
       )}
     </div>
   );
 
-  const sidebar = (
-    <div className="hidden lg:flex flex-col gap-4">
-      {priceCard}
-      {shopInfoCard}
-      <p className="px-1 text-[13px] leading-relaxed text-[var(--rv-muted)]">
-        Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.
-      </p>
+  /* ── Add files card ── */
+  const addFilesCard = (isDesktop = false) => (
+    <div className={isDesktop ? 'gg p' : 'g p'} style={{ textAlign: 'center', padding: '28px 16px' }}>
+      <div style={{ fontSize: 17, fontWeight: 600, color: '#1C1C1E' }}>Add files to print</div>
+      <div className="v" style={{ textAlign: 'center', margin: '4px 0 16px' }}>PDF, photos or Word files · up to 50 MB each</div>
+      <button type="button" className="btn" style={{ width: '100%' }} onClick={() => setStarted(true)}>
+        Add files
+      </button>
     </div>
   );
 
+  /* ── Closed state ── */
   if (closed) {
-    // Closed state — no upload entry is offered.
     return (
-      <CustomerShell shopName={shopName} status="closed" subtitle={hours} sidebar={sidebar}>
-        <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">Closed right now</h1>
-        <p className="mt-1 text-[15px] text-[var(--rv-muted)]">Opens at the next opening time.</p>
-        <div className="rv-card mt-4" aria-label="Hours">
-          <div className="rv-row">
-            <span className="text-[15px] text-[var(--rv-ink)]">Hours</span>
-            <span className="text-[14px] text-[var(--rv-muted)]">{hours}</span>
+      <>
+        <div className="x m">
+          <div className="top"><i className="dot" />{shopName}, closed</div>
+          <h1 className="h">Closed right now</h1>
+          <p className="sub">Opens at the next opening time.</p>
+          <div className="g">
+            <div className="r"><span>Hours</span><span className="v">{hours}</span></div>
+            {shopPhone ? (
+              <a href={`tel:${shopPhone}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <span>Call the shop</span><span className="v">›</span>
+              </a>
+            ) : null}
           </div>
-          {shopPhone ? (
-            <a href={`tel:${shopPhone}`} className="rv-row no-underline">
-              <span className="text-[15px] font-bold text-[var(--rv-accent)]">Call the shop</span>
-              <span aria-hidden="true" className="text-[var(--rv-muted)]">›</span>
-            </a>
-          ) : null}
+          <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
+          <p className="cap"><Link href="/" style={{ color: '#0A58D6', textDecoration: 'none' }}>Find another shop</Link></p>
+          <div style={{ height: 'calc(80px + env(safe-area-inset-bottom))' }} />
         </div>
-        <p className="mt-3 text-[13px] text-[var(--rv-muted)]">Come back when the shop opens. Nothing is uploaded until then.</p>
-        <p className="mt-4 text-[14px]">
-          <Link href="/" className="font-bold text-[var(--rv-accent)] underline">Find another shop</Link>
-        </p>
-      </CustomerShell>
+        <div className="x d">
+          <div className="dtop">
+            <b><i className="dot" />{shopName}</b>
+            <span className="v"><Link href="/" style={{ color: '#5B5F66', textDecoration: 'none' }}>Home</Link></span>
+          </div>
+          <div className="wrap"><div className="l" style={{ maxWidth: 560, margin: '0 auto' }}>
+            <h1 className="h1">Closed right now</h1>
+            <p className="s2">Opens at the next opening time.</p>
+            <div className="gg"><div className="r"><span>Hours</span><span className="v">{hours}</span></div></div>
+            <p className="cap">Come back when the shop opens. Nothing is uploaded until then.</p>
+            <p className="cap"><Link href="/" style={{ color: '#0A58D6', textDecoration: 'none' }}>Find another shop</Link></p>
+          </div></div>
+          <SiteFooter />
+        </div>
+        <ConsumerTabBar />
+      </>
     );
   }
 
+  /* ── Order flow started — keep CustomerOrderFlowV2 but in Clear container ── */
+  if (started) {
+    return (
+      <CustomerOrderFlowV2Lazy
+        shopSlug={shopSlug}
+        shopName={shopName}
+        upiId={upiId}
+        upiPayeeName={upiPayeeName}
+        paymentMode={paymentMode}
+        retentionHours={retentionHours}
+        bwPerPagePaise={bwPerPagePaise}
+        colorPerPagePaise={colorPerPagePaise}
+      />
+    );
+  }
+
+  /* ── Landing state ── */
   return (
-    <CustomerShell
-      shopName={shopName}
-      status="open"
-      subtitle={statusLine}
-      sidebar={sidebar}
-      onBack={started ? () => setStarted(false) : undefined}
-    >
-      {!started ? (
-        <>
-          <h1 className="text-[27px] font-extrabold tracking-[-0.02em] text-[var(--rv-ink)]">Print without the queue</h1>
+    <>
+      {/* Mobile */}
+      <div className="x m">
+        <div className="top"><i className="dot" />{shopName}, open</div>
+        <h1 className="h">Print without the queue</h1>
+        <p className="sub">{statusLine}</p>
+        {addFilesCard()}
+        {priceCard()}
+        {shopInfoCard()}
+        <p className="cap">Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.</p>
+        <div style={{ height: 'calc(80px + env(safe-area-inset-bottom))' }} />
+      </div>
 
-          {/* Add-files hero card */}
-          <section
-            className="rv-card mt-4 flex flex-col items-center py-8 text-center"
-            aria-labelledby="add-files-heading"
-          >
-            <span className="rv-ic" aria-hidden="true">
-              <Printer className="size-5" />
-            </span>
-            <h2 id="add-files-heading" className="mt-3 text-[17px] font-extrabold text-[var(--rv-ink)]">
-              Add files to print
-            </h2>
-            <p className="mt-1 text-[14px] text-[var(--rv-muted)]">PDF, photos or Word files · up to 50 MB each</p>
-            <button type="button" className="rv-btn mt-4" onClick={() => setStarted(true)}>
-              Add files
-            </button>
-          </section>
-
-          {/* Mobile: prices + shop info inline (sidebar renders on desktop). */}
-          <div className="mt-4 flex flex-col gap-4 lg:hidden">
-            {priceCard}
-            {shopInfoCard}
+      {/* Desktop */}
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />{shopName}</b>
+          <span className="v">
+            <Link href="/" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Home</Link>
+            <Link href="/track" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Track order</Link>
+            <Link href="/help" style={{ color: '#5B5F66', textDecoration: 'none' }}>Help</Link>
+          </span>
+        </div>
+        <div className="wrap">
+          <div className="l">
+            <h1 className="h1">Print without the queue</h1>
+            <p className="s2">{statusLine}</p>
+            {addFilesCard(true)}
           </div>
+          <div className="rt">
+            {priceCard(true)}
+            {shopInfoCard(true)}
+            <p className="cap">Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.</p>
+          </div>
+        </div>
+        <SiteFooter />
+      </div>
 
-          <p className="mt-4 text-[13px] text-[var(--rv-muted)] lg:hidden">
-            Your files are deleted {retentionHours ? `${retentionHours} hours` : '24 hours'} after pickup.
-          </p>
-        </>
-      ) : (
-        <CustomerOrderFlowV2Lazy
-          shopSlug={shopSlug}
-          shopName={shopName}
-          upiId={upiId}
-          upiPayeeName={upiPayeeName}
-          paymentMode={paymentMode}
-          retentionHours={retentionHours}
-          bwPerPagePaise={bwPerPagePaise}
-          colorPerPagePaise={colorPerPagePaise}
-        />
-      )}
-    </CustomerShell>
+      <ConsumerTabBar />
+    </>
   );
 }
