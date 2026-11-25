@@ -265,18 +265,21 @@ export default function HomePage() {
 
   /* ── Pending / recent order rows (if any) ── */
   const orderRows = () => {
-    if (!pendingOrder && (!recentOrder || pendingOrder?.token === recentOrder.token)) return null;
+    const pending = pendingOrder;
+    const recent = recentOrder;
+    if (!pending && !recent) return null;
+    if (pending && recent && pending.token === recent.token) return null;
     return (
       <div className="g">
-        {pendingOrder && (
-          <Link href={`/s/${pendingOrder.shopSlug}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span>Continue paying — Order {pendingOrder.orderNumber ?? '—'}<small>{pendingOrder.shopName ?? ''} — payment was interrupted</small></span>
+        {pending && (
+          <Link href={`/s/${pending.shopSlug}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <span>Continue paying — Order {pending.orderNumber ?? '—'}<small>{pending.shopName ?? ''} — payment was interrupted</small></span>
             <span className="v">›</span>
           </Link>
         )}
-        {recentOrder && pendingOrder?.token !== recentOrder.token && (
-          <Link href={`/o/${recentOrder.token}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span>Order {recentOrder.orderNumber ?? '—'}<small>{recentOrder.shopName ?? ''} — track your order</small></span>
+        {recent && pending?.token !== recent.token && (
+          <Link href={`/o/${recent.token}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <span>Order {recent.orderNumber ?? '—'}<small>{recent.shopName ?? ''} — track your order</small></span>
             <span className="v">›</span>
           </Link>
         )}
