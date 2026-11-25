@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { LiveDot } from '@/components/clear/consumer-page';
 import {
   Loader2, ArrowRight, ShieldCheck, UserPlus, Eye, EyeOff, Mail,
 } from 'lucide-react';
@@ -31,8 +32,9 @@ const DEMO_ACCOUNTS: { email: string; label: string }[] = process.env.NODE_ENV =
  * the real email+password form (POST /api/v1/auth/login, JWT, role-based
  * redirect) with the same logic as the previous login page.
  *
- * Colours are explicit (not theme tokens) so the screen looks identical
- * in light and dark mode — the reference is dark by design.
+ * Colours come from the shared `--halo-*` tokens in globals.css (see
+ * HALO_TOKENS in components/clear/tokens.ts) so the screen looks
+ * identical in light and dark mode — the reference is dark by design.
  */
 export default function ShopLoginPage() {
   const api = useApiClient();
@@ -111,34 +113,26 @@ export default function ShopLoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#0B0B0D] text-white">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-halo-surface text-halo-text">
       {/* Ambient glow — restrained, like the reference's planet light. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[480px]"
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 50% at 50% 0%, rgba(10,88,214,0.28) 0%, rgba(10,88,214,0.08) 45%, transparent 70%)',
-        }}
+        className="halo-glow-top pointer-events-none absolute inset-x-0 top-0 h-[480px]"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[300px]"
-        style={{
-          background:
-            'radial-gradient(ellipse 50% 60% at 50% 110%, rgba(30,138,86,0.12) 0%, transparent 65%)',
-        }}
+        className="halo-glow-bottom pointer-events-none absolute inset-x-0 bottom-0 h-[300px]"
       />
 
       {/* Desktop-only top bar — the mobile screen stays 1:1 with the reference. */}
       <header className="relative z-10 hidden items-center justify-between px-8 py-5 lg:flex">
         <Link href="/" className="flex items-center gap-2.5" aria-label="Printelyx — home">
-          <span className="flex size-8 items-center justify-center rounded-full border border-white/25 text-white">
-            <span className="size-2 rounded-full bg-[#0A58D6]" aria-hidden="true" />
+          <span className="flex size-8 items-center justify-center rounded-full border border-halo-border-25 text-halo-text">
+            <span className="size-2 rounded-full bg-accent" aria-hidden="true" />
           </span>
           <span className="text-base font-bold tracking-tight">Printelyx</span>
         </Link>
-        <Link href="/" className="text-sm font-medium text-white/60 transition-colors hover:text-white">
+        <Link href="/" className="text-sm font-medium text-halo-text-60 transition-colors hover:text-halo-text">
           Customer app →
         </Link>
       </header>
@@ -148,18 +142,15 @@ export default function ShopLoginPage() {
           {/* Logo mark + wordmark — centred, as in the reference. */}
           <div className="flex flex-col items-center text-center">
             <div
-              className="flex size-14 items-center justify-center rounded-full border border-white/20 bg-white/[0.04]"
+              className="flex size-14 items-center justify-center rounded-full border border-halo-border-strong bg-halo-fill"
               aria-hidden="true"
             >
-              <span className="size-3 rounded-full bg-[#0A58D6]" />
+              <span className="size-3 rounded-full bg-accent" />
             </div>
             <p className="mt-4 text-[28px] font-bold leading-none tracking-tight">Printelyx</p>
-            <p className="mt-3 flex items-center gap-2 text-sm text-white/55">
-              <span className="relative flex size-2" aria-hidden="true">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#34D399] opacity-60" />
-                <span className="relative inline-flex size-2 rounded-full bg-[#34D399]" />
-              </span>
-              Sign in to your <em className="not-italic font-semibold text-white/80">shop</em>
+            <p className="mt-3 flex items-center gap-2 text-sm text-halo-text-3">
+              <LiveDot />
+              Sign in to your <em className="not-italic font-semibold text-halo-text-2">shop</em>
             </p>
           </div>
 
@@ -169,11 +160,11 @@ export default function ShopLoginPage() {
               type="button"
               onClick={() => setUnavailableNote('google')}
               aria-disabled="true"
-              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full bg-white/85 text-[15px] font-semibold text-[#1C1C1E] transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full bg-halo-pill text-[15px] font-semibold text-halo-ink transition-colors hover:bg-halo-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <GoogleMark />
               Continue with Google
-              <span className="rounded-full bg-[#1C1C1E]/10 px-2 py-0.5 text-[11px] font-semibold text-[#1C1C1E]/70">
+              <span className="rounded-full bg-halo-ink/10 px-2 py-0.5 text-[11px] font-semibold text-halo-ink-soft">
                 Soon
               </span>
             </button>
@@ -181,11 +172,11 @@ export default function ShopLoginPage() {
               type="button"
               onClick={() => setUnavailableNote('apple')}
               aria-disabled="true"
-              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full bg-white/85 text-[15px] font-semibold text-[#1C1C1E] transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full bg-halo-pill text-[15px] font-semibold text-halo-ink transition-colors hover:bg-halo-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <AppleMark />
               Continue with Apple
-              <span className="rounded-full bg-[#1C1C1E]/10 px-2 py-0.5 text-[11px] font-semibold text-[#1C1C1E]/70">
+              <span className="rounded-full bg-halo-ink/10 px-2 py-0.5 text-[11px] font-semibold text-halo-ink-soft">
                 Soon
               </span>
             </button>
@@ -193,7 +184,7 @@ export default function ShopLoginPage() {
               type="button"
               onClick={openEmail}
               aria-expanded={emailOpen}
-              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full border border-white/15 bg-[#1C1C1F] text-[15px] font-semibold text-white transition-colors hover:bg-[#232327] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-full border border-halo-border bg-halo-card text-[15px] font-semibold text-halo-text transition-colors hover:bg-halo-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <Mail className="size-5" aria-hidden="true" />
               Continue with email
@@ -204,11 +195,11 @@ export default function ShopLoginPage() {
           {unavailableNote && (
             <div
               role="status"
-              className="mt-4 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-center text-sm leading-relaxed text-white/70"
+              className="mt-4 rounded-2xl border border-halo-border-soft bg-halo-fill-5 px-4 py-3 text-center text-sm leading-relaxed text-halo-text-70"
             >
               {unavailableNote === 'google' ? 'Google' : 'Apple'} sign-in isn&apos;t available
               yet — Printelyx signs shops in with email for now. Use{' '}
-              <button type="button" onClick={openEmail} className="font-semibold text-white underline underline-offset-2">
+              <button type="button" onClick={openEmail} className="font-semibold text-halo-text underline underline-offset-2">
                 Continue with email
               </button>{' '}
               below.
@@ -219,7 +210,7 @@ export default function ShopLoginPage() {
           {emailOpen && (
             <form onSubmit={submit} className="mt-6 space-y-4" noValidate={false}>
               <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium text-white/80">
+                <label htmlFor="email" className="text-sm font-medium text-halo-text-2">
                   Email
                 </label>
                 <input
@@ -231,17 +222,17 @@ export default function ShopLoginPage() {
                   autoComplete="email"
                   required
                   disabled={submitting}
-                  className="h-12 w-full rounded-2xl border border-white/15 bg-white/[0.06] px-4 text-base text-white placeholder:text-white/35 focus:border-[#0A58D6] focus:outline-none disabled:opacity-60"
+                  className="h-12 w-full rounded-2xl border border-halo-border bg-halo-fill-strong px-4 text-base text-halo-text placeholder:text-halo-text-5 focus:border-accent focus:outline-none disabled:opacity-60"
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="password" className="text-sm font-medium text-white/80">
+                  <label htmlFor="password" className="text-sm font-medium text-halo-text-2">
                     Password
                   </label>
                   <Link
                     href="/shop/forgot-password"
-                    className="text-xs font-medium text-white/60 hover:text-white hover:underline"
+                    className="text-xs font-medium text-halo-text-60 hover:text-halo-text hover:underline"
                   >
                     Forgot password?
                   </Link>
@@ -256,14 +247,14 @@ export default function ShopLoginPage() {
                     autoComplete="current-password"
                     required
                     disabled={submitting}
-                    className="h-12 w-full rounded-2xl border border-white/15 bg-white/[0.06] px-4 pr-12 text-base text-white placeholder:text-white/35 focus:border-[#0A58D6] focus:outline-none disabled:opacity-60"
+                    className="h-12 w-full rounded-2xl border border-halo-border bg-halo-fill-strong px-4 pr-12 text-base text-halo-text placeholder:text-halo-text-5 focus:border-accent focus:outline-none disabled:opacity-60"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     aria-controls="password"
-                    className="absolute right-1 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-xl text-white/55 hover:bg-white/10 hover:text-white"
+                    className="absolute right-1 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-xl text-halo-text-3 hover:bg-halo-fill-10 hover:text-halo-text"
                   >
                     {showPassword ? (
                       <EyeOff className="size-4" aria-hidden="true" />
@@ -276,7 +267,7 @@ export default function ShopLoginPage() {
               {error && (
                 <div
                   role="alert"
-                  className="rounded-2xl border border-[#E5484D]/40 bg-[#E5484D]/15 px-4 py-3 text-sm text-[#FFB4AE]"
+                  className="rounded-2xl border border-halo-danger/40 bg-halo-danger-soft px-4 py-3 text-sm text-halo-danger-text"
                 >
                   {error}
                 </div>
@@ -284,7 +275,7 @@ export default function ShopLoginPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-[#0A58D6] text-[15px] font-semibold text-white transition-colors hover:bg-[#094FBF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-60"
+                className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent text-[15px] font-semibold text-white transition-colors hover:bg-[var(--accent-press)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-60"
               >
                 {submitting ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -297,25 +288,25 @@ export default function ShopLoginPage() {
           )}
 
           {/* Privacy / Terms — as in the reference. */}
-          <p className="mt-8 text-center text-xs text-white/45">
-            <Link href="/privacy" className="hover:text-white hover:underline">
+          <p className="mt-8 text-center text-xs text-halo-text-4">
+            <Link href="/privacy" className="hover:text-halo-text hover:underline">
               Privacy policy
             </Link>
             <span className="mx-3" aria-hidden="true">·</span>
-            <Link href="/terms" className="hover:text-white hover:underline">
+            <Link href="/terms" className="hover:text-halo-text hover:underline">
               Terms of service
             </Link>
           </p>
 
           {/* Create Shop Account — the primary CTA for new shopkeepers. */}
-          <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-center">
-            <p className="text-sm font-semibold text-white">Don&apos;t have a shop account?</p>
-            <p className="mt-1 text-xs leading-relaxed text-white/55">
+          <div className="mt-8 rounded-3xl border border-halo-border-soft bg-halo-fill p-5 text-center">
+            <p className="text-sm font-semibold text-halo-text">Don&apos;t have a shop account?</p>
+            <p className="mt-1 text-xs leading-relaxed text-halo-text-3">
               Set up your print shop in minutes — 0% commission, customers pay you directly via UPI.
             </p>
             <Link
               href="/shop/register"
-              className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.06] text-sm font-semibold text-white transition-colors hover:bg-white/10"
+              className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full border border-halo-border bg-halo-fill-strong text-sm font-semibold text-halo-text transition-colors hover:bg-halo-fill-10"
             >
               <UserPlus className="size-4" aria-hidden="true" />
               Create Shop Account
@@ -324,12 +315,12 @@ export default function ShopLoginPage() {
 
           {/* Demo accounts — only visible in development (not production) */}
           {process.env.NODE_ENV !== 'production' && DEMO_ACCOUNTS.length > 0 && (
-            <div className="mt-4 rounded-3xl border border-dashed border-white/15 bg-white/[0.03] p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-white">
-                <ShieldCheck className="size-4 text-[#34D399]" aria-hidden="true" />
+            <div className="mt-4 rounded-3xl border border-dashed border-halo-border bg-halo-fill-3 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-halo-text">
+                <ShieldCheck className="size-4 text-halo-live" aria-hidden="true" />
                 Demo accounts (dev only)
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-white/50">
+              <p className="mt-1 text-xs leading-relaxed text-halo-text-50">
                 Tap any account to fill the email. Type the demo password manually — it&apos;s in the
                 project README.
               </p>
@@ -339,22 +330,22 @@ export default function ShopLoginPage() {
                     key={acc.email}
                     type="button"
                     onClick={() => fillDemo(acc)}
-                    className="flex min-h-[44px] w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition-colors hover:border-white/25 hover:bg-white/[0.07]"
+                    className="flex min-h-[44px] w-full items-center justify-between rounded-2xl border border-halo-border-soft bg-halo-fill px-3 py-2 text-left transition-colors hover:border-halo-border-strong hover:bg-halo-fill-7"
                   >
                     <span className="flex flex-col">
-                      <span className="text-sm font-medium text-white">{acc.label}</span>
-                      <span className="font-mono text-xs text-white/50">{acc.email}</span>
+                      <span className="text-sm font-medium text-halo-text">{acc.label}</span>
+                      <span className="font-mono text-xs text-halo-text-50">{acc.email}</span>
                     </span>
-                    <ArrowRight className="size-3 text-white/60" aria-hidden="true" />
+                    <ArrowRight className="size-3 text-halo-text-60" aria-hidden="true" />
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          <p className="mt-6 text-center text-xs text-white/45">
+          <p className="mt-6 text-center text-xs text-halo-text-4">
             Customer?{' '}
-            <Link href="/" className="font-medium text-white hover:underline">
+            <Link href="/" className="font-medium text-halo-text hover:underline">
               Open the customer app →
             </Link>
           </p>

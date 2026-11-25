@@ -34,7 +34,7 @@ const STEPS: { title: string; body: string }[] = [
 export default function HowItWorksPage() {
   return (
     <InfoShell>
-      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">How it works</h1>
+      <h1 className="type-page">How it works</h1>
       <ol className="mt-6 space-y-6">
         {STEPS.map((step, i) => (
           <li key={step.title} className="flex gap-4">
@@ -45,8 +45,8 @@ export default function HowItWorksPage() {
               {i + 1}
             </span>
             <div>
-              <h2 className="text-[18px] font-semibold text-[var(--label)]">{step.title}</h2>
-              <p className="mt-1 text-[16px] leading-[1.6] text-[var(--label-2)]">{step.body}</p>
+              <h2 className="type-section">{step.title}</h2>
+              <p className="mt-1 type-body">{step.body}</p>
             </div>
           </li>
         ))}

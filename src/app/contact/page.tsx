@@ -34,8 +34,8 @@ export default function ContactPage() {
 
   return (
     <InfoShell>
-      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Contact</h1>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h1 className="type-page">Contact</h1>
+      <p className="mt-2 type-body">
         Questions about an order — status, payment verification, or file changes — are best
         answered by the shop itself. Open your tracking page and use the Call shop button there.
       </p>
@@ -54,8 +54,8 @@ export default function ContactPage() {
         </p>
       </div>
 
-      <h2 className="mt-8 text-[18px] font-semibold text-[var(--label)]">Reach the Printelyx team</h2>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">
+      <h2 className="mt-8 type-section">Reach the Printelyx team</h2>
+      <p className="mt-2 type-body">
         For problems with the app itself — a payment that will not verify, a file that will not
         upload — report it and include your order token if you have one.
       </p>

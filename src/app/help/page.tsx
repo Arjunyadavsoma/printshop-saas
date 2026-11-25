@@ -97,8 +97,8 @@ export default function HelpPage() {
   return (
     <InfoShell>
       <p className="text-sm font-semibold text-[var(--label-2)]">Printelyx</p>
-      <h1 className="mt-2 text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Help</h1>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">Quick answers</p>
+      <h1 className="mt-2 type-page">Help</h1>
+      <p className="mt-2 type-body">Quick answers</p>
 
       <div className="mt-6 overflow-hidden rounded-[14px] bg-[var(--surface)]">
         {FAQ_ITEMS.map((item, idx) => (

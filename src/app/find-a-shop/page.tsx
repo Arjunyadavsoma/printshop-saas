@@ -322,7 +322,7 @@ export default function FindAShopPage() {
     <div className="flex min-h-[100dvh] flex-col bg-[var(--ground)]">
       <SiteHeader />
       <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 pb-[calc(76px+env(safe-area-inset-bottom))] py-6 lg:px-8 lg:pb-6">
-        <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">
+        <h1 className="type-page">
           Find a shop near you
         </h1>
         <p className="mt-1 text-base text-[var(--label-2)]">

@@ -4,15 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, AlertCircle, Keyboard } from 'lucide-react';
-import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
-import { SiteFooter } from '@/components/clear/site-footer';
+import { ConsumerPage } from '@/components/clear/consumer-page';
+import { Input } from '@/components/clear/input';
+import { PrimaryButton, TintedButton } from '@/components/clear/button';
 import jsQR from 'jsqr';
 
 /**
- * /scan — "Scan QR" consumer tab. Clear design (matches homepage).
+ * /scan — "Scan QR" consumer tab.
  * Point the camera at a shop's QR code and go straight to its upload page.
  * Decoding uses jsQR (pure JS, canvas frame grab). Manual-entry fallback
  * for denied camera permission and desktop use.
+ *
+ * Shared consumer shell (ConsumerPage) — the old `.x .m` / `.x .d` dual
+ * canvas is gone. Camera logic and copy are unchanged.
  */
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,60}$/i;
@@ -30,6 +34,9 @@ export function extractShopSlug(payload: string): string | null {
     return null;
   }
 }
+
+const cardClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-1';
+const cardPadClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] p-4';
 
 export default function ScanPage() {
   const router = useRouter();
@@ -106,104 +113,68 @@ export default function ScanPage() {
     go(slug);
   };
 
-  /* ── Camera card (shared) ── */
-  const cameraCard = (isDesktop = false) => (
-    <div className={isDesktop ? 'gg' : 'g'} style={{ padding: 0, overflow: 'hidden' }}>
-      {cameraState === 'live' ? (
-        <div style={{ position: 'relative', aspectRatio: '4/3', width: '100%', background: '#000' }}>
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption -- camera preview */}
-          <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} aria-label="Camera preview" />
-          <div aria-hidden="true" style={{ position: 'absolute', left: '18%', right: '18%', top: '22%', bottom: '22%', border: '2px solid rgba(255,255,255,0.8)', borderRadius: 16, pointerEvents: 'none' }} />
-        </div>
-      ) : (
-        <div style={{ aspectRatio: '4/3', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#F2F3F7', padding: 24, textAlign: 'center' }}>
-          <Camera style={{ width: 40, height: 40, color: '#6B6F76' }} strokeWidth={1.5} aria-hidden="true" />
-          <p style={{ fontSize: 14, color: '#5B5F66' }}>
-            {cameraState === 'starting' ? 'Starting the camera…' : cameraState === 'denied' ? 'Camera access is off.' : 'The camera is off.'}
-          </p>
-          <button type="button" onClick={() => void startCamera()} disabled={cameraState === 'starting'} className="btn" style={{ flex: 'none', height: 44, fontSize: 15, padding: '0 24px' }}>
-            {cameraState === 'starting' ? 'Starting…' : 'Open Scanner'}
-          </button>
-          <p style={{ fontSize: 13, color: '#6B6F76' }}>Aim at the shop&apos;s QR poster — the shop page opens by itself.</p>
-        </div>
-      )}
-    </div>
-  );
-
-  /* ── Manual entry card (shared) ── */
-  const manualCard = (isDesktop = false) => (
-    <div className={isDesktop ? 'gg p' : 'g p'}>
-      <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: '#1C1C1E' }}>
-        <Keyboard style={{ width: 16, height: 16, color: '#5B5F66' }} aria-hidden="true" />
-        Or enter the shop code
-      </h2>
-      <form style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }} onSubmit={submitManual}>
-        <label htmlFor="scan-manual" style={{ fontSize: 14, fontWeight: 600, display: 'block' }}>Shop link or code</label>
-        <input
-          id="scan-manual"
-          className="in"
-          type="text"
-          placeholder="printelyx.cc.cd/s/my-shop  —  or  my-shop"
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          autoComplete="off"
-          inputMode="url"
-        />
-        {manualError && <p className="cap" role="alert" style={{ color: '#9C1F18', margin: 0 }}>{manualError}</p>}
-        <button type="submit" className="btn s" style={{ flex: 'none', height: 44, fontSize: 15 }}>{'Open shop page'}</button>
-      </form>
-      <p className="cap" style={{ margin: '12px 0 0' }}>
-        Every Printelyx shop page lives at <span style={{ fontFamily: 'ui-monospace, monospace' }}>/s/&lt;shop-code&gt;</span> — the code is printed under the QR code on the shop poster.
-      </p>
-    </div>
-  );
-
   return (
-    <>
-      {/* Mobile */}
-      <div className="x m">
-        <div className="top"><i className="dot" /><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
-        <h1 className="h">Scan a shop QR code</h1>
-        <p className="sub">Point your camera at the shop&apos;s QR poster to go straight to its upload page.</p>
-        {cameraCard()}
-        {cameraError && (
-          <p className="cap" role="alert" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: '#5B5F66' }}>
-            <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
-            {cameraError}
-          </p>
-        )}
-        {manualCard()}
-        <p className="cap">No poster around? <Link href="/find-a-shop" style={{ color: '#0A58D6', textDecoration: 'none' }}>Find shops near you</Link> instead.</p>
-        <div style={{ height: 'calc(80px + env(safe-area-inset-bottom))' }} />
-      </div>
+    <ConsumerPage>
+      <h1 className="type-hero">Scan a shop QR code</h1>
+      <p className="type-sub mt-2">Point your camera at the shop&apos;s QR poster to go straight to its upload page.</p>
 
-      {/* Desktop */}
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />Printelyx</b>
-          <span className="v">
-            <Link href="/" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Home</Link>
-            <Link href="/track" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Track order</Link>
-            <Link href="/help" style={{ color: '#5B5F66', textDecoration: 'none' }}>Help</Link>
-          </span>
-        </div>
-        <div className="wrap"><div className="l" style={{ maxWidth: 560, margin: '0 auto' }}>
-          <h1 className="h1">Scan a shop QR code</h1>
-          <p className="s2">Point your camera at the shop&apos;s QR poster to go straight to its upload page.</p>
-          {cameraCard(true)}
-          {cameraError && (
-            <p className="cap" role="alert" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: '#5B5F66' }}>
-              <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
-              {cameraError}
+      {/* Camera card */}
+      <div className="mt-6 overflow-hidden rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)]">
+        {cameraState === 'live' ? (
+          <div className="relative aspect-[4/3] w-full bg-black">
+            <video ref={videoRef} playsInline muted className="size-full object-cover" aria-label="Camera preview" />
+            <div aria-hidden="true" className="pointer-events-none absolute inset-x-[18%] inset-y-[22%] rounded-2xl border-2 border-white/80" />
+          </div>
+        ) : (
+          <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 bg-[var(--ground)] p-6 text-center">
+            <Camera className="size-10 text-[var(--label-2)]" strokeWidth={1.5} aria-hidden="true" />
+            <p className="text-sm text-[var(--label-2)]">
+              {cameraState === 'starting' ? 'Starting the camera…' : cameraState === 'denied' ? 'Camera access is off.' : 'The camera is off.'}
             </p>
-          )}
-          {manualCard(true)}
-          <p className="cap">No poster around? <Link href="/find-a-shop" style={{ color: '#0A58D6', textDecoration: 'none' }}>Find shops near you</Link> instead.</p>
-        </div></div>
-        <SiteFooter />
+            <PrimaryButton type="button" size="compact" onClick={() => void startCamera()} disabled={cameraState === 'starting'}>
+              {cameraState === 'starting' ? 'Starting…' : 'Open Scanner'}
+            </PrimaryButton>
+            <p className="text-[13px] text-[var(--label-2)]">Aim at the shop&apos;s QR poster — the shop page opens by itself.</p>
+          </div>
+        )}
       </div>
 
-      <ConsumerTabBar />
-    </>
+      {cameraError && (
+        <p className="mt-4 flex items-start gap-2 px-2 text-sm text-[var(--label-2)]" role="alert">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {cameraError}
+        </p>
+      )}
+
+      {/* Manual entry card */}
+      <div className={`${cardPadClass} mt-4`}>
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-[var(--label)]">
+          <Keyboard className="size-4 text-[var(--label-2)]" aria-hidden="true" />
+          Or enter the shop code
+        </h2>
+        <form onSubmit={submitManual} className="mt-3 flex flex-col gap-3">
+          <Input
+            id="scan-manual"
+            label="Shop link or code"
+            placeholder="printelyx.cc.cd/s/my-shop  —  or  my-shop"
+            value={manual}
+            onChange={setManual}
+            autoComplete="off"
+            inputMode="url"
+            error={manualError ?? undefined}
+          />
+          <TintedButton type="submit" size="compact">
+            Open shop page
+          </TintedButton>
+        </form>
+        <p className="mt-3 text-sm text-[var(--label-2)]">
+          Every Printelyx shop page lives at <span className="font-mono">/s/&lt;shop-code&gt;</span> — the code is printed under the QR code on the shop poster.
+        </p>
+      </div>
+
+      <p className="mt-4 px-2 text-sm text-[var(--label-2)]">
+        No poster around? <Link href="/find-a-shop" className="text-[var(--accent)]">Find shops near you</Link> instead.
+      </p>
+    </ConsumerPage>
   );
 }

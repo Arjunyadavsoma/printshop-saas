@@ -36,14 +36,14 @@ const SECTIONS: { title: string; body: string }[] = [
 export default function RefundPolicyPage() {
   return (
     <InfoShell>
-      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Refund policy</h1>
+      <h1 className="type-page">Refund policy</h1>
       <ol className="mt-6 space-y-6">
         {SECTIONS.map((section, i) => (
           <li key={section.title}>
-            <h2 className="text-[18px] font-semibold text-[var(--label)]">
+            <h2 className="type-section">
               {i + 1}. {section.title}
             </h2>
-            <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">{section.body}</p>
+            <p className="mt-2 type-body">{section.body}</p>
           </li>
         ))}
       </ol>

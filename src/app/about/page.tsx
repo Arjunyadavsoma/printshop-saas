@@ -16,8 +16,8 @@ export default function AboutPage() {
   return (
     <InfoShell>
       <p className="text-sm font-semibold text-[var(--label-2)]">Printelyx</p>
-      <h1 className="mt-2 text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">About</h1>
-      <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">Print without the queue.</p>
+      <h1 className="mt-2 type-page">About</h1>
+      <p className="mt-2 type-body">Print without the queue.</p>
 
       <div className="mt-6 overflow-hidden rounded-[14px] bg-[var(--surface)]">
         {[

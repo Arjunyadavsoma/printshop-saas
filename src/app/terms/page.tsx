@@ -40,7 +40,7 @@ const SECTIONS: { title: string; body: string }[] = [
 export default function TermsPage() {
   return (
     <InfoShell>
-      <h1 className="text-[28px] font-bold tracking-[-0.01em] text-[var(--label)]">Terms of use</h1>
+      <h1 className="type-page">Terms of use</h1>
       <p className="mt-2 text-[15px] leading-[1.6] text-[var(--label-2)]">
         Plain-language summary, kept current in code. Last reviewed: November 2026.
       </p>
@@ -48,10 +48,10 @@ export default function TermsPage() {
       <ol className="mt-6 space-y-6">
         {SECTIONS.map((section, i) => (
           <li key={section.title}>
-            <h2 className="text-[18px] font-semibold text-[var(--label)]">
+            <h2 className="type-section">
               {i + 1}. {section.title}
             </h2>
-            <p className="mt-2 text-[16px] leading-[1.6] text-[var(--label-2)]">{section.body}</p>
+            <p className="mt-2 type-body">{section.body}</p>
           </li>
         ))}
       </ol>
