@@ -27,6 +27,7 @@ import {
   InMemoryRealtimeAdapter,
   InMemoryQueueAdapter,
   StubEmailAdapter,
+  ResendEmailAdapter,
   StubSmsAdapter,
   StubLoggerAdapter,
   UpiDeepLinkPaymentAdapter,
@@ -369,8 +370,16 @@ function buildContainer(): Container {
   // Queue — in-memory, processes jobs immediately.
   const queue: QueueAdapter = new InMemoryQueueAdapter();
 
-  // Email / SMS — stubs capture to memory (MVP).
-  const email: EmailAdapter = new StubEmailAdapter();
+  // Email — Resend when EMAIL_PROVIDER=resend (production); the stub
+  // captures to memory otherwise (dev/tests). Resend is the only
+  // production sender: the password-reset route is the single caller
+  // today. The key is fail-fast in production (same pattern as the JWT
+  // secrets) — a deploy that asks for Resend without a key refuses to
+  // boot instead of silently dropping reset emails.
+  const email: EmailAdapter =
+    env('EMAIL_PROVIDER', '') === 'resend'
+      ? new ResendEmailAdapter(requireSecret('RESEND_API_KEY'))
+      : new StubEmailAdapter();
   const sms: SMSAdapter = new StubSmsAdapter();
 
   // Payments — a registry of all providers. The checkout/webhook flows route

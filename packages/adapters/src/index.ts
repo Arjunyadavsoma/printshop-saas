@@ -12,6 +12,7 @@ export * from './realtime/in-memory.adapter';
 export * from './realtime/socketio-relay.adapter';
 export * from './queue/in-memory.adapter';
 export * from './email/stub.adapter';
+export * from './email/resend.adapter';
 export * from './sms/stub.adapter';
 export * from './logger/stub.adapter';
 export * from './payment/phonepe.adapter';

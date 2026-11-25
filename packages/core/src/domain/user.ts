@@ -9,6 +9,10 @@ export interface User {
   passwordHash: string;
   role: UserRole;
   shopId: string | null;
+  /** Clerk user id (`user_…`) when the account is linked to Clerk sign-in.
+   * Null for password-only accounts. Set by the Clerk session exchange /
+   * webhook — never by the registration form. */
+  clerkId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,6 +24,7 @@ export const UserSchema = z.object({
   passwordHash: z.string(),
   role: z.enum(USER_ROLES as [UserRole, ...UserRole[]]),
   shopId: z.string().uuid().nullable(),
+  clerkId: z.string().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

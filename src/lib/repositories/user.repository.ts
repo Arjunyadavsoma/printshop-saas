@@ -10,6 +10,7 @@ interface UserRow {
   passwordHash: string;
   role: string;
   shopId: string | null;
+  clerkId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +23,7 @@ function toDomain(row: UserRow): User {
     passwordHash: row.passwordHash,
     role: row.role as UserRole,
     shopId: row.shopId,
+    clerkId: row.clerkId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -51,12 +53,20 @@ export class UserRepository extends BaseRepository<UserRow> {
     return row ? toDomain(row) : null;
   }
 
+  /** Find a user by their linked Clerk id (`user_…`). */
+  async findByClerkId(clerkId: string): Promise<User | null> {
+    const row = await this.findOne({ clerkId });
+    return row ? toDomain(row) : null;
+  }
+
   async create(input: {
     email: string;
     phone: string;
     password: string;
     role: UserRole;
     shopId: string | null;
+    /** Clerk user id to link at creation (Clerk sign-up path). */
+    clerkId?: string | null;
   }, auth: AuthAdapter): Promise<User> {
     const passwordHash = await auth.hashPassword(input.password);
     const row = await this.insertOne({
@@ -70,6 +80,7 @@ export class UserRepository extends BaseRepository<UserRow> {
       passwordHash,
       role: input.role,
       shopId: input.shopId,
+      clerkId: input.clerkId ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as UserRow);
