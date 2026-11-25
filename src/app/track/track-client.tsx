@@ -3,13 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CustomerShell } from '@/components/clear/customer-shell';
-import { Search } from 'lucide-react';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
+import { SiteFooter } from '@/components/clear/site-footer';
 
 /**
  * /track — order lookup by tracking link or order token.
- * Uses CustomerShell + .rv-* classes for visual consistency with the
- * rest of the consumer flow (home, shop, orders, profile, scan).
+ * Clear design (matches the homepage: .x/.m mobile + .x/.d desktop).
  */
 export function TrackPageClient() {
   const router = useRouter();
@@ -20,83 +19,66 @@ export function TrackPageClient() {
     e.preventDefault();
     setError(null);
     const trimmed = value.trim();
-    if (!trimmed) {
-      setError('Enter your tracking link or order number.');
-      return;
-    }
-    // If it looks like a full tracking URL, extract the token
+    if (!trimmed) { setError('Enter your tracking link or order number.'); return; }
     if (trimmed.startsWith('http')) {
       try {
         const url = new URL(trimmed);
         const token = url.pathname.split('/o/')[1];
-        if (token) {
-          router.push(`/o/${token}`);
-          return;
-        }
-      } catch {
-        // Not a valid URL — treat as a token
-      }
+        if (token) { router.push(`/o/${token}`); return; }
+      } catch { /* not a URL */ }
     }
-    // Treat as a direct token (hex string)
-    if (/^[a-f0-9]{32,}$/i.test(trimmed)) {
-      router.push(`/o/${trimmed}`);
-      return;
-    }
+    if (/^[a-f0-9]{32,}$/i.test(trimmed)) { router.push(`/o/${trimmed}`); return; }
     setError('That does not look like a valid tracking link. Check your receipt for the link.');
   };
 
-  return (
-    <CustomerShell shopName="Printelyx">
-      <div className="rv-g" style={{ gap: 14 }}>
-        <div>
-          <h1 className="text-[27px]">Track your order</h1>
-          <p className="rv-t" style={{ margin: '6px 0 0' }}>
-            Paste your tracking link from your receipt, or your order number.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ position: 'relative' }}>
-            <span
-              aria-hidden="true"
-              style={{ position: 'absolute', left: 13, top: 13, color: 'var(--rv-muted,#566274)' }}
-            >
-              <Search className="size-[22px]" strokeWidth={2} />
-            </span>
-            <label className="rv-t" htmlFor="track-input" style={{ position: 'absolute', left: -9999 }}>
-              Tracking link or order number
-            </label>
-            <input
-              id="track-input"
-              className="rv-input"
-              type="text"
-              placeholder="https://printelyx.cc.cd/o/…"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-          {error && (
-            <p className="rv-t mt-2" role="alert" style={{ color: 'var(--danger,#B3261E)' }}>
-              {error}
-            </p>
-          )}
-          <button type="submit" className="rv-btn mt-4">
-            Track order
-          </button>
-        </form>
-
-        <div className="rv-card" style={{ padding: 0 }}>
-          <Link href="/orders" className="rv-row">
-            <span>My orders</span>
-            <span className="rv-t" aria-hidden="true">›</span>
-          </Link>
-          <Link href="/help" className="rv-row">
-            <span>Help</span>
-            <span className="rv-t" aria-hidden="true">›</span>
-          </Link>
-        </div>
+  const form = () => (
+    <form onSubmit={handleSubmit}>
+      <div className="g p">
+        <label htmlFor="track-input" style={{ fontSize: 14, fontWeight: 600, display: 'block', marginTop: 12 }}>Tracking link or order number</label>
+        <input id="track-input" className="in" type="text" placeholder="https://printelyx.cc.cd/o/…" value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" />
+        {error && <p className="cap" role="alert" style={{ color: '#9C1F18', margin: '8px 0 0' }}>{error}</p>}
+        <button type="submit" className="btn" style={{ width: '100%', marginTop: 16 }}>Track order</button>
       </div>
-    </CustomerShell>
+    </form>
+  );
+
+  return (
+    <>
+      {/* Mobile */}
+      <div className="x m">
+        <div className="top"><i className="dot" /><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
+        <h1 className="h">Track your order</h1>
+        <p className="sub">Paste your tracking link from your receipt, or your order number.</p>
+        {form()}
+        <div className="g">
+          <Link href="/orders" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>My orders</span><span className="v">›</span></Link>
+          <Link href="/help" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Help</span><span className="v">›</span></Link>
+        </div>
+        <div style={{ height: 'calc(80px + env(safe-area-inset-bottom))' }} />
+      </div>
+
+      {/* Desktop */}
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />Printelyx</b>
+          <span className="v">
+            <Link href="/" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Home</Link>
+            <Link href="/help" style={{ color: '#5B5F66', textDecoration: 'none' }}>Help</Link>
+          </span>
+        </div>
+        <div className="wrap"><div className="l" style={{ maxWidth: 560, margin: '0 auto' }}>
+          <h1 className="h1">Track your order</h1>
+          <p className="s2">Paste your tracking link from your receipt, or your order number.</p>
+          {form()}
+          <div className="gg">
+            <Link href="/orders" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>My orders</span><span className="v">›</span></Link>
+            <Link href="/help" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Help</span><span className="v">›</span></Link>
+          </div>
+        </div></div>
+        <SiteFooter />
+      </div>
+
+      <ConsumerTabBar />
+    </>
   );
 }

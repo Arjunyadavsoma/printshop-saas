@@ -18,8 +18,8 @@
   --shadow-pop: 0 10px 30px -8px rgb(16 24 40 / 0.18), 0 4px 10px -4px rgb(16 24 40 / 0.08);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* ── Font: Manrope for all surfaces (unified across consumer + portal) ── */
-  --font-sans: var(--font-manrope), var(--font-instrument), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  /* ── Font: Instrument Sans (Clear design — English only, Latin subset) ── */
+  --font-sans: var(--font-instrument), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ── Clear colour tokens → Tailwind utilities ── */
@@ -493,7 +493,7 @@
   --rv-amber-ink: #8A4B00;
   --rv-code-blue: #9FB4FF;
   --rv-done-green: #12805C;
-  font-family: var(--font-manrope), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-instrument), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--rv-ink);
   background: var(--rv-bg);
 }
@@ -507,22 +507,22 @@
 .rv-row:last-child { border-bottom: 0; }
 .rv-g { display: flex; flex-direction: column; gap: 10px; }
 .rv-r { display: flex; align-items: center; gap: 12px; }
-.rv-btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border: 0; border-radius: 14px; background: var(--rv-accent); color: #fff; font: 800 16px var(--font-manrope), sans-serif; width: 100%; }
+.rv-btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border: 0; border-radius: 14px; background: var(--rv-accent); color: #fff; font: 800 16px var(--font-instrument), sans-serif; width: 100%; }
 .rv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .rv-ic { width: 44px; height: 44px; border-radius: 12px; background: var(--rv-accent-soft); color: var(--rv-accent); display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
 .rv-ic img { width: 100%; height: 100%; object-fit: cover; }
-.rv-chip { height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--rv-chip-border); background: #fff; font: 700 13px var(--font-manrope), sans-serif; color: var(--rv-ink); display: inline-flex; align-items: center; gap: 8px; }
+.rv-chip { height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--rv-chip-border); background: #fff; font: 700 13px var(--font-instrument), sans-serif; color: var(--rv-ink); display: inline-flex; align-items: center; gap: 8px; }
 .rv-chip.on { background: var(--rv-ink); color: #fff; border-color: var(--rv-ink); }
 .rv-pill { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 12px; background: var(--rv-green-bg); color: var(--rv-green-ink); white-space: nowrap; }
 .rv-pill.am { background: var(--rv-amber-bg); color: var(--rv-amber-ink); }
 .rv-pill.gy { background: #E9EDF3; color: var(--rv-muted); }
 .rv-seg { display: flex; background: #E9EDF3; border-radius: 12px; padding: 4px; gap: 4px; }
-.rv-seg button { flex: 1; height: 40px; border: 0; border-radius: 9px; background: transparent; font: 700 14px var(--font-manrope), sans-serif; color: var(--rv-muted); }
+.rv-seg button { flex: 1; height: 40px; border: 0; border-radius: 9px; background: transparent; font: 700 14px var(--font-instrument), sans-serif; color: var(--rv-muted); }
 .rv-seg button.on { background: #fff; color: var(--rv-ink); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
 .rv-bk { width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--rv-border); background: #fff; display: flex; align-items: center; justify-content: center; color: var(--rv-ink); }
 .rv-bar { background: #fff; border-top: 1px solid var(--rv-border); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 30; }
 @media (min-width: 1024px) { .rv-bar { bottom: 0; } }
-.rv-input { height: 48px; border: 1px solid var(--rv-chip-border); border-radius: 14px; padding: 0 14px 0 44px; font: 600 15px var(--font-manrope), sans-serif; width: 100%; background: #fff; color: var(--rv-ink); outline: none; }
+.rv-input { height: 48px; border: 1px solid var(--rv-chip-border); border-radius: 14px; padding: 0 14px 0 44px; font: 600 15px var(--font-instrument), sans-serif; width: 100%; background: #fff; color: var(--rv-ink); outline: none; }
 .rv-input:focus-visible { border-color: var(--rv-accent); }
 .rv-code-card { background: var(--rv-ink); border: 0; color: #fff; text-align: center; padding: 22px; border-radius: 16px; }
 .rv-code-card .code { font-size: 48px; font-weight: 800; letter-spacing: 0.18em; margin: 8px 0 4px; }

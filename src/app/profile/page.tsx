@@ -1,85 +1,91 @@
 'use client';
 
 import Link from 'next/link';
-import { User, ReceiptText, Store } from 'lucide-react';
-import { CustomerShell } from '@/components/clear/customer-shell';
+import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
+import { SiteFooter } from '@/components/clear/site-footer';
 
 /**
- * /profile — "Profile" consumer tab. Sign-in for customers is planned but
- * NOT built yet (the platform has no customer accounts — orders are
- * tracked by device-stored order links). This page is the honest
- * placeholder: it states exactly what works today, where the customer's
- * orders live, and where shopkeepers sign in. When customer accounts
- * ship, sign-in lands here and existing device orders get claimed by the
- * signed-in account (cross-device order history).
+ * /profile — "Profile" consumer tab. Clear design (matches homepage).
+ * Customer sign-in is planned but not built yet — this is the honest
+ * placeholder stating what works today.
  */
 export default function ProfilePage() {
   return (
-    <CustomerShell shopName="Printelyx">
-      <h1 className="text-3xl font-extrabold tracking-tight text-[var(--label)]">Profile</h1>
-      <p className="mt-1 text-base text-[var(--label-2)]">Your account, orders and shops in one place.</p>
+    <>
+      {/* Mobile */}
+      <div className="x m">
+        <div className="top"><i className="dot" /><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
+        <h1 className="h">Profile</h1>
+        <p className="sub">Your account, orders and shops in one place.</p>
 
-      <section className="mt-5 rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)] p-5">
-        <div className="flex items-center gap-3">
-          <span className="flex size-12 items-center justify-center rounded-full bg-[var(--accent-tint)] text-[var(--accent-tint-text)]" aria-hidden="true">
-            <User className="size-6" strokeWidth={1.75} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-base font-semibold text-[var(--label)]">Sign in is coming soon</p>
-            <p className="text-[13px] text-[var(--label-2)]">Customer accounts are on the way.</p>
-          </div>
+        <div className="g p">
+          <p style={{ fontSize: 16, fontWeight: 600, color: '#1C1C1E' }}>Sign in is coming soon</p>
+          <small style={{ display: 'block', fontSize: 14, color: '#5B5F66', marginTop: 2 }}>Customer accounts are on the way.</small>
+          <p className="cap" style={{ margin: '12px 0 0' }}>
+            You don&apos;t need an account to print. Every order you place is saved on this device and tracked with its own link — sign-in later will link those orders across your devices.
+          </p>
+          <button type="button" disabled className="btn s" style={{ opacity: 0.5, cursor: 'not-allowed', marginTop: 12, flex: 'none', height: 44, fontSize: 15 }} aria-disabled="true">
+            Sign in — coming soon
+          </button>
         </div>
-        <p className="mt-4 text-sm text-[var(--label-2)]">
-          You don&apos;t need an account to print. Every order you place is saved on this device
-          and tracked with its own link — sign-in later will link those orders across your devices.
-        </p>
-        <button
-          type="button"
-          disabled
-          className="mt-4 inline-flex min-h-[48px] w-full items-center justify-center rounded-full bg-[var(--accent-tint)] px-5 text-sm font-semibold text-[var(--accent-tint-text)] opacity-60"
-          aria-disabled="true"
-        >
-          Sign in — coming soon
-        </button>
-      </section>
 
-      <section className="mt-4 divide-y divide-[var(--hairline)] rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)]" aria-label="Your activity">
-        <Link href="/orders" className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3">
-          <span className="flex items-center gap-3 text-sm font-medium text-[var(--label)]">
-            <ReceiptText className="size-5 text-[var(--label-2)]" aria-hidden="true" />
-            Your orders
-          </span>
-          <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-        </Link>
-        <Link href="/find-a-shop" className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3">
-          <span className="flex items-center gap-3 text-sm font-medium text-[var(--label)]">
-            <Store className="size-5 text-[var(--label-2)]" aria-hidden="true" />
-            Shops near you
-          </span>
-          <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-        </Link>
-      </section>
+        <div className="g">
+          <div className="r"><span>Your activity<small>Orders and shops you&apos;ve used.</small></span></div>
+          <Link href="/orders" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Your orders</span><span className="v">›</span></Link>
+          <Link href="/find-a-shop" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Shops near you</span><span className="v">›</span></Link>
+        </div>
 
-      <section className="mt-4 divide-y divide-[var(--hairline)] rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--surface)]" aria-label="For shopkeepers">
-        <Link href="/shop/login" className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium text-[var(--label)]">Shopkeeper login</span>
-            <span className="block text-[13px] text-[var(--label-2)]">You run a shop? This is your sign-in.</span>
-          </span>
-          <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-        </Link>
-        <Link href="/shop/register" className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium text-[var(--label)]">Register your shop</span>
-            <span className="block text-[13px] text-[var(--label-2)]">Get a QR code and start taking orders.</span>
-          </span>
-          <span aria-hidden="true" className="text-[var(--label-3)]">›</span>
-        </Link>
-      </section>
+        <div className="g">
+          <div className="r"><span>For shopkeepers<small>You run a shop? This is your sign-in.</small></span></div>
+          <Link href="/shop/login" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Shopkeeper login</span><span className="v">›</span></Link>
+          <Link href="/shop/register" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Register your shop</span><span className="v">›</span></Link>
+        </div>
 
-      <p className="mt-4 text-[13px] text-[var(--label-2)]">
-        Questions? <Link href="/help" className="underline">Help centre</Link>
-      </p>
-    </CustomerShell>
+        <p className="cap">Questions? <Link href="/help" style={{ color: '#0A58D6', textDecoration: 'none' }}>Help centre</Link></p>
+        <div style={{ height: 'calc(80px + env(safe-area-inset-bottom))' }} />
+      </div>
+
+      {/* Desktop */}
+      <div className="x d">
+        <div className="dtop">
+          <b><i className="dot" />Printelyx</b>
+          <span className="v">
+            <Link href="/" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Home</Link>
+            <Link href="/orders" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Orders</Link>
+            <Link href="/help" style={{ color: '#5B5F66', textDecoration: 'none' }}>Help</Link>
+          </span>
+        </div>
+        <div className="wrap"><div className="l" style={{ maxWidth: 560, margin: '0 auto' }}>
+          <h1 className="h1">Profile</h1>
+          <p className="s2">Your account, orders and shops in one place.</p>
+
+          <div className="gg p">
+            <p style={{ fontSize: 16, fontWeight: 600, color: '#1C1C1E' }}>Sign in is coming soon</p>
+            <small style={{ display: 'block', fontSize: 14, color: '#5B5F66', marginTop: 2 }}>Customer accounts are on the way.</small>
+            <p className="cap" style={{ margin: '12px 0 0' }}>
+              You don&apos;t need an account to print. Every order you place is saved on this device and tracked with its own link.
+            </p>
+            <button type="button" disabled className="btn s" style={{ opacity: 0.5, cursor: 'not-allowed', marginTop: 12, flex: 'none', height: 44, fontSize: 15 }} aria-disabled="true">
+              Sign in — coming soon
+            </button>
+          </div>
+
+          <div className="gg">
+            <div className="r"><span>Your activity<small>Orders and shops you&apos;ve used.</small></span></div>
+            <Link href="/orders" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Your orders</span><span className="v">›</span></Link>
+            <Link href="/find-a-shop" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Shops near you</span><span className="v">›</span></Link>
+          </div>
+
+          <div className="gg">
+            <div className="r"><span>For shopkeepers<small>You run a shop? This is your sign-in.</small></span></div>
+            <Link href="/shop/login" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Shopkeeper login</span><span className="v">›</span></Link>
+            <Link href="/shop/register" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Register your shop</span><span className="v">›</span></Link>
+          </div>
+        </div></div>
+        <SiteFooter />
+      </div>
+
+      <ConsumerTabBar />
+    </>
   );
 }
