@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans, Manrope } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import "./clear.css";
@@ -12,14 +12,16 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { isClerkEnabled } from "@/lib/clerk";
 
 /**
- * Printelyx "Clear" design system — Instrument Sans only (English only).
- * Replaces Anek Latin + Devanagari + Telugu (Hindi/Telugu content removed).
- * Manrope is the consumer-flow face (Consumer Flow Revamp boards).
+ * Printelyx Consumer Visual Identity — Inter is the primary typeface.
+ * Exposed as `--font-inter` (canonical, per the identity doc) and
+ * `--font-instrument` (backward-compat alias so the existing Clear CSS,
+ * which references var(--font-instrument), renders in Inter without edits).
+ * Manrope remains the consumer-flow display face.
  */
-const instrumentSans = Instrument_Sans({
+const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  variable: "--font-instrument",
+  variable: "--font-inter",
   display: "swap",
   fallback: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
 });
@@ -72,7 +74,7 @@ export const viewport: Viewport = {
   // Single light entry: the Clear design has no dark mode (the PDF is
   // light-only and .ref-* hardcodes light colours), so the browser chrome
   // must never advertise a dark theme.
-  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#0A58D6" }],
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#2563EB" }],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -97,7 +99,8 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className={`${instrumentSans.variable} ${manrope.variable} antialiased bg-background text-foreground`}
+        className={`${inter.variable} ${manrope.variable} antialiased bg-background text-foreground`}
+        style={{ ['--font-instrument' as string]: 'var(--font-inter)' } as React.CSSProperties}
       >
         <AuthProvider>
           {/*

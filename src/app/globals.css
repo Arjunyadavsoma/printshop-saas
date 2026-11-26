@@ -18,8 +18,10 @@
   --shadow-pop: 0 10px 30px -8px rgb(16 24 40 / 0.18), 0 4px 10px -4px rgb(16 24 40 / 0.08);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* ── Font: Instrument Sans (Clear design — English only, Latin subset) ── */
-  --font-sans: var(--font-instrument), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  /* ── Font: Inter (Printelyx Consumer Visual Identity — English only) ──
+     --font-instrument is aliased to --font-inter on <body> (see layout.tsx)
+     so legacy Clear CSS that references var(--font-instrument) renders Inter. */
+  --font-sans: var(--font-inter), var(--font-instrument), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ── Clear colour tokens → Tailwind utilities ── */
@@ -163,22 +165,23 @@
    LIGHT MODE (default)
    ════════════════════════════════════════════════════════════════════ */
 :root {
-  /* Core palette */
-  --ground: #F2F3F7;
+  /* Core palette — Printelyx Consumer Visual Identity (Blue + White) */
+  --ground: #F8FAFC;
   --surface: #FFFFFF;
-  --label: #1C1C1E;
-  --label-2: #5B5F66;
-  --label-3: #6B6F76;
-  --hairline: #DADBE0;
-  --track: #E3E4E9;
-  --fill: #F2F3F7;
+  --label: #0F172A;
+  --label-2: #64748B;
+  --label-3: #94A3B8;
+  --hairline: #E2E8F0;
+  --track: #E2E8F0;
+  --fill: #F8FAFC;
 
-  /* Accent */
-  --accent: #0A58D6;
-  --accent-press: #094FBF;
+  /* Accent — Primary Blue #2563EB */
+  --accent: #2563EB;
+  --accent-press: #1D4ED8;
   --on-accent: #FFFFFF;
-  --accent-tint: #E6EEFB;
-  --accent-tint-text: #0A4CB8;
+  --accent-tint: #EFF6FF;
+  --accent-tint-text: #1D4ED8;
+  --pale-blue: #DBEAFE;
 
   /* Halo identity (dark sign-in screen, PR #10) — mode-independent:
      halo screens are dark by design in both modes. The login page and
@@ -186,8 +189,8 @@
   --halo-surface: #0B0B0D;
   --halo-card: #1C1C1F;
   --halo-card-hover: #232327;
-  --halo-glow-blue: rgba(10, 88, 214, 0.28);
-  --halo-glow-blue-soft: rgba(10, 88, 214, 0.08);
+  --halo-glow-blue: rgba(37, 99, 235, 0.28);
+  --halo-glow-blue-soft: rgba(37, 99, 235, 0.08);
   --halo-glow-green: rgba(30, 138, 86, 0.12);
   --halo-live: #34D399;
   --halo-pill: rgba(255, 255, 255, 0.85);
@@ -215,16 +218,20 @@
   --halo-danger-soft: rgba(229, 72, 77, 0.15);
   --halo-danger-text: #FFB4AE;
 
-  /* Status */
-  --success: #1E8A56;
+  /* Status — Printelyx Consumer Visual Identity semantic colors */
+  --success: #16A34A;
+  --success-bg: #F0FDF4;
+  --warning: #D97706;
+  --warning-bg: #FFFBEB;
+  --error: #DC2626;
+  --error-bg: #FEF2F2;
   --success-tint: #DDF3E7;
   --success-text: #14663F;
-  --warning: #F5C400;
   --warning-tint: #FFF1CC;
   --warning-text: #7A4B00;
-  --danger: #B3261E;
-  --danger-tint: #FAE3E1;
-  --danger-text: #9C1F18;
+  --danger: #DC2626;
+  --danger-tint: #FEF2F2;
+  --danger-text: #991B1B;
 
   /* Print semantics */
   --pg-bw-dot: conic-gradient(#1C1C1E 0deg 180deg, #FFFFFF 180deg 360deg);
@@ -232,59 +239,59 @@
   --pg-colour-dot: conic-gradient(#E5484D, #F5C400, #30A46C, #0091FF, #D6409F, #E5484D);
   --kanban-fill: #E8E9EF;
 
-  /* Legacy Square UI values (for components not yet migrated) */
-  --background: #F2F3F7;
-  --foreground: #1C1C1E;
+  /* Legacy Square UI values — aligned to Printelyx Blue+White identity */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
   --card: #FFFFFF;
-  --card-foreground: #1C1C1E;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #1C1C1E;
-  --primary: #0A58D6;
+  --popover-foreground: #0F172A;
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
-  --secondary: #F2F3F7;
-  --secondary-foreground: #1C1C1E;
-  --muted: #F2F3F7;
-  --muted-foreground: #5B5F66;
-  --accent-foreground: #1C1C1E;
-  --destructive: #B3261E;
+  --secondary: #F8FAFC;
+  --secondary-foreground: #0F172A;
+  --muted: #F8FAFC;
+  --muted-foreground: #64748B;
+  --accent-foreground: #0F172A;
+  --destructive: #DC2626;
   --destructive-foreground: #FFFFFF;
-  --border: #DADBE0;
-  --input: #DADBE0;
-  --ring: #0A58D6;
-  --brand: #0A58D6;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #2563EB;
+  --brand: #2563EB;
   --brand-foreground: #FFFFFF;
-  --brand-soft: #E6EEFB;
-  --brand-hover: #094FBF;
-  --brand-border: #E6EEFB;
+  --brand-soft: #EFF6FF;
+  --brand-hover: #1D4ED8;
+  --brand-border: #EFF6FF;
   --success-foreground: #FFFFFF;
   --success-soft: #DDF3E7;
   --success-border: #DDF3E7;
   --warning-foreground: #7A4B00;
   --warning-soft: #FFF1CC;
   --warning-border: #FFF1CC;
-  --info: #0A58D6;
+  --info: #2563EB;
   --info-foreground: #FFFFFF;
-  --info-soft: #E6EEFB;
-  --info-border: #E6EEFB;
+  --info-soft: #EFF6FF;
+  --info-border: #EFF6FF;
   --danger-foreground: #FFFFFF;
-  --danger-soft: #FAE3E1;
-  --danger-border: #FAE3E1;
-  --focus: #0A58D6;
-  --page: #F2F3F7;
+  --danger-soft: #FEF2F2;
+  --danger-border: #FEF2F2;
+  --focus: #2563EB;
+  --page: #F8FAFC;
   --surface-elevated: #FFFFFF;
   --sidebar: #FFFFFF;
-  --sidebar-foreground: #1C1C1E;
-  --sidebar-primary: #0A58D6;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #2563EB;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #E6EEFB;
-  --sidebar-accent-foreground: #0A4CB8;
-  --sidebar-border: #DADBE0;
-  --sidebar-ring: #0A58D6;
-  --chart-1: #0A58D6;
-  --chart-2: #1E8A56;
-  --chart-3: #F5C400;
-  --chart-4: #B3261E;
-  --chart-5: #6B6F76;
+  --sidebar-accent: #EFF6FF;
+  --sidebar-accent-foreground: #1D4ED8;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #2563EB;
+  --chart-1: #2563EB;
+  --chart-2: #16A34A;
+  --chart-3: #D97706;
+  --chart-4: #DC2626;
+  --chart-5: #94A3B8;
 }
 
 /* ════════════════════════════════════════════════════════════════════
