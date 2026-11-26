@@ -66,6 +66,29 @@ if [ -n "${DATABASE_URL:-}" ]; then
     echo "  ⚠ Could not create upload-session tables — uploads fall back to in-process storage."
   fi
 
+  # Surgical customer-account table creation (same pattern as the upload
+  # tables above): `prisma db push` is all-or-nothing and refuses on the
+  # Order.[shopId, customerToken] drift, so the CustomerAccount table and
+  # Order.customerId column would never be created by db push. Create
+  # them directly from scripts/ensure-customer-tables.sql (CREATE TABLE /
+  # ADD COLUMN IF NOT EXISTS — safe to run on every deploy, touches
+  # nothing else). Without this, the customer Google sign-in exchange
+  # fails on its first write (no such table).
+  echo "→ Ensuring customer-account tables (idempotent SQL)..."
+  CUSTOMER_SQL_OK=0
+  for ATTEMPT in 1 2 3; do
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-customer-tables.sql 2>&1 | tail -3; then
+      echo "  ✓ Customer-account tables present (attempt ${ATTEMPT})"
+      CUSTOMER_SQL_OK=1
+      break
+    fi
+    echo "  ⚠ db execute attempt ${ATTEMPT} failed — retrying in 15s..."
+    sleep 15
+  done
+  if [ "$CUSTOMER_SQL_OK" -ne 1 ]; then
+    echo "  ⚠ Could not create customer-account tables — customer Google sign-in will fail until they exist."
+  fi
+
   # Schema sync (db push) — this project manages its schema via
   # prisma/schema.prisma + db push (CI + local do the same). Without this,
   # NEW tables (e.g. the DB-backed UploadSession/UploadChunk registry that
