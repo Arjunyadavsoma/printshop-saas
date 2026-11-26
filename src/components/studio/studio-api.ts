@@ -25,6 +25,15 @@ const MAX_ORDER_BYTES = 200 * 1024 * 1024; // 200 MB per order
 
 export { CHUNK_SIZE, MAX_FILE_BYTES, MAX_ORDER_BYTES };
 
+/** Shape of POST /api/v1/s/[slug]/orders success `data` (matches the
+ *  `placeOrder` return in src/lib/orders/order-flow.ts). */
+interface PlaceOrderResponse {
+  token: string;
+  pickupCode: string;
+  orderNumber: string;
+  totalPaise: number;
+}
+
 /** SHA-256 hex of a Blob (WebCrypto). Used for per-chunk checksums. */
 export async function sha256Hex(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();

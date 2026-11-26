@@ -35,7 +35,7 @@ import { GoogleMark } from '@/components/clear/provider-marks';
 interface LoginResponse {
   accessToken?: string;
   refreshToken?: string;
-  user?: { id: string; email: string; role: 'owner' | 'staff' | 'admin'; shopId: string | null };
+  user?: { id: string; email: string; role: 'owner' | 'staff' | 'admin' | 'customer'; shopId: string | null };
 }
 
 export default function AuthLoginPage() {

@@ -414,7 +414,7 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
 
   const upiIntentUrl = useMemo(() => {
     if (!placed || !shop.upiId) return null;
-    return buildUpiIntentUrl(shop.upiId, placed.totalPaise, placed.orderNumber, shopName);
+    return buildUpiIntentUrl({ payeeUpi: shop.upiId, payeeName: shopName, amountPaise: placed.totalPaise, orderShortId: placed.orderNumber });
   }, [placed, shop.upiId, shopName]);
 
   /* ── Render ─────────────────────────────────────────────────────────── */
