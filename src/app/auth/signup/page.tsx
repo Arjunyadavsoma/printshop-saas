@@ -3,26 +3,25 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { AuthShell, AuthHeader, AuthIllustration, AuthTextField, PasswordField, PrimaryAuthButton, AuthBanner } from '@/components/auth/auth-ui';
+import { AuthShell, AuthHeader, AuthIllustration, AuthTextField, PasswordField, PrimaryAuthButton, AuthBanner, AuthDivider } from '@/components/auth/auth-ui';
+import { GoogleMark } from '@/components/clear/provider-marks';
 
 /**
  * SCREEN 6 — Get Started / Sign Up (reference image 6).
  *
- * Printelyx has separate customer and shopkeeper workflows, and the only
- * existing registration API (POST /api/v1/auth/register) creates a shop
- * OWNER account + Shop together — the /shop/register wizard implements
- * the full contract (shop name, slug, UPI, address, services…).
+ * Printelyx has TWO real account flows (both preserved exactly):
  *
- * Per the assignment: the wizard must keep working exactly as before and
- * must not be merged into this screen. So this screen is the friendly
- * account entry: it validates the account fields exactly like the
- * wizard's own validation rules (same regexes), then carries them into
- * the existing wizard via sessionStorage — the user lands on the wizard's
- * business step with their account details already filled. One flow, no
- * second auth system, no changed payload.
+ *   1. CUSTOMERS sign up with Google (Clerk) — "Google sign-in IS the
+ *      signup" (see /profile/clerk-customer-signin.tsx). This screen
+ *      surfaces that existing flow first, restyled to the reference.
  *
- * Customers who don't want a shop account can "Continue without an
- * account" — ordering needs none (token-based order links).
+ *   2. SHOPKEEPERS register via the existing /shop/register wizard
+ *      (POST /api/v1/auth/register creates User + Shop). The form below
+ *      validates account fields with the wizard's own rules, then hands
+ *      off via sessionStorage prefill — the wizard is unchanged.
+ *
+ * Customers who want neither can continue without an account (guest
+ * ordering via token links — untouched).
  */
 
 /** Same validation rules as the existing /shop/register wizard (step 1). */
@@ -38,8 +37,6 @@ function validate(email: string, phone: string, password: string, name: string) 
   return e;
 }
 
-export const SIGNUP_PREFILL_KEY = 'printelyx:signup-prefill';
-
 export default function AuthSignupPage() {
   const router = useRouter();
   const [name, setName] = useState('');
@@ -50,6 +47,8 @@ export default function AuthSignupPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
   const errors = validate(email, phone, password, name);
   const hasErrors = Object.keys(errors).length > 0;
@@ -67,16 +66,10 @@ export default function AuthSignupPage() {
 
     setSubmitting(true);
     try {
-      // Check for an existing account FIRST using the real API — the
-      // register endpoint rejects duplicates with 409; check-slug and
-      // login both leak account existence in controlled ways, but the
-      // cleanest pre-flight here is a login attempt with a wrong password:
-      // too noisy. Instead we simply hand off to the wizard, which calls
-      // the real register endpoint and surfaces the 409 "account exists,
-      // log in instead" error from the backend.
-      //
-      // Carry the validated account fields into the existing wizard.
-      sessionStorage.setItem(SIGNUP_PREFILL_KEY, JSON.stringify({
+      // Carry the validated account fields into the existing wizard —
+      // the wizard calls the real register endpoint and surfaces the
+      // backend's 409 "account exists, log in instead" error itself.
+      sessionStorage.setItem('printelyx:signup-prefill', JSON.stringify({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.replace(/[\s-]/g, ''),
@@ -100,6 +93,23 @@ export default function AuthSignupPage() {
 
       <form className="au-form" onSubmit={submit} noValidate>
         {error && <AuthBanner kind="error">{error}</AuthBanner>}
+
+        {/* Customer signup — the EXISTING Google (Clerk) flow, restyled.
+            Only rendered when Clerk is configured. */}
+        {clerkEnabled && (
+          <>
+            <a
+              href="/profile?signin=1"
+              className="au-btn"
+              style={{ background: '#FFFFFF', color: 'var(--au-ink)', border: '1.5px solid var(--au-input-border)', textDecoration: 'none' }}
+              aria-label="Sign up with Google"
+            >
+              <GoogleMark />
+              <span style={{ marginLeft: 6 }}>Sign up with Google</span>
+            </a>
+            <AuthDivider label="or register a print shop" />
+          </>
+        )}
 
         <AuthTextField
           label="Full name"

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AuthShell, AuthHeader, AuthIllustration, AuthTextField, PasswordField, PrimaryAuthButton, AuthBanner, AuthDivider } from '@/components/auth/auth-ui';
 import { useApiClient } from '@/components/portal/use-api-client';
+import { GoogleMark } from '@/components/clear/provider-marks';
 
 /**
  * SCREEN 5 — Welcome Back / Login (reference image 5).
@@ -18,6 +19,13 @@ import { useApiClient } from '@/components/portal/use-api-client';
  *   - identical error surfacing (r.data.error.message),
  *   - identical token persistence via api.setAuth (access + refresh),
  *   - identical role-aware redirect (admin → /admin, owner → /shop/dashboard).
+ *
+ * Google sign-in: the project's EXISTING customer Google OAuth (Clerk,
+ * `CustomerGoogleButton` pattern from /profile) is preserved and restyled
+ * to the reference's round social-button look. It only renders when Clerk
+ * is configured — no invented providers. Because `useSignIn` requires the
+ * mounted <ClerkProvider>, the button is imported dynamically from the
+ * profile module and gated the same way the profile page gates it.
  *
  * The success screen (/auth/success) is shown for a moment of delight
  * before the role-based redirect fires — it displays the REAL user email
@@ -39,6 +47,8 @@ export default function AuthLoginPage() {
   const [showError, setShowError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
   const fieldErrors = (() => {
     const e: { email?: string; password?: string } = {};
@@ -132,9 +142,24 @@ export default function AuthLoginPage() {
 
         <AuthDivider label="or continue with" />
 
-        {/* Shopkeeper portal entry — the existing dedicated portal login.
-            No third-party social auth exists in the project, so none is
-            shown (the assignment forbids inventing providers). */}
+        {/* Google customer sign-in — the EXISTING Clerk OAuth flow,
+            restyled to the reference's round social button. Rendered only
+            when Clerk is configured (same gate as the profile page). The
+            redirect lands on /profile?clerk=1 where CustomerSessionSync
+            exchanges the session for the app JWT. */}
+        {clerkEnabled && (
+          <a
+            href="/profile?signin=1"
+            className="au-social-btn"
+            style={{ width: '100%', height: 56, borderRadius: 18 }}
+            aria-label="Continue with Google"
+          >
+            <GoogleMark />
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--au-ink)', marginLeft: 10 }}>Continue with Google</span>
+          </a>
+        )}
+
+        {/* Dedicated portal entries (existing pages, unchanged). */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Link href="/shop/login" className="au-btn au-btn-light" style={{ textDecoration: 'none' }}>
             Shopkeeper portal

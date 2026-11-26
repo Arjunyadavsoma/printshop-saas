@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SiteHeader } from '@/components/clear/site-header';
-import { SiteFooter } from '@/components/clear/site-footer';
-import { ConsumerTabBar } from '@/components/clear/consumer-tab-bar';
+import { QrCode } from 'lucide-react';
+import { ConsumerPage } from '@/components/clear/consumer-page';
+import { Input } from '@/components/clear/input';
+import { TintedButton } from '@/components/clear/button';
 import { readRecentOrders, type RecentOrderSummary } from '@/lib/customer/recent-orders';
 import { readPendingOrder, type PendingOrder } from '@/lib/customer/order-restore';
 import {
@@ -80,16 +81,17 @@ function chipClass(s: ShopListItem): string {
   return s.isOpen ? 'chip ok' : 'chip a';
 }
 
+/** White row card (Clear) — token-based, no legacy `.g` margins. */
+const cardClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-1';
+const cardPadClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] p-4';
+
 /**
- * Site home — Clear design (1:1 match to the uploaded reference screens).
+ * Site home — Clear design.
  *
- * Mobile (390px): top bar → "Print without the queue" → subtitle → search
- *   card → shops card (single white card with divider rows) → caption →
- *   "Run a print shop?" card. Bottom nav for navigation consistency.
- *
- * Desktop (1280px): top bar → two-column layout — left: headline (44px) +
- *   subtitle + search + shops; right: "Scan a shop QR code" card + register/
- *   login card.
+ * One responsive layout (no duplicated mobile/desktop markup): the hero
+ * and shop list on the left, a 360px rail on desktop with the QR scanner
+ * card and the "Run a print shop?" card. On mobile the rail stacks below
+ * the shop list, in the same order as the old mobile canvas.
  *
  * No filter chips, no QR hero banner, no individual shop cards — the
  * reference is deliberately quiet: content is the hero, chrome disappears.
@@ -196,40 +198,40 @@ export default function HomePage() {
     return list;
   }, [shops, query]);
 
-  const openCount = useMemo(() => shops.filter(s => s.isOpen).length, [shops]);
-
-  /* ── Shops card body (shared by mobile + desktop) ── */
-  const shopsCard = (isDesktop = false) => {
+  /* ── Shops card body ── */
+  const shopsCard = () => {
     if (error) {
       return (
-        <div className={isDesktop ? 'gg p' : 'g p'}>
-          <p style={{ fontSize: 15, fontWeight: 600, color: '#1C1C1E' }}>Couldn&apos;t load shops</p>
-          <small style={{ display: 'block', fontSize: 14, color: '#5B5F66', marginTop: 4 }}>This is usually temporary. Try again.</small>
-          <button type="button" onClick={() => void loadShops()} className="btn s" style={{ flex: 'none', height: 44, fontSize: 15, marginTop: 12, padding: '0 20px' }}>Try again</button>
+        <div className={cardPadClass}>
+          <p className="text-[15px] font-semibold text-[var(--label)]">Couldn&apos;t load shops</p>
+          <small className="mt-1 block text-sm text-[var(--label-2)]">This is usually temporary. Try again.</small>
+          <TintedButton type="button" size="compact" onClick={() => void loadShops()} className="mt-3">
+            Try again
+          </TintedButton>
         </div>
       );
     }
     if (loading) {
       return (
-        <div className={isDesktop ? 'gg' : 'g'}>
-          <div className="r"><span style={{ color: '#5B5F66' }}>Looking for shops nearby…</span></div>
+        <div className={cardClass}>
+          <div className="r"><span className="text-[var(--label-2)]">Looking for shops nearby…</span></div>
         </div>
       );
     }
     if (filtered.length === 0) {
       return (
-        <div className={isDesktop ? 'gg p' : 'g p'}>
-          <p style={{ fontSize: 15, fontWeight: 600, color: '#1C1C1E' }}>No shops found{query ? ' for your search' : ''}</p>
-          <small style={{ display: 'block', fontSize: 14, color: '#5B5F66', marginTop: 4 }}>
+        <div className={cardPadClass}>
+          <p className="text-[15px] font-semibold text-[var(--label)]">No shops found{query ? ' for your search' : ''}</p>
+          <small className="mt-1 block text-sm text-[var(--label-2)]">
             Scan a shop&apos;s QR code to go straight to its page.
           </small>
         </div>
       );
     }
     return (
-      <div className={isDesktop ? 'gg' : 'g'}>
+      <div className={cardClass}>
         {filtered.map((s) => (
-          <Link key={s.id} href={`/s/${s.slug}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link key={s.id} href={`/s/${s.slug}`} className="r">
             <span>{s.name}<small>{s.isOpen ? `Open, ${waitText(s)}` : waitText(s)}{s.distanceLabel ? ` · ${s.distanceLabel}` : ''}</small></span>
             <span className="v"><span className={chipClass(s)}>{s.isOpen ? 'Open' : 'Closed'}</span></span>
           </Link>
@@ -238,45 +240,46 @@ export default function HomePage() {
     );
   };
 
-  /* ── Search card body (shared) ── */
-  const searchCard = (isDesktop = false) => (
-    <div className={isDesktop ? 'gg p' : 'g p'}>
-      <label htmlFor="q" style={{ fontSize: 14, fontWeight: 600, display: 'block' }}>Search shops</label>
-      <input
+  /* ── Search card body ── */
+  const searchCard = () => (
+    <div className={cardPadClass}>
+      <Input
         id="q"
-        className="in"
-        type="text"
+        label="Search shops"
         placeholder="Search by shop or area"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={setQuery}
         autoComplete="off"
       />
     </div>
   );
 
-  /* ── "Run a print shop?" card (shared) ── */
-  const runShopCard = (isDesktop = false) => (
-    <div className={isDesktop ? 'gg' : 'g'}>
+  /* ── "Run a print shop?" card ── */
+  const runShopCard = () => (
+    <div className={cardClass}>
       <div className="r"><span>Run a print shop?<small>Get a QR code and start taking orders.</small></span></div>
-      <Link href="/shop/register" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Register your shop</span><span className="v">›</span></Link>
-      <Link href="/shop/login" className="r" style={{ textDecoration: 'none', color: 'inherit' }}><span>Shopkeeper login</span><span className="v">›</span></Link>
+      <Link href="/shop/register" className="r"><span>Register your shop</span><span className="v">›</span></Link>
+      <Link href="/shop/login" className="r"><span>Shopkeeper login</span><span className="v">›</span></Link>
     </div>
   );
 
   /* ── Pending / recent order rows (if any) ── */
   const orderRows = () => {
-    if (!pendingOrder && !recentOrder) return null;
+    const pending = pendingOrder;
+    const recent = recentOrder;
+    if (!pending && !recent) return null;
+    if (pending && recent && pending.token === recent.token) return null;
     return (
-      <div className="g">
-        {pendingOrder && (
-          <Link href={`/s/${pendingOrder.shopSlug}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span>Continue paying — Order {pendingOrder.orderNumber ?? '—'}<small>{pendingOrder.shopName ?? ''} — payment was interrupted</small></span>
+      <div className={cardClass}>
+        {pending && (
+          <Link href={`/s/${pending.shopSlug}`} className="r">
+            <span>Continue paying — Order {pending.orderNumber ?? '—'}<small>{pending.shopName ?? ''} — payment was interrupted</small></span>
             <span className="v">›</span>
           </Link>
         )}
-        {recentOrder && pendingOrder?.token !== recentOrder.token && (
-          <Link href={`/o/${recentOrder.token}`} className="r" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span>Order {recentOrder.orderNumber ?? '—'}<small>{recentOrder.shopName ?? ''} — track your order</small></span>
+        {recent && pending?.token !== recent.token && (
+          <Link href={`/o/${recent.token}`} className="r">
+            <span>Order {recent.orderNumber ?? '—'}<small>{recent.shopName ?? ''} — track your order</small></span>
             <span className="v">›</span>
           </Link>
         )}
@@ -285,58 +288,47 @@ export default function HomePage() {
   };
 
   return (
-    <>
-      {/* ── Mobile layout (below 1024px) ── */}
-      <div className="x m">
-        <div className="top"><i className="dot" /><b style={{ color: '#1C1C1E', fontSize: 17 }}>Printelyx</b></div>
-        <h1 className="h">Print without the queue</h1>
-        <p className="sub">Find a shop near you, or scan its QR code.</p>
-        {searchCard()}
-        {orderRows()}
-        {shopsCard()}
-        <p className="cap">Scan a shop&apos;s QR code to go straight to its page.</p>
-        {runShopCard()}
-        <div className="cap" style={{ marginTop: 16, paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-          <Link href="/orders" style={{ color: '#0A58D6', textDecoration: 'none' }}>My orders</Link>
-          <span style={{ margin: '0 6px', color: '#DADBE1' }}>·</span>
-          <Link href="/track" style={{ color: '#0A58D6', textDecoration: 'none' }}>Track order</Link>
-          <span style={{ margin: '0 6px', color: '#DADBE1' }}>·</span>
-          <Link href="/help" style={{ color: '#0A58D6', textDecoration: 'none' }}>Help</Link>
-        </div>
-      </div>
-
-      {/* ── Desktop layout (1024px+) ── */}
-      <div className="x d">
-        <div className="dtop">
-          <b><i className="dot" />Printelyx</b>
-          <span className="v">
-            <Link href="/track" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Track order</Link>
-            <Link href="/pricing" style={{ color: '#5B5F66', textDecoration: 'none', marginRight: 20 }}>Pricing</Link>
-            <Link href="/help" style={{ color: '#5B5F66', textDecoration: 'none' }}>Help</Link>
-          </span>
-        </div>
-        <div className="wrap">
-          <div className="l">
-            <h1 className="h1">Print without the queue</h1>
-            <p className="s2">Find a shop near you, or scan its QR code.</p>
-            {searchCard(true)}
-            {orderRows()}
-            {shopsCard(true)}
+    <ConsumerPage wide>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <div>
+            <h1 className="type-hero">Print without the queue</h1>
+            <p className="type-sub mt-2">Find a shop near you, or scan its QR code.</p>
           </div>
-          <div className="rt">
-            <div className="gg p" style={{ textAlign: 'center' }}>
-              <div className="v" style={{ textAlign: 'center', fontSize: 15, fontWeight: 600, color: '#1C1C1E' }}>Scan a shop QR code</div>
-              <div className="qr" />
-              <Link href="/scan" className="btn s" style={{ flex: 'none', height: 44, fontSize: 15, marginTop: 12, textDecoration: 'none' }}>Open scanner</Link>
+          {searchCard()}
+          {orderRows()}
+          {shopsCard()}
+          <p className="type-caption px-2 lg:hidden">Scan a shop&apos;s QR code to go straight to its page.</p>
+        </div>
+
+        <aside className="min-w-0 space-y-4">
+          {/* Desktop-only scanner card. The box is an illustration, not a
+              scannable code — the old fake QR pattern is gone. */}
+          <div className={`${cardPadClass} hidden text-center lg:block`}>
+            <p className="text-[15px] font-semibold text-[var(--label)]">Scan a shop QR code</p>
+            <div className="mx-auto mt-3 flex size-[120px] items-center justify-center rounded-2xl border border-[var(--hairline)] bg-[var(--ground)]">
+              <QrCode className="size-12 text-[var(--label-2)]" aria-hidden="true" />
             </div>
-            {runShopCard(true)}
+            <p className="mt-3 text-sm text-[var(--label-2)]">Point your camera at a shop&apos;s QR code to open its page.</p>
+            <Link
+              href="/scan"
+              className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--accent-tint)] px-5 text-[15px] font-semibold text-[var(--accent-tint-text)]"
+            >
+              Open scanner
+            </Link>
           </div>
-        </div>
-        <SiteFooter />
+          {runShopCard()}
+        </aside>
       </div>
 
-      {/* Persistent bottom navigation (mobile only) */}
-      <ConsumerTabBar />
-    </>
+      {/* Mobile-only footer links (desktop has the header nav + footer). */}
+      <div className="mt-6 px-2 pb-2 text-sm lg:hidden">
+        <Link href="/orders" className="text-[var(--accent)]">My orders</Link>
+        <span className="mx-1.5 text-[var(--hairline)]" aria-hidden="true">·</span>
+        <Link href="/track" className="text-[var(--accent)]">Track order</Link>
+        <span className="mx-1.5 text-[var(--hairline)]" aria-hidden="true">·</span>
+        <Link href="/help" className="text-[var(--accent)]">Help</Link>
+      </div>
+    </ConsumerPage>
   );
 }

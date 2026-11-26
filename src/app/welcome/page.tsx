@@ -41,8 +41,8 @@ export default function WelcomePage() {
     let dest: Dest = null;
     if (ready) {
       if (token) {
-        // Authenticated — route by existing role.
-        dest = { to: role === 'admin' ? '/admin' : '/shop/dashboard' };
+        // Authenticated — route by existing role (customer → home).
+        dest = { to: role === 'admin' ? '/admin' : role === 'customer' ? '/' : '/shop/dashboard' };
       } else if (hasCompletedOnboarding()) {
         dest = { to: '/' };
       } else {
