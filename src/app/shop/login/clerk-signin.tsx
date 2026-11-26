@@ -26,11 +26,15 @@ export function ClerkGoogleButton() {
     if (!signIn) return;
     const { error: ssoError } = await signIn.sso({
       strategy: 'oauth_google',
-      // After SSO completes, Clerk lands back on the login page, where
+      // After SSO completes, Clerk lands on /sso-callback, which
+      // completes the handshake and sends the user back here, where
       // <ClerkSessionSync /> exchanges the session for the app JWT.
       redirectUrl: '/shop/login?clerk=1',
-      // Intermediate callback route (renders
-      // <AuthenticateWithRedirectCallback />).
+      // Intermediate callback route. NOTE: this SDK version types
+      // `redirectCallbackUrl` as required for signIn.sso(), so the
+      // callback page cannot be skipped — instead it is hardened
+      // (loading + error states, explicit redirect URLs) so a failed
+      // handshake never leaves a blank page.
       redirectCallbackUrl: '/sso-callback',
     });
     if (ssoError) {
@@ -71,6 +75,7 @@ export function ClerkSessionSync() {
   const { isSignedIn, isLoaded } = useUser();
   const api = useApiClient();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const tried = useRef(false);
 
   useEffect(() => {
@@ -96,13 +101,27 @@ export function ClerkSessionSync() {
     })();
   }, [isLoaded, isSignedIn, api]);
 
-  if (!error) return null;
+  // Google sent the user back (?clerk=1) but no Clerk session appeared:
+  // the OAuth step did not establish a session. Say so plainly instead
+  // of leaving the plain sign-in form with no explanation. The 3s delay
+  // gives Clerk time to restore a session that is still loading, so a
+  // slow (but working) return does not flash a false warning.
+  useEffect(() => {
+    if (!isLoaded || isSignedIn) return;
+    if (!window.location.search.includes('clerk=1')) return;
+    const t = window.setTimeout(() => {
+      setNotice('Google sign-in didn’t finish — no Google session was found. Please try again.');
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [isLoaded, isSignedIn]);
+
+  if (!error && !notice) return null;
   return (
     <div
       role="alert"
       className="mt-4 rounded-2xl border border-halo-danger/40 bg-halo-danger-soft px-4 py-3 text-sm text-halo-danger-text"
     >
-      {error}
+      {error ?? notice}
     </div>
   );
 }
