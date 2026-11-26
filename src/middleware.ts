@@ -18,6 +18,15 @@ import { NextResponse, type NextRequest } from 'next/server';
  * Supabase origin is NOT added → the CSP falls back to 'self' only (the
  * in-memory storage uses same-origin /api/v1/storage/put + /api/v1/storage/get
  * routes, which 'self' allows).
+ *
+ * CSP note (Clerk): the Clerk JS SDK loads its script from the Clerk
+ * Frontend API domain and talks to it over XHR, so that origin must be in
+ * `script-src` + `connect-src` whenever Clerk is configured. Without it the
+ * SDK never initializes, `useSignIn()` stays unloaded, the "Continue with
+ * Google" button stays disabled — and tapping it does nothing at all.
+ * The domain is the app's custom Clerk Frontend API domain (Clerk
+ * dashboard + DNSHE `clerk` CNAME → frontend-api.clerk.services). If the
+ * custom domain ever changes, update CLERK_FRONTEND_API_ORIGIN below.
  */
 export function middleware(req: NextRequest) {
   // AUDIT P1-7: /dev/* pages were publicly reachable on production (a
@@ -56,9 +65,16 @@ export function middleware(req: NextRequest) {
   const printlatchOrigin = 'http://127.0.0.1:32191';
   const nativePrinterOrigin = 'http://127.0.0.1:32192';
 
+  // Clerk Frontend API origin — only added when Clerk is configured
+  // (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY set), mirroring the Supabase gate.
+  const CLERK_FRONTEND_API_ORIGIN = 'https://clerk.printelyx.cc.cd';
+  const clerkOrigin = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    ? CLERK_FRONTEND_API_ORIGIN
+    : '';
+
   const connectSrc = supabaseOrigin
-    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin} ${nativePrinterOrigin}`
-    : `'self' ws: wss: ${printlatchOrigin} ${nativePrinterOrigin}`;
+    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigin ? ` ${clerkOrigin}` : ''}`
+    : `'self' ws: wss: ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigin ? ` ${clerkOrigin}` : ''}`;
   const imgSrc = supabaseOrigin
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
@@ -70,8 +86,8 @@ export function middleware(req: NextRequest) {
   // of production (it's only needed for Turbopack HMR in dev).
   const isProduction = process.env.NODE_ENV === 'production';
   const scriptSrc = isProduction
-    ? "script-src 'self' 'unsafe-inline'" // prod: unsafe-inline required by Next.js, no unsafe-eval
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'"; // dev: Turbopack HMR needs both
+    ? `script-src 'self' 'unsafe-inline'${clerkOrigin ? ` ${clerkOrigin}` : ''}` // prod: unsafe-inline required by Next.js, no unsafe-eval
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval'${clerkOrigin ? ` ${clerkOrigin}` : ''}`; // dev: Turbopack HMR needs both
   const csp = [
     "default-src 'self'",
     scriptSrc,
