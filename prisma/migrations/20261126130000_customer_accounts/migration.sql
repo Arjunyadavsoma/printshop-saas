@@ -11,10 +11,13 @@
 -- "Customer" model (the per-shop customer directory) — unrelated to
 -- sign-in.
 --
--- Production apply: the Vercel build runs `prisma db push` (additive),
--- which adds this table/column automatically — no manual step. Never run
--- `prisma migrate deploy` on production (the init migration is SQLite
--- SQL); see docs/DATABASE_MIGRATION_AUDIT.md.
+-- Production apply: the Vercel build runs this DDL surgically via
+-- scripts/ensure-customer-tables.sql (called from scripts/vercel-build.sh
+-- before the db push attempt) — `prisma db push` alone does NOT apply it,
+-- because db push is all-or-nothing and refuses on the unrelated
+-- Order.[shopId, customerToken] drift. Never run `prisma migrate deploy`
+-- on production (the init migration is SQLite SQL); see
+-- docs/DATABASE_MIGRATION_AUDIT.md.
 CREATE TABLE IF NOT EXISTS "CustomerAccount" (
   "id" TEXT NOT NULL,
   "email" TEXT NOT NULL,
