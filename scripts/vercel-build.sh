@@ -54,7 +54,7 @@ if [ -n "${DATABASE_URL:-}" ]; then
   echo "→ Ensuring upload-session tables (idempotent SQL)..."
   SQL_OK=0
   for ATTEMPT in 1 2 3; do
-    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-upload-tables.sql 2>&1 | tail -3; then
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-upload-tables.sql 2>&1 | tail -20; then
       echo "  ✓ Upload-session tables present (attempt ${ATTEMPT})"
       SQL_OK=1
       break
@@ -77,7 +77,7 @@ if [ -n "${DATABASE_URL:-}" ]; then
   echo "→ Ensuring customer-account tables (idempotent SQL)..."
   CUSTOMER_SQL_OK=0
   for ATTEMPT in 1 2 3; do
-    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-customer-tables.sql 2>&1 | tail -3; then
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-customer-tables.sql 2>&1 | tail -20; then
       echo "  ✓ Customer-account tables present (attempt ${ATTEMPT})"
       CUSTOMER_SQL_OK=1
       break
