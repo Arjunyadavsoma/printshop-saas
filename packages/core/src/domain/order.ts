@@ -22,7 +22,13 @@ export interface Order {
   paymentUtr: string | null;
   paidAt: Date | null;
   customerPhone: string | null;
+  /** Signed-in customer account that placed this order, when there is one.
+   * NULL for guest orders. Set only by `placeOrder` from a verified
+   * customer JWT — never trusted from the request body. */
+  customerId: string | null;
   notes: string | null;
+  /** When the order was placed (null while still a draft). */
+  placedAt: Date | null;
   /** Human-friendly per-shop sequential token (e.g. "A104", "B205"). */
   tokenNumber: string | null;
   createdAt: Date;
@@ -43,7 +49,9 @@ export const OrderSchema = z.object({
   paymentUtr: z.string().nullable(),
   paidAt: z.date().nullable(),
   customerPhone: z.string().max(20).nullable(),
+  customerId: z.string().uuid().nullable(),
   notes: z.string().max(1000).nullable(),
+  placedAt: z.date().nullable(),
   tokenNumber: z.string().max(20).nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),

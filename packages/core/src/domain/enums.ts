@@ -7,8 +7,13 @@
  */
 
 /** Roles a user account may hold. */
-export type UserRole = 'owner' | 'operator' | 'staff' | 'admin';
-export const USER_ROLES: readonly UserRole[] = ['owner', 'operator', 'staff', 'admin'] as const;
+export type UserRole = 'owner' | 'operator' | 'staff' | 'admin' | 'customer';
+export const USER_ROLES: readonly UserRole[] = ['owner', 'operator', 'staff', 'admin', 'customer'] as const;
+// NOTE on 'customer': no `User` row ever carries this role. Customers live
+// in their own `Customer` table (see prisma/schema.prisma) so the same
+// Google account can be both a shopkeeper and a customer. 'customer' exists
+// here only because a customer JWT carries it in its `role` claim
+// (AccessTokenClaims / RefreshTokenClaims) and `withCustomerAuth` checks it.
 
 /** Subscription tier a shop can be on. */
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';

@@ -15,7 +15,9 @@ interface OrderRow {
   paymentUtr: string | null;
   paidAt: Date | null;
   customerPhone: string | null;
+  customerId: string | null;
   notes: string | null;
+  placedAt: Date | null;
   tokenNumber: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -34,7 +36,9 @@ function toDomain(row: OrderRow): Order {
     paymentUtr: row.paymentUtr,
     paidAt: row.paidAt,
     customerPhone: row.customerPhone,
+    customerId: row.customerId ?? null,
     notes: row.notes,
+    placedAt: row.placedAt ?? null,
     tokenNumber: row.tokenNumber,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -62,6 +66,20 @@ export class OrderRepository extends BaseRepository<OrderRow> {
 
   async listByShop(shopId: string, opts: OrderListOptions = {}): Promise<Order[]> {
     const filter: Record<string, unknown> = { shopId };
+    if (opts.status) filter.status = opts.status;
+    const rows = await this.findMany(filter, {
+      limit: opts.limit ?? 50,
+      offset: opts.offset ?? 0,
+      order: ['createdAt', 'desc'],
+    });
+    return rows.map(toDomain);
+  }
+
+  /** List a signed-in customer's orders, newest first. The customer
+   * history at GET /api/v1/customer/orders. Only orders placed while
+   * signed in carry a customerId — guest orders stay device-local. */
+  async listByCustomer(customerId: string, opts: OrderListOptions = {}): Promise<Order[]> {
+    const filter: Record<string, unknown> = { customerId };
     if (opts.status) filter.status = opts.status;
     const rows = await this.findMany(filter, {
       limit: opts.limit ?? 50,

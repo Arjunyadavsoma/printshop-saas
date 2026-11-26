@@ -111,6 +111,46 @@ model User {
   @@index([shopId])
 }
 
+// ─── Customer accounts (consumer Google sign-in) ────────────────────────
+// A customer account is a SEPARATE table from `User` on purpose — never
+// a `User` row with role `customer`:
+//
+//   - `User.email` and `User.clerkId` are both @unique, and `User.role`
+//     is a single string. One Clerk id / one email maps to exactly one
+//     User row, so the same Google account could never be both a
+//     shopkeeper (owner) and a customer in that table — and the customer
+//     sign-in flow must never link a Clerk id onto an owner row (that
+//     would hand the customer flow an owner JWT).
+//   - With its own table, the same Google account (same email, same
+//     Clerk id) can hold a shopkeeper account AND a customer account
+//     independently. The customer exchange route
+//     (`/api/v1/auth/clerk-session/customer`) only ever reads/writes
+//     this table — see `src/lib/auth/clerk-customers.ts`.
+//
+// Named `CustomerAccount` (not `Customer`) because the schema already
+// has a shop-scoped `Customer` model — the per-shop customer directory
+// a shopkeeper sees under /shop/customers. That model is unrelated to
+// sign-in; this one is the consumer's Google account.
+//
+// Customers have no password and no shop: Google sign-in IS the signup
+// (Clerk SSO creates the row on first sign-in, exactly like the
+// shopkeeper flow). `name`/`phone` are filled from the Clerk profile
+// when available and editable via PATCH /api/v1/customer/me — the
+// checkout form prefills them. Guest ordering is untouched: an order
+// only gains a `customerId` when it is placed while signed in.
+model CustomerAccount {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  phone     String?
+  clerkId   String?  @unique // Clerk user id (user_…) when linked to Clerk sign-in
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+
+  @@index([clerkId])
+}
+
 // ─── Password reset tokens (H16) ───────────────────────────────────────
 // Single-use, short-lived tokens for the "forgot password" flow. We store
 // ONLY the SHA-256 hash of the token — never the plaintext. The plaintext
@@ -153,6 +193,13 @@ model Order {
   paidAt           DateTime?
   customerName     String?
   customerPhone    String?
+  // Link to the signed-in customer account that placed this order, when
+  // there is one. NULL for guest orders (the default). Set only by
+  // `placeOrder` when the place-order request carries a valid customer
+  // JWT — never trusted from the request body. Drives the signed-in
+  // order history at GET /api/v1/customer/orders.
+  customerId       String?
+  customerAccount  CustomerAccount? @relation(fields: [customerId], references: [id])
   notes            String?
   // ── Product build Phase 1: pickup + pricing snapshot (additive) ──
   orderNumber      String?
@@ -180,6 +227,7 @@ model Order {
   notifications    Notification[]
 
   @@unique([shopId, tokenNumber])
+  @@index([customerId])
   // H9 fix: customerToken is the per-order "credential" customers use to
   // access their own order status / receipt / file downloads. Without a
   // UNIQUE constraint on (shopId, customerToken), two orders in the same

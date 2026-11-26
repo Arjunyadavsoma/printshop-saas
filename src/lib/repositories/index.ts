@@ -1,6 +1,7 @@
 export { BaseRepository } from './base.repository';
 export { ShopRepository } from './shop.repository';
 export { UserRepository } from './user.repository';
+export { CustomerAccountRepository } from './customer-account.repository';
 export { OrderRepository } from './order.repository';
 export { FileRepository } from './file.repository';
 export { AuditLogRepository } from './audit-log.repository';
@@ -29,6 +30,7 @@ export type {
 
 import { ShopRepository } from './shop.repository';
 import { UserRepository } from './user.repository';
+import { CustomerAccountRepository } from './customer-account.repository';
 import { OrderRepository } from './order.repository';
 import { FileRepository } from './file.repository';
 import { AuditLogRepository } from './audit-log.repository';
@@ -42,6 +44,7 @@ import { productRepos } from './product.repository';
 export const repos = {
   shops: new ShopRepository('shop'),
   users: new UserRepository('user'),
+  customerAccounts: new CustomerAccountRepository('customerAccount'),
   orders: new OrderRepository('order'),
   files: new FileRepository('printFile'),
   audit: new AuditLogRepository('auditLog'),

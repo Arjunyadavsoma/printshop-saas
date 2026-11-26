@@ -23,6 +23,7 @@ import { UTRInput } from '@/components/clear/utr-input';
 import type { PageMode } from '@/components/clear/tokens';
 import { buildUpiIntentUrl } from '@/lib/payments/upi';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
+import { useApiClient } from '@/components/portal/use-api-client';
 import {
   savePendingOrder,
   readPendingOrder,
@@ -379,6 +380,11 @@ export function CustomerOrderFlowV2({
   const [customerPhone, setCustomerPhone] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Signed-in customer session (AuthProvider, root layout). Used only to
+  // prefill name/phone and to link the placed order to the customer
+  // account — guests have no token and the flow behaves exactly as today.
+  const api = useApiClient();
+  const [draftRestored, setDraftRestored] = useState(false);
   const [pricesChanged, setPricesChanged] = useState<number | null>(null);
   // Rate card for preset price badges + the client-side estimate fallback.
   // Seeded from the server page's real pricing config when available; the
@@ -574,8 +580,36 @@ export function CustomerOrderFlowV2({
       setStep(1); // jump to Options if we have files
     } catch {
       // Corrupt draft — ignore.
+    } finally {
+      setDraftRestored(true);
     }
   }, [shopSlug]);
+
+  // Prefill name/phone from the signed-in customer account (GET /me).
+  // Only fills fields the customer hasn't already typed or restored from
+  // a draft — never overwrites their input. Runs after draft recovery so
+  // a restored draft wins over the profile. A failed fetch leaves the
+  // fields blank (guest behaviour) — prefill is a convenience, not a gate.
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (!draftRestored || prefilledRef.current) return;
+    if (!api.ready || api.role !== 'customer' || !api.token) return;
+    prefilledRef.current = true;
+    void (async () => {
+      try {
+        const r = await api.request<{ data?: { name?: string | null; phone?: string | null } }>(
+          'GET',
+          '/api/v1/customer/me',
+        );
+        const me = r.data?.data;
+        if (!me) return;
+        if (me.name) setCustomerName((prev) => prev || me.name!);
+        if (me.phone) setCustomerPhone((prev) => prev || me.phone!);
+      } catch {
+        // ignore — fields stay blank, exactly like guest checkout
+      }
+    })();
+  }, [draftRestored, api]);
 
   // Restore "already placed" from sessionStorage so a refresh after the
   // Pay button tap doesn't re-enable it. Falls back to the durable
@@ -1397,9 +1431,16 @@ export function CustomerOrderFlowV2({
         }
       }
 
+      // Send the customer token when signed in so the server links the
+      // placed order to the customer account (order history). Guests
+      // send no token and the order stays a guest order, as today.
+      const placeHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (api.ready && api.role === 'customer' && api.token) {
+        placeHeaders.Authorization = `Bearer ${api.token}`;
+      }
       const res = await fetch(`/api/v1/s/${shopSlug}/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: placeHeaders,
         body: JSON.stringify({
           orderId: draft.orderId,
           orderToken: draft.orderToken,
@@ -1486,7 +1527,7 @@ export function CustomerOrderFlowV2({
     } finally {
       setPlacing(false);
     }
-  }, [draft, placing, readyFiles, shopSlug, shopName, customerName, customerPhone, note, quote, files, activeIdx, draftRecovery]);
+  }, [draft, placing, readyFiles, shopSlug, shopName, customerName, customerPhone, note, quote, files, activeIdx, draftRecovery, api]);
 
   /* ── Payment: UTR submission + counter ─────────────────────────────── */
 
