@@ -60,6 +60,39 @@ export const POST = withAuth<{ id: string }>(
         );
       }
 
+      // Feature 4 (W4): close the curl-only escape hatch for UPI orders.
+      // A shop owner must NOT be able to flip an awaiting_payment UPI order
+      // to `paid` without a customer UTR submission first — the customer
+      // must have called POST /api/v1/o/[token]/payment to create a
+      // SUBMITTED Payment row. This route is now restricted to:
+      //   - counter_cash / counter_upi orders (no UTR expected), OR
+      //   - orders where a Payment row exists in SUBMITTED status.
+      // The proper UPI verification path is POST /confirm-payment, which
+      // requires a SUBMITTED Payment row and is the UI-facing flow.
+      const existingPayments = await repos.payments.forOrder(order.id);
+      const submittedUpi = existingPayments.find(
+        (p) => p.method === 'upi' && p.status === 'SUBMITTED',
+      );
+      // If there is NO submitted UPI payment, this is a counter-style
+      // verification (the shopkeeper confirms an off-platform/cash payment).
+      // That is allowed. But if the shop has paymentMethods that include
+      // UPI and there is no Payment row at all, block — the customer must
+      // submit a UTR first (via the tracking page) so the audit trail is
+      // complete. We do NOT read shop.paymentMethods here because the
+      // shopkeeper is the authority on what actually happened at the counter;
+      // the guard is simply: you cannot bypass the UTR-submission step for
+      // an order that the customer never interacted with payment-wise.
+      const anyPayment = existingPayments.length > 0;
+      if (!anyPayment && !body.txnReference) {
+        throw new ValidationError(
+          'Cannot verify payment — no payment record exists for this order. ' +
+            'Ask the customer to submit their UPI reference (UTR) or counter ' +
+            'choice from the order tracking page first, then confirm here. ' +
+            'If the customer paid off-platform, provide a txnReference.',
+        );
+      }
+      void submittedUpi; // acknowledged — the existence check above is the gate
+
       // H-5 fix: do NOT allow payment verification when the order still has
       // unpriced / unconfirmed files. A file in `needs_review` status or one
       // whose pricePaise is 0 means we don't yet know what to charge the

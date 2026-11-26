@@ -1,11 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { placeOrder } from '@/lib/orders/order-flow';
-import { NotFoundError, AppError } from '@platform/core/errors';
+import { NotFoundError } from '@platform/core/errors';
 
 /**
  * POST /api/v1/s/[slug]/orders — place the order from the customer's draft.
@@ -72,9 +72,28 @@ export const POST = withRateLimit('place-order', 20, 60, async (req: NextRequest
     );
     return ok(result);
   } catch (cause) {
-    const err = cause as { code?: string };
+    const err = cause as { code?: string; newTotalPaise?: number; newQuote?: unknown };
     if (err?.code === 'PRICES_CHANGED') {
-      return fail(new AppError((cause as Error).message, 'PRICES_CHANGED', 409, { quote: (cause as { newQuote?: unknown }).newQuote }));
+      // Feature 4 (W9): put the new total + full quote in `data` so the
+      // client can show the updated amount without a separate re-fetch.
+      // The error envelope keeps the code/message/details for logging;
+      // `data` carries the recoverable payload the client needs to proceed.
+      const quote = err.newQuote as { totalPaise?: number | null } | undefined;
+      return NextResponse.json(
+        {
+          success: false,
+          data: {
+            totalPaise: err.newTotalPaise ?? quote?.totalPaise ?? null,
+            quote: err.newQuote ?? null,
+          },
+          error: {
+            code: 'PRICES_CHANGED',
+            message: (cause as Error).message,
+            details: { quote: err.newQuote },
+          },
+        },
+        { status: 409 },
+      );
     }
     return fail(toAppError(cause));
   }

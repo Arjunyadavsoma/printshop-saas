@@ -15,12 +15,14 @@ const BodySchema = z.object({
   method: z.enum(['upi', 'counter_cash', 'counter_upi']),
   utr: z.string().regex(/^\d{12}$/).optional(),
   /**
-   * P9-Security §4: the customer's declared payment amount (from the UPI
-   * app's confirmation screen). Optional — older clients don't send it.
-   * If supplied, `submitPayment` rejects with AMOUNT_MISMATCH when it
-   * does not equal the order total.
+   * Feature 4 (W2): REQUIRED. The customer's declared payment amount
+   * (from the UPI app's confirmation screen). `submitPayment` rejects
+   * with AMOUNT_MISMATCH if this does not equal the order total — this
+   * closes the gap where a hand-crafted request omitting the field
+   * bypassed the amount check entirely. Counter payments declare the
+   * order total too (the customer agrees to pay that amount at the counter).
    */
-  declaredAmountPaise: z.number().int().nonnegative().optional(),
+  declaredAmountPaise: z.number().int().nonnegative(),
 });
 
 export const POST = withRateLimit<{ token: string }>('order-payment', 20, 60, async (req: NextRequest, ctx: { params: Promise<{ token: string }> }) => {

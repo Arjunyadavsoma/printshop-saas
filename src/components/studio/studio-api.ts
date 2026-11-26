@@ -301,17 +301,21 @@ export async function placeOrder(
   return { ok: true, data: { token: body.data.token, orderNumber: body.data.orderNumber, pickupCode: body.data.pickupCode, totalPaise: body.data.totalPaise, placedAt: Date.now() } };
 }
 
-/** POST /o/[token]/payment — submit a UTR or choose counter payment. */
+/** POST /o/[token]/payment — submit a UTR or choose counter payment.
+ *  Feature 4 (G12): returns `paymentId` + `status` so the client can show
+ *  "Payment already submitted, waiting for shopkeeper" if the customer
+ *  re-opens the payment step after a successful submission (idempotent
+ *  return from the server reuses the existing Payment row). */
 export async function submitPayment(
   orderToken: string,
-  params: { method: 'upi' | 'counter_cash' | 'counter_upi'; utr?: string; declaredAmountPaise?: number | null },
-): Promise<{ ok: boolean; message?: string }> {
+  params: { method: 'upi' | 'counter_cash' | 'counter_upi'; utr?: string; declaredAmountPaise: number },
+): Promise<{ ok: true; paymentId: string; status: string } | { ok: false; message: string }> {
   const res = await fetch(`/api/v1/o/${orderToken}/payment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  const body = (await res.json()) as { error?: { message?: string } };
-  if (!res.ok) return { ok: false, message: body?.error?.message ?? 'Payment submission failed' };
-  return { ok: true };
+  const body = (await res.json()) as { data?: { paymentId: string; status: string }; error?: { message?: string } };
+  if (!res.ok || !body.data) return { ok: false, message: body?.error?.message ?? 'Payment submission failed' };
+  return { ok: true, paymentId: body.data.paymentId, status: body.data.status };
 }

@@ -89,6 +89,26 @@ if [ -n "${DATABASE_URL:-}" ]; then
     echo "  ⚠ Could not create customer-account tables — customer Google sign-in will fail until they exist."
   fi
 
+  # Surgical refund + payment-idempotency table/index creation (Feature 4 —
+  # Checkout & Payments): the Refund model, partial unique on Payment.utr,
+  # partial unique on Payment(orderId,method) for active statuses, and
+  # partial unique on PaymentAttempt.providerTransactionId. Same idempotent
+  # IF NOT EXISTS pattern as the upload/customer scripts above.
+  echo "→ Ensuring refund + payment-idempotency tables (idempotent SQL)..."
+  REFUND_SQL_OK=0
+  for ATTEMPT in 1 2 3; do
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-refund-tables.sql 2>&1 | tail -20; then
+      echo "  ✓ Refund + payment-idempotency tables present (attempt ${ATTEMPT})"
+      REFUND_SQL_OK=1
+      break
+    fi
+    echo "  ⚠ db execute attempt ${ATTEMPT} failed — retrying in 15s..."
+    sleep 15
+  done
+  if [ "$REFUND_SQL_OK" -ne 1 ]; then
+    echo "  ⚠ Could not create refund tables — refund flow will fail until they exist."
+  fi
+
   # Schema sync (db push) — this project manages its schema via
   # prisma/schema.prisma + db push (CI + local do the same). Without this,
   # NEW tables (e.g. the DB-backed UploadSession/UploadChunk registry that

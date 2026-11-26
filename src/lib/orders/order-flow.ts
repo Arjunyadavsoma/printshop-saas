@@ -6,6 +6,7 @@ import { computeOrderPrice } from '@/lib/pricing/price-engine';
 import type { RuleLike, AddonLike } from '@/lib/pricing/price-engine';
 import { buildUpiIntentUrl, isValidUtr } from '@/lib/payments/upi';
 import { assertOrderTransition } from '@/lib/orders/state-machine';
+import { assertPaymentTransition } from '@/lib/payments/payment-state-machine';
 import { ValidationError, NotFoundError, AppError } from '@platform/core/errors';
 import { IllegalTransitionError } from '@/lib/orders/state-machine';
 
@@ -248,6 +249,16 @@ export async function placeOrder(shop: Record<string, unknown>, order: { id: str
     data: { totalPaise: quote.totalPaise, files: printable.length, urgent },
   });
 
+  // Feature 4 (W15): fire the `new_order` notification so the shopkeeper
+  // is alerted immediately (not just on payment_submitted). Previously the
+  // shopkeeper had to watch the dashboard — now they get a push the moment
+  // an order is placed, exactly like they do when a UTR is submitted.
+  await repos.notifications.createForShop(shopId, {
+    kind: 'new_order',
+    orderId: order.id,
+    payload: { totalPaise: quote.totalPaise, files: printable.length, urgent, orderNumber },
+  });
+
   // Build tasks NOW for PRINT_THEN_PAY (paper first); UPI flow builds at paid.
   if (nextStatus === 'queued') {
     const { buildTasksForOrder } = await import('@/lib/dispatch/task-builder');
@@ -271,18 +282,18 @@ export async function submitPayment(token: string, input: {
   utr?: string;
   screenshotBytes?: Uint8Array;
   /**
-   * P9-Security §4: the customer's declared payment amount (from the UPI
-   * app's confirmation screen). If supplied and it does NOT match the
+   * P9-Security §4 + Feature 4: the customer's declared payment amount
+   * (from the UPI app's confirmation screen). If it does NOT match the
    * order's `totalAmountPaise`, the submission is rejected with
    * `AMOUNT_MISMATCH` — the shopkeeper is not shown a misleading "paid"
-   * notification for a wrong-amount transfer. Optional for backward
-   * compat with clients that don't send it; the shopkeeper's manual
-   * verification is the safety net when omitted.
+   * notification for a wrong-amount transfer. Now REQUIRED at the route
+   * layer; kept optional here only for the internal screenshot-upload
+   * path which always knows the order total.
    */
   declaredAmountPaise?: number;
 }): Promise<{ paymentId: string; status: string }> {
   const db = getContainer().db;
-  const order = await db.findOne<{ id: string; shopId: string; status: string; totalAmountPaise: number; orderNumber: string | null; customerToken: string; notes: string | null }>('order', { customerToken: token });
+  const order = await db.findOne<{ id: string; shopId: string; status: string; totalAmountPaise: number; orderNumber: string | null; customerToken: string; notes: string | null; expiresAt: Date | null }>('order', { customerToken: token });
   if (!order) throw new NotFoundError('Order not found');
   const shop = await db.findOne<Record<string, unknown>>('shop', { id: order.shopId });
 
@@ -295,20 +306,50 @@ export async function submitPayment(token: string, input: {
     throw cause;
   }
 
+  // Feature 4 (W7): enforce the payment window. An awaiting_payment order
+  // has expiresAt = placedAt + orderExpiryMinutes (default 30 min). A
+  // customer cannot submit a UTR for an expired order — the shopkeeper's
+  // confirm would succeed on a stale total otherwise. The tracking page
+  // already hides expired orders (404); this closes the submission gap.
+  if (order.expiresAt && order.expiresAt.getTime() < Date.now()) {
+    throw new ValidationError(
+      'This order’s payment window has expired. Place a new order to continue.',
+    );
+  }
+
   if (input.method === 'upi') {
     if (!input.utr || !isValidUtr(input.utr)) {
       throw new ValidationError('Enter the 12-digit UTR / reference number from your UPI app.');
     }
   }
 
-  // P9-Security §4: amount mismatch flag. The customer's declared amount
-  // must equal the order total exactly (paise — no float tolerance). A
-  // mismatch means the customer paid the wrong amount and the shopkeeper
-  // should NOT be told "this order is paid".
+  // P9-Security §4 + Feature 4: amount mismatch flag. The customer's
+  // declared amount must equal the order total exactly (paise — no float
+  // tolerance). A mismatch means the customer paid the wrong amount and
+  // the shopkeeper should NOT be told "this order is paid".
   if (input.method === 'upi' && input.declaredAmountPaise !== undefined && input.declaredAmountPaise !== order.totalAmountPaise) {
     throw new ValidationError(
       `Amount mismatch — you entered Rs ${(input.declaredAmountPaise / 100).toFixed(2)} but the order total is Rs ${(order.totalAmountPaise / 100).toFixed(2)}. Re-check the amount in your UPI app and try again.`,
     );
+  }
+
+  // Feature 4 (W1): idempotency guard. A double-tap on "submit UTR" must
+  // not create two SUBMITTED Payment rows for the same order+method. The
+  // partial unique index Payment_active_order_method_unique is the DB
+  // backstop; this application-layer check gives a clean error message
+  // and avoids a raw unique-violation 500. A REJECTED payment does not
+  // block (the customer re-submits after a rejection — a new row is
+  // expected). CONFIRMED/REFUNDED_NOTE are terminal and block resubmit.
+  const existing = await db.findMany<{ id: string; status: string }>(
+    'payment',
+    { orderId: order.id, method: input.method },
+    { limit: 10 },
+  );
+  const active = existing.find((p) => p.status === 'SUBMITTED' || p.status === 'PENDING');
+  if (active) {
+    // Idempotent: return the existing payment rather than creating a
+    // duplicate. The customer sees the same "waiting for shopkeeper" state.
+    return { paymentId: active.id, status: active.status };
   }
 
   // P9-Security §4: duplicate UTR detection across the same shop. A single
@@ -511,8 +552,18 @@ export async function confirmPayment(orderId: string, shopId: string, confirmedB
   const payments = await repos.payments.forOrder(order.id);
   const payment = payments[0];
   if (!payment) throw new NotFoundError('No payment for this order');
-  if (payment.status !== 'SUBMITTED' && payment.status !== 'PENDING') {
-    throw new ValidationError(`This payment is already ${payment.status}.`);
+  // Feature 4 (W6): use the payment state machine. If the payment is
+  // already CONFIRMED, this is an idempotent re-confirm (double-click) —
+  // return the current order state WITHOUT re-building tasks or re-
+  // transitioning the order. A REJECTED/REFUNDED_NOTE payment cannot
+  // become CONFIRMED (the state machine throws).
+  if (payment.status === 'CONFIRMED') {
+    return { status: order.status, tasksCreated: 0 };
+  }
+  try {
+    assertPaymentTransition(payment.status as 'PENDING' | 'SUBMITTED' | 'CONFIRMED' | 'REJECTED' | 'REFUNDED_NOTE', 'CONFIRMED');
+  } catch {
+    throw new ValidationError(`This payment is ${payment.status} and cannot be confirmed.`);
   }
 
   // counter payment (PENDING) confirms straight to PAID; UPI SUBMITTED too
@@ -525,6 +576,14 @@ export async function confirmPayment(orderId: string, shopId: string, confirmedB
   assertOrderTransition(order.status as Parameters<typeof assertOrderTransition>[0], 'paid');
   await db.update('order', { id: order.id }, { status: 'paid', paidAt: new Date(), updatedAt: new Date() });
   await repos.orderEvents.append(order.id, { type: 'payment_confirmed', actorType: 'shop', actorId: confirmedBy, data: { method: method ?? payment.method } });
+  // Feature 4: notify the shopkeeper that payment is confirmed (in addition
+  // to the order event). This is the counterpart to the payment_submitted
+  // notification — the shopkeeper's queue is now cleared for this order.
+  await repos.notifications.createForShop(order.shopId, {
+    kind: 'payment_confirmed',
+    orderId: order.id,
+    payload: { method: method ?? payment.method, amountPaise: payment.amountPaise },
+  });
 
   // paid → queued + build tasks
   assertOrderTransition('paid', 'queued');
@@ -543,6 +602,18 @@ export async function rejectPayment(orderId: string, shopId: string, confirmedBy
   const payments = await repos.payments.forOrder(order.id);
   const payment = payments[0];
   if (!payment) throw new NotFoundError('No payment for this order');
+  // Feature 4 (W6): if the payment is already REJECTED, this is an
+  // idempotent re-reject (double-click) — return the current order state
+  // WITHOUT re-transitioning. A CONFIRMED/REFUNDED_NOTE payment cannot
+  // be rejected (use the refund flow for CONFIRMED).
+  if (payment.status === 'REJECTED') {
+    return { status: order.status };
+  }
+  try {
+    assertPaymentTransition(payment.status as 'PENDING' | 'SUBMITTED' | 'CONFIRMED' | 'REJECTED' | 'REFUNDED_NOTE', 'REJECTED');
+  } catch {
+    throw new ValidationError(`This payment is ${payment.status} and cannot be rejected.`);
+  }
   await repos.payments.update(payment.id, { status: 'REJECTED', confirmedBy, rejectReason: reason.slice(0, 300) });
   // the customer can resubmit a UTR — back to awaiting_payment
   assertOrderTransition(order.status as Parameters<typeof assertOrderTransition>[0], 'awaiting_payment');

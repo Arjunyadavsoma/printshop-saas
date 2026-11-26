@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShopCapabilities, StudioFile, StudioStep, Quote, PlacedOrder, PrintSettings, DEFAULT_SETTINGS, formatRupees } from './types';
+import type { PaymentStatus } from './steps/StepConfirmation';
 import {
   startUpload, uploadChunk, cancelUpload, completeUpload, uploadStatus,
   pollFile, fetchQuote, saveSpec, placeOrder, submitPayment,
@@ -101,6 +102,10 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
   const [note, setNote] = useState('');
   const [placed, setPlaced] = useState<PlacedOrder | null>(null);
   const [pricesChanged, setPricesChanged] = useState<number | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('submitted');
+  const [rejectReason, setRejectReason] = useState<string | null>(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
 
   const abortersRef = useRef<Map<string, AbortController>>(new Map());
   const pollTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -392,25 +397,96 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
     }
   }, [orderId, orderToken, readyFiles, shop.slug, shopName, customerName, customerPhone, note, quote, api]);
 
-  const submitUtr = useCallback(async (utr: string): Promise<boolean> => {
-    if (!placed) return false;
+  const submitUtr = useCallback(async (utr: string): Promise<void> => {
+    if (!placed || paymentSubmitting) return;
     setError(null);
-    const result = await submitPayment(placed.token, { method: 'upi', utr, declaredAmountPaise: placed.totalPaise });
-    if (!result.ok) { setError(result.message ?? 'Could not submit the UTR'); return false; }
-    clearPendingOrder();
-    setStep('confirmation');
-    return true;
+    setPaymentSubmitting(true);
+    try {
+      const result = await submitPayment(placed.token, { method: 'upi', utr, declaredAmountPaise: placed.totalPaise });
+      if (!result.ok) { setError(result.message ?? 'Could not submit the UTR'); return; }
+      clearPendingOrder();
+      setRejectReason(null);
+      setPaymentStatus('submitted');
+      setStep('confirmation');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit the UTR');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }, [placed, paymentSubmitting]);
+
+  const chooseCounter = useCallback(async (method: 'counter_cash' | 'counter_upi'): Promise<void> => {
+    if (!placed || paymentSubmitting) return;
+    setError(null);
+    setPaymentSubmitting(true);
+    try {
+      const result = await submitPayment(placed.token, { method, declaredAmountPaise: placed.totalPaise });
+      if (!result.ok) { setError(result.message ?? 'Could not submit'); return; }
+      clearPendingOrder();
+      setRejectReason(null);
+      setPaymentStatus('submitted');
+      setStep('confirmation');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }, [placed, paymentSubmitting]);
+
+  /* ── Refresh payment status from /api/v1/o/[token] ──────────────────── */
+  // Maps the orderTracking payload's `order.status` + `payment.status` onto
+  // the studio's PaymentStatus union so StepConfirmation renders the right
+  // card. Errors are surfaced as 'unknown' so the customer sees a technical
+  // issue rather than a stuck "submitted" screen.
+  const refreshPaymentStatus = useCallback(async () => {
+    if (!placed) return;
+    setRefreshingStatus(true);
+    try {
+      const res = await fetch(`/api/v1/o/${placed.token}`, { headers: { Accept: 'application/json' } });
+      const body = (await res.json()) as {
+        data?: {
+          order: { status: string };
+          payment?: { status: string; rejectReason?: string | null } | null;
+        };
+        error?: { message?: string };
+      };
+      if (!res.ok || !body.data) {
+        setPaymentStatus('unknown');
+        return;
+      }
+      const orderStatus = body.data.order.status;
+      const payment = body.data.payment;
+      const paymentState = payment?.status;
+      if (orderStatus === 'cancelled') {
+        setPaymentStatus('cancelled');
+      } else if (paymentState === 'CONFIRMED' || orderStatus === 'paid' || orderStatus === 'ready' || orderStatus === 'printed' || orderStatus === 'collected' || orderStatus === 'paid_on_pickup') {
+        setPaymentStatus('confirmed');
+      } else if (paymentState === 'REJECTED') {
+        setPaymentStatus('rejected');
+        setRejectReason(payment?.rejectReason ?? null);
+      } else {
+        setPaymentStatus('submitted');
+      }
+    } catch {
+      setPaymentStatus('unknown');
+    } finally {
+      setRefreshingStatus(false);
+    }
   }, [placed]);
 
-  const chooseCounter = useCallback(async (method: 'counter_cash' | 'counter_upi'): Promise<boolean> => {
-    if (!placed) return false;
-    setError(null);
-    const result = await submitPayment(placed.token, { method, declaredAmountPaise: placed.totalPaise });
-    if (!result.ok) { setError(result.message ?? 'Could not submit'); return false; }
-    clearPendingOrder();
-    setStep('confirmation');
-    return true;
-  }, [placed]);
+  /* ── Retry payment (rejected state) — drop back to the payment step ── */
+  const retryPayment = useCallback(() => {
+    setRejectReason(null);
+    setStep('payment');
+  }, []);
+
+  /* ── When the confirmation step mounts, refresh once so the live status
+      is shown immediately (the customer may have navigated here directly). */
+  useEffect(() => {
+    if (step === 'confirmation' && placed) {
+      void refreshPaymentStatus();
+    }
+  }, [step, placed, refreshPaymentStatus]);
 
   const upiIntentUrl = useMemo(() => {
     if (!placed || !shop.upiId) return null;
@@ -419,7 +495,40 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
 
   /* ── Render ─────────────────────────────────────────────────────────── */
   if (step === 'confirmation' && placed) {
-    return <StepConfirmation placed={placed} shop={shop} shopName={shopName} />;
+    return (
+      <div className="min-h-[100dvh] bg-[var(--ground)]">
+        {/* Top progress bar — kept across all steps so the customer sees their place in the flow. */}
+        <div className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-[var(--surface)]/95 backdrop-blur">
+          <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <StudioStepper current={step} />
+            <button
+              type="button"
+              onClick={() => { if (confirm('Leave the print studio? Your uploaded files will be kept for this session.')) window.location.href = `/s/${shop.slug}`; }}
+              className="hidden text-[14px] font-medium text-[var(--label-2)] hover:text-[var(--label)] sm:block"
+            >
+              Exit
+            </button>
+          </div>
+        </div>
+        {refreshingStatus && (
+          <div className="mx-auto max-w-[1200px] px-4 pt-4 sm:px-6">
+            <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--label-2)]">
+              Checking the latest status…
+            </div>
+          </div>
+        )}
+        <StepConfirmation
+          placed={placed}
+          shop={shop}
+          shopName={shopName}
+          paymentStatus={paymentStatus}
+          rejectReason={rejectReason}
+          onRetry={retryPayment}
+          onRefresh={() => void refreshPaymentStatus()}
+          token={placed.token}
+        />
+      </div>
+    );
   }
 
   return (
@@ -438,8 +547,15 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
         </div>
       </div>
 
-      {/* Main layout: content + sticky summary (desktop) */}
-      <div className="mx-auto grid max-w-[1200px] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      {/* Main layout: content + sticky summary (desktop). On the payment
+          step the studio summary collapses to a single column — StepPayment
+          owns its own two-column layout (left: methods + UTR, right: sticky
+          order summary + Pay button) so the customer never sees a duplicate
+          rail. */}
+      <div className={[
+        'mx-auto max-w-[1200px] px-4 py-6 sm:px-6',
+        step === 'payment' ? '' : 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]',
+      ].join(' ')}>
         <div className="min-w-0">
           {error && (
             <div className="mb-4 rounded-[10px] border border-[var(--error)]/30 bg-[#FEF2F2] px-4 py-3 text-[14px] text-[#991B1B]" role="alert">
@@ -472,9 +588,10 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
             <StepPreview
               files={files}
               shop={shop}
+              shopName={shopName}
+              quote={quote}
               onBack={() => setStep('settings')}
-              onNext={() => setStep('payment')}
-              canNext={canGoPayment}
+              onProceed={() => setStep('payment')}
               customerName={customerName}
               customerPhone={customerPhone}
               onCustomerName={setCustomerName}
@@ -487,10 +604,11 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
             <StepPayment
               placed={placed}
               shop={shop}
-              shopName={shopName}
+              quote={quote}
               upiIntentUrl={upiIntentUrl}
-              onSubmitUtr={submitUtr}
-              onChooseCounter={chooseCounter}
+              submitting={paymentSubmitting}
+              onSubmitUtr={(utr) => { void submitUtr(utr); }}
+              onChooseCounter={(method) => { void chooseCounter(method); }}
               onBack={() => setStep('preview')}
             />
           )}
@@ -504,32 +622,40 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
           )}
         </div>
 
-        {/* Sticky summary (desktop right rail + mobile bottom bar) */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-[72px]">
-            <StudioSummary
-              quote={quote}
-              quoting={quoting}
-              totalFiles={totalFiles}
-              totalPages={totalPages}
-              colourPages={colourPages}
-              bwPages={bwPages}
-              copies={readyFiles.reduce((s, f) => s + f.settings.copies, 0)}
-              shop={shop}
-            />
-          </div>
-        </aside>
+        {/* Sticky summary (desktop right rail). Hidden on the payment step
+            — StepPayment renders its own right-rail summary card with the
+            Pay button. */}
+        {step !== 'payment' && (
+          <aside className="hidden lg:block">
+            <div className="sticky top-[72px]">
+              <StudioSummary
+                quote={quote}
+                quoting={quoting}
+                totalFiles={totalFiles}
+                totalPages={totalPages}
+                colourPages={colourPages}
+                bwPages={bwPages}
+                copies={readyFiles.reduce((s, f) => s + f.settings.copies, 0)}
+                shop={shop}
+              />
+            </div>
+          </aside>
+        )}
       </div>
 
-      {/* Mobile sticky bottom summary */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--hairline)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <MobileSummary
-          quote={quote}
-          quoting={quoting}
-          totalPages={totalPages}
-          totalFiles={totalFiles}
-        />
-      </div>
+      {/* Mobile sticky bottom summary. Hidden on the payment + preview steps
+          — StepPayment and StepPreview render their own safe-area-aware
+          sticky Pay bars. */}
+      {step !== 'payment' && step !== 'preview' && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--hairline)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom)] lg:hidden">
+          <MobileSummary
+            quote={quote}
+            quoting={quoting}
+            totalPages={totalPages}
+            totalFiles={totalFiles}
+          />
+        </div>
+      )}
     </div>
   );
 }

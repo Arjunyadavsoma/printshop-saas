@@ -225,6 +225,7 @@ model Order {
   payments         Payment[]
   events           OrderEvent[]
   notifications    Notification[]
+  refunds          Refund[]
 
   @@unique([shopId, tokenNumber])
   @@index([customerId])
@@ -752,6 +753,37 @@ model Payment {
   order               Order     @relation(fields: [orderId], references: [id])
 
   @@index([orderId, status])
+}
+
+// Structured refund tracking. Reuses the existing provider adapters'
+// refund() methods (Razorpay/PhonePe/Paytm all implement it). One refund
+// per (provider, providerRefundId) — the DB backstop against duplicate
+// refund initiation. The amount is integer paise; `status` is a plain
+// string (pending|succeeded|failed) enforced by the payment state machine
+// in src/lib/payments/payment-state-machine.ts, not a Prisma enum (the
+// schema has zero enums by convention).
+model Refund {
+  id                 String    @id @default(uuid())
+  orderId            String
+  paymentId          String?   // FK to Payment (direct-UPI/counter flow)
+  paymentAttemptId   String?   // FK to PaymentAttempt (gateway flow)
+  provider           String    // razorpay | phonepe | paytm | googlepay | manual
+  providerRefundId   String?   // PSP's refund reference (null until PSP confirms)
+  amountPaise        Int       // always > 0, always <= order.totalAmountPaise
+  reason             String    @default("Customer request")
+  status             String    @default("pending") // pending | succeeded | failed
+  initiatedBy        String    // userId of the shopkeeper/admin
+  initiatedAt        DateTime  @default(now())
+  completedAt        DateTime?
+  errorMessage       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  order              Order     @relation(fields: [orderId], references: [id])
+
+  // One refund per PSP reference — the replay guard.
+  @@unique([provider, providerRefundId])
+  @@index([orderId])
+  @@index([status])
 }
 
 // Append-only timeline powering the tracking UI and the dispute log.
