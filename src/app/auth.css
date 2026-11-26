@@ -1,0 +1,612 @@
+/*
+ * Printelyx Auth Design System — 8-screen authentication experience.
+ * Inspired by the supplied reference (coral accent, black pill buttons,
+ * 3D illustrations, light-grey rounded inputs, generous whitespace).
+ *
+ * Scoped to .au-* classes under [data-auth] so it never leaks into the
+ * Clear design system or the shopkeeper/admin portals.
+ *
+ * Mobile-first: 390×844 reference, safe-area aware, 44px touch targets.
+ */
+
+[data-auth] {
+  /* Palette */
+  --au-coral: #FF5252;
+  --au-coral-soft: #FFF0F0;
+  --au-coral-deep: #E84343;
+  --au-bg: #FFFFFF;
+  --au-input-bg: #F1F1F1;
+  --au-input-border: #E5E5E5;
+  --au-ink: #151515;
+  --au-ink-2: #858585;
+  --au-ink-3: #B0B0B0;
+  --au-btn: #111111;
+  --au-btn-text: #FFFFFF;
+  --au-success: #34C759;
+  --au-error: #FF3B30;
+  --au-divider: #EFEFEF;
+
+  /* Typography */
+  --au-font: var(--font-instrument), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --au-h1: 700 30px/1.15 var(--au-font);
+  --au-h2: 600 22px/1.25 var(--au-font);
+  --au-body: 500 15px/1.5 var(--au-font);
+  --au-small: 500 13px/1.45 var(--au-font);
+  --au-tiny: 600 11px/1.4 var(--au-font);
+
+  /* Shape */
+  --au-r-input: 16px;
+  --au-r-btn: 28px;
+  --au-r-card: 24px;
+
+  font-family: var(--au-font);
+  color: var(--au-ink);
+  background: var(--au-bg);
+}
+
+/* ── Screen container ───────────────────────────────────────────────
+   Mobile: full-height flex column, content max 420px centered.
+   Desktop (≥1024px): split-screen — form left, illustration right. */
+.au-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--au-bg);
+  position: relative;
+}
+.au-screen.safe { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+
+/* The narrow mobile column */
+.au-col {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Desktop split: form pane + illustration pane */
+.au-split { display: none; }
+@media (min-width: 1024px) {
+  .au-screen { flex-direction: row; }
+  .au-split {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    background: linear-gradient(160deg, #FFF7F5 0%, #FFFDFD 60%, #FFFFFF 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .au-split img {
+    width: min(78%, 520px);
+    height: auto;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .au-form-pane {
+    width: 460px;
+    flex: none;
+    padding: 48px 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100dvh;
+  }
+  .au-form-pane .au-col { padding: 0; max-width: none; }
+}
+@media (min-width: 1440px) {
+  .au-form-pane { width: 520px; padding: 64px 72px; }
+}
+
+/* ── Top bar (back button) ─────────────────────────────────────────── */
+.au-topbar {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 8px;
+}
+.au-back {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--au-ink);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.au-back:hover { background: var(--au-input-bg); }
+.au-back:active { background: var(--au-divider); }
+.au-back svg { width: 22px; height: 22px; }
+
+/* ── Header ────────────────────────────────────────────────────────── */
+.au-header { padding: 8px 0 0; }
+.au-header h1 {
+  margin: 0;
+  font: var(--au-h1);
+  color: var(--au-ink);
+  letter-spacing: -0.02em;
+}
+.au-header p {
+  margin: 8px 0 0;
+  font: var(--au-body);
+  color: var(--au-ink-2);
+}
+
+/* ── Illustration ──────────────────────────────────────────────────── */
+.au-illustration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+.au-illustration img {
+  width: min(72%, 280px);
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+@media (min-width: 480px) { .au-illustration img { width: min(60%, 320px); } }
+
+/* ── Form ──────────────────────────────────────────────────────────── */
+.au-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+/* ── Text field ────────────────────────────────────────────────────── */
+.au-field { display: flex; flex-direction: column; gap: 7px; }
+.au-label {
+  font: var(--au-small);
+  color: var(--au-ink);
+  font-weight: 600;
+}
+.au-label .req { color: var(--au-coral); margin-left: 2px; }
+
+.au-input-wrap { position: relative; }
+.au-input {
+  width: 100%;
+  height: 56px;
+  border: 1.5px solid transparent;
+  border-radius: var(--au-r-input);
+  background: var(--au-input-bg);
+  padding: 0 48px 0 48px;
+  font: var(--au-body);
+  color: var(--au-ink);
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.au-input::placeholder { color: var(--au-ink-3); }
+.au-input:focus {
+  border-color: var(--au-coral);
+  background: var(--au-bg);
+}
+.au-input.au-error { border-color: var(--au-error); }
+.au-input-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  color: var(--au-ink-2);
+  pointer-events: none;
+}
+.au-input-action {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--au-ink-2);
+  cursor: pointer;
+}
+.au-input-action:hover { color: var(--au-ink); background: rgba(0,0,0,0.04); }
+.au-input-action svg { width: 20px; height: 20px; }
+
+/* Error / hint text */
+.au-hint { font: var(--au-tiny); color: var(--au-ink-2); }
+.au-error-text {
+  font: var(--au-tiny);
+  color: var(--au-error);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.au-error-text svg { width: 13px; height: 13px; flex: none; }
+
+/* ── Primary button (black pill) ───────────────────────────────────── */
+.au-btn {
+  width: 100%;
+  height: 56px;
+  border: 0;
+  border-radius: var(--au-r-btn);
+  background: var(--au-btn);
+  color: var(--au-btn-text);
+  font: 600 16px var(--au-font);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.au-btn:hover { background: #222; }
+.au-btn:active { transform: scale(0.98); }
+.au-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.au-btn:disabled:hover { background: var(--au-btn); }
+.au-btn svg { width: 18px; height: 18px; }
+
+.au-btn-light {
+  background: var(--au-coral-soft);
+  color: var(--au-coral-deep);
+}
+.au-btn-light:hover { background: #FFE3E3; }
+
+/* Circular next button (onboarding) */
+.au-next {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--au-btn);
+  color: var(--au-btn-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
+  flex: none;
+}
+.au-next:hover { background: #222; }
+.au-next:active { transform: scale(0.94); }
+.au-next svg { width: 24px; height: 24px; }
+
+/* ── Links ─────────────────────────────────────────────────────────── */
+.au-link {
+  color: var(--au-coral);
+  font: var(--au-small);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.au-link:hover { text-decoration: underline; color: var(--au-coral-deep); }
+
+/* ── Checkbox row ──────────────────────────────────────────────────── */
+.au-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+.au-check input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--au-coral);
+  cursor: pointer;
+  flex: none;
+  margin-top: 1px;
+}
+.au-check span {
+  font: var(--au-small);
+  color: var(--au-ink-2);
+  line-height: 1.45;
+}
+.au-check span a, .au-check span .au-link { color: var(--au-coral); font-weight: 600; }
+
+/* ── Divider ───────────────────────────────────────────────────────── */
+.au-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 0;
+}
+.au-divider::before, .au-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--au-divider);
+}
+.au-divider span {
+  font: var(--au-tiny);
+  color: var(--au-ink-2);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* ── Footer (swap link) ────────────────────────────────────────────── */
+.au-footer {
+  margin-top: auto;
+  padding: 24px 0 max(24px, env(safe-area-inset-bottom));
+  text-align: center;
+  font: var(--au-small);
+  color: var(--au-ink-2);
+}
+
+/* ── Pagination (onboarding) ───────────────────────────────────────── */
+.au-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.au-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #D9D9D9;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s ease;
+}
+.au-dot.on {
+  width: 28px;
+  background: var(--au-coral);
+}
+.au-dot:focus-visible { outline: 2px solid var(--au-coral); outline-offset: 2px; }
+
+/* ── OTP input ─────────────────────────────────────────────────────── */
+.au-otp {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 8px 0;
+}
+.au-otp input {
+  width: 58px;
+  max-width: 58px;
+  min-width: 0;
+  flex: 1 1 0;
+  height: 64px;
+  border: 1.5px solid var(--au-input-border);
+  border-radius: 16px;
+  background: var(--au-input-bg);
+  text-align: center;
+  font: 700 24px var(--au-font);
+  color: var(--au-ink);
+  outline: none;
+  caret-color: var(--au-coral);
+  transition: border-color 0.15s ease, background 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.au-otp input:focus {
+  border-color: var(--au-coral);
+  background: var(--au-bg);
+}
+.au-otp input.au-filled { border-color: var(--au-ink-2); background: var(--au-bg); }
+.au-otp input.au-error { border-color: var(--au-error); }
+@media (max-width: 420px) {
+  .au-otp { gap: 8px; }
+  .au-otp input { height: 58px; font-size: 21px; border-radius: 14px; }
+}
+@media (max-width: 359px) {
+  .au-otp input { height: 52px; font-size: 19px; }
+}
+
+/* ── Splash screen ─────────────────────────────────────────────────── */
+.au-splash {
+  position: fixed;
+  inset: 0;
+  background: var(--au-coral);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.au-splash-logo {
+  font: 700 clamp(36px, 11vw, 44px)/1 var(--au-font);
+  color: #fff;
+  letter-spacing: -0.03em;
+  animation: au-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.au-splash-tag {
+  margin-top: 12px;
+  font: 500 14px/1.4 var(--au-font);
+  color: rgba(255, 255, 255, 0.85);
+  animation: au-rise 0.7s 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.au-splash-balloon {
+  position: absolute;
+  animation: au-float 4s ease-in-out infinite;
+  pointer-events: none;
+  user-select: none;
+}
+.au-splash-balloon.b1 { top: 12%; left: 12%; animation-delay: 0s; }
+.au-splash-balloon.b2 { bottom: 18%; right: 12%; animation-delay: 1.4s; }
+.au-splash-b3 { top: 30%; right: 20%; animation-delay: 2.6s; }
+
+@keyframes au-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes au-float {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-14px) rotate(3deg); }
+}
+
+/* Splash exit */
+.au-splash-exit { animation: au-splash-out 0.45s ease both; }
+@keyframes au-splash-out {
+  to { opacity: 0; visibility: hidden; }
+}
+
+/* ── Success screen ────────────────────────────────────────────────── */
+.au-success-check {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--au-coral-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  animation: au-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.au-success-check svg { width: 34px; height: 34px; color: var(--au-coral); }
+@keyframes au-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.au-success-illust { animation: au-rise 0.6s 0.15s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* ── Loading spinner ───────────────────────────────────────────────── */
+.au-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: au-spin 0.7s linear infinite;
+}
+.au-spinner.dark {
+  border-color: rgba(17, 17, 17, 0.15);
+  border-top-color: var(--au-btn);
+}
+@keyframes au-spin { to { transform: rotate(360deg); } }
+
+/* ── Banner (error / info) ─────────────────────────────────────────── */
+.au-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font: var(--au-small);
+  line-height: 1.45;
+}
+.au-banner.error { background: #FFECEC; color: #C62828; }
+.au-banner.info { background: var(--au-coral-soft); color: var(--au-coral-deep); }
+.au-banner svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+/* ── Onboarding layout ─────────────────────────────────────────────── */
+.au-onboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.au-onboard-illust {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px 0;
+}
+.au-onboard-illust img {
+  width: min(78%, 340px);
+  max-height: 100%;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.au-onboard-body { padding-bottom: 8px; }
+.au-onboard-body h1 {
+  margin: 0;
+  font: 700 28px/1.2 var(--au-font);
+  color: var(--au-ink);
+  letter-spacing: -0.02em;
+}
+.au-onboard-body p {
+  margin: 10px 0 0;
+  font: var(--au-body);
+  color: var(--au-ink-2);
+  line-height: 1.55;
+}
+.au-onboard-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 0 max(20px, env(safe-area-inset-bottom));
+}
+.au-skip {
+  font: var(--au-small);
+  color: var(--au-ink-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 8px;
+}
+.au-skip:hover { color: var(--au-ink); }
+
+/* Slide transitions */
+.au-slide { animation: au-slide-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes au-slide-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.au-slide-back { animation: au-slide-back 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes au-slide-back {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Social buttons (only for existing providers) ──────────────────── */
+.au-social {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.au-social-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 1.5px solid var(--au-input-border);
+  background: var(--au-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.au-social-btn:hover { background: var(--au-input-bg); }
+
+/* ── Reduced motion ────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  [data-auth] *, [data-auth] *::before, [data-auth] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Focus visibility ──────────────────────────────────────────────── */
+[data-auth] button:focus-visible,
+[data-auth] a:focus-visible,
+[data-auth] input:focus-visible {
+  outline: 2px solid var(--au-coral);
+  outline-offset: 2px;
+}
+[data-auth] .au-input:focus-visible { outline: none; /* border handles it */ }

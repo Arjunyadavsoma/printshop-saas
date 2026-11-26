@@ -59,8 +59,10 @@ yarn-error.log*
 # Required public assets referenced by the app — never ignore these:
 # og.png (OpenGraph/Twitter previews, referenced in layout metadata)
 # download-qr.png (/download-app static QR)
+# auth/*.png (authentication screen 3D illustrations)
 !public/og.png
 !public/download-qr.png
+!public/auth/*.png
 
 # typescript
 *.tsbuildinfo

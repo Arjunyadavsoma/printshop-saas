@@ -3,6 +3,7 @@ import { Instrument_Sans, Manrope } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import "./clear.css";
+import "./auth.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/portal/auth-context";
 import { PWARegister } from "@/components/pwa/pwa-register";

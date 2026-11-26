@@ -185,6 +185,31 @@ export default function ShopRegisterPage() {
         }));
       }
     } catch { /* ignore */ }
+
+    // Auth-signup prefill (Screen 6): the consumer signup screen carries
+    // its validated account fields via sessionStorage after the user taps
+    // "Create Account". Apply them over the hydrated state and clear the
+    // prefill so a later visit doesn't re-apply it. The wizard itself is
+    // unchanged — same steps, same validation, same submit contract.
+    try {
+      const prefillRaw = sessionStorage.getItem('printelyx:signup-prefill');
+      if (prefillRaw) {
+        const pre = JSON.parse(prefillRaw) as { name?: string; email?: string; phone?: string; password?: string };
+        setState((prev) => ({
+          ...prev,
+          account: {
+            ...prev.account,
+            name: pre.name ?? prev.account.name,
+            email: pre.email ?? prev.account.email,
+            phone: pre.phone ?? prev.account.phone,
+            password: pre.password ?? prev.account.password,
+            passwordConfirm: pre.password ?? prev.account.passwordConfirm,
+          },
+        }));
+        sessionStorage.removeItem('printelyx:signup-prefill');
+      }
+    } catch { /* ignore */ }
+
     setHydrated(true);
   }, []);
 
