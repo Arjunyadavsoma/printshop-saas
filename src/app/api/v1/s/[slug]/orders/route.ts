@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getContainer } from '@/lib/container';
+import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError } from '@/lib/api/envelope';
 import { withRateLimit } from '@/lib/api/with-auth';
 import { placeOrder } from '@/lib/orders/order-flow';
@@ -23,6 +24,29 @@ const BodySchema = z.object({
   clientTotalPaise: z.number().int().nonnegative().optional().nullable(),
 });
 
+/**
+ * Optional customer link: if the request carries a valid customer JWT
+ * (role `customer`, issued by the customer exchange route), the placed
+ * order is linked to that customer account so it shows in their order
+ * history. Absent or invalid token → guest order, exactly as today.
+ * The token is verified here, never trusted: a forged, expired, or
+ * shopkeeper token simply places a guest order — it can never attach
+ * an order to someone else's account.
+ */
+async function resolveCustomerId(req: NextRequest): Promise<string | null> {
+  try {
+    const header = req.headers.get('authorization') ?? '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+    if (!token) return null;
+    const claims = await getContainer().auth.verifyAccessToken(token);
+    if (!claims || claims.role !== 'customer' || claims.shopId !== null) return null;
+    const customer = await repos.customerAccounts.findById(claims.sub);
+    return customer?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const POST = withRateLimit('place-order', 20, 60, async (req: NextRequest, ctx: { params: Promise<{ slug: string }> }) => {
   try {
     const { slug } = await ctx.params;
@@ -34,6 +58,7 @@ export const POST = withRateLimit('place-order', 20, 60, async (req: NextRequest
     if (!order || order.customerToken !== body.orderToken || order.shopId !== shop.id) {
       throw new NotFoundError('Order not found');
     }
+    const customerId = await resolveCustomerId(req);
     const result = await placeOrder(
       shop,
       order as never,
@@ -43,6 +68,7 @@ export const POST = withRateLimit('place-order', 20, 60, async (req: NextRequest
       body.customerName ?? null,
       body.customerPhone ?? null,
       body.note ?? null,
+      customerId,
     );
     return ok(result);
   } catch (cause) {

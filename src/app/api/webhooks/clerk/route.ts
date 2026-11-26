@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { Webhook } from 'svix';
 import { getContainer } from '@/lib/container';
 import { linkOrCreateClerkUser, unlinkClerkUser } from '@/lib/auth/clerk-users';
+import { unlinkClerkCustomer } from '@/lib/auth/clerk-customers';
 import { repos } from '@/lib/repositories';
 
 /**
@@ -12,7 +13,12 @@ import { repos } from '@/lib/repositories';
  *
  *   - `user.created` / `user.updated` → link-or-create the local user by
  *     Clerk id + email (same helper as the session exchange), and sync
- *     the email if the Clerk user changed it.
+ *     the email if the Clerk user changed it. Customer accounts are NOT
+ *     created here — they are created lazily at the first customer
+ *     sign-in (POST /api/v1/auth/clerk-session/customer), so a
+ *     shopkeeper who never uses the consumer side never gains a
+ *     customer row. If a customer row already exists for the Clerk id,
+ *     its email follows the Clerk account the same way.
  *   - `user.deleted` → unlink the Clerk id only. The local user and
  *     their shop are KEPT — deleting them would orphan the shop's
  *     orders; the password login keeps working if one was ever set.
@@ -72,6 +78,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (event.type === 'user.deleted') {
       await unlinkClerkUser(clerkId);
+      // The same Clerk id may also be linked to a customer account (the
+      // same Google account can be a shopkeeper AND a customer) — unlink
+      // both. Only the links are removed; both local rows are kept.
+      await unlinkClerkCustomer(clerkId);
       return NextResponse.json({ received: true });
     }
 
@@ -86,6 +96,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // email is the login identity for the JWT path too.
       if (user.email !== email) {
         await repos.users.update(user.id, { email });
+      }
+      // Same for a customer row linked to this Clerk id, if one exists.
+      // (Never creates one — customer rows are created lazily at the
+      // first customer sign-in.)
+      const customer = await repos.customerAccounts.findByClerkId(clerkId);
+      if (customer && customer.email !== email) {
+        await repos.customerAccounts.update(customer.id, { email });
       }
       return NextResponse.json({ received: true });
     }

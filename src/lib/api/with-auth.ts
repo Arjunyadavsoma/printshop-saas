@@ -5,7 +5,7 @@ import { repos } from '@/lib/repositories';
 import { ok, fail, toAppError, requestId, logRequest } from './envelope';
 import { rateLimit, rateKey } from './rate-limit';
 import { ForbiddenError, UnauthorizedError } from '@platform/core/errors';
-import type { UserRole, User, PrintAgent } from '@platform/core/domain';
+import type { UserRole, User, CustomerAccount, PrintAgent } from '@platform/core/domain';
 
 /** Time + log a handler call, set the X-Request-Id response header. */
 async function timed<P>(
@@ -34,6 +34,70 @@ export interface Principal {
   role: UserRole;
   email: string;
   user: User;
+}
+
+/** The verified principal for customer (consumer) routes. Customers live
+ * in their own table — `withAuth` resolves its principal from
+ * `repos.users`, so a customer id would fail there ("User no longer
+ * exists"). This guard is deliberately separate: it only accepts JWTs
+ * minted by the customer exchange route (`role: 'customer'`,
+ * `shopId: null`) and loads the customer from `repos.customerAccounts`. A
+ * shopkeeper JWT (role `owner`/`admin`/…) is rejected here, and a
+ * customer JWT is rejected by `withAuth` — the two identities never
+ * cross. */
+export interface CustomerPrincipal {
+  customerId: string;
+  email: string;
+  customer: CustomerAccount;
+}
+
+type CustomerAuthHandler<P extends RouteParams> = (
+  req: NextRequest,
+  ctx: RouteCtx<P>,
+  principal: CustomerPrincipal,
+) => Promise<NextResponse>;
+
+export function withCustomerAuth<P extends RouteParams = RouteParams>(
+  handler: CustomerAuthHandler<P>,
+) {
+  return async (req: NextRequest, ctx: RouteCtx<P>): Promise<NextResponse> => {
+    let container: ReturnType<typeof getContainer> | null = null;
+    try {
+      container = getContainer();
+      const header = req.headers.get('authorization') ?? '';
+      const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!token) throw new UnauthorizedError('Missing bearer token');
+
+      const claims = await container.auth.verifyAccessToken(token);
+      if (!claims) throw new UnauthorizedError('Invalid or expired token');
+      if (claims.role !== 'customer') {
+        throw new ForbiddenError(`Role '${claims.role}' is not permitted`);
+      }
+      // Customer tokens never carry a shop scope; a token that does is
+      // not a customer token, whatever its role claim says.
+      if (claims.shopId !== null) {
+        throw new UnauthorizedError('Token shop scope is stale');
+      }
+
+      const customer = await repos.customerAccounts.findById(claims.sub);
+      if (!customer) throw new UnauthorizedError('Customer no longer exists');
+
+      const principal: CustomerPrincipal = {
+        customerId: customer.id,
+        email: customer.email,
+        customer,
+      };
+      return await timed(req, () => handler(req, ctx, principal));
+    } catch (cause) {
+      const res = fail(toAppError(cause));
+      const rid = requestId(req);
+      if (container) {
+        logRequest(container.logger, req.method, req.nextUrl.pathname, res.status, 0, rid);
+      }
+      try { res.headers.set('x-request-id', rid); } catch {}
+      return res;
+    }
+  };
 }
 
 type RouteParams = Record<string, string>;

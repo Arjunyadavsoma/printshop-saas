@@ -20,22 +20,36 @@ import { useClerk, useUser } from '@clerk/nextjs';
  * sign-in attempt's stored redirect — if that attempt is lost (e.g.
  * the browser dropped the attempt cookie on the way back from
  * Google), the callback still knows where to send the user.
+ *
+ * Two flows share this route: shopkeepers (default — back to
+ * /shop/login) and customers (`?for=customer` — back to /profile).
+ * The param is read from `window.location.search`, not Next's
+ * `useSearchParams`, so no Suspense boundary is needed.
  */
-const AFTER_OAUTH = '/shop/login?clerk=1';
+const SHOPKEEPER_AFTER_OAUTH = '/shop/login?clerk=1';
+const CUSTOMER_AFTER_OAUTH = '/profile?clerk=1';
 
 export function SsoCallbackClient() {
   const clerk = useClerk();
   const { isSignedIn, isLoaded } = useUser();
   const [error, setError] = useState<string | null>(null);
+  const [afterOAuth, setAfterOAuth] = useState(SHOPKEEPER_AFTER_OAUTH);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('for') === 'customer') {
+      setAfterOAuth(CUSTOMER_AFTER_OAUTH);
+    }
+  }, []);
 
   // The OAuth step already established the session (Google accepted
   // the login) but the handshake stalled: skip it and go straight
-  // back — <ClerkSessionSync /> on the login page finishes the job.
+  // back — <ClerkSessionSync /> on the login page (or
+  // <CustomerSessionSync /> on the profile page) finishes the job.
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      window.location.href = AFTER_OAUTH;
+      window.location.href = afterOAuth;
     }
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, afterOAuth]);
 
   useEffect(() => {
     if (!isLoaded || isSignedIn) return;
@@ -51,8 +65,8 @@ export function SsoCallbackClient() {
     }, 15000);
     void clerk
       .handleRedirectCallback({
-        signInForceRedirectUrl: AFTER_OAUTH,
-        signUpForceRedirectUrl: AFTER_OAUTH,
+        signInForceRedirectUrl: afterOAuth,
+        signUpForceRedirectUrl: afterOAuth,
       })
       .catch(() => {
         fail('Google sign-in couldn’t be completed. Please try again.');
@@ -62,7 +76,7 @@ export function SsoCallbackClient() {
       done = true;
       window.clearTimeout(timer);
     };
-  }, [isLoaded, isSignedIn, clerk]);
+  }, [isLoaded, isSignedIn, clerk, afterOAuth]);
 
   if (error) {
     return (
@@ -70,7 +84,7 @@ export function SsoCallbackClient() {
         <p className="text-lg font-bold">Google sign-in didn’t finish</p>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-halo-text-60">{error}</p>
         <a
-          href="/shop/login"
+          href={afterOAuth === CUSTOMER_AFTER_OAUTH ? '/profile' : '/shop/login'}
           className="mt-6 flex min-h-[48px] items-center justify-center rounded-full bg-accent px-6 text-sm font-semibold text-white"
         >
           Back to sign in

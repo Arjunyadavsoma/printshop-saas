@@ -154,7 +154,7 @@ export async function quoteOrder(shopId: string, files: DraftFileSpec[], addonSe
 }
 
 /** Place the order: recompute everything server-side, snapshot, transition. */
-export async function placeOrder(shop: Record<string, unknown>, order: { id: string; customerToken: string; status: string; notes: string | null }, addonIds: string[], urgent: boolean, clientTotalPaise: number | null, customerName: string | null, customerPhone: string | null, note: string | null): Promise<{
+export async function placeOrder(shop: Record<string, unknown>, order: { id: string; customerToken: string; status: string; notes: string | null }, addonIds: string[], urgent: boolean, clientTotalPaise: number | null, customerName: string | null, customerPhone: string | null, note: string | null, customerId: string | null = null): Promise<{
   orderId: string;
   token: string;
   pickupCode: string;
@@ -222,6 +222,11 @@ export async function placeOrder(shop: Record<string, unknown>, order: { id: str
     status: nextStatus,
     customerName,
     customerPhone,
+    // Link the order to the signed-in customer account, when the order
+    // was placed with a valid customer JWT. Only set, never cleared:
+    // a guest placement (customerId null) must not unlink an order that
+    // already belongs to a customer. Guest orders keep customerId null.
+    ...(customerId ? { customerId } : {}),
     notes: note ?? order.notes ?? null,
     subtotalPaise: quote.subtotalPaise,
     addonsPaise: quote.addonsPaise,
