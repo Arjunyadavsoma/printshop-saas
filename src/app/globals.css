@@ -183,6 +183,30 @@
   --accent-tint-text: #1D4ED8;
   --pale-blue: #DBEAFE;
 
+  /* Shopkeeper Desktop-First Identity — steel-blue + blue-violet SaaS.
+     Consumed by src/components/shop/shop-shell.tsx and every /shop/* route.
+     See docs/PRINTELYX-SHOPKEEPER-VISUAL-IDENTITY.md for the full spec. */
+  --shop-steel: #1E3A5F;
+  --shop-steel-deep: #16294A;
+  --shop-accent: #6366F1;
+  --shop-accent-press: #4F46E5;
+  --shop-accent-soft: #EEF0FF;
+  --shop-surface: #FFFFFF;
+  --shop-bg: #F1F5F9;
+  --shop-ink: #0F172A;
+  --shop-ink-2: #475569;
+  --shop-ink-3: #94A3B8;
+  --shop-border: #E2E8F0;
+  --shop-side-border: rgba(255, 255, 255, 0.10);
+  --shop-side-text: rgba(255, 255, 255, 0.72);
+  --shop-side-text-on: #FFFFFF;
+  --shop-success: #16A34A;
+  --shop-warning: #D97706;
+  --shop-danger: #DC2626;
+  --shop-sidebar-w: 248px;
+  --shop-sidebar-w-collapsed: 76px;
+  --shop-topbar-h: 64px;
+
   /* Halo identity (dark sign-in screen, PR #10) — mode-independent:
      halo screens are dark by design in both modes. The login page and
      any future dark hero read these, never hardcoded hex. */

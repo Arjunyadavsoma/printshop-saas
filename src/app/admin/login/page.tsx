@@ -14,7 +14,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 /**
  * /admin/login — platform admin login.
  *
- * SECURITY LAYERS:
+ * Restyled to the Consumer Blue+White identity (tokens: --accent #2563EB,
+ * --surface #FFFFFF, --ground #F8FAFC, --label, --label-2, --hairline).
+ *
+ * SECURITY LAYERS (PRESERVED — no logic changes):
  * 1. This page is NOT linked from the homepage (hidden URL)
  * 2. The page only renders if a valid access key is in the URL:
  *    /admin/login?k=<ADMIN_ACCESS_KEY>
@@ -78,17 +81,22 @@ export default function AdminLoginPage() {
     }
   }
 
-  // No access key → explain plainly instead of a fake 404. A bare link
-  // to /admin/login (e.g. from a footer) must not look like a broken
-  // page: the portal is real, it is just invite-only. The key is still
-  // required to see the sign-in form.
+  // No access key → explain plainly instead of a fake 404.
   if (keyValid === false) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-page px-4">
+      <div
+        className="relative flex min-h-screen items-center justify-center bg-[var(--ground)] px-4"
+        style={{ fontFamily: 'var(--font-inter)' }}
+      >
         <div className="max-w-sm text-center">
-          <Lock className="mx-auto size-12 text-muted-foreground" aria-hidden="true" />
-          <h1 className="mt-4 text-xl font-semibold text-foreground">Admin portal</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <div
+            className="mx-auto flex size-12 items-center justify-center rounded-[12px] bg-[var(--accent-tint)] text-[var(--accent)]"
+            aria-hidden="true"
+          >
+            <Lock className="size-6" />
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-[var(--label)]">Admin portal</h1>
+          <p className="mt-1 text-sm text-[var(--label-2)]">
             Sign-in is by invitation link only. If you are a platform admin,
             open the link you were sent (it includes an access key). If you
             followed a plain link here, the portal is not broken — it just
@@ -96,7 +104,7 @@ export default function AdminLoginPage() {
           </p>
           <Link
             href="/"
-            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline"
+            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--accent)] hover:underline"
           >
             Back to landing page <ArrowRight className="size-3" aria-hidden="true" />
           </Link>
@@ -108,27 +116,33 @@ export default function AdminLoginPage() {
   // Checking the key...
   if (keyValid === null) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-page">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
+      <div
+        className="relative flex min-h-screen items-center justify-center bg-[var(--ground)]"
+        style={{ fontFamily: 'var(--font-inter)' }}
+      >
+        <Loader2 className="size-6 animate-spin text-[var(--label-2)]" aria-hidden="true" />
       </div>
     );
   }
 
   // Key valid → show the login form.
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-10">
-      <div className="w-full max-w-md">
-        <Card className="border-border bg-surface shadow-sm">
+    <div
+      className="relative flex min-h-screen items-center justify-center bg-[var(--ground)] px-4 py-10"
+      style={{ fontFamily: 'var(--font-inter)' }}
+    >
+      <div className="w-full max-w-md mx-auto">
+        <Card className="border-[var(--hairline)] bg-[var(--surface)] shadow-sm">
           <CardHeader className="space-y-3">
             <div
-              className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm"
+              className="flex size-12 items-center justify-center rounded-[12px] bg-[var(--accent)] text-white shadow-sm"
               aria-hidden="true"
             >
               <ShieldCheck className="size-6" />
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-lg font-semibold text-foreground">Admin sign-in</CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
+              <CardTitle className="text-lg font-semibold text-[var(--label)]">Admin sign-in</CardTitle>
+              <CardDescription className="text-sm text-[var(--label-2)]">
                 Restricted access. Use your platform admin credentials.
               </CardDescription>
             </div>
@@ -136,7 +150,7 @@ export default function AdminLoginPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+                <Label htmlFor="email" className="text-sm font-medium text-[var(--label)]">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -146,11 +160,11 @@ export default function AdminLoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@example.com"
                   disabled={submitting}
-                  className="h-11 text-base"
+                  className="h-11 text-base border-[var(--hairline)] focus-visible:border-[var(--accent)] focus-visible:ring-[var(--accent)]/30"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+                <Label htmlFor="password" className="text-sm font-medium text-[var(--label)]">Password</Label>
                 <div className="relative">
                   <Input
                     id="password"
@@ -161,14 +175,14 @@ export default function AdminLoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     disabled={submitting}
-                    className="h-11 pr-10 text-base"
+                    className="h-11 pr-10 text-base border-[var(--hairline)] focus-visible:border-[var(--accent)] focus-visible:ring-[var(--accent)]/30"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     aria-controls="password"
-                    className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-[var(--label-2)] hover:bg-[var(--accent-tint)] hover:text-[var(--accent)]"
                   >
                     {showPassword ? (
                       <EyeOff className="size-4" aria-hidden="true" />
@@ -179,16 +193,16 @@ export default function AdminLoginPage() {
                 </div>
               </div>
               {error && (
-                <Alert variant="destructive" className="border-danger-border bg-danger-soft text-danger">
+                <Alert variant="destructive" className="border-[var(--error)]/30 bg-[var(--error)]/5">
                   <AlertCircle className="size-4" aria-hidden="true" />
                   <AlertTitle>Sign-in failed</AlertTitle>
-                  <AlertDescription className="text-danger">{error}</AlertDescription>
+                  <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
               <Button
                 type="submit"
                 disabled={submitting}
-                className="min-h-[44px] w-full gap-2 bg-brand text-brand-foreground hover:bg-brand-hover"
+                className="min-h-[44px] w-full gap-2 bg-[var(--accent)] text-white hover:bg-[var(--accent-press)]"
               >
                 {submitting ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -199,13 +213,18 @@ export default function AdminLoginPage() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex flex-col gap-2 text-xs text-muted-foreground">
-            <Link href="/" className="inline-flex items-center gap-1 hover:text-foreground">
+          <CardFooter className="flex flex-col gap-2 text-xs text-[var(--label-2)]">
+            <Link href="/" className="inline-flex items-center gap-1 hover:text-[var(--label)]">
               Back to landing page <ArrowRight className="size-3" aria-hidden="true" />
             </Link>
           </CardFooter>
         </Card>
-        <p className="mt-6 text-center text-xs text-muted-foreground">Printelyx · Platform admin portal</p>
+        <p className="mt-6 text-center text-xs text-[var(--label-2)]">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+            Printelyx · Platform admin portal
+          </span>
+        </p>
       </div>
     </div>
   );

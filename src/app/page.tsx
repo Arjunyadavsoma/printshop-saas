@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { QrCode } from 'lucide-react';
+import {
+  QrCode, Search, Upload, Wallet, MapPin, ArrowRight, Store, ShieldCheck, Zap,
+} from 'lucide-react';
 import { ConsumerPage } from '@/components/clear/consumer-page';
 import { Input } from '@/components/clear/input';
 import { TintedButton } from '@/components/clear/button';
+import { useApiClient } from '@/components/portal/use-api-client';
 import { readRecentOrders, type RecentOrderSummary } from '@/lib/customer/recent-orders';
 import { readPendingOrder, type PendingOrder } from '@/lib/customer/order-restore';
 import {
@@ -82,22 +85,26 @@ function chipClass(s: ShopListItem): string {
 }
 
 /** White row card (Clear) — token-based, no legacy `.g` margins. */
-const cardClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-1';
-const cardPadClass = 'rounded-[22px] border border-[var(--hairline)] bg-[var(--surface)] p-4';
+const cardClass = 'rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-1';
+const cardPadClass = 'rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] p-4';
 
 /**
- * Site home — Clear design.
+ * Site home — auth-aware.
  *
- * One responsive layout (no duplicated mobile/desktop markup): the hero
- * and shop list on the left, a 360px rail on desktop with the QR scanner
- * card and the "Run a print shop?" card. On mobile the rail stacks below
- * the shop list, in the same order as the old mobile canvas.
+ * LOGGED-OUT visitors see a marketing landing that explains what Printelyx
+ * is, with primary CTAs (Find a shop / Scan QR / Sign in / Get started) and
+ * a browsable peek at nearby shops — the app works WITHOUT login, so a
+ * logged-out visitor can still find a shop and place an order.
  *
- * No filter chips, no QR hero banner, no individual shop cards — the
- * reference is deliberately quiet: content is the hero, chrome disappears.
+ * LOGGED-IN customers see the consumer home: the shops list, search,
+ * recent/pending orders, and the QR scanner rail.
+ *
+ * QR-scan entry (`/scan`, `/s/[slug]`) is handled on those routes and
+ * NEVER forces login — a scanned QR goes straight to the shop page.
  */
 export default function HomePage() {
   const router = useRouter();
+  const api = useApiClient();
   const [shops, setShops] = useState<ShopListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +114,8 @@ export default function HomePage() {
   const [locError, setLocError] = useState<string | null>(null);
   const [recentOrder, setRecentOrder] = useState<RecentOrderSummary | null>(null);
   const [pendingOrder, setPendingOrder] = useState<PendingOrder | null>(null);
+
+  const authed = api.ready && Boolean(api.token);
 
   useEffect(() => {
     const list = readRecentOrders();
@@ -198,8 +207,8 @@ export default function HomePage() {
     return list;
   }, [shops, query]);
 
-  /* ── Shops card body ── */
-  const shopsCard = () => {
+  /* ── Shared: shops card body ── */
+  const shopsCard = (compact = false) => {
     if (error) {
       return (
         <div className={cardPadClass}>
@@ -228,19 +237,26 @@ export default function HomePage() {
         </div>
       );
     }
+    const list = compact ? filtered.slice(0, 5) : filtered;
     return (
       <div className={cardClass}>
-        {filtered.map((s) => (
+        {list.map((s) => (
           <Link key={s.id} href={`/s/${s.slug}`} className="r">
             <span>{s.name}<small>{s.isOpen ? `Open, ${waitText(s)}` : waitText(s)}{s.distanceLabel ? ` · ${s.distanceLabel}` : ''}</small></span>
             <span className="v"><span className={chipClass(s)}>{s.isOpen ? 'Open' : 'Closed'}</span></span>
           </Link>
         ))}
+        {compact && filtered.length > 5 && (
+          <Link href="/find-a-shop" className="r">
+            <span>View all {filtered.length} shops</span>
+            <span className="v"><ArrowRight className="size-4" aria-hidden="true" /></span>
+          </Link>
+        )}
       </div>
     );
   };
 
-  /* ── Search card body ── */
+  /* ── Shared: search card ── */
   const searchCard = () => (
     <div className={cardPadClass}>
       <Input
@@ -254,7 +270,7 @@ export default function HomePage() {
     </div>
   );
 
-  /* ── "Run a print shop?" card ── */
+  /* ── Shared: "Run a print shop?" card ── */
   const runShopCard = () => (
     <div className={cardClass}>
       <div className="r"><span>Run a print shop?<small>Get a QR code and start taking orders.</small></span></div>
@@ -263,7 +279,7 @@ export default function HomePage() {
     </div>
   );
 
-  /* ── Pending / recent order rows (if any) ── */
+  /* ── Shared: pending / recent order rows ── */
   const orderRows = () => {
     const pending = pendingOrder;
     const recent = recentOrder;
@@ -287,6 +303,146 @@ export default function HomePage() {
     );
   };
 
+  /* ════════════════════════════════════════════════════════════════════
+     MARKETING LANDING — logged-out visitors.
+     Explains what Printelyx is, with CTAs and a browsable shops peek
+     (the app works without login).
+     ════════════════════════════════════════════════════════════════════ */
+  if (api.ready && !api.token) {
+    return (
+      <ConsumerPage wide>
+        {/* Hero */}
+        <section className="rounded-[18px] border border-[var(--hairline)] bg-[var(--surface)] px-6 py-10 text-center sm:px-10 sm:py-14">
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-[var(--accent-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--accent-tint-text)]">
+            <Zap className="size-3.5" aria-hidden="true" />
+            0% commission · Pay the shop directly by UPI
+          </div>
+          <h1 className="mt-5 text-[clamp(28px,6vw,44px)] font-bold leading-[1.1] tracking-tight text-[var(--label)]">
+            Your documents.<br className="sm:hidden" /> Printed nearby.
+          </h1>
+          <p className="mx-auto mt-4 max-w-[520px] text-[16px] leading-relaxed text-[var(--label-2)]">
+            Printelyx connects you to print shops around you. Scan a shop&apos;s QR
+            code, upload your files, choose your print options, and pay the shop
+            directly — no queue, no middleman.
+          </p>
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => void handleDetectAndFind()}
+              disabled={locating}
+              className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[10px] bg-[var(--accent)] px-6 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--accent-press)] disabled:opacity-60"
+            >
+              <MapPin className="size-4" aria-hidden="true" />
+              {locating ? 'Finding shops…' : 'Find shops near me'}
+            </button>
+            <Link
+              href="/scan"
+              className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-6 text-[15px] font-semibold text-[var(--label)] transition-colors hover:bg-[var(--ground)]"
+            >
+              <QrCode className="size-4" aria-hidden="true" />
+              Scan a shop QR
+            </Link>
+          </div>
+          {locError && (
+            <p className="mt-3 text-[13px] text-[var(--label-2)]" role="alert">{locError}</p>
+          )}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[13px] text-[var(--label-2)]">
+            <Link href="/auth/login" className="font-semibold text-[var(--accent)] hover:underline">Sign in</Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/auth/signup" className="font-semibold text-[var(--accent)] hover:underline">Get started</Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/how-it-works" className="hover:underline">How it works</Link>
+          </div>
+          <p className="mt-4 text-[12px] text-[var(--label-3)]">
+            No account needed to print — scan a QR and order as a guest.
+          </p>
+        </section>
+
+        {/* Feature cards */}
+        <section className="mt-6 grid gap-4 sm:grid-cols-3">
+          {[
+            { icon: Search, title: 'Find a shop', body: 'Browse print shops near you, see live wait times and pricing before you go.' },
+            { icon: Upload, title: 'Upload & customize', body: 'Send your documents from your phone. Choose B/W or colour, copies, single or double-sided.' },
+            { icon: Wallet, title: 'Pay by UPI & track', body: 'Pay the shop directly — no commission. Track your order until it&apos;s ready for pickup.' },
+          ].map((f) => (
+            <div key={f.title} className="rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] p-5">
+              <div className="flex size-10 items-center justify-center rounded-[10px] bg-[var(--accent-tint)] text-[var(--accent)]">
+                <f.icon className="size-5" aria-hidden="true" />
+              </div>
+              <h3 className="mt-3 text-[16px] font-semibold text-[var(--label)]">{f.title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--label-2)]">{f.body}</p>
+            </div>
+          ))}
+        </section>
+
+        {/* Shops peek — browsable without login */}
+        <section className="mt-6">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-[18px] font-semibold text-[var(--label)]">Shops near you</h2>
+            <Link href="/find-a-shop" className="inline-flex items-center gap-1 text-[14px] font-semibold text-[var(--accent)] hover:underline">
+              View all <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+          <div className="mt-3">{shopsCard(true)}</div>
+        </section>
+
+        {/* Run a print shop CTA */}
+        <section className="mt-6 grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--accent-tint)] p-6">
+            <div className="flex items-center gap-2">
+              <Store className="size-5 text-[var(--accent)]" aria-hidden="true" />
+              <h2 className="text-[18px] font-semibold text-[var(--label)]">Run a print shop?</h2>
+            </div>
+            <p className="mt-2 text-[14px] leading-relaxed text-[var(--label-2)]">
+              Get your own QR code, take orders online, and customers pay you directly
+              via UPI. 0% commission — set up in about two minutes.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href="/shop/register"
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] bg-[var(--accent)] px-5 text-[14px] font-semibold text-white hover:bg-[var(--accent-press)]"
+              >
+                Register your shop <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+              <Link
+                href="/shop/login"
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-5 text-[14px] font-semibold text-[var(--label)] hover:bg-[var(--ground)]"
+              >
+                Shopkeeper login
+              </Link>
+            </div>
+          </div>
+          {/* Trust card */}
+          <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] p-5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-5 text-[var(--accent)]" aria-hidden="true" />
+              <h3 className="text-[15px] font-semibold text-[var(--label)]">Why Printelyx</h3>
+            </div>
+            <ul className="mt-3 space-y-2 text-[13px] text-[var(--label-2)]">
+              <li>· Pay the shop directly — we never touch your money</li>
+              <li>· Live wait times so you skip the queue</li>
+              <li>· Track your order from upload to pickup</li>
+              <li>· Works on any phone — no app required</li>
+            </ul>
+          </div>
+        </section>
+
+        {/* Mobile-only footer links */}
+        <div className="mt-6 px-2 pb-2 text-sm lg:hidden">
+          <Link href="/help" className="text-[var(--accent)]">Help</Link>
+          <span className="mx-1.5 text-[var(--hairline)]" aria-hidden="true">·</span>
+          <Link href="/about" className="text-[var(--accent)]">About</Link>
+          <span className="mx-1.5 text-[var(--hairline)]" aria-hidden="true">·</span>
+          <Link href="/pricing" className="text-[var(--accent)]">Pricing</Link>
+        </div>
+      </ConsumerPage>
+    );
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     CONSUMER HOME — logged-in customers.
+     The shops list, search, recent/pending orders, and the QR rail.
+     ════════════════════════════════════════════════════════════════════ */
   return (
     <ConsumerPage wide>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -302,8 +458,7 @@ export default function HomePage() {
         </div>
 
         <aside className="min-w-0 space-y-4">
-          {/* Desktop-only scanner card. The box is an illustration, not a
-              scannable code — the old fake QR pattern is gone. */}
+          {/* Desktop-only scanner card. */}
           <div className={`${cardPadClass} hidden text-center lg:block`}>
             <p className="text-[15px] font-semibold text-[var(--label)]">Scan a shop QR code</p>
             <div className="mx-auto mt-3 flex size-[120px] items-center justify-center rounded-2xl border border-[var(--hairline)] bg-[var(--ground)]">
@@ -321,7 +476,7 @@ export default function HomePage() {
         </aside>
       </div>
 
-      {/* Mobile-only footer links (desktop has the header nav + footer). */}
+      {/* Mobile-only footer links */}
       <div className="mt-6 px-2 pb-2 text-sm lg:hidden">
         <Link href="/orders" className="text-[var(--accent)]">My orders</Link>
         <span className="mx-1.5 text-[var(--hairline)]" aria-hidden="true">·</span>

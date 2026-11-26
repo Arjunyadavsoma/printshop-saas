@@ -94,7 +94,14 @@ export function ClerkSessionSync() {
           return;
         }
         api.setAuth(inner.accessToken, inner.refreshToken ?? '', inner.role ?? 'owner', inner.email ?? '');
-        window.location.href = inner.role === 'admin' ? '/admin' : '/shop/dashboard';
+        // Route by role: admins go to the platform admin portal, customers
+        // to the consumer app, shopkeepers stay on the shop dashboard.
+        window.location.href =
+          inner.role === 'admin'
+            ? '/admin'
+            : inner.role === 'customer'
+              ? '/'
+              : '/shop/dashboard';
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Network error');
       }

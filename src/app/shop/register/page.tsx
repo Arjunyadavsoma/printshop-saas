@@ -7,15 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
   Store,
@@ -127,8 +118,16 @@ function passwordStrength(p: string): { score: number; label: string; color: str
   if (/[0-9]/.test(p)) score++;
   if (/[^A-Za-z0-9]/.test(p)) score++;
   const labels = ['Too short', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent'];
-  const colors = ['bg-danger', 'bg-danger', 'bg-warning', 'bg-warning', 'bg-success', 'bg-success'];
-  return { score, label: labels[score] ?? 'Too short', color: colors[score] ?? 'bg-danger' };
+  // Shopkeeper visual identity — steel-blue + blue-violet status palette.
+  const colors = [
+    'bg-[var(--shop-danger)]',
+    'bg-[var(--shop-danger)]',
+    'bg-[var(--shop-warning)]',
+    'bg-[var(--shop-warning)]',
+    'bg-[var(--shop-success)]',
+    'bg-[var(--shop-success)]',
+  ];
+  return { score, label: labels[score] ?? 'Too short', color: colors[score] ?? 'bg-[var(--shop-danger)]' };
 }
 
 // Subscription-price note: this page says "no credit card, no commission"
@@ -262,7 +261,6 @@ export default function ShopRegisterPage() {
   }, [state.business.shopName, slugTouched]);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
-  const progress = ((stepIndex + 1) / STEPS.length) * 100;
 
   // ── Per-step validation ──
   const accountErrors = useMemo(() => {
@@ -401,122 +399,211 @@ export default function ShopRegisterPage() {
 
   // ── Render ──
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-page px-4 py-6 sm:py-8">
-      <div className="w-full max-w-2xl">
-        <Link
-          href="/"
-          className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
-        >
-          ← Back to Printelyx
-        </Link>
-        {/* Brand */}
-        <div className="mb-5 flex flex-col items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
-            <Store className="size-6" />
+    <div className="min-h-screen bg-[var(--shop-bg)] px-4 py-6 sm:py-8 lg:py-12">
+      <div className="mx-auto w-full max-w-[640px] lg:max-w-[1024px] lg:grid lg:grid-cols-[280px_1fr] lg:gap-10">
+        {/* Left hero column — desktop only (>=1024px). The form card sits
+            in the right column on the same row. On tablet/mobile the form
+            centers alone at max-w-[640px]. */}
+        <aside className="hidden lg:flex lg:flex-col lg:py-2">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--shop-ink-2)] transition-colors hover:text-[var(--shop-accent)]"
+          >
+            ← Back to Printelyx
+          </Link>
+          <div className="mt-12 space-y-6">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-[var(--shop-accent)] text-white shadow-sm">
+              <Store className="size-6" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--shop-ink-3)]">
+                Printelyx for shops
+              </p>
+              <h1 className="mt-1 text-[26px] font-bold leading-tight text-[var(--shop-ink)]">
+                Set up your print shop
+              </h1>
+              <p className="mt-2 text-[14px] leading-relaxed text-[var(--shop-ink-2)]">
+                Get live in four quick steps — no credit card, no commission.
+              </p>
+            </div>
+            <ul className="space-y-3 text-[14px] leading-relaxed text-[var(--shop-ink-2)]">
+              <li className="flex items-start gap-2.5">
+                <Check className="mt-0.5 size-4 shrink-0 text-[var(--shop-accent)]" aria-hidden="true" />
+                <span>Your public shop page and QR — instantly.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Check className="mt-0.5 size-4 shrink-0 text-[var(--shop-accent)]" aria-hidden="true" />
+                <span>UPI payments straight to your bank.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Check className="mt-0.5 size-4 shrink-0 text-[var(--shop-accent)]" aria-hidden="true" />
+                <span>Manage orders, jobs and printers from one desktop dashboard.</span>
+              </li>
+            </ul>
           </div>
-          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Printelyx for shops
-          </p>
-          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">Start your print shop</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Set up your shop in four quick steps — no credit card, no commission.
-          </p>
-        </div>
+        </aside>
 
-        {/* Progress */}
-        <Card className="border-border bg-surface shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-1.5">
+        {/* Right column — form card + mobile brand header + footer links */}
+        <div className="space-y-4">
+          {/* Mobile / tablet brand header (hidden on lg where the hero column shows) */}
+          <div className="lg:hidden">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--shop-ink-2)] transition-colors hover:text-[var(--shop-accent)]"
+            >
+              ← Back to Printelyx
+            </Link>
+            <div className="mt-4 flex flex-col items-center text-center">
+              <div className="flex size-12 items-center justify-center rounded-xl bg-[var(--shop-accent)] text-white shadow-sm">
+                <Store className="size-6" />
+              </div>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--shop-ink-3)]">
+                Printelyx for shops
+              </p>
+              <h1 className="mt-1 text-[22px] font-bold tracking-tight text-[var(--shop-ink)]">
+                Start your print shop
+              </h1>
+              <p className="mt-1 text-[14px] text-[var(--shop-ink-2)]">
+                Set up in four quick steps — no credit card, no commission.
+              </p>
+            </div>
+          </div>
+
+          {/* Wizard card — white surface on light neutral bg, 18px radius,
+              subtle border + shadow. */}
+          <div className="bg-[var(--shop-surface)] rounded-[18px] border border-[var(--shop-border)] shadow-sm p-6 lg:p-8">
+            {/* Horizontal stepper — 4 labeled dots. Active + completed steps
+                fill with the blue-violet accent; upcoming steps stay on the
+                surface with muted text. The Progress bar is retired. */}
+            <div className="mb-6 border-b border-[var(--shop-border)] pb-5">
+              <div className="flex items-start justify-between">
                 {STEPS.map((s, i) => {
                   const Icon = s.icon;
                   const active = s.id === step;
                   const done = i < stepIndex;
                   return (
-                    <div key={s.id} className="flex items-center gap-1.5">
+                    <div key={s.id} className="flex flex-col items-center gap-2">
                       <div
-                        className={`flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors sm:size-8 ${
-                          active
-                            ? 'border-brand bg-brand text-brand-foreground'
-                            : done
-                              ? 'border-success/30 bg-success-soft text-success'
-                              : 'border-border bg-surface text-muted-foreground'
+                        className={`flex size-9 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                          active || done
+                            ? 'border-[var(--shop-accent)] bg-[var(--shop-accent)] text-white'
+                            : 'border-[var(--shop-border)] bg-[var(--shop-surface)] text-[var(--shop-ink-3)]'
                         }`}
                         aria-current={active ? 'step' : undefined}
                       >
-                        {done ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
+                        {done ? <Check className="size-4" aria-hidden="true" /> : <Icon className="size-4" aria-hidden="true" />}
                       </div>
-                      <span className={`hidden text-xs font-medium sm:inline ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      <span
+                        className={`text-[11px] font-semibold ${
+                          active
+                            ? 'text-[var(--shop-ink)]'
+                            : done
+                              ? 'text-[var(--shop-ink-2)]'
+                              : 'text-[var(--shop-ink-3)]'
+                        }`}
+                      >
                         {s.label}
                       </span>
-                      {i < STEPS.length - 1 && (
-                        <span className="hidden h-px w-6 bg-border sm:inline-block" aria-hidden />
-                      )}
                     </div>
                   );
                 })}
               </div>
-              <Badge variant="outline" className="text-xs">
-                Step {stepIndex + 1} of {STEPS.length}
-              </Badge>
             </div>
-            <Progress value={progress} className="mt-3 h-1.5" />
-          </CardHeader>
 
-          {/* Step content */}
-          <CardContent className="space-y-4">
-            {step === 'account' && (
-              <>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <User className="size-4 text-brand" /> Account details
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Your sign-in credentials. The email becomes your login — pick something you check often.
-                </CardDescription>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field
-                    id="name"
-                    label="Your name"
-                    value={state.account.name}
-                    onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, name: v } }))}
-                    onBlur={() => markTouched('name')}
-                    error={showErr('account', 'name') ? accountErrors.name : undefined}
-                    placeholder="e.g. Priya Sharma"
-                    disabled={submitting}
-                  />
-                  <Field
-                    id="phone"
-                    label="Phone (Indian mobile)"
-                    value={state.account.phone}
-                    onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, phone: v } }))}
-                    onBlur={() => markTouched('phone')}
-                    error={showErr('account', 'phone') ? accountErrors.phone : undefined}
-                    placeholder="e.g. 98765 43210"
-                    disabled={submitting}
-                  />
-                </div>
-                <Field
-                  id="email"
-                  label="Email"
-                  type="email"
-                  value={state.account.email}
-                  onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, email: v } }))}
-                  onBlur={() => markTouched('email')}
-                  error={showErr('account', 'email') ? accountErrors.email : undefined}
-                  placeholder="e.g. owner@myprintshop.com"
-                  disabled={submitting}
-                  autoComplete="email"
-                />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
+            {/* Step content */}
+            <div className="space-y-5">
+              {step === 'account' && (
+                <>
+                  <div>
+                    <h2 className="flex items-center gap-2 text-[22px] font-bold text-[var(--shop-ink)]">
+                      <User className="size-5 text-[var(--shop-accent)]" aria-hidden="true" /> Account details
+                    </h2>
+                    <p className="mt-1 text-[14px] text-[var(--shop-ink-2)]">
+                      Your sign-in credentials. The email becomes your login — pick something you check often.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field
-                      id="password"
-                      label="Password"
+                      id="name"
+                      label="Your name"
+                      value={state.account.name}
+                      onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, name: v } }))}
+                      onBlur={() => markTouched('name')}
+                      error={showErr('account', 'name') ? accountErrors.name : undefined}
+                      placeholder="e.g. Priya Sharma"
+                      disabled={submitting}
+                    />
+                    <Field
+                      id="phone"
+                      label="Phone (Indian mobile)"
+                      value={state.account.phone}
+                      onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, phone: v } }))}
+                      onBlur={() => markTouched('phone')}
+                      error={showErr('account', 'phone') ? accountErrors.phone : undefined}
+                      placeholder="e.g. 98765 43210"
+                      disabled={submitting}
+                    />
+                  </div>
+                  <Field
+                    id="email"
+                    label="Email"
+                    type="email"
+                    value={state.account.email}
+                    onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, email: v } }))}
+                    onBlur={() => markTouched('email')}
+                    error={showErr('account', 'email') ? accountErrors.email : undefined}
+                    placeholder="e.g. owner@myprintshop.com"
+                    disabled={submitting}
+                    autoComplete="email"
+                  />
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Field
+                        id="password"
+                        label="Password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={state.account.password}
+                        onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, password: v } }))}
+                        onBlur={() => markTouched('password')}
+                        error={showErr('account', 'password') ? accountErrors.password : undefined}
+                        placeholder="e.g. MyShop@2026"
+                        disabled={submitting}
+                        autoComplete="new-password"
+                        trailing={
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((s) => !s)}
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            aria-controls="password"
+                            className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-[8px] text-[var(--shop-ink-3)] hover:bg-[var(--shop-bg)] hover:text-[var(--shop-ink)]"
+                          >
+                            {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                          </button>
+                        }
+                      />
+                      <p className="text-[12px] text-[var(--shop-ink-3)]">At least 8 characters.</p>
+                      {state.account.password && (
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--shop-border)]">
+                            <div
+                              className={`h-full transition-all ${passwordStrength(state.account.password).color}`}
+                              style={{ width: `${(passwordStrength(state.account.password).score / 5) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-[12px] text-[var(--shop-ink-3)]">
+                            {passwordStrength(state.account.password).label}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <Field
+                      id="passwordConfirm"
+                      label="Confirm password"
                       type={showPassword ? 'text' : 'password'}
-                      value={state.account.password}
-                      onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, password: v } }))}
-                      onBlur={() => markTouched('password')}
-                      error={showErr('account', 'password') ? accountErrors.password : undefined}
+                      value={state.account.passwordConfirm}
+                      onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, passwordConfirm: v } }))}
+                      onBlur={() => markTouched('passwordConfirm')}
+                      error={showErr('account', 'passwordConfirm') ? accountErrors.passwordConfirm : undefined}
                       placeholder="e.g. MyShop@2026"
                       disabled={submitting}
                       autoComplete="new-password"
@@ -525,412 +612,418 @@ export default function ShopRegisterPage() {
                           type="button"
                           onClick={() => setShowPassword((s) => !s)}
                           aria-label={showPassword ? 'Hide password' : 'Show password'}
-                          aria-controls="password"
-                          className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-controls="passwordConfirm"
+                          className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-[8px] text-[var(--shop-ink-3)] hover:bg-[var(--shop-bg)] hover:text-[var(--shop-ink)]"
                         >
                           {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                         </button>
                       }
                     />
-                    <p className="text-xs text-muted-foreground">At least 8 characters.</p>
-                    {state.account.password && (
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={`h-full transition-all ${passwordStrength(state.account.password).color}`}
-                            style={{ width: `${(passwordStrength(state.account.password).score / 5) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {passwordStrength(state.account.password).label}
-                        </span>
-                      </div>
-                    )}
                   </div>
-                  <Field
-                    id="passwordConfirm"
-                    label="Confirm password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={state.account.passwordConfirm}
-                    onChange={(v) => setState((s) => ({ ...s, account: { ...s.account, passwordConfirm: v } }))}
-                    onBlur={() => markTouched('passwordConfirm')}
-                    error={showErr('account', 'passwordConfirm') ? accountErrors.passwordConfirm : undefined}
-                    placeholder="e.g. MyShop@2026"
-                    disabled={submitting}
-                    autoComplete="new-password"
-                    trailing={
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((s) => !s)}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        aria-controls="passwordConfirm"
-                        className="absolute right-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      >
-                        {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
-                      </button>
-                    }
-                  />
-                </div>
-              </>
-            )}
+                </>
+              )}
 
-            {step === 'business' && (
-              <>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Store className="size-4 text-brand" /> Business profile
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  What customers see when they scan your shop QR.
-                </CardDescription>
-                <Field
-                  id="shopName"
-                  label="Shop name"
-                  value={state.business.shopName}
-                  onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, shopName: v } }))}
-                  onBlur={() => markTouched('shopName')}
-                  error={showErr('business', 'shopName') ? businessErrors.shopName : undefined}
-                  placeholder="e.g. Sharma Xerox & Print Hub"
-                  disabled={submitting}
-                />
-                <div className="space-y-1.5">
-                  <Label htmlFor="slug">Shop URL slug</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="inline-flex h-11 shrink-0 items-center rounded-md border border-border bg-muted px-2 text-xs tabular-nums text-muted-foreground sm:h-10">
-                      /shops/
-                    </code>
-                    <Input
-                      id="slug"
-                      value={state.business.slug}
-                      onChange={(e) => {
-                        setSlugTouched(true);
-                        setState((s) => ({ ...s, business: { ...s.business, slug: e.target.value.toLowerCase() } }));
-                      }}
-                      onBlur={() => markTouched('slug')}
-                      placeholder="e.g. sharma-print"
+              {step === 'business' && (
+                <>
+                  <div>
+                    <h2 className="flex items-center gap-2 text-[22px] font-bold text-[var(--shop-ink)]">
+                      <Store className="size-5 text-[var(--shop-accent)]" aria-hidden="true" /> Business profile
+                    </h2>
+                    <p className="mt-1 text-[14px] text-[var(--shop-ink-2)]">
+                      What customers see when they scan your shop QR.
+                    </p>
+                  </div>
+                  {/* Shop name + URL slug side by side on >=640px */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field
+                      id="shopName"
+                      label="Shop name"
+                      value={state.business.shopName}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, shopName: v } }))}
+                      onBlur={() => markTouched('shopName')}
+                      error={showErr('business', 'shopName') ? businessErrors.shopName : undefined}
+                      placeholder="e.g. Sharma Xerox & Print Hub"
                       disabled={submitting}
-                      className="h-11 flex-1 text-base sm:h-10"
+                    />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="slug" className="text-[14px] font-semibold text-[var(--shop-ink)]">
+                        Shop URL slug
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <code className="inline-flex h-11 shrink-0 items-center rounded-[10px] border border-[var(--shop-border)] bg-[var(--shop-bg)] px-2 text-[12px] tabular-nums text-[var(--shop-ink-3)]">
+                          /shops/
+                        </code>
+                        <Input
+                          id="slug"
+                          value={state.business.slug}
+                          onChange={(e) => {
+                            setSlugTouched(true);
+                            setState((s) => ({ ...s, business: { ...s.business, slug: e.target.value.toLowerCase() } }));
+                          }}
+                          onBlur={() => markTouched('slug')}
+                          placeholder="e.g. sharma-print"
+                          disabled={submitting}
+                          className="h-11 flex-1 rounded-[10px] border-[var(--shop-border)] bg-[var(--shop-surface)] text-[14px] text-[var(--shop-ink)] placeholder:text-[var(--shop-ink-3)] focus:border-[var(--shop-accent)] focus-visible:border-[var(--shop-accent)] focus-visible:ring-[var(--shop-accent)]"
+                        />
+                      </div>
+                      {slugStatus === 'checking' && (
+                        <p className="flex items-center gap-1 text-[12px] text-[var(--shop-ink-3)]">
+                          <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Checking availability…
+                        </p>
+                      )}
+                      {slugStatus === 'ok' && (
+                        <p className="flex items-center gap-1 text-[12px] text-[var(--shop-success)]">
+                          <CheckCircle2 className="size-3" aria-hidden="true" /> URL is available.
+                        </p>
+                      )}
+                      {slugStatus === 'taken' && (
+                        <p className="flex items-center gap-1 text-[12px] text-[var(--shop-danger)]">
+                          <AlertCircle className="size-3" aria-hidden="true" /> This URL is already taken — pick another.
+                        </p>
+                      )}
+                      {slugStatus === 'invalid' && (
+                        <p className="text-[12px] text-[var(--shop-danger)]">Lowercase letters, digits and hyphens only.</p>
+                      )}
+                      {showErr('business', 'slug') && businessErrors.slug && slugStatus === 'idle' && (
+                        <p className="text-[12px] text-[var(--shop-danger)]">{businessErrors.slug}</p>
+                      )}
+                      {state.business.slug && slugStatus !== 'invalid' && (
+                        <p className="text-[12px] tabular-nums text-[var(--shop-ink-3)]">
+                          Preview: /shops/{state.business.slug}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="description" className="text-[14px] font-semibold text-[var(--shop-ink)]">
+                      Description (optional)
+                    </Label>
+                    <Textarea
+                      id="description"
+                      value={state.business.description}
+                      onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, description: e.target.value } }))}
+                      placeholder="e.g. A short bio shown on your public shop page."
+                      rows={3}
+                      disabled={submitting}
+                      maxLength={2000}
+                      className="min-h-[88px] rounded-[10px] border-[var(--shop-border)] bg-[var(--shop-surface)] text-[14px] text-[var(--shop-ink)] placeholder:text-[var(--shop-ink-3)] focus:border-[var(--shop-accent)] focus-visible:border-[var(--shop-accent)] focus-visible:ring-[var(--shop-accent)]"
                     />
                   </div>
-                  {slugStatus === 'checking' && (
-                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" /> Checking availability…
-                    </p>
-                  )}
-                  {slugStatus === 'ok' && (
-                    <p className="flex items-center gap-1 text-xs text-success">
-                      <CheckCircle2 className="size-3" /> URL is available.
-                    </p>
-                  )}
-                  {slugStatus === 'taken' && (
-                    <p className="flex items-center gap-1 text-xs text-danger">
-                      <AlertCircle className="size-3" /> This URL is already taken — pick another.
-                    </p>
-                  )}
-                  {slugStatus === 'invalid' && (
-                    <p className="text-xs text-danger">Lowercase letters, digits and hyphens only.</p>
-                  )}
-                  {showErr('business', 'slug') && businessErrors.slug && slugStatus === 'idle' && (
-                    <p className="text-xs text-danger">{businessErrors.slug}</p>
-                  )}
-                  {state.business.slug && slugStatus !== 'invalid' && (
-                    <p className="text-xs tabular-nums text-muted-foreground">
-                      Preview: /shops/{state.business.slug}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="description">Description (optional)</Label>
-                  <Textarea
-                    id="description"
-                    value={state.business.description}
-                    onChange={(e) => setState((s) => ({ ...s, business: { ...s.business, description: e.target.value } }))}
-                    placeholder="e.g. A short bio shown on your public shop page."
-                    rows={3}
-                    disabled={submitting}
-                    maxLength={2000}
-                  />
-                </div>
-                <Field
-                  id="upiId"
-                  label="UPI ID (where customers pay you)"
-                  value={state.business.upiId}
-                  onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, upiId: v } }))}
-                  onBlur={() => markTouched('upiId')}
-                  error={showErr('business', 'upiId') ? businessErrors.upiId : undefined}
-                  placeholder="e.g. myshop@okaxis"
-                  disabled={submitting}
-                />
-                <Field
-                  id="address"
-                  label="Address (optional)"
-                  value={state.business.address}
-                  onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, address: v } }))}
-                  onBlur={() => markTouched('address')}
-                  error={undefined}
-                  placeholder="e.g. Shop 12, MG Road, Bengaluru"
-                  disabled={submitting}
-                />
-
-                {/* Optional location — helps customers find the shop. Never
-                    required; invalid values are flagged, not silently kept. */}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field
-                    id="city"
-                    label="City (optional)"
-                    value={state.business.city}
-                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, city: v } }))}
-                    onBlur={() => markTouched('city')}
-                    error={undefined}
-                    placeholder="e.g. Bengaluru"
-                    disabled={submitting}
-                  />
-                  <Field
-                    id="state"
-                    label="State (optional)"
-                    value={state.business.state}
-                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, state: v } }))}
-                    onBlur={() => markTouched('state')}
-                    error={undefined}
-                    placeholder="e.g. Karnataka"
-                    disabled={submitting}
-                  />
-                  <Field
-                    id="pincode"
-                    label="PIN code (optional)"
-                    value={state.business.pincode}
-                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, pincode: v.replace(/\D/g, '').slice(0, 6) } }))}
-                    onBlur={() => markTouched('pincode')}
-                    error={showErr('business', 'pincode') ? businessErrors.pincode : undefined}
-                    placeholder="e.g. 560001"
-                    disabled={submitting}
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field
-                    id="latitude"
-                    label="Latitude (optional)"
-                    value={state.business.latitude}
-                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, latitude: v } }))}
-                    onBlur={() => markTouched('latitude')}
-                    error={showErr('business', 'latitude') ? businessErrors.latitude : undefined}
-                    placeholder="e.g. 12.9716"
-                    disabled={submitting}
-                  />
-                  <Field
-                    id="longitude"
-                    label="Longitude (optional)"
-                    value={state.business.longitude}
-                    onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, longitude: v } }))}
-                    onBlur={() => markTouched('longitude')}
-                    error={showErr('business', 'longitude') ? businessErrors.longitude : undefined}
-                    placeholder="e.g. 77.5946"
-                    disabled={submitting}
-                  />
-                </div>
-                <div className="mt-3">
-                  <DetectLocationButton
-                    disabled={submitting}
-                    onDetected={(loc) =>
-                      setState((s) => ({
-                        ...s,
-                        business: {
-                          ...s.business,
-                          latitude: String(loc.lat.toFixed(6)),
-                          longitude: String(loc.lng.toFixed(6)),
-                        },
-                      }))
-                    }
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Location is optional — leave it blank and add it later from Settings. Coordinates entered here are saved as unverified; use “Find on map” in Settings for verified coordinates. Detect location works only while you are at the shop — it fills in your device&apos;s current position.
-                </p>
-
-                {/* Payment method selection — audit H6: 'split' option removed
-                    (was collected but never honored by the pricing/checkout
-                    flow). The three remaining options cover every supported
-                    payment path: 'upi' (online only), 'cash' (cash on pickup
-                    only), 'both' (customer chooses at checkout). */}
-                <div className="space-y-2">
-                  <Label className="text-xs">Payment methods you accept</Label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {[
-                      { val: 'upi', label: 'UPI only', desc: 'Online payment via UPI app' },
-                      { val: 'cash', label: 'Cash only', desc: 'Pay at pickup' },
-                      { val: 'both', label: 'UPI + Cash', desc: 'Customer chooses' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.val}
-                        type="button"
-                        onClick={() => setState((s) => ({ ...s, business: { ...s.business, paymentMethods: opt.val as 'upi' | 'cash' | 'both' | 'split' } }))}
-                        className={`rounded-lg border-2 p-2 text-center transition ${state.business.paymentMethods === opt.val ? 'border-brand/30 bg-brand-soft' : 'border-border hover:border-brand/30'}`}
-                      >
-                        <p className="text-xs font-medium text-foreground">{opt.label}</p>
-                        <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field
+                      id="upiId"
+                      label="UPI ID (where customers pay you)"
+                      value={state.business.upiId}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, upiId: v } }))}
+                      onBlur={() => markTouched('upiId')}
+                      error={showErr('business', 'upiId') ? businessErrors.upiId : undefined}
+                      placeholder="e.g. myshop@okaxis"
+                      disabled={submitting}
+                    />
+                    <Field
+                      id="address"
+                      label="Address (optional)"
+                      value={state.business.address}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, address: v } }))}
+                      onBlur={() => markTouched('address')}
+                      error={undefined}
+                      placeholder="e.g. Shop 12, MG Road, Bengaluru"
+                      disabled={submitting}
+                    />
                   </div>
-                  <p className="text-xs text-muted-foreground">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
-                </div>
 
-                {/* Pamphlet / cover sheet — audit H6: the editable form was
-                    removed (the feature was never implemented in the pricing
-                    engine, so the collected price/name values were dead). The
-                    database columns + API schema are kept for backward compat
-                    with existing shops. The placeholder defaults are still
-                    sent in the registration payload so the backend zod schema
-                    doesn't reject the request. */}
-                <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs text-muted-foreground">Pamphlet / cover sheet</Label>
-                    <Badge variant="outline" className="bg-brand-soft text-[10px] text-muted-foreground">Coming soon</Badge>
+                  {/* Optional location — helps customers find the shop. Never
+                      required; invalid values are flagged, not silently kept. */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <Field
+                      id="city"
+                      label="City (optional)"
+                      value={state.business.city}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, city: v } }))}
+                      onBlur={() => markTouched('city')}
+                      error={undefined}
+                      placeholder="e.g. Bengaluru"
+                      disabled={submitting}
+                    />
+                    <Field
+                      id="state"
+                      label="State (optional)"
+                      value={state.business.state}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, state: v } }))}
+                      onBlur={() => markTouched('state')}
+                      error={undefined}
+                      placeholder="e.g. Karnataka"
+                      disabled={submitting}
+                    />
+                    <Field
+                      id="pincode"
+                      label="PIN code (optional)"
+                      value={state.business.pincode}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, pincode: v.replace(/\D/g, '').slice(0, 6) } }))}
+                      onBlur={() => markTouched('pincode')}
+                      error={showErr('business', 'pincode') ? businessErrors.pincode : undefined}
+                      placeholder="e.g. 560001"
+                      disabled={submitting}
+                    />
                   </div>
-                  <p className="text-xs text-muted-foreground">A folder/cover where printed pages are kept. This feature isn&apos;t available yet &mdash; your shop will be created without it, and you&apos;ll be able to add it later from Settings once it&apos;s ready.</p>
-                </div>
-              </>
-            )}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field
+                      id="latitude"
+                      label="Latitude (optional)"
+                      value={state.business.latitude}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, latitude: v } }))}
+                      onBlur={() => markTouched('latitude')}
+                      error={showErr('business', 'latitude') ? businessErrors.latitude : undefined}
+                      placeholder="e.g. 12.9716"
+                      disabled={submitting}
+                    />
+                    <Field
+                      id="longitude"
+                      label="Longitude (optional)"
+                      value={state.business.longitude}
+                      onChange={(v) => setState((s) => ({ ...s, business: { ...s.business, longitude: v } }))}
+                      onBlur={() => markTouched('longitude')}
+                      error={showErr('business', 'longitude') ? businessErrors.longitude : undefined}
+                      placeholder="e.g. 77.5946"
+                      disabled={submitting}
+                    />
+                  </div>
+                  <div className="mt-1">
+                    <DetectLocationButton
+                      disabled={submitting}
+                      onDetected={(loc) =>
+                        setState((s) => ({
+                          ...s,
+                          business: {
+                            ...s.business,
+                            latitude: String(loc.lat.toFixed(6)),
+                            longitude: String(loc.lng.toFixed(6)),
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <p className="text-[12px] leading-relaxed text-[var(--shop-ink-3)]">
+                    Location is optional — leave it blank and add it later from Settings. Coordinates entered here are saved as unverified; use “Find on map” in Settings for verified coordinates. Detect location works only while you are at the shop — it fills in your device&apos;s current position.
+                  </p>
 
-            {step === 'services' && (
-              <>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Wrench className="size-4 text-brand" /> Services you offer
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Pick at least one. You can change these later from Settings. The selected services appear on your public shop page.
-                </CardDescription>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {SERVICE_OPTIONS.map((opt) => {
-                    const checked = state.services.includes(opt.key);
-                    return (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => toggleService(opt.key)}
-                        aria-pressed={checked}
-                        className={`flex items-start gap-2.5 rounded-md border p-3 text-left transition-colors ${
-                          checked
-                            ? 'border-brand/30 bg-brand-soft'
-                            : 'border-border bg-surface hover:bg-muted'
-                        }`}
+                  {/* Payment method selection — audit H6: 'split' option removed
+                      (was collected but never honored by the pricing/checkout
+                      flow). The three remaining options cover every supported
+                      payment path: 'upi' (online only), 'cash' (cash on pickup
+                      only), 'both' (customer chooses at checkout). */}
+                  <div className="space-y-2">
+                    <Label className="text-[14px] font-semibold text-[var(--shop-ink-2)]">
+                      Payment methods you accept
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {[
+                        { val: 'upi', label: 'UPI only', desc: 'Online payment via UPI app' },
+                        { val: 'cash', label: 'Cash only', desc: 'Pay at pickup' },
+                        { val: 'both', label: 'UPI + Cash', desc: 'Customer chooses' },
+                      ].map((opt) => {
+                        const selected = state.business.paymentMethods === opt.val;
+                        return (
+                          <button
+                            key={opt.val}
+                            type="button"
+                            onClick={() => setState((s) => ({ ...s, business: { ...s.business, paymentMethods: opt.val as 'upi' | 'cash' | 'both' | 'split' } }))}
+                            className={`rounded-[10px] border p-3 text-center transition-colors ${
+                              selected
+                                ? 'border-[var(--shop-accent)] bg-[var(--shop-accent-soft)]'
+                                : 'border-[var(--shop-border)] bg-[var(--shop-surface)] hover:border-[var(--shop-accent)]/40'
+                            }`}
+                          >
+                            <p className={`text-[13px] font-semibold ${selected ? 'text-[var(--shop-accent-press)]' : 'text-[var(--shop-ink)]'}`}>
+                              {opt.label}
+                            </p>
+                            <p className="mt-0.5 text-[12px] text-[var(--shop-ink-3)]">{opt.desc}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[12px] text-[var(--shop-ink-3)]">You can change this later from Settings → Payments. You can also skip payment provider setup (PhonePe/Paytm) — customers pay via your UPI ID + you verify manually.</p>
+                  </div>
+
+                  {/* Pamphlet / cover sheet — audit H6: the editable form was
+                      removed (the feature was never implemented in the pricing
+                      engine, so the collected price/name values were dead). The
+                      database columns + API schema are kept for backward compat
+                      with existing shops. The placeholder defaults are still
+                      sent in the registration payload so the backend zod schema
+                      doesn't reject the request. */}
+                  <div className="space-y-2 rounded-[10px] border border-dashed border-[var(--shop-border)] bg-[var(--shop-bg)] p-3">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-[12px] font-semibold text-[var(--shop-ink-2)]">Pamphlet / cover sheet</Label>
+                      <Badge
+                        variant="outline"
+                        className="border-[var(--shop-border)] bg-[var(--shop-accent-soft)] text-[10px] font-semibold text-[var(--shop-accent-press)]"
                       >
-                        <div
-                          className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${
-                            checked ? 'border-brand bg-brand text-brand-foreground' : 'border-border'
+                        Coming soon
+                      </Badge>
+                    </div>
+                    <p className="text-[12px] text-[var(--shop-ink-3)]">A folder/cover where printed pages are kept. This feature isn&apos;t available yet &mdash; your shop will be created without it, and you&apos;ll be able to add it later from Settings once it&apos;s ready.</p>
+                  </div>
+                </>
+              )}
+
+              {step === 'services' && (
+                <>
+                  <div>
+                    <h2 className="flex items-center gap-2 text-[22px] font-bold text-[var(--shop-ink)]">
+                      <Wrench className="size-5 text-[var(--shop-accent)]" aria-hidden="true" /> Services you offer
+                    </h2>
+                    <p className="mt-1 text-[14px] text-[var(--shop-ink-2)]">
+                      Pick at least one. You can change these later from Settings. The selected services appear on your public shop page.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {SERVICE_OPTIONS.map((opt) => {
+                      const checked = state.services.includes(opt.key);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => toggleService(opt.key)}
+                          aria-pressed={checked}
+                          className={`flex items-start gap-2.5 rounded-[10px] border p-3 text-left transition-colors ${
+                            checked
+                              ? 'border-[var(--shop-accent)] bg-[var(--shop-accent-soft)]'
+                              : 'border-[var(--shop-border)] bg-[var(--shop-surface)] hover:border-[var(--shop-accent)]/40'
                           }`}
                         >
-                          {checked && <Check className="size-3" />}
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium">{opt.label}</span>
-                          <span className="text-xs text-muted-foreground">{opt.description}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {state.services.length === 0 && (
-                  <p className="text-xs text-danger">Pick at least one service to continue.</p>
-                )}
-              </>
-            )}
-
-            {step === 'review' && (
-              <>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardCheck className="size-4 text-brand" /> Review &amp; create
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Confirm the details below. You can edit any of this later from Settings.
-                </CardDescription>
-
-                <ReviewBlock title="Account">
-                  <ReviewRow label="Name" value={state.account.name} />
-                  <ReviewRow label="Email" value={state.account.email} />
-                  <ReviewRow label="Phone" value={state.account.phone} />
-                </ReviewBlock>
-                <ReviewBlock title="Business">
-                  <ReviewRow label="Shop name" value={state.business.shopName} />
-                  <ReviewRow label="URL" value={`/shops/${state.business.slug}`} />
-                  <ReviewRow label="UPI ID" value={state.business.upiId} />
-                  {state.business.address && <ReviewRow label="Address" value={state.business.address} />}
-                  {state.business.city && <ReviewRow label="City" value={state.business.city} />}
-                  {state.business.state && <ReviewRow label="State" value={state.business.state} />}
-                  {state.business.pincode && <ReviewRow label="PIN code" value={state.business.pincode} />}
-                  {(state.business.latitude || state.business.longitude) && (
-                    <ReviewRow label="Coordinates" value={`${state.business.latitude}, ${state.business.longitude}`} />
-                  )}
-                  {state.business.description && <ReviewRow label="Description" value={state.business.description} />}
-                </ReviewBlock>
-                <ReviewBlock title="Services">
-                  <div className="flex flex-wrap gap-1.5">
-                    {state.services.map((k) => {
-                      const opt = SERVICE_OPTIONS.find((o) => o.key === k);
-                      return (
-                        <Badge key={k} variant="outline" className="bg-brand-soft">
-                          {opt?.label ?? k}
-                        </Badge>
+                          <div
+                            className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${
+                              checked
+                                ? 'border-[var(--shop-accent)] bg-[var(--shop-accent)] text-white'
+                                : 'border-[var(--shop-border)]'
+                            }`}
+                          >
+                            {checked && <Check className="size-3" aria-hidden="true" />}
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`text-[14px] font-semibold ${checked ? 'text-[var(--shop-accent-press)]' : 'text-[var(--shop-ink)]'}`}>
+                              {opt.label}
+                            </span>
+                            <span className="text-[12px] text-[var(--shop-ink-3)]">{opt.description}</span>
+                          </div>
+                        </button>
                       );
                     })}
                   </div>
-                </ReviewBlock>
+                  {state.services.length === 0 && (
+                    <p className="text-[12px] text-[var(--shop-danger)]">Pick at least one service to continue.</p>
+                  )}
+                </>
+              )}
 
-                {error && (
-                  <div role="alert" className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
-                    {error}
+              {step === 'review' && (
+                <>
+                  <div>
+                    <h2 className="flex items-center gap-2 text-[22px] font-bold text-[var(--shop-ink)]">
+                      <ClipboardCheck className="size-5 text-[var(--shop-accent)]" aria-hidden="true" /> Review &amp; create
+                    </h2>
+                    <p className="mt-1 text-[14px] text-[var(--shop-ink-2)]">
+                      Confirm the details below. You can edit any of this later from Settings.
+                    </p>
                   </div>
-                )}
-              </>
-            )}
-          </CardContent>
 
-          <CardFooter className="flex items-center justify-between gap-2 border-t pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={back}
-              disabled={stepIndex === 0 || submitting}
-              className="min-h-[44px] gap-1.5"
-            >
-              <ArrowLeft className="size-4" /> Back
-            </Button>
-            <div className="flex items-center gap-2">
-              {step !== 'review' ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={advance}
-                  disabled={!canAdvance || submitting}
-                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand-hover"
-                >
-                  Continue <ArrowRight className="size-4" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void submit()}
-                  disabled={submitting}
-                  className="min-h-[44px] gap-1.5 bg-brand text-brand-foreground hover:bg-brand-hover"
-                >
-                  {submitting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                  {submitting ? 'Creating shop…' : 'Create my shop'}
-                </Button>
+                  <ReviewBlock title="Account">
+                    <ReviewRow label="Name" value={state.account.name} />
+                    <ReviewRow label="Email" value={state.account.email} />
+                    <ReviewRow label="Phone" value={state.account.phone} />
+                  </ReviewBlock>
+                  <ReviewBlock title="Business">
+                    <ReviewRow label="Shop name" value={state.business.shopName} />
+                    <ReviewRow label="URL" value={`/shops/${state.business.slug}`} />
+                    <ReviewRow label="UPI ID" value={state.business.upiId} />
+                    {state.business.address && <ReviewRow label="Address" value={state.business.address} />}
+                    {state.business.city && <ReviewRow label="City" value={state.business.city} />}
+                    {state.business.state && <ReviewRow label="State" value={state.business.state} />}
+                    {state.business.pincode && <ReviewRow label="PIN code" value={state.business.pincode} />}
+                    {(state.business.latitude || state.business.longitude) && (
+                      <ReviewRow label="Coordinates" value={`${state.business.latitude}, ${state.business.longitude}`} />
+                    )}
+                    {state.business.description && <ReviewRow label="Description" value={state.business.description} />}
+                  </ReviewBlock>
+                  <ReviewBlock title="Services">
+                    <div className="flex flex-wrap gap-1.5">
+                      {state.services.map((k) => {
+                        const opt = SERVICE_OPTIONS.find((o) => o.key === k);
+                        return (
+                          <Badge
+                            key={k}
+                            variant="outline"
+                            className="border-[var(--shop-accent)]/30 bg-[var(--shop-accent-soft)] text-[12px] font-semibold text-[var(--shop-accent-press)]"
+                          >
+                            {opt?.label ?? k}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </ReviewBlock>
+
+                  {error && (
+                    <div
+                      role="alert"
+                      className="rounded-[10px] border border-[var(--shop-danger)]/30 bg-[#FEF2F2] px-3 py-2 text-[14px] text-[var(--shop-danger)]"
+                    >
+                      {error}
+                    </div>
+                  )}
+                </>
               )}
             </div>
-          </CardFooter>
-        </Card>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Already have an account?{' '}
-          <Link href="/shop/login" className="font-medium text-brand hover:underline">
-            Sign in
-          </Link>
-          {' · '}
-          <Link href="/" className="font-medium text-brand hover:underline">
-            Customer app
-          </Link>
-        </p>
+            {/* Footer — sticky-feeling action row with Back + Continue/Submit */}
+            <div className="mt-7 flex items-center justify-between gap-3 border-t border-[var(--shop-border)] pt-5">
+              <Button
+                type="button"
+                size="sm"
+                onClick={back}
+                disabled={stepIndex === 0 || submitting}
+                className="min-h-[44px] gap-1.5 rounded-[10px] border border-[var(--shop-border)] bg-white text-[14px] font-semibold text-[var(--shop-ink)] hover:bg-[var(--shop-bg)]"
+              >
+                <ArrowLeft className="size-4" aria-hidden="true" /> Back
+              </Button>
+              <div className="flex items-center gap-2">
+                {step !== 'review' ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={advance}
+                    disabled={!canAdvance || submitting}
+                    className="min-h-[44px] gap-1.5 rounded-[10px] bg-[var(--shop-accent)] text-[14px] font-semibold text-white hover:bg-[var(--shop-accent-press)]"
+                  >
+                    Continue <ArrowRight className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void submit()}
+                    disabled={submitting}
+                    className="min-h-[44px] gap-1.5 rounded-[10px] bg-[var(--shop-accent)] text-[14px] font-semibold text-white hover:bg-[var(--shop-accent-press)]"
+                  >
+                    {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
+                    {submitting ? 'Creating shop…' : 'Create my shop'}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <p className="text-center text-[12px] text-[var(--shop-ink-3)]">
+            Already have an account?{' '}
+            <Link href="/shop/login" className="font-semibold text-[var(--shop-accent)] hover:underline">
+              Sign in
+            </Link>
+            {' · '}
+            <Link href="/" className="font-semibold text-[var(--shop-accent)] hover:underline">
+              Customer app
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -965,7 +1058,9 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-[14px] font-semibold text-[var(--shop-ink)]">
+        {label}
+      </Label>
       <div className={trailing ? 'relative' : undefined}>
         <Input
           id={id}
@@ -977,19 +1072,21 @@ function Field({
           disabled={disabled}
           autoComplete={autoComplete}
           aria-invalid={Boolean(error)}
-          className={`h-11 text-base sm:h-10 ${trailing ? 'pr-10' : ''}`}
+          className={`h-11 rounded-[10px] border-[var(--shop-border)] bg-[var(--shop-surface)] text-[14px] text-[var(--shop-ink)] placeholder:text-[var(--shop-ink-3)] focus:border-[var(--shop-accent)] focus-visible:border-[var(--shop-accent)] focus-visible:ring-[var(--shop-accent)] ${
+            trailing ? 'pr-10' : ''
+          }`}
         />
         {trailing}
       </div>
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p className="text-[12px] text-[var(--shop-danger)]">{error}</p>}
     </div>
   );
 }
 
 function ReviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border bg-surface p-3">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+    <div className="rounded-[10px] border border-[var(--shop-border)] bg-[var(--shop-surface)] p-4">
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--shop-ink-3)]">{title}</p>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
@@ -997,9 +1094,9 @@ function ReviewBlock({ title, children }: { title: string; children: React.React
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium break-words">{value}</span>
+    <div className="flex items-start justify-between gap-3 text-[14px]">
+      <span className="text-[var(--shop-ink-2)]">{label}</span>
+      <span className="text-right font-semibold text-[var(--shop-ink)] break-words">{value}</span>
     </div>
   );
 }

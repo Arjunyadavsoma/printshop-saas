@@ -81,9 +81,13 @@ export default function AuthLoginPage() {
       const role = inner.user?.role ?? 'owner';
       api.setAuth(inner.accessToken, inner.refreshToken ?? '', role, inner.user?.email ?? email.trim());
 
-      // Hand off to the success screen with the REAL user + role; it
-      // performs the same role-aware redirect the existing login uses.
-      const dest = role === 'admin' ? '/admin' : '/shop/dashboard';
+      // Role-aware redirect — the explicit differentiation the user asked
+      // for: a customer signing in by email lands on the consumer home
+      // (shops); a shopkeeper/staff lands on the shop dashboard; an admin
+      // lands on the platform admin portal. (Customers normally sign in
+      // with Google via /profile?signin=1, but this path is defensive for
+      // any customer who authenticates by email.)
+      const dest = role === 'admin' ? '/admin' : role === 'customer' ? '/' : '/shop/dashboard';
       router.replace(`/auth/success?email=${encodeURIComponent(inner.user?.email ?? email.trim())}&role=${role}&next=${encodeURIComponent(dest)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error — check your connection and try again.');
