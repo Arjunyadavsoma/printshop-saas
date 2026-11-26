@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { verifyToken, clerkClient } from '@clerk/nextjs/server';
 import { UnauthorizedError, ValidationError } from '@platform/core/errors';
 import { getContainer } from '@/lib/container';
 import { linkOrCreateClerkUser } from '@/lib/auth/clerk-users';
@@ -13,9 +13,19 @@ import { rateLimit, rateKey } from '@/lib/api/rate-limit';
  * Dual-auth migration seam: Clerk proves *who* the user is (Google OAuth
  * on the sign-in page); the app's JWT is still the session token every
  * API route understands (`withAuth`). The caller must already hold a
- * valid Clerk session (the Clerk session cookie) — `auth()` verifies it
- * server-side against the Clerk secret key. No password is involved and
- * no Clerk token is ever trusted from the request body.
+ * valid Clerk session (the Clerk session cookie).
+ *
+ * Why no `auth()` / `currentUser()` here: in @clerk/nextjs v7 those
+ * require `clerkMiddleware()` to have run on the request, and this app
+ * deliberately has no Clerk middleware — `src/middleware.ts` is only the
+ * app's own security-headers middleware, and the JWT login path must keep
+ * working with or without Clerk. Calling `auth()` without the middleware
+ * throws ("clerkMiddleware() was not run..."), which used to surface as a
+ * 500 on every exchange and made Google sign-in fail for everyone. This
+ * route instead verifies the session JWT directly with `verifyToken`
+ * (signature checked against Clerk's JWKS) and fetches the user with the
+ * Backend API client — no middleware needed. No Clerk token is ever
+ * trusted from the request body.
  *
  * The local user is found or created by `linkOrCreateClerkUser`:
  * existing shopkeepers are matched by email and keep their account,
@@ -23,7 +33,7 @@ import { rateLimit, rateKey } from '@/lib/api/rate-limit';
  * The JWT login path is untouched — it keeps working with or without
  * Clerk configured.
  *
- * Request:  {} (Clerk session cookie)
+ * Request:  {} (Clerk `__session` cookie)
  * Response: { "success": true, "data": { "accessToken", "refreshToken", "role", "email" } }
  *           401 when there is no valid Clerk session.
  */
@@ -31,12 +41,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await rateLimit(getContainer().cache, rateKey(req, 'clerk-session'), 20, 60);
 
-    const { userId } = await auth();
-    if (!userId) {
+    const sessionToken = req.cookies.get('__session')?.value;
+    if (!sessionToken) {
       return fail(new UnauthorizedError('No Clerk session — sign in with Google first.'));
     }
 
-    const clerkUser = await currentUser();
+    let userId: string;
+    try {
+      // `verifyToken` needs its options argument: the secret key lets it
+      // load Clerk's JWKS and verify the session JWT's signature.
+      const claims = await verifyToken(sessionToken, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+      });
+      userId = claims.sub;
+    } catch {
+      return fail(new UnauthorizedError('No Clerk session — sign in with Google first.'));
+    }
+
+    const clerkUser = await (await clerkClient()).users.getUser(userId);
     const email = clerkUser?.primaryEmailAddress?.emailAddress?.toLowerCase();
     if (!email) {
       return fail(new ValidationError('Your Clerk account has no verified email address.'));

@@ -7,11 +7,14 @@ vi.mock('@/lib/db', async () => {
 });
 
 // Clerk server SDK — mocked: no Clerk keys exist in the test env.
-const clerkAuthMock = vi.fn();
-const clerkCurrentUserMock = vi.fn();
+// The route verifies the `__session` cookie directly with `verifyToken`
+// (no clerkMiddleware runs in this app, so `auth()`/`currentUser()` would
+// throw); the Backend API client fetches the user for their email.
+const clerkVerifyTokenMock = vi.fn();
+const clerkGetUserMock = vi.fn();
 vi.mock('@clerk/nextjs/server', () => ({
-  auth: (...args: unknown[]) => clerkAuthMock(...args),
-  currentUser: (...args: unknown[]) => clerkCurrentUserMock(...args),
+  verifyToken: (...args: unknown[]) => clerkVerifyTokenMock(...args),
+  clerkClient: async () => ({ users: { getUser: (...args: unknown[]) => clerkGetUserMock(...args) } }),
 }));
 
 import { setContainerForTesting, type Container } from '@/lib/container';
@@ -36,8 +39,8 @@ let container: Container;
 
 beforeEach(() => {
   resetMockDb();
-  clerkAuthMock.mockReset();
-  clerkCurrentUserMock.mockReset();
+  clerkVerifyTokenMock.mockReset();
+  clerkGetUserMock.mockReset();
   const cache = new InMemoryCacheAdapter();
   container = {
     db: new InMemoryDatabaseAdapter(),
@@ -63,31 +66,46 @@ beforeEach(() => {
   setContainerForTesting(container);
 });
 
-function postReq(): NextRequest {
-  return new NextRequest('http://localhost/api/v1/auth/clerk-session', { method: 'POST' });
+function postReq(sessionCookie?: string): NextRequest {
+  const headers: Record<string, string> = {};
+  if (sessionCookie) headers.cookie = `__session=${sessionCookie}`;
+  return new NextRequest('http://localhost/api/v1/auth/clerk-session', {
+    method: 'POST',
+    headers,
+  });
+}
+
+function mockValidSession(userId: string, email: string | null) {
+  clerkVerifyTokenMock.mockResolvedValue({ sub: userId });
+  clerkGetUserMock.mockResolvedValue(
+    email === null ? { primaryEmailAddress: null } : { primaryEmailAddress: { emailAddress: email } },
+  );
 }
 
 describe('POST /api/v1/auth/clerk-session', () => {
-  it('returns 401 with no Clerk session', async () => {
-    clerkAuthMock.mockResolvedValue({ userId: null });
+  it('returns 401 with no Clerk session cookie', async () => {
     const res = await POST(postReq());
+    expect(res.status).toBe(401);
+    expect((await res.json()).success).toBe(false);
+    expect(clerkVerifyTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 when the session token fails verification', async () => {
+    clerkVerifyTokenMock.mockRejectedValue(new Error('invalid signature'));
+    const res = await POST(postReq('bad-token'));
     expect(res.status).toBe(401);
     expect((await res.json()).success).toBe(false);
   });
 
   it('returns 400 when the Clerk user has no email', async () => {
-    clerkAuthMock.mockResolvedValue({ userId: 'user_noemail' });
-    clerkCurrentUserMock.mockResolvedValue({ primaryEmailAddress: null });
-    const res = await POST(postReq());
+    mockValidSession('user_noemail', null);
+    const res = await POST(postReq('valid-token'));
     expect(res.status).toBe(400);
   });
 
   it('mints a JWT pair for a brand-new Clerk user and creates the local account', async () => {
-    clerkAuthMock.mockResolvedValue({ userId: 'user_new1' });
-    clerkCurrentUserMock.mockResolvedValue({
-      primaryEmailAddress: { emailAddress: 'Clerk-New@Example.com' },
-    });
-    const res = await POST(postReq());
+    mockValidSession('user_new1', 'Clerk-New@Example.com');
+    const res = await POST(postReq('valid-token'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -109,11 +127,8 @@ describe('POST /api/v1/auth/clerk-session', () => {
       { email: 'shop@example.com', phone: '9000000000', password: 'pw123456', role: 'owner', shopId: null },
       container.auth,
     );
-    clerkAuthMock.mockResolvedValue({ userId: 'user_link1' });
-    clerkCurrentUserMock.mockResolvedValue({
-      primaryEmailAddress: { emailAddress: 'shop@example.com' },
-    });
-    const res = await POST(postReq());
+    mockValidSession('user_link1', 'shop@example.com');
+    const res = await POST(postReq('valid-token'));
     expect(res.status).toBe(200);
     const body = await res.json();
     const claims = await container.auth.verifyAccessToken(body.data.accessToken);
