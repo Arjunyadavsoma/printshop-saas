@@ -1,17 +1,25 @@
 import { notFound } from 'next/navigation';
 import { getContainer } from '@/lib/container';
 import { repos } from '@/lib/repositories';
-import { ShopOrderPage } from './ShopOrderPage';
+import {
+  shopOpenStatus,
+  parseOpeningHours,
+  DAY_KEYS,
+  type DayKey,
+} from '@/lib/location/opening-hours';
+import { ShopOrderPage, type PricingBoardGroup } from './ShopOrderPage';
 
 /**
  * /s/[shopSlug] — the QR landing. Server Component.
  *
- * Loads the shop from the DB and renders the Clear customer flow
- * (CustomerOrderFlowV2 inside CustomerShell, via ShopOrderPage).
- * Pricing comes from the shop's real config: active A4 single-side
- * price rules first, then the shop pricingConfig. Only when neither
- * exists do the display strings fall back to the spec rates
- * (B&W ₹2 / Colour ₹10 per page) — and the page says so.
+ * Loads the shop from the DB and renders the shop profile landing
+ * (ShopOrderPage): identity header (logo, open-status chip, description),
+ * services, a structured pricing board built from the shop's real price
+ * rules, and business info. Pricing display strings still come from the
+ * shop's real config: active A4 single-side price rules first, then the
+ * shop pricingConfig. Only when neither exists do the display strings
+ * fall back to the spec rates (B&W ₹2 / Colour ₹10 per page) — and the
+ * page says so.
  */
 export default async function ShopLanding({ params }: { params: Promise<{ shopSlug: string }> }) {
   const { shopSlug } = await params;
@@ -22,6 +30,9 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
     upiId: string; upiPayeeName: string | null; paymentMode: string;
     paymentMethods: string; minutesPerPageBw: number; minutesPerPageColor: number;
     retentionHours: number; pricingConfig: string | Record<string, number> | null;
+    timezone: string | null; logoUrl: string | null; servicesJson: string | null;
+    fullAddress: string | null; city: string | null; state: string | null;
+    pincode: string | null; description: string | null;
   }>('shop', { slug: shopSlug });
   if (!shop) notFound();
 
@@ -67,6 +78,37 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   const shopIsOpen = shop.isOpen ?? true;
   const shopAccepting = shop.acceptingOrders ?? true;
   const closed = !shopIsOpen || !shopAccepting;
+
+  // Open-status from the weekly-hours engine: combines the schedule with
+  // the manual flags (isOpen / acceptingOrders) into one customer-facing
+  // label ("Open now", "Closes at 9:00 PM", "Opens tomorrow at 9:00 AM"…).
+  const openStatus = shopOpenStatus(
+    {
+      openingHours: shop.openingHours,
+      timezone: shop.timezone ?? 'Asia/Kolkata',
+      isOpen: shopIsOpen,
+      acceptingOrders: shopAccepting,
+    },
+    new Date(),
+  );
+
+  // servicesJson → validated string[] (real keys from the register flow;
+  // anything unknown still renders, via the client's key → label fallback).
+  const services = parseServices(shop.servicesJson);
+
+  // Structured pricing board from the active price rules: group by paper
+  // size, one row per (colour × sides) combo that actually exists, each
+  // with the LOWEST slab's per-page rate + the page threshold of that slab.
+  const pricingBoard = buildPricingBoard(rateRows);
+
+  // Weekly hours rows for the business-info card (Mon–Sun). Null when the
+  // shop has no parseable hours — the list is skipped entirely then.
+  const weeklyHours = buildWeeklyHours(shop.openingHours);
+
+  // Display address: the verified fullAddress wins over the legacy string.
+  const fullAddress = (shop.fullAddress ?? '').trim() || shop.address;
+  const description = (shop.description ?? '').trim() || null;
+
   const hoursText = formatOpeningHours(shop.openingHours);
   // Short hours for the landing page (fits on one line without truncation)
   const shortHours = hoursText.length > 30 ? '9 am – 9 pm' : hoursText.replace('Mon–Sat ', '').replace(', Sun closed', ' · Sun closed');
@@ -91,12 +133,100 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
       shopPhone={shop.phone}
       shopAddress={shop.address}
       closed={closed}
+      logoUrl={shop.logoUrl}
+      services={services}
+      openNow={openStatus.open}
+      openLabel={openStatus.label}
+      pricingBoard={pricingBoard}
+      weeklyHours={weeklyHours}
+      fullAddress={fullAddress}
+      description={description}
     />
   );
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
+/** Parse servicesJson ("[\"bw_print\", …]") into a validated string[]. */
+function parseServices(raw: string | null): string[] {
+  if (typeof raw !== 'string' || raw.trim().length === 0) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Group the active price rules into a pricing board: paperSize → rows for
+ * each (colour × sides) combination, using the cheapest slab of each rule
+ * (with that slab's minPages as the "from N pages" threshold). Duplicate
+ * rules for the same combo collapse to the lowest rate. Null when the shop
+ * has no active rules — the landing falls back to the pricingConfig card.
+ */
+function buildPricingBoard(
+  rules: Array<{
+    paperSize: string;
+    colorMode: 'BW' | 'COLOR';
+    sides: 'SINGLE' | 'DOUBLE';
+    slabs: Array<{ minPages: number; perPagePaise: number }>;
+  }>,
+): PricingBoardGroup[] | null {
+  const bySize = new Map<string, Map<string, PricingBoardGroup['rows'][number]>>();
+  for (const rule of rules) {
+    const cheapest = [...(rule.slabs ?? [])].sort((a, b) => a.perPagePaise - b.perPagePaise)[0];
+    if (!cheapest) continue;
+    const rows = bySize.get(rule.paperSize) ?? new Map();
+    const comboKey = `${rule.colorMode}|${rule.sides}`;
+    const existing = rows.get(comboKey);
+    if (!existing || cheapest.perPagePaise < existing.perPagePaise) {
+      rows.set(comboKey, {
+        colorMode: rule.colorMode,
+        sides: rule.sides,
+        fromPages: Math.max(1, cheapest.minPages ?? 1),
+        perPagePaise: cheapest.perPagePaise,
+      });
+    }
+    bySize.set(rule.paperSize, rows);
+  }
+  const groups: PricingBoardGroup[] = [...bySize.entries()].map(([paperSize, rows]) => ({
+    paperSize,
+    rows: [...rows.values()],
+  }));
+  return groups.length > 0 ? groups : null;
+}
+
+/** Weekly hours → Mon–Sun display rows; null when nothing is parseable. */
+function buildWeeklyHours(openingHours: unknown): { day: string; label: string }[] | null {
+  const hours = parseOpeningHours(openingHours);
+  if (Object.keys(hours).length === 0) return null;
+  const dayLabels: Record<DayKey, string> = {
+    mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
+  };
+  let anyOpenDay = false;
+  const rows = DAY_KEYS.map((key) => {
+    const sessions = hours[key] ?? [];
+    if (sessions.length === 0) return { day: dayLabels[key], label: 'Closed' };
+    anyOpenDay = true;
+    return {
+      day: dayLabels[key],
+      label: sessions.map((s) => `${formatHhMm12h(s.open)} – ${formatHhMm12h(s.close)}`).join(', '),
+    };
+  });
+  return anyOpenDay ? rows : null;
+}
+
+/** "09:00" → "9:00 AM" (12-hour clock, matches the opening-hours labels). */
+function formatHhMm12h(value: string): string {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+  if (!m) return value;
+  const h24 = Number(m[1]);
+  const period = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${m[2]} ${period}`;
+}
 
 /** Render the opening hours JSON or fallback string as a one-line summary. */
 function formatOpeningHours(hours: unknown): string {
