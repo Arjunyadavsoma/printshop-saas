@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ConsumerPage } from '@/components/clear/consumer-page';
 import { PrimaryButton } from '@/components/clear/button';
-import { CustomerOrderFlowV2Lazy } from './CustomerOrderFlowV2Lazy';
+import { SmartPrintStudioLazy } from './SmartPrintStudioLazy';
 
 export interface ShopOrderPageProps {
   shopSlug: string;
@@ -129,18 +129,21 @@ export function ShopOrderPage(props: ShopOrderPageProps) {
     );
   }
 
-  /* ── Order flow started — keep CustomerOrderFlowV2 but in Clear container ── */
+  /* ── Smart Print Studio — the premium 5-step upload → settings →
+     review → payment → confirmation flow. Replaces the legacy
+     CustomerOrderFlowV2 with the same backend (chunked uploads, quote,
+     specs, orders, payment) behind a redesigned, desktop-responsive UI. ── */
   if (started) {
     return (
-      <CustomerOrderFlowV2Lazy
+      <SmartPrintStudioLazy
         shopSlug={shopSlug}
         shopName={shopName}
         upiId={upiId}
-        upiPayeeName={upiPayeeName}
-        paymentMode={paymentMode}
-        retentionHours={retentionHours}
-        bwPerPagePaise={bwPerPagePaise}
         colorPerPagePaise={colorPerPagePaise}
+        bwPerPagePaise={bwPerPagePaise}
+        doubleBwPrice={doubleBwPrice}
+        paymentMode={paymentMode}
+        closed={closed}
       />
     );
   }
