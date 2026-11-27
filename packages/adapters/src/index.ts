@@ -19,3 +19,4 @@ export * from './payment/phonepe.adapter';
 export * from './payment/paytm.adapter';
 export * from './payment/upi-deeplink.adapter';
 export * from './payment/razorpay.adapter';
+export * from './payment/toropay.adapter';

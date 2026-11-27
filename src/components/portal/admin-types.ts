@@ -33,7 +33,7 @@ export type PrintJobStatus =
 
 export type ColorMode = 'bw' | 'color';
 export type PaperSize = 'a4' | 'a3' | 'letter' | 'legal';
-export type PaymentProvider = 'phonepe' | 'paytm' | 'googlepay' | 'razorpay';
+export type PaymentProvider = 'phonepe' | 'paytm' | 'googlepay' | 'razorpay' | 'toropay';
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
 export interface ShopPricingConfig {

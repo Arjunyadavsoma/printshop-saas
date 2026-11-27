@@ -1,11 +1,11 @@
 import type { PaymentAdapter } from '@platform/core/interfaces';
 import type { PaymentProvider } from '@platform/core/domain';
-import { PhonePePaymentAdapter, PaytmPaymentAdapter, UpiDeepLinkPaymentAdapter, RazorpayPaymentAdapter } from '@platform/adapters';
+import { PhonePePaymentAdapter, PaytmPaymentAdapter, UpiDeepLinkPaymentAdapter, RazorpayPaymentAdapter, ToroPayPaymentAdapter } from '@platform/adapters';
 import { AdapterError } from '@platform/core/errors';
 
 /**
  * Routes to the correct PaymentAdapter concrete by the shop's configured
- * provider. Adding a new provider (e.g. Razorpay) is: implement the adapter,
+ * provider. Adding a new provider (e.g. ToroPay) is: implement the adapter,
  * register it here, set PAYMENT_PROVIDER. No business-logic changes.
  */
 export class PaymentAdapterRegistry {
@@ -16,6 +16,7 @@ export class PaymentAdapterRegistry {
     this.register(new PaytmPaymentAdapter());
     this.register(new UpiDeepLinkPaymentAdapter());
     this.register(new RazorpayPaymentAdapter());
+    this.register(new ToroPayPaymentAdapter());
   }
 
   register(adapter: PaymentAdapter): void {

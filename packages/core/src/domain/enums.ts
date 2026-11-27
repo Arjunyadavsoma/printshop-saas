@@ -25,16 +25,17 @@ export const SUBSCRIPTION_TIERS: readonly SubscriptionTier[] = [
 ] as const;
 
 /** Payment providers supported by the PaymentAdapter abstraction.
- *  Feature 4: `cashfree` removed — it was a phantom enum value with no
- *  adapter, no registry entry, no webhook route, and no env vars. Keeping
- *  it risked a runtime AdapterError if a shop's paymentProvider was ever
- *  set to 'cashfree'. Re-add only when a real adapter is implemented. */
-export type PaymentProvider = 'phonepe' | 'paytm' | 'googlepay' | 'razorpay';
+ *  Feature 4: `cashfree` removed — phantom enum value with no adapter.
+ *  ToroPay added — UPI payment-link platform (https://www.toropay.co.in/).
+ *  Direct UPI path (merchant verifies) + optional provider checkout path
+ *  (signed webhook verifies). See docs/PRINTELYX-TOROPAY-INTEGRATION.md. */
+export type PaymentProvider = 'phonepe' | 'paytm' | 'googlepay' | 'razorpay' | 'toropay';
 export const PAYMENT_PROVIDERS: readonly PaymentProvider[] = [
   'phonepe',
   'paytm',
   'googlepay',
   'razorpay',
+  'toropay',
 ] as const;
 
 /** Lifecycle of an order, from draft to collected. */
