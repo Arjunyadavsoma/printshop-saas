@@ -21,6 +21,8 @@ import jsQR from 'jsqr';
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,60}$/i;
 
+/** Extract a shop slug from a QR payload (full URL or bare slug).
+ *  Returns the slug, or null if the payload is not a shop QR. */
 export function extractShopSlug(payload: string): string | null {
   const raw = payload.trim();
   if (!raw) return null;
@@ -31,6 +33,24 @@ export function extractShopSlug(payload: string): string | null {
     return null;
   } catch {
     if (SLUG_PATTERN.test(raw)) return raw.toLowerCase();
+    return null;
+  }
+}
+
+/** Extract an order token from a QR payload (full URL or bare token).
+ *  Order QR codes link to /o/[token] for tracking. Returns the token, or
+ *  null if the payload is not an order QR. */
+export function extractOrderToken(payload: string): string | null {
+  const raw = payload.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const match = url.pathname.match(/^\/o\/([a-f0-9]{16,64})\/?$/i);
+    if (match) return match[1].toLowerCase();
+    return null;
+  } catch {
+    // Bare token — must be a hex string (the customerToken is 128-bit hex)
+    if (/^[a-f0-9]{16,64}$/i.test(raw)) return raw.toLowerCase();
     return null;
   }
 }
@@ -56,6 +76,7 @@ export default function ScanPage() {
   }, []);
 
   const go = useCallback((slug: string) => { stop(); router.push(`/s/${slug}`); }, [router, stop]);
+  const goToOrder = useCallback((token: string) => { stop(); router.push(`/o/${token}`); }, [router, stop]);
 
   const startCamera = useCallback(async () => {
     setCameraError(null);
@@ -87,6 +108,8 @@ export default function ScanPage() {
           if (code?.data) {
             const slug = extractShopSlug(code.data);
             if (slug) { go(slug); return; }
+            const token = extractOrderToken(code.data);
+            if (token) { goToOrder(token); return; }
           }
           busy = false;
         }
@@ -99,18 +122,20 @@ export default function ScanPage() {
       const name = (cause as { name?: string })?.name;
       if (name === 'NotAllowedError') { setCameraState('denied'); setCameraError('Camera permission was denied. Allow camera access in your browser settings, or use manual entry below.'); }
       else if (name === 'NotFoundError' || name === 'OverconstrainedError') { setCameraState('error'); setCameraError('No camera was found on this device. Use manual entry below.'); }
+      else if (name === 'NotReadableError') { setCameraState('error'); setCameraError('The camera is already in use by another app. Close it and try again, or use manual entry below.'); }
       else { setCameraState('error'); setCameraError('Could not start the camera. Use manual entry below.'); }
     }
-  }, [go]);
+  }, [go, goToOrder]);
 
   useEffect(() => stop, [stop]);
 
   const submitManual = (e?: React.FormEvent) => {
     e?.preventDefault();
     const slug = extractShopSlug(manual);
-    if (!slug) { setManualError('That does not look like a Printelyx shop link or shop code. Paste the full link (…/s/shop-name) or the shop code.'); return; }
-    setManualError(null);
-    go(slug);
+    if (slug) { setManualError(null); go(slug); return; }
+    const token = extractOrderToken(manual);
+    if (token) { setManualError(null); goToOrder(token); return; }
+    setManualError('That does not look like a Printelyx shop link, order link, or code. Paste the full link (…/s/shop-name or …/o/order-token) or the shop code.');
   };
 
   return (
