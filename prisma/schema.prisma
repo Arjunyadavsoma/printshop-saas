@@ -88,6 +88,8 @@ model Shop {
   subscription          Subscription?
   users                 User[]
   paymentAttempts       PaymentAttempt[]
+  gmailConnection       ShopGmailConnection?
+  paymentEvidence       PaymentEvidence[]
 
   @@index([slug])
 }
@@ -753,6 +755,59 @@ model Payment {
   order               Order     @relation(fields: [orderId], references: [id])
 
   @@index([orderId, status])
+}
+
+// Shopkeeper Gmail connection for automatic payment reconciliation.
+// The refresh token is AES-256-GCM encrypted at rest using PAYMENT_ENCRYPTION_KEY.
+// The scope is gmail.readonly — Printelyx never sends email on the shopkeeper's behalf.
+model ShopGmailConnection {
+  id                   String    @id @default(uuid())
+  shopId               String   @unique
+  googleEmail          String
+  encryptedRefreshToken String
+  grantedScopes        String
+  status               String   @default("active") // active | expired | revoked | error
+  lastSyncAt           DateTime?
+  historyCursor        String?  // Gmail history ID for incremental sync
+  watchExpiration      DateTime? // Gmail push watch expiry (null = polling mode)
+  syncError            String?
+  matchedCount         Int      @default(0)
+  pendingReviewCount   Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  shop                 Shop     @relation(fields: [shopId], references: [id])
+  paymentEvidence      PaymentEvidence[]
+
+  @@index([status])
+}
+
+// Payment evidence from any source — ToroPay webhook, Gmail notification,
+// provider status API, or manual shopkeeper entry. Used by the reconciliation
+// engine to match incoming payments against pending orders.
+model PaymentEvidence {
+  id                String   @id @default(uuid())
+  shopId            String
+  sourceType        String   // toropay | gmail | manual | provider_api
+  externalId        String?  // webhook event ID / Gmail message ID / provider txn ID
+  transactionRef    String?  // UTR / RRN / provider transaction ID
+  amountPaise       Int
+  currency          String   @default("INR")
+  receivingUpiId    String?  // the merchant's UPI ID that received the payment
+  senderAddress     String?  // for Gmail: the bank/provider sender email
+  evidenceTimestamp DateTime // when the payment/notification occurred
+  authenticationResult String? // verified | unverified | spoofed
+  processingStatus  String   @default("pending") // pending | matched | rejected | expired
+  matchedOrderId    String?  // the Order this evidence was matched to
+  redactedMetadata  Json?    // minimal safe metadata (no full email body)
+  createdAt         DateTime @default(now())
+  shop              Shop                @relation(fields: [shopId], references: [id])
+  gmailConnection   ShopGmailConnection? @relation(fields: [shopId], references: [shopId])
+
+  @@unique([sourceType, externalId])
+  @@unique([transactionRef]) // one transaction reference can only pay one order
+  @@index([shopId, processingStatus])
+  @@index([matchedOrderId])
+  @@index([amountPaise])
 }
 
 // Structured refund tracking. Reuses the existing provider adapters'

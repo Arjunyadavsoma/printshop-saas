@@ -35,7 +35,7 @@ import { StepPayment } from './steps/StepPayment';
 import { StepConfirmation } from './steps/StepConfirmation';
 import { buildUpiIntentUrl } from '@/lib/payments/upi';
 import { saveRecentOrder } from '@/lib/customer/recent-orders';
-import { savePendingOrder, readPendingOrder, clearPendingOrder } from '@/lib/customer/order-restore';
+import { savePendingOrder, readPendingOrder, clearPendingOrder, markUpiLaunched, consumeUpiReturnFlag } from '@/lib/customer/order-restore';
 import { useApiClient } from '@/components/portal/use-api-client';
 
 const DRAFT_KEY = 'printelyx:studio-draft';
@@ -107,6 +107,7 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [upiReturned, setUpiReturned] = useState(false);
 
   const abortersRef = useRef<Map<string, AbortController>>(new Map());
   const pollTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -493,6 +494,24 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
     }
   }, [step, placed, refreshPaymentStatus]);
 
+  /* ── UPI return detection: when the customer returns from the UPI app
+      (visibilitychange → visible), check if a UPI launch was marked. If so,
+      show a "Welcome back! Enter your UTR" banner on the payment step so the
+      customer knows what to do next — the #1 checkout-stuck cause was
+      customers paying via UPI but not entering the UTR. */
+  useEffect(() => {
+    if (step !== 'payment') return;
+    const handler = () => {
+      if (document.visibilityState === 'visible') {
+        if (consumeUpiReturnFlag()) {
+          setUpiReturned(true);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [step]);
+
   const upiIntentUrl = useMemo(() => {
     if (!placed || !shop.upiId) return null;
     return buildUpiIntentUrl({ payeeUpi: shop.upiId, payeeName: shopName, amountPaise: placed.totalPaise, orderShortId: placed.orderNumber });
@@ -613,6 +632,8 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
               quote={quote}
               upiIntentUrl={upiIntentUrl}
               submitting={paymentSubmitting}
+              upiReturned={upiReturned}
+              onUpiLaunched={() => markUpiLaunched()}
               onSubmitUtr={(utr) => { void submitUtr(utr); }}
               onChooseCounter={(method) => { void chooseCounter(method); }}
               onBack={() => setStep('preview')}

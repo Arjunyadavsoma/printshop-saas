@@ -109,6 +109,22 @@ if [ -n "${DATABASE_URL:-}" ]; then
     echo "  ⚠ Could not create refund tables — refund flow will fail until they exist."
   fi
 
+  # Gmail connection + payment evidence tables (Phase E + F)
+  echo "→ Ensuring Gmail + reconciliation tables (idempotent SQL)..."
+  GMAIL_SQL_OK=0
+  for ATTEMPT in 1 2 3; do
+    if timeout 30 bun scripts/run-sql-file.mjs scripts/ensure-gmail-reconciliation-tables.sql 2>&1 | tail -20; then
+      echo "  ✓ Gmail + reconciliation tables present (attempt ${ATTEMPT})"
+      GMAIL_SQL_OK=1
+      break
+    fi
+    echo "  ⚠ db execute attempt ${ATTEMPT} failed — retrying in 15s..."
+    sleep 15
+  done
+  if [ "$GMAIL_SQL_OK" -ne 1 ]; then
+    echo "  ⚠ Could not create Gmail tables — Gmail reconciliation will fail until they exist."
+  fi
+
   # Schema sync (db push) — this project manages its schema via
   # prisma/schema.prisma + db push (CI + local do the same). Without this,
   # NEW tables (e.g. the DB-backed UploadSession/UploadChunk registry that

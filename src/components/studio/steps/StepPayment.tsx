@@ -49,6 +49,12 @@ export interface StepPaymentProps {
   quote: Quote | null;
   upiIntentUrl: string | null;
   submitting: boolean;
+  /** True when the customer returned from the UPI app — shows a "Welcome
+   *  back! Enter your UTR" banner to guide them to the next step. */
+  upiReturned?: boolean;
+  /** Called when the customer taps "Open UPI app" — marks the launch so
+   *  the visibilitychange listener in the orchestrator can detect the return. */
+  onUpiLaunched?: () => void;
   onSubmitUtr: (utr: string) => void;
   onChooseCounter: (method: 'counter_cash' | 'counter_upi') => void;
   onBack: () => void;
@@ -72,6 +78,8 @@ export function StepPayment({
   quote,
   upiIntentUrl,
   submitting,
+  upiReturned,
+  onUpiLaunched,
   onSubmitUtr,
   onChooseCounter,
   onBack,
@@ -127,6 +135,7 @@ export function StepPayment({
   const openUpiApp = () => {
     if (!upiIntentUrl) return;
     setUpiLaunched(true);
+    onUpiLaunched?.();
     // A full navigation triggers the OS UPI intent picker. The pending-order
     // restore logic in SmartPrintStudio handles the return trip.
     window.location.href = upiIntentUrl;
@@ -457,6 +466,21 @@ export function StepPayment({
           You pay {shop.name} directly — 0% commission. The shopkeeper confirms every payment.
         </p>
       </div>
+
+      {/* UPI return banner — shown when the customer returns from the UPI app.
+          This is the #1 checkout-stuck fix: customers paid via UPI but didn't
+          know they needed to enter the UTR. This banner guides them. */}
+      {upiReturned && selected === 'upi' && (
+        <div className="flex items-start gap-3 rounded-[14px] border border-[var(--success)]/30 bg-[#F0FDF4] px-4 py-3" role="status">
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[var(--success)]" aria-hidden="true" />
+          <div>
+            <p className="text-[14px] font-semibold text-[#15803D]">Welcome back! Enter your UTR to confirm.</p>
+            <p className="mt-0.5 text-[13px] text-[#16A34A]">
+              Find the 12-digit transaction reference in your UPI app&rsquo;s payment receipt, then enter it below to submit your payment.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Mobile: compact order summary card (above the methods). */}
       <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] p-4 lg:hidden">
