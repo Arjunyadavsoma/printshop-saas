@@ -68,22 +68,27 @@ export function middleware(req: NextRequest) {
   // Clerk Frontend API origin + protection CDN — only added when Clerk is
   // configured (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY set), mirroring the
   // Supabase gate.
-  // Clerk loads its runtime from TWO origins:
+  // Clerk loads its runtime from THREE origin families:
   //   1. The custom Frontend API domain (clerk.printelyx.cc.cd) — the main
   //      JS bundle + XHR endpoints.
   //   2. cdn.protect.clerk.com — the Clerk protection/bot-detection script
   //      (bootstrap.js). Without this in script-src, the browser blocks the
   //      load → Clerk never initializes → "Continue with Google" is dead.
-  // Both must be in script-src AND connect-src.
+  //   3. *.client.protect.clerk.com — per-instance loader + probe endpoints
+  //      (e.g. `1-efhddza2z...-l.client.protect.clerk.com/loader.js` and
+  //      `...-p.client.protect.clerk.com/probe`). The subdomain prefix is
+  //      dynamic per Clerk instance, so a wildcard is required.
+  // All three must be in script-src AND connect-src.
   // Clerk also creates Web Workers from blob: URLs (for its telemetry +
   // protection checks). Without `worker-src 'self' blob:`, the browser
   // falls back to script-src (which doesn't include blob:) → the worker
   // creation is blocked → Clerk logs a CSP violation + degrades.
   const CLERK_FRONTEND_API_ORIGIN = 'https://clerk.printelyx.cc.cd';
-  const CLERK_PROTECT_CDN = 'https://cdn.protect.clerk.com';
+  const CLERK_PROTECT_ORIGINS =
+    'https://cdn.protect.clerk.com https://*.client.protect.clerk.com';
   const clerkConfigured = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const clerkOrigins = clerkConfigured
-    ? `${CLERK_FRONTEND_API_ORIGIN} ${CLERK_PROTECT_CDN}`
+    ? `${CLERK_FRONTEND_API_ORIGIN} ${CLERK_PROTECT_ORIGINS}`
     : '';
 
   const connectSrc = supabaseOrigin

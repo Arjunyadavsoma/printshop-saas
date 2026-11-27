@@ -34,7 +34,20 @@ import { getShopBySlug } from './get-shop';
  * React cache(): the shop lookup is memoized per-request so
  * generateMetadata (in layout.tsx) and this page don't issue two
  * identical queries — a real perf win on cold serverless starts.
+ *
+ * ISR (fix for production 504 Gateway Timeout):
+ * Vercel serverless functions have a 10s execution limit. A Neon
+ * free-tier cold start (~500ms–2s per connection) + 4 Prisma queries
+ * (shop + printers + queue + priceRules) could exceed that limit on a
+ * cold function → Vercel returned 504 → the customer saw the error
+ * boundary. With `revalidate = 60`, Next.js caches the rendered HTML
+ * for 60 seconds and serves it from the CDN WITHOUT invoking the
+ * function or hitting the DB at all. The DB is only queried once per
+ * minute (background revalidation), eliminating the 504 entirely.
+ * Trade-off: the wait estimate / open-status label can be up to 60s
+ * stale — acceptable for a landing page ("about X min wait").
  */
+export const revalidate = 60;
 
 export default async function ShopLanding({ params }: { params: Promise<{ shopSlug: string }> }) {
   const { shopSlug } = await params;
