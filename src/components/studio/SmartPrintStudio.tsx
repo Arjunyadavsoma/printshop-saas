@@ -106,6 +106,7 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
   const [rejectReason, setRejectReason] = useState<string | null>(null);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [placing, setPlacing] = useState(false);
 
   const abortersRef = useRef<Map<string, AbortController>>(new Map());
   const pollTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -354,8 +355,10 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
   /* ── Place order + submit payment ───────────────────────────────────── */
   const placeTheOrder = useCallback(async (): Promise<boolean> => {
     if (!orderId || !orderToken) { setError('Session expired. Please re-add your files.'); return false; }
+    if (placing) return false; // prevent double-place
     setError(null);
     setPricesChanged(null);
+    setPlacing(true);
     try {
       // Sync specs for every ready file
       for (const f of readyFiles) {
@@ -394,8 +397,10 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not place the order');
       return false;
+    } finally {
+      setPlacing(false);
     }
-  }, [orderId, orderToken, readyFiles, shop.slug, shopName, customerName, customerPhone, note, quote, api]);
+  }, [orderId, orderToken, readyFiles, shop.slug, shopName, customerName, customerPhone, note, quote, api, placing]);
 
   const submitUtr = useCallback(async (utr: string): Promise<void> => {
     if (!placed || paymentSubmitting) return;
@@ -590,8 +595,9 @@ export function SmartPrintStudio({ shop, shopName }: SmartPrintStudioProps) {
               shop={shop}
               shopName={shopName}
               quote={quote}
+              placing={placing}
               onBack={() => setStep('settings')}
-              onProceed={() => setStep('payment')}
+              onProceed={() => { void placeTheOrder(); }}
               customerName={customerName}
               customerPhone={customerPhone}
               onCustomerName={setCustomerName}

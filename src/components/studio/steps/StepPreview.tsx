@@ -39,6 +39,10 @@ export interface StepPreviewProps {
   shop: ShopCapabilities;
   shopName: string;
   quote: Quote | null;
+  /** True while the order is being placed (POST /orders in flight). Disables
+   *  the proceed button and shows a spinner so the customer knows the app
+   *  is working, not stuck. */
+  placing?: boolean;
   onBack: () => void;
   onProceed: () => void;
   // Optional customer-details (preserved from the prior interface).
@@ -80,6 +84,7 @@ export function StepPreview({
   shop,
   shopName,
   quote,
+  placing,
   onBack,
   onProceed,
   customerName,
@@ -443,11 +448,12 @@ export function StepPreview({
         {quoteReady ? (
           <PrimaryButton
             type="button"
-            disabled={!canProceed}
+            disabled={!canProceed || placing}
+            loading={placing}
             onClick={onProceed}
             trailingIcon={<ArrowRight className="size-4" aria-hidden="true" />}
           >
-            {proceedLabel}
+            {placing ? 'Placing order…' : proceedLabel}
           </PrimaryButton>
         ) : (
           <span className="inline-flex min-h-[44px] cursor-not-allowed items-center gap-2 rounded-full bg-[var(--accent)] px-6 text-[14px] font-semibold text-white opacity-50">
@@ -471,12 +477,13 @@ export function StepPreview({
             </div>
             <PrimaryButton
               type="button"
-              disabled={!canProceed}
+              disabled={!canProceed || placing}
+              loading={placing}
               onClick={onProceed}
               className="shrink-0"
               leadingIcon={<CheckCircle2 className="size-4" aria-hidden="true" />}
             >
-              Proceed
+              {placing ? 'Placing…' : 'Proceed'}
             </PrimaryButton>
           </div>
         </div>
