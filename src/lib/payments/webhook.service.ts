@@ -94,6 +94,18 @@ export function extractReference(provider: PaymentProvider, rawBody: string): st
       return null;
     }
   }
+  if (provider === 'toropay') {
+    // ToroPay posts a JSON envelope { id, type, created_at, data }.
+    // The merchant reference is data.order.merchant_order_id (our
+    // PaymentAttempt.merchantOrderId). Verified from
+    // https://www.toropay.co.in/docs/webhooks.
+    try {
+      const event = JSON.parse(rawBody);
+      return event?.data?.order?.merchant_order_id ?? event?.data?.order?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
   if (provider === 'paytm') {
     // Paytm posts `application/x-www-form-urlencoded` bodies. Use
     // URLSearchParams (the spec parser) instead of manual `split('&')` +

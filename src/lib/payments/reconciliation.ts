@@ -71,6 +71,31 @@ export async function reconcileEvidence(evidenceId: string, confirmedBy?: string
     return { matched: true, autoConfirmed: false, orderId: evidence.matchedOrderId, reason: 'Already matched' };
   }
 
+  // SECURITY: Currency must be INR. A non-INR payment with a coincidentally
+  // matching paise amount must never auto-confirm an order.
+  if (evidence.currency !== 'INR') {
+    await db.update('paymentEvidence', { id: evidence.id }, {
+      processingStatus: 'rejected',
+      redactedMetadata: { reason: 'currency_mismatch', currency: evidence.currency },
+    });
+    return { matched: false, autoConfirmed: false, orderId: null, reason: `Currency mismatch: expected INR, got ${evidence.currency}` };
+  }
+
+  // SECURITY: The receiving UPI ID must match the shop's UPI ID. A credit
+  // notification for a DIFFERENT merchant's account must never confirm this
+  // shop's order, even if the amount matches.
+  const shop = await db.findOne<{ id: string; upiId: string | null }>('shop', { id: evidence.shopId });
+  if (!shop) {
+    return { matched: false, autoConfirmed: false, orderId: null, reason: 'Shop not found' };
+  }
+  if (shop.upiId && evidence.receivingUpiId && shop.upiId.toLowerCase() !== evidence.receivingUpiId.toLowerCase()) {
+    await db.update('paymentEvidence', { id: evidence.id }, {
+      processingStatus: 'rejected',
+      redactedMetadata: { reason: 'receiving_account_mismatch', evidenceUpiId: evidence.receivingUpiId },
+    });
+    return { matched: false, autoConfirmed: false, orderId: null, reason: `Receiving UPI ID mismatch: expected ${shop.upiId}, got ${evidence.receivingUpiId}` };
+  }
+
   // Find candidate orders: same shop, pending payment, exact amount match.
   const candidates = await db.findMany<{
     id: string;

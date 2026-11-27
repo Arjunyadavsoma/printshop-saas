@@ -70,18 +70,6 @@ export interface ToroPayWebhookVerification {
   error: string | null;
 }
 
-/** Events that indicate a confirmed payment (auto-finalize the order). */
-const CONFIRMED_EVENTS = new Set([
-  'payment.confirmed',
-  'payment.paid',      // legacy name
-  'order.paid',
-]);
-
-/** Events that indicate a rejected/failed payment. */
-const REJECTED_EVENTS = new Set([
-  'payment.rejected',
-  'payment.failed',    // legacy name
-]);
 
 /**
  * Verify the HMAC SHA-256 signature of a ToroPay webhook.
@@ -118,20 +106,29 @@ export function parseToroPayEvent(rawBody: string): ToroPayEvent | null {
 
 /**
  * Classify a ToroPay event.
- * VERIFIED semantics:
- *   - payment.confirmed / payment.paid / order.paid → paid=true (auto-finalize)
- *   - payment.rejected / payment.failed → failed=true
- *   - All other events → informational (no state change)
+ * VERIFIED semantics (from https://www.toropay.co.in/docs/payment-status):
+ *   - payment.confirmed → the MERCHANT (or provider) confirmed the payment.
+ *     This is the only event that auto-finalizes the order. The customer's
+ *     "I have paid" tap does NOT fire a webhook — only the merchant
+ *     confirmation does (status → success).
+ *   - payment.paid / order.paid → LEGACY names kept for existing integrations.
+ *     These are the same event as payment.confirmed, but we treat them as
+ *     informational (NOT auto-finalizing) out of caution — if ToroPay ever
+ *     changes the semantics, we never auto-finalize on an ambiguous event.
+ *   - payment.rejected / payment.failed → payment failed/rejected.
+ *   - All other events → informational (no state change).
  */
 export function classifyToroPayEvent(
   eventType: string,
 ): { paid: boolean; failed: boolean } {
-  if (CONFIRMED_EVENTS.has(eventType)) {
+  if (eventType === 'payment.confirmed') {
     return { paid: true, failed: false };
   }
-  if (REJECTED_EVENTS.has(eventType)) {
+  if (eventType === 'payment.rejected' || eventType === 'payment.failed') {
     return { paid: false, failed: true };
   }
+  // Legacy + informational events: order.paid, payment.paid, order.created,
+  // order.updated, payment_link.created, customer.created, fulfillment.*.
   return { paid: false, failed: false };
 }
 

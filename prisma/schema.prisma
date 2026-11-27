@@ -776,7 +776,6 @@ model ShopGmailConnection {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   shop                 Shop     @relation(fields: [shopId], references: [id])
-  paymentEvidence      PaymentEvidence[]
 
   @@index([status])
 }
@@ -801,7 +800,6 @@ model PaymentEvidence {
   redactedMetadata  Json?    // minimal safe metadata (no full email body)
   createdAt         DateTime @default(now())
   shop              Shop                @relation(fields: [shopId], references: [id])
-  gmailConnection   ShopGmailConnection? @relation(fields: [shopId], references: [shopId])
 
   @@unique([sourceType, externalId])
   @@unique([transactionRef]) // one transaction reference can only pay one order
