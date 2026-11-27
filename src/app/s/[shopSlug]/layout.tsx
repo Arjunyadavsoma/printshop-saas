@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getShopBySlug } from './get-shop';
 
 /**
  * /s/[shopSlug] segment layout — the customer flow page is a heavy client
@@ -6,6 +7,9 @@ import type { Metadata } from 'next';
  * NAME (public data) for a useful tab title + link preview; on lookup
  * failure it falls back to a generic title. No customer/personal data is
  * ever exposed in these previews (audit P1-5).
+ *
+ * Perf: shares the same React cache()'d `getShopBySlug` as the page server
+ * component — the DB query runs ONCE per request, not twice.
  */
 export async function generateMetadata({
   params,
@@ -15,8 +19,7 @@ export async function generateMetadata({
   const { shopSlug } = await params;
   let shopName = 'Print shop';
   try {
-    const { getContainer } = await import('@/lib/container');
-    const shop = await getContainer().db.findOne<{ name: string }>('shop', { slug: shopSlug });
+    const shop = await getShopBySlug(shopSlug);
     if (shop?.name) shopName = shop.name;
   } catch {
     // lookup is best-effort — the generic title is fine

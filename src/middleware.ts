@@ -65,16 +65,30 @@ export function middleware(req: NextRequest) {
   const printlatchOrigin = 'http://127.0.0.1:32191';
   const nativePrinterOrigin = 'http://127.0.0.1:32192';
 
-  // Clerk Frontend API origin — only added when Clerk is configured
-  // (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY set), mirroring the Supabase gate.
+  // Clerk Frontend API origin + protection CDN — only added when Clerk is
+  // configured (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY set), mirroring the
+  // Supabase gate.
+  // Clerk loads its runtime from TWO origins:
+  //   1. The custom Frontend API domain (clerk.printelyx.cc.cd) — the main
+  //      JS bundle + XHR endpoints.
+  //   2. cdn.protect.clerk.com — the Clerk protection/bot-detection script
+  //      (bootstrap.js). Without this in script-src, the browser blocks the
+  //      load → Clerk never initializes → "Continue with Google" is dead.
+  // Both must be in script-src AND connect-src.
+  // Clerk also creates Web Workers from blob: URLs (for its telemetry +
+  // protection checks). Without `worker-src 'self' blob:`, the browser
+  // falls back to script-src (which doesn't include blob:) → the worker
+  // creation is blocked → Clerk logs a CSP violation + degrades.
   const CLERK_FRONTEND_API_ORIGIN = 'https://clerk.printelyx.cc.cd';
-  const clerkOrigin = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-    ? CLERK_FRONTEND_API_ORIGIN
+  const CLERK_PROTECT_CDN = 'https://cdn.protect.clerk.com';
+  const clerkConfigured = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const clerkOrigins = clerkConfigured
+    ? `${CLERK_FRONTEND_API_ORIGIN} ${CLERK_PROTECT_CDN}`
     : '';
 
   const connectSrc = supabaseOrigin
-    ? `'self' ws: wss: ${supabaseOrigin} ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigin ? ` ${clerkOrigin}` : ''}`
-    : `'self' ws: wss: ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigin ? ` ${clerkOrigin}` : ''}`;
+    ? `'self' ws: wss: blob: ${supabaseOrigin} ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigins ? ` ${clerkOrigins}` : ''}`
+    : `'self' ws: wss: blob: ${printlatchOrigin} ${nativePrinterOrigin}${clerkOrigins ? ` ${clerkOrigins}` : ''}`;
   const imgSrc = supabaseOrigin
     ? `'self' data: blob: ${supabaseOrigin}`
     : "'self' data: blob:";
@@ -84,13 +98,19 @@ export function middleware(req: NextRequest) {
   // renders blank + the browser console shows "Executing inline script
   // violates Content Security Policy directive". We keep 'unsafe-eval' out
   // of production (it's only needed for Turbopack HMR in dev).
+  // worker-src: Clerk creates Web Workers from blob: URLs. Without an
+  // explicit worker-src, the browser falls back to script-src (which can't
+  // match blob:) → worker creation is blocked. Adding `worker-src 'self'
+  // blob:` allows Clerk's workers without weakening script-src.
   const isProduction = process.env.NODE_ENV === 'production';
   const scriptSrc = isProduction
-    ? `script-src 'self' 'unsafe-inline'${clerkOrigin ? ` ${clerkOrigin}` : ''}` // prod: unsafe-inline required by Next.js, no unsafe-eval
-    : `script-src 'self' 'unsafe-inline' 'unsafe-eval'${clerkOrigin ? ` ${clerkOrigin}` : ''}`; // dev: Turbopack HMR needs both
+    ? `script-src 'self' 'unsafe-inline'${clerkOrigins ? ` ${clerkOrigins}` : ''}` // prod: unsafe-inline required by Next.js, no unsafe-eval
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval'${clerkOrigins ? ` ${clerkOrigins}` : ''}`; // dev: Turbopack HMR needs both
+  const workerSrc = `worker-src 'self' blob:`;
   const csp = [
     "default-src 'self'",
     scriptSrc,
+    workerSrc,
     "style-src 'self' 'unsafe-inline'", // Next.js injects styles inline (required)
     `img-src ${imgSrc}`,
     "font-src 'self' data:",

@@ -18,7 +18,7 @@
  * purges old caches.
  */
 
-const CACHE_VERSION = 'v2'; // audit: adds /offline fallback page to the shell
+const CACHE_VERSION = 'v3'; // fix: default handler catch + navigation resilience + chunk 404 fallback
 const STATIC_CACHE = `printshop-static-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
@@ -99,13 +99,23 @@ self.addEventListener('fetch', (event) => {
 
   // Navigations (HTML pages) — network-first, fall back to cached page,
   // then to the cached homepage shell as a last resort.
+  // Also catches 5xx server errors (not just network failures) so a
+  // temporarily broken server doesn't leave the user with a blank tab.
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then((res) => {
+          // Cache successful responses for offline use.
           if (res.ok) {
             const copy = res.clone();
             caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
+          }
+          // For 5xx server errors, fall back to cache if available —
+          // a stale page is better than a server error page for a PWA.
+          if (!res.ok && res.status >= 500) {
+            return caches
+              .match(req)
+              .then((cached) => cached || res);
           }
           return res;
         })
@@ -122,19 +132,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Default for other same-origin GETs (e.g. manifest, dynamic imports) —
-  // stale-while-revalidate: serve cache immediately, refresh in background.
+  // Default for other same-origin GETs (e.g. manifest, dynamic imports,
+  // _next/static/chunks/*.js) — stale-while-revalidate: serve cache
+  // immediately, refresh in background. The .catch() is critical: without
+  // it, a network failure (offline, DNS error, aborted request) rejects
+  // the entire respondWith promise → the browser surfaces
+  // "FetchEvent resulted in a network error response" +
+  // "TypeError: Failed to fetch" in the console. With the catch, we
+  // gracefully fall back to whatever cache we have (or a 504 Response
+  // when there's no cache at all — a controlled failure, not an uncaught
+  // rejection).
   event.respondWith(
     caches.match(req).then(
       (cached) =>
         cached ||
-        fetch(req).then((res) => {
-          if (res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        }),
+        fetch(req)
+          .then((res) => {
+            if (res.ok && res.type === 'basic') {
+              const copy = res.clone();
+              caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
+            }
+            return res;
+          })
+          .catch(() =>
+            // No cache + network failure → return a 504 Gateway Timeout
+            // Response object so the browser gets a controlled response
+            // instead of an uncaught promise rejection.
+            new Response('Offline', {
+              status: 504,
+              statusText: 'Gateway Timeout',
+              headers: { 'Content-Type': 'text/plain' },
+            }),
+          ),
     ),
   );
 });

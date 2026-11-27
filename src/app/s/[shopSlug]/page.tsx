@@ -8,6 +8,7 @@ import {
   type DayKey,
 } from '@/lib/location/opening-hours';
 import { ShopOrderPage, type PricingBoardGroup } from './ShopOrderPage';
+import { getShopBySlug } from './get-shop';
 
 /**
  * /s/[shopSlug] — the QR landing. Server Component.
@@ -20,30 +21,34 @@ import { ShopOrderPage, type PricingBoardGroup } from './ShopOrderPage';
  * shop pricingConfig. Only when neither exists do the display strings
  * fall back to the spec rates (B&W ₹2 / Colour ₹10 per page) — and the
  * page says so.
+ *
+ * DEFENSIVE SSR (fix for production "We couldn't load this shop" errors):
+ * Every downstream DB query (printers, queue, price rules) is wrapped in
+ * its own try/catch with a safe fallback. Previously, a single failing
+ * query (e.g. a Prisma connection blip, a malformed price rule) crashed
+ * the ENTIRE server component → the error boundary fired → the customer
+ * saw "We couldn't load this shop" even though the shop itself loaded
+ * fine. Now the shop identity + pricing always render; only the specific
+ * card that failed shows a graceful fallback.
+ *
+ * React cache(): the shop lookup is memoized per-request so
+ * generateMetadata (in layout.tsx) and this page don't issue two
+ * identical queries — a real perf win on cold serverless starts.
  */
+
 export default async function ShopLanding({ params }: { params: Promise<{ shopSlug: string }> }) {
   const { shopSlug } = await params;
-  const db = getContainer().db;
-  const shop = await db.findOne<{
-    id: string; name: string; slug: string; address: string; phone: string;
-    isOpen: boolean; acceptingOrders: boolean; openingHours: unknown;
-    upiId: string; upiPayeeName: string | null; paymentMode: string;
-    paymentMethods: string; minutesPerPageBw: number; minutesPerPageColor: number;
-    retentionHours: number; pricingConfig: string | Record<string, number> | null;
-    timezone: string | null; logoUrl: string | null; servicesJson: string | null;
-    fullAddress: string | null; city: string | null; state: string | null;
-    pincode: string | null; description: string | null;
-  }>('shop', { slug: shopSlug });
+  const shop = await getShopBySlug(shopSlug);
   if (!shop) notFound();
 
   // Live status: printers online + queue depth → honest wait estimate.
-  // The three shop-scoped reads are independent — run them in parallel.
-  // They used to run sequentially and the shop page took 2–3s to answer
-  // on production, which read on a phone as "the shop is not opening".
+  // Each query is wrapped in its own try/catch so a single failure doesn't
+  // crash the page. The shop identity + pricing board still render; only
+  // the wait estimate degrades (falls back to "a few minutes").
   const [printers, queued, rateRows] = await Promise.all([
-    repos.printers.listForShop(shop.id),
-    repos.printJobs.findQueuedByShop(shop.id, 50),
-    repos.priceRules.activeForShop(shop.id),
+    safeQuery('printers', () => repos.printers.listForShop(shop.id), []),
+    safeQuery('queue', () => repos.printJobs.findQueuedByShop(shop.id, 50), []),
+    safeQuery('priceRules', () => repos.priceRules.activeForShop(shop.id), []),
   ]);
   const onlinePrinters = printers.filter(p => p.enabled && p.status === 'ONLINE');
   const queuedSheets = queued.reduce((sum, t) => sum + (t.sheetCount ?? 1) * (t.copies ?? 1), 0);
@@ -82,7 +87,9 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
   // Open-status from the weekly-hours engine: combines the schedule with
   // the manual flags (isOpen / acceptingOrders) into one customer-facing
   // label ("Open now", "Closes at 9:00 PM", "Opens tomorrow at 9:00 AM"…).
-  const openStatus = shopOpenStatus(
+  // Wrapped in try/catch: malformed openingHours JSON would crash the
+  // engine → crash the page. Fallback: just use the manual isOpen flag.
+  const openStatus = safeOpenStatus(
     {
       openingHours: shop.openingHours,
       timezone: shop.timezone ?? 'Asia/Kolkata',
@@ -146,6 +153,41 @@ export default async function ShopLanding({ params }: { params: Promise<{ shopSl
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
+
+/**
+ * Defensive query wrapper — runs a DB query and returns its result, or
+ * the fallback on ANY error. Logs the failure with a label so the
+ * operator can find the root cause in logs without the customer seeing
+ * a broken page. This is the single most important SSR resilience fix:
+ * previously, one failing query crashed the whole server component.
+ */
+async function safeQuery<T>(label: string, run: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await run();
+  } catch (cause) {
+    console.error(`[shop-landing] query "${label}" failed:`, cause instanceof Error ? cause.message : String(cause));
+    return fallback;
+  }
+}
+
+/**
+ * Defensive open-status wrapper — the weekly-hours engine can throw on
+ * malformed openingHours JSON. Fallback: open per the manual isOpen flag,
+ * with a generic label.
+ */
+function safeOpenStatus(
+  input: Parameters<typeof shopOpenStatus>[0],
+  now: Date,
+): { open: boolean; label: string } {
+  try {
+    return shopOpenStatus(input, now);
+  } catch (cause) {
+    console.error('[shop-landing] shopOpenStatus failed:', cause instanceof Error ? cause.message : String(cause));
+    return input.isOpen
+      ? { open: true, label: 'Open now' }
+      : { open: false, label: 'Closed' };
+  }
+}
 
 /** Parse servicesJson ("[\"bw_print\", …]") into a validated string[]. */
 function parseServices(raw: string | null): string[] {
