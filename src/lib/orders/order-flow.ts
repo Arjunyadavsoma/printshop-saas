@@ -169,6 +169,27 @@ export async function placeOrder(shop: Record<string, unknown>, order: { id: str
   if ((shop.acceptingOrders as boolean) === false || (shop.isOpen as boolean) === false) {
     throw new ValidationError('This shop is not accepting orders right now.');
   }
+
+  // Idempotent retry: if the order is already awaiting_payment (or queued for
+  // counter shops), it was already placed. Return the existing orderNumber /
+  // pickupCode / totalAmountPaise instead of regenerating them — a retry must
+  // not change the customer's order reference. This handles the case where the
+  // customer refreshes the page or navigates back to StepPreview and clicks
+  // "Proceed to payment" again after the order was already placed.
+  if (order.status === 'awaiting_payment' || order.status === 'queued' || order.status === 'payment_submitted') {
+    const existing = await db.findOne<{ orderNumber: string | null; pickupCode: string | null; totalAmountPaise: number }>('order', { id: order.id });
+    if (existing?.orderNumber) {
+      return {
+        orderId: order.id,
+        token: order.customerToken,
+        pickupCode: existing.pickupCode ?? '',
+        orderNumber: existing.orderNumber,
+        totalPaise: existing.totalAmountPaise,
+        pricesChanged: false,
+      };
+    }
+  }
+
   const files = await repos.files.findByOrder(order.id);
   const printable = files.filter(f => f.status === 'ready' && f.pdfStorageKey);
   if (printable.length === 0) {
