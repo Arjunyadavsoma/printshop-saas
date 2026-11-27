@@ -90,3 +90,10 @@ server.log
 # Playwright test artifacts (keep .last-run.json, ignore screenshots/videos)
 test-results/*/
 playwright-report/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key

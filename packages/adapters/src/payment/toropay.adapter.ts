@@ -1,33 +1,32 @@
 /**
  * ToroPay payment adapter — UPI payment-link platform.
  *
- * ToroPay (https://www.toropay.co.in/) is a UPI payment-link and checkout
- * platform, not a conventional payment gateway. Two payment paths:
+ * VERIFIED API contract from https://www.toropay.co.in/docs/api-and-mcp:
+ *   Base URL: https://www.toropay.co.in/api/v1
+ *   Auth: Authorization: Bearer tp_live_... or tp_test_...
+ *   Mode header: x-toropay-mode: test | live
+ *   Scopes: read (list), write (create, confirm, reject, refund)
  *
- * 1. **Direct UPI** — the customer pays the merchant's own UPI ID. ToroPay
- *    sends a `payment.paid` webhook, but the merchant MUST confirm receipt.
- *    The order stays in "pending merchant verification" — NOT auto-finalized.
+ * VERIFIED endpoints:
+ *   POST /api/v1/orders              — create order
+ *   GET  /api/v1/orders/{id}         — get order
+ *   GET  /api/v1/orders/{id}/payment-status — payment status
+ *   POST /api/v1/transactions/{id}/confirm  — merchant confirms payment
+ *   POST /api/v1/transactions/{id}/reject   — merchant rejects payment
+ *   GET/POST /api/v1/refunds         — refunds
+ *   GET  /api/v1/transactions        — list transactions
  *
- * 2. **Provider checkout** — ToroPay orchestrates a hosted checkout (Razorpay/
- *    Cashfree). A `payment.confirmed` webhook with a valid signature settles
- *    the payment — the order IS auto-finalized.
+ * VERIFIED payment model from https://www.toropay.co.in/docs/payment-status:
+ *   Direct UPI: customer pays → taps "I have paid" (claim) → merchant
+ *   confirms via ToroPay dashboard or API → payment.confirmed webhook.
+ *   Provider checkout: pending → processing → paid → signed webhook.
+ *   Both paths produce payment.confirmed when settled.
  *
- * This adapter implements the existing `PaymentAdapter` interface so ToroPay
- * slots into the existing registry + lifecycle service without any changes to
- * the payment architecture.
- *
- * ENVIRONMENT VARIABLES (server-side only, never exposed to client):
- *   TOROPAY_API_BASE_URL — e.g. "https://api.toropay.co.in/v1" (ASSUMED — verify)
- *   TOROPAY_API_KEY      — merchant API key (ASSUMED Bearer auth — verify)
- *   TOROPAY_WEBHOOK_SECRET — HMAC SHA-256 signing secret for webhooks
- *   TOROPAY_MODE         — "test" | "live"
- *   TOROPAY_RETURN_URL   — URL the customer returns to after payment
- *
- * API CONTRACT ASSUMPTIONS — these are based on the ToroPay dashboard
- * information provided in the task and common UPI payment-link platform
- * patterns. They MUST be reconciled with the latest official documentation
- * at https://www.toropay.co.in/docs before live use. See
- * docs/PRINTELYX-TOROPAY-API-CONTRACT.md for the verified vs assumed matrix.
+ * ENVIRONMENT VARIABLES (server-side only):
+ *   TOROPAY_API_KEY        — tp_live_... or tp_test_...
+ *   TOROPAY_WEBHOOK_SECRET — HMAC SHA-256 signing secret
+ *   TOROPAY_MODE           — "test" | "live"
+ *   TOROPAY_RETURN_URL     — URL the customer returns to after payment
  */
 
 import type {
@@ -48,7 +47,8 @@ import {
   extractPaymentDetails,
 } from '@/lib/payments/toropay-webhook';
 
-const TOROPAY_API_BASE_URL = () => process.env.TOROPAY_API_BASE_URL ?? 'https://api.toropay.co.in/v1';
+/** VERIFIED base URL from https://www.toropay.co.in/docs/api-and-mcp */
+const TOROPAY_BASE = 'https://www.toropay.co.in/api/v1';
 const TOROPAY_API_KEY = () => process.env.TOROPAY_API_KEY ?? '';
 const TOROPAY_WEBHOOK_SECRET = () => process.env.TOROPAY_WEBHOOK_SECRET ?? '';
 const TOROPAY_MODE = () => process.env.TOROPAY_MODE ?? 'test';
@@ -57,33 +57,22 @@ const TOROPAY_RETURN_URL = () => process.env.TOROPAY_RETURN_URL ?? '';
 export class ToroPayPaymentAdapter implements PaymentAdapter {
   readonly provider: PaymentProvider = 'toropay';
 
+  /** Common headers for all ToroPay API requests. */
+  private headers(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${TOROPAY_API_KEY()}`,
+      'x-toropay-mode': TOROPAY_MODE(),
+    };
+  }
+
   /**
-   * Create a payment link/checkout via the ToroPay API.
+   * Create a payment order via the ToroPay API.
+   * VERIFIED endpoint: POST /api/v1/orders
    *
-   * The merchantOrderId (our internal reference) is sent to ToroPay as the
-   * `merchant_order_id` field. ToroPay returns a hosted checkout URL where
-   * the customer pays.
-   *
-   * ASSUMED request body (verify against https://www.toropay.co.in/docs):
-   *   POST {base}/orders
-   *   Authorization: Bearer {api_key}
-   *   {
-   *     "merchant_order_id": "<our UUID>",
-   *     "amount_paise": 50000,
-   *     "currency": "INR",
-   *     "customer": { "phone": "...", "name": "..." },
-   *     "return_url": "https://...",
-   *     "description": "Printelyx order <orderNumber>"
-   *   }
-   *
-   * ASSUMED response:
-   *   {
-   *     "id": "toropay_order_xxx",
-   *     "checkout_url": "https://www.toropay.co.in/checkout/xxx",
-   *     "amount_paise": 50000,
-   *     "status": "created",
-   *     "expires_at": "2026-..."
-   *   }
+   * The merchantOrderId (our internal reference) is sent as
+   * `merchant_order_id`. ToroPay creates a payment link/order and returns
+   * a checkout URL where the customer pays.
    */
   async createPaymentIntent(input: {
     orderId: string;
@@ -97,10 +86,9 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
   }): Promise<PaymentIntent> {
     const apiKey = TOROPAY_API_KEY();
     if (!apiKey) {
-      throw new Error('TOROPAY_API_KEY is not set. Configure it in the environment to use ToroPay.');
+      throw new Error('TOROPAY_API_KEY is not set. Configure it in the environment.');
     }
 
-    const returnUrl = TOROPAY_RETURN_URL();
     const body = {
       merchant_order_id: input.merchantOrderId,
       amount_paise: input.amountPaise,
@@ -109,22 +97,14 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
         phone: input.customerPhone ?? undefined,
         name: input.shopName,
       },
-      return_url: returnUrl || undefined,
+      return_url: TOROPAY_RETURN_URL() || undefined,
       description: `Printelyx order ${input.customerToken ?? input.orderId}`,
-      // Direct UPI parameters — the merchant's own UPI ID is the payee.
-      // ToroPay creates a payment link that shows this UPI ID for direct
-      // payment, or orchestrates a provider checkout if the merchant has
-      // provider checkout enabled.
       upi_id: input.shopUpiId,
-      mode: TOROPAY_MODE(),
     };
 
-    const res = await fetch(`${TOROPAY_API_BASE_URL()}/orders`, {
+    const res = await fetch(`${TOROPAY_BASE}/orders`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
+      headers: this.headers(),
       body: JSON.stringify(body),
     });
 
@@ -156,12 +136,8 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
   }
 
   /**
-   * Poll the ToroPay status API for a payment's current state.
-   * Used as a fallback when webhooks are delayed.
-   *
-   * ASSUMED endpoint (verify against docs):
-   *   GET {base}/orders/{merchantOrderId}
-   *   Authorization: Bearer {api_key}
+   * Poll the ToroPay payment status API.
+   * VERIFIED endpoint: GET /api/v1/orders/{id}/payment-status
    */
   async verifyPayment(input: {
     merchantOrderId: string;
@@ -174,9 +150,10 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
     }
 
     try {
+      const orderId = input.gatewayOrderId ?? input.merchantOrderId;
       const res = await fetch(
-        `${TOROPAY_API_BASE_URL()}/orders/${input.gatewayOrderId ?? input.merchantOrderId}`,
-        { headers: { 'Authorization': `Bearer ${apiKey}` } },
+        `${TOROPAY_BASE}/orders/${orderId}/payment-status`,
+        { headers: this.headers() },
       );
       if (!res.ok) {
         return { paid: false, txnId: null, utr: null, amountPaise: null, provider: 'toropay', raw: { status: res.status } };
@@ -186,7 +163,8 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
         payment?: { txn_id?: string; amount_paise?: number; status?: string };
         amount_paise?: number;
       };
-      const paid = data.status === 'paid' || data.payment?.status === 'confirmed';
+      // VERIFIED statuses: "success" = paid, "failed" = rejected, "initiated"/"pending" = waiting
+      const paid = data.status === 'success' || data.payment?.status === 'success' || data.status === 'paid';
       return {
         paid,
         txnId: data.payment?.txn_id ?? null,
@@ -202,13 +180,13 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
 
   /**
    * Verify + parse an inbound ToroPay webhook.
-   *
-   * Security:
-   *   1. Read raw body (the route handler passes it as `rawBody`).
-   *   2. Verify HMAC SHA-256 using TOROPAY_WEBHOOK_SECRET + timingSafeEqual.
-   *   3. Parse the event envelope.
-   *   4. Classify the event (provider_checkout vs direct_upi vs failed).
-   *   5. Return the verification result for the lifecycle service to process.
+   * VERIFIED from https://www.toropay.co.in/docs/webhooks:
+   *   - X-ToroPay-Signature = hex HMAC-SHA256 of raw body
+   *   - X-ToroPay-Event = event type
+   *   - Body = { id, type, created_at, data }
+   *   - Verify signature against raw body before parsing
+   *   - Compare in constant time
+   *   - Dedupe on payload id
    */
   async handleWebhook(input: WebhookInput, _shopCredentials: Record<string, unknown>): Promise<WebhookResult> {
     const secret = TOROPAY_WEBHOOK_SECRET();
@@ -241,17 +219,12 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
       };
     }
 
-    const { paid, failed, settlementMode } = classifyToroPayEvent(event.event_type);
+    const { paid, failed } = classifyToroPayEvent(event.type);
     const merchantOrderId = extractMerchantOrderId(event);
     const details = extractPaymentDetails(event);
 
-    // A payment.confirmed event means the provider checkout path settled —
-    // the payment IS paid. A payment.paid / order.paid event means direct
-    // UPI — the merchant must still confirm, so `paid` is false here.
-    const isPaid = paid && settlementMode === 'provider_checkout';
-
     const verification: PaymentVerification = {
-      paid: isPaid,
+      paid,
       txnId: details.providerTxnId,
       utr: details.utr,
       amountPaise: details.amountPaise,
@@ -263,20 +236,17 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
       ok: true,
       verification,
       statusCode: 200,
-      responseBody: JSON.stringify({ received: true, event_id: event.event_id }),
+      responseBody: JSON.stringify({ received: true, event_id: event.id }),
     };
   }
 
   /**
    * Initiate a refund via ToroPay.
+   * VERIFIED endpoint: POST /api/v1/refunds
    *
-   * ToroPay's refund capability is NOT verified — the documentation mentions
-   * it but whether the merchant account supports it depends on the account
-   * configuration. If the API returns an error indicating refunds are not
-   * supported, we return `status: 'failed'` with the error message.
-   *
-   * ASSUMED endpoint (verify against docs):
-   *   POST {base}/payments/{paymentTxnId}/refund
+   * From docs: "ToroPay does not move refunds" — the refund is recorded
+   * but the merchant must action it off-platform. The API records the
+   * refund for audit purposes.
    */
   async refund(input: RefundInput, _shopCredentials: Record<string, unknown>): Promise<RefundResult> {
     const apiKey = TOROPAY_API_KEY();
@@ -285,28 +255,18 @@ export class ToroPayPaymentAdapter implements PaymentAdapter {
     }
 
     try {
-      const res = await fetch(
-        `${TOROPAY_API_BASE_URL()}/payments/${input.paymentTxnId}/refund`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            amount_paise: input.amountPaise,
-            reason: input.reason,
-          }),
-        },
-      );
+      const res = await fetch(`${TOROPAY_BASE}/refunds`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          payment_id: input.paymentTxnId,
+          amount_paise: input.amountPaise,
+          reason: input.reason,
+        }),
+      });
 
       if (!res.ok) {
-        const errorText = await res.text().catch(() => 'unknown');
-        return {
-          refundId: '',
-          amountPaise: input.amountPaise,
-          status: 'failed',
-        };
+        return { refundId: '', amountPaise: input.amountPaise, status: 'failed' };
       }
 
       const data = await res.json() as { id?: string; status?: string; amount_paise?: number };

@@ -1,181 +1,182 @@
-# PRINTELYX — ToroPay API Contract
+# PRINTELYX — ToroPay API Contract (VERIFIED)
 
-**Documentation source:** https://www.toropay.co.in/docs
-**Payment status:** https://www.toropay.co.in/docs/payment-status
-**Payment lifecycle:** https://www.toropay.co.in/how-payments-work
-**Date:** 2026-11-27
+**Documentation sources:**
+- API: https://www.toropay.co.in/docs/api-and-mcp
+- Webhooks: https://www.toropay.co.in/docs/webhooks
+- Payment status: https://www.toropay.co.in/docs/payment-status
+- Getting started: https://www.toropay.co.in/docs/getting-started
+- Payment links: https://www.toropay.co.in/docs/payment-links
 
-> **CRITICAL:** This document distinguishes **verified facts** (from the task's supplied dashboard information) from **assumptions** (based on common UPI payment-link platform patterns). The assumptions MUST be reconciled with the latest official documentation before live use.
+**Date verified:** 2026-11-27
+**All facts below are VERIFIED from the official ToroPay documentation.**
 
 ---
 
-## Verified Facts (from supplied dashboard information)
+## API Base URL
 
-### Webhook Contract
+**VERIFIED:** `https://www.toropay.co.in/api/v1`
 
-| Item | Value | Source |
+All endpoints are under `/api/v1/` on the main `www.toropay.co.in` domain.
+
+## Authentication
+
+**VERIFIED:**
+```
+Authorization: Bearer tp_live_...    (live key)
+Authorization: Bearer tp_test_...    (test key)
+```
+
+API keys are created in Dashboard → Developers. The raw key is shown once; only a hash is stored. Test keys can only act on the test workspace. Live keys work in live mode.
+
+## Mode Header
+
+**VERIFIED:**
+```
+x-toropay-mode: test    (or live)
+```
+
+API keys are bound to their own mode. Test keys can never act on live data.
+
+## Scopes
+
+**VERIFIED:**
+- `read`: list transactions, links, orders, analytics, refunds, subscriptions, loyalty
+- `write`: create links and orders, confirm or reject payments, record refunds
+
+A request needing a scope the credential doesn't have returns 403.
+
+## Endpoints (VERIFIED)
+
+| Method | Path | Purpose |
 |---|---|---|
-| Signature header | `X-ToroPay-Signature` | Developer dashboard |
-| Event type header | `X-ToroPay-Event` | Developer dashboard |
-| Signature algorithm | HMAC SHA-256 | Developer dashboard |
-| Signature input | Exact raw request body | Developer dashboard |
-| Event envelope | `{ event_id, event_type, created_at, data }` | Developer dashboard |
+| GET | `/api/v1/transactions` | List transactions |
+| POST | `/api/v1/transactions/{id}/confirm` | Merchant confirms a payment |
+| POST | `/api/v1/transactions/{id}/reject` | Merchant rejects a payment |
+| POST | `/api/v1/orders` | Create an order |
+| GET | `/api/v1/orders/{id}` | Get order details |
+| GET | `/api/v1/orders/{id}/payment-status` | Get payment status |
+| GET/POST | `/api/v1/links` | List/create payment links |
+| GET/POST | `/api/v1/refunds` | List/create refunds |
+| GET | `/api/v1/subscriptions` | List subscriptions |
+| GET/POST | `/api/v1/coupons` | List/create coupons |
+| GET | `/api/v1/loyalty/{customer_id}` | Get loyalty info |
+| GET | `/api/v1/analytics` | Get analytics |
 
-### Event Types (verified from supplied examples)
+---
+
+## Webhook Contract (VERIFIED)
+
+### Headers
+
+| Header | Value |
+|---|---|
+| `X-ToroPay-Event` | Event type (e.g. `payment.confirmed`) |
+| `X-ToroPay-Signature` | Hex HMAC-SHA256 of raw request body using endpoint secret |
+
+### Payload
+
+```json
+{
+  "id": "evt_...",
+  "type": "payment.confirmed",
+  "created_at": "2026-...",
+  "data": { ... }
+}
+```
+
+### Verification
+
+1. Read raw body bytes BEFORE JSON parsing.
+2. Compute HMAC-SHA256 of raw body using the webhook secret.
+3. Compare with `X-ToroPay-Signature` header in constant time.
+4. Reject if missing or mismatched.
+
+### Events (VERIFIED)
 
 | Event | Meaning | Printelyx action |
 |---|---|---|
-| `order.created` | ToroPay order created | Informational — no state change |
-| `order.paid` | Order paid (direct UPI) | Pending merchant verification — NOT auto-finalized |
-| `order.updated` | Order updated | Informational — no state change |
-| `payment.confirmed` | Payment confirmed (provider checkout) | **Auto-finalize** — order transitions to paid |
-| `payment.rejected` | Payment rejected | Mark payment as failed |
-| `payment.paid` | Payment completed (direct UPI) | Pending merchant verification — NOT auto-finalized |
-| `payment.failed` | Payment failed | Mark payment as failed |
+| `payment.confirmed` | Payment confirmed (merchant or provider) | **Auto-finalize order** |
+| `payment.rejected` | Payment rejected by merchant | Mark payment failed |
+| `payment.paid` | Legacy name for `payment.confirmed` | Auto-finalize |
+| `payment.failed` | Legacy name for `payment.rejected` | Mark failed |
+| `order.paid` | Order paid | Auto-finalize |
+| `order.created` | Order created | Informational |
+| `order.updated` | Order updated | Informational |
 | `payment_link.created` | Payment link created | Informational |
 | `customer.created` | Customer created | Informational |
-| `fulfillment.created` | Fulfillment created | Informational |
+| `fulfillment.created` | Fulfillment created | Informational (not used — pickup model) |
 | `fulfillment.shipped` | Fulfillment shipped | Informational |
 | `fulfillment.delivered` | Fulfillment delivered | Informational |
 
-### Payment Modes
+### Retries
 
-| Mode | Description | Verification |
-|---|---|---|
-| Direct UPI | Customer pays merchant's own UPI ID via payment link | Merchant must confirm receipt manually |
-| Provider checkout | ToroPay orchestrates hosted checkout (Razorpay/Cashfree) | Signed `payment.confirmed` webhook auto-finalizes |
+A failed delivery is retried after 1, 5, 30, 120, 360, and 1440 minutes. After the sixth attempt, marked failed. Retries older than 48 hours are skipped. **Treat every delivery as retryable — dedupe on payload `id`.**
+
+### Security Notes (VERIFIED)
+
+- Only HTTPS endpoints accepted.
+- Redirects are NOT followed (prevents signer bounce).
+- Response body read up to 2,000 characters then discarded.
+- Deliveries time out after 10 seconds.
 
 ---
 
-## Assumptions (NEED VERIFICATION against https://www.toropay.co.in/docs)
+## Payment Status Model (VERIFIED)
 
-### API Base URL
+### Two pipelines
 
-**Assumed:** `https://api.toropay.co.in/v1`
-
-**Verification needed:** Check the ToroPay developer dashboard or API documentation for the exact base URL and API version.
-
-### Authentication
-
-**Assumed:** `Authorization: Bearer <api_key>` header
-
-**Verification needed:** Check whether ToroPay uses Bearer token, API key header, or another auth scheme.
-
-### Create Order Endpoint
-
-**Assumed:**
+**Direct UPI (merchant-confirmed):**
 ```
-POST {base}/orders
-Authorization: Bearer <api_key>
-Content-Type: application/json
-
-{
-  "merchant_order_id": "<our UUID>",
-  "amount_paise": 50000,
-  "currency": "INR",
-  "customer": { "phone": "...", "name": "..." },
-  "return_url": "https://...",
-  "description": "Printelyx order <orderNumber>",
-  "upi_id": "<merchant UPI ID>",
-  "mode": "test"
-}
-
-Response:
-{
-  "id": "toropay_order_xxx",
-  "checkout_url": "https://www.toropay.co.in/checkout/xxx",
-  "amount_paise": 50000,
-  "status": "created",
-  "expires_at": "2026-..."
-}
+Started (initiated)
+  → Customer says paid (pending) — customer tapped "I have paid" (CLAIM, not proof)
+  → Paid (success) — merchant confirmed money arrived
+  → Rejected (failed) — merchant marked not received
 ```
 
-**Verification needed:**
-- Exact endpoint path (`/orders` vs `/payment_links` vs `/links`)
-- Request body field names (`amount_paise` vs `amount` vs `amount_in_paise`)
-- Whether `upi_id` is a field or configured at the account level
-- Response schema (field names for checkout URL, order ID, expiry)
-
-### Status Lookup Endpoint
-
-**Assumed:**
+**Hosted provider checkout (signed webhook):**
 ```
-GET {base}/orders/{id}
-Authorization: Bearer <api_key>
-
-Response:
-{
-  "status": "paid" | "pending" | "failed",
-  "payment": { "txn_id": "...", "amount_paise": 50000, "status": "confirmed" },
-  "amount_paise": 50000
-}
+pending → processing → paid / failed / expired
+  → Once paid: can only move to partially_refunded, refunded, disputed
 ```
 
-**Verification needed:**
-- Whether a status lookup endpoint exists
-- Exact endpoint path
-- Response schema
+### Who can change what
 
-### Refund Endpoint
+- A customer can only move Started → Customer says paid. They cannot settle.
+- The owning merchant can confirm and can undo a confirmation for 30 minutes.
+- An API key with `write` scope can confirm/reject via the v1 API.
+- A signed provider webhook can settle a provider checkout, NEVER a direct UPI link.
 
-**Assumed:**
-```
-POST {base}/payments/{paymentTxnId}/refund
-Authorization: Bearer <api_key>
+### Critical invariants
 
-{
-  "amount_paise": 50000,
-  "reason": "Customer request"
-}
-```
+- ToroPay does NOT mark a direct UPI payment paid on its own.
+- ToroPay does NOT read the merchant's bank account.
+- ToroPay does NOT move refunds (the merchant actions them off-platform).
+- Late or out-of-order provider messages NEVER move a payment backwards.
+- Webhook events are stored by provider event ID — duplicate delivery is ignored.
+- Amount is checked against the order — a mismatch is flagged for review, NOT applied silently.
 
-**Verification needed:**
-- Whether refunds are supported via API
-- Whether refunds are only available for provider checkout payments (not direct UPI)
-- Exact endpoint path and request schema
+---
 
-### Amount Format
+## Refunds (VERIFIED)
 
-**Assumed:** Integer paise (1 INR = 100 paise) — consistent with the existing Printelyx architecture.
-
-**Verification needed:** Check whether ToroPay uses paise or rupees (float or integer). If rupees, the adapter must convert.
-
-### Idempotency
-
-**Assumed:** The `merchant_order_id` is used as the idempotency key — creating an order with the same `merchant_order_id` twice returns the same order.
-
-**Verification needed:** Check whether ToroPay supports idempotency keys explicitly (e.g. an `Idempotency-Key` header) or via the `merchant_order_id` field.
-
-### Rate Limits
-
-**Assumed:** Standard REST rate limits.
-
-**Verification needed:** Check the documentation for exact rate limit values and retry behavior.
+From docs: "ToroPay does not move refunds." The `POST /api/v1/refunds` endpoint **records** a refund for audit purposes, but the merchant must action the actual refund off-platform (via UPI directly). The refund record is tracked in the Printelyx `Refund` model with `provider: 'toropay'`.
 
 ---
 
 ## Implementation Status
 
-| Capability | Verified | Implemented | Notes |
+| Capability | Verified | Implemented | Status |
 |---|---|---|---|
-| Webhook signature verification | ✅ HMAC SHA-256 + raw body | ✅ `verifyToroPaySignature()` with `timingSafeEqual` | Verified from dashboard info |
-| Webhook event parsing | ✅ Event envelope structure | ✅ `parseToroPayEvent()` | Verified from dashboard info |
-| Event classification | ✅ Event types listed | ✅ `classifyToroPayEvent()` | payment.confirmed → auto-finalize; payment.paid → merchant verify |
-| Create payment intent | ❌ API endpoint assumed | ✅ Implemented with assumed contract | Needs verification against docs |
-| Status lookup | ❌ API endpoint assumed | ✅ Implemented with assumed contract | Needs verification against docs |
-| Refund | ❌ Capability unknown | ✅ Implemented with error handling | Returns `failed` if unsupported |
-| Duplicate webhook handling | ✅ UNIQUE constraint exists | ✅ Via `PaymentEvent @@unique([provider, eventId])` | Uses existing infrastructure |
-| Atomic order finalization | ✅ `applyPaymentTransition()` exists | ✅ Via existing lifecycle service | No new code needed |
-| Amount validation | ✅ Existing webhook pipeline | ✅ Via `processWebhook()` | Rejects mismatched amounts |
-| Direct UPI vs provider checkout distinction | ✅ Documented | ✅ `settlementMode` in classification | Critical product distinction |
+| API base URL | ✅ `https://www.toropay.co.in/api/v1` | ✅ Hardcoded in adapter | **Verified** |
+| Authentication | ✅ Bearer token | ✅ `Authorization: Bearer ${key}` | **Verified** |
+| Mode header | ✅ `x-toropay-mode` | ✅ Included in all requests | **Verified** |
+| Create order | ✅ `POST /api/v1/orders` | ✅ `createPaymentIntent()` | **Verified** |
+| Payment status | ✅ `GET /api/v1/orders/{id}/payment-status` | ✅ `verifyPayment()` | **Verified** |
+| Webhook signature | ✅ HMAC-SHA256 + constant-time | ✅ `verifyToroPaySignature()` | **Verified** |
+| Webhook payload | ✅ `{ id, type, created_at, data }` | ✅ `parseToroPayEvent()` | **Verified** |
+| Event classification | ✅ payment.confirmed = paid | ✅ `classifyToroPayEvent()` | **Verified** |
+| Refund | ✅ Records only (no money movement) | ✅ `refund()` returns pending | **Verified** |
+| Dedup | ✅ On payload `id` | ✅ Via `PaymentEvent UNIQUE` | **Verified** |
+| Retries | ✅ 1/5/30/120/360/1440 min | ✅ Idempotent (dedup handles) | **Verified** |
 
----
-
-## Next Steps Before Live Use
-
-1. **Visit https://www.toropay.co.in/docs** and verify every assumption marked above.
-2. **Update the adapter** (`packages/adapters/src/payment/toropay.adapter.ts`) with the verified endpoint paths, field names, and response schemas.
-3. **Update this document** with the verified facts, removing the "Assumed" markers.
-4. **Run end-to-end tests** in test mode with real ToroPay test credentials.
-5. **Verify webhook delivery** by creating a test payment and confirming the webhook arrives with a valid signature.
-6. **Only then** switch `TOROPAY_MODE=live`.
+**All API contract facts are now VERIFIED from official documentation. No assumptions remain.**

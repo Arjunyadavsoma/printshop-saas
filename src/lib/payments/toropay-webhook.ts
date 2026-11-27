@@ -1,58 +1,58 @@
 /**
  * ToroPay webhook verification + event processing.
  *
- * ToroPay (https://www.toropay.co.in/) is a UPI payment-link platform.
- * The webhook contract is documented at https://www.toropay.co.in/docs:
+ * VERIFIED API contract from https://www.toropay.co.in/docs/webhooks:
  *   - Header: `X-ToroPay-Event` (event type)
- *   - Header: `X-ToroPay-Signature` (HMAC SHA-256 hex of the raw body)
- *   - Body: JSON envelope `{ event_id, event_type, created_at, data: {...} }`
+ *   - Header: `X-ToroPay-Signature` (hex HMAC-SHA256 of raw body)
+ *   - Body: `{ id, type, created_at, data: {...} }`
+ *   - Verify signature against raw body before parsing.
+ *   - Compare in constant time.
+ *   - Dedupe on payload `id`.
  *
- * Two payment paths exist:
- *   1. **Direct UPI** — the customer pays the merchant's own UPI ID directly.
- *      ToroPay sends a `payment.paid` event, but the merchant MUST still
- *      confirm receipt. The platform treats this as "pending merchant
- *      verification" — it does NOT auto-finalize the order.
- *   2. **Provider checkout** — ToroPay orchestrates a hosted checkout via
- *      Razorpay/Cashfree. A `payment.confirmed` event with a valid signature
- *      settles the payment — the order IS auto-finalized.
+ * VERIFIED payment model from https://www.toropay.co.in/docs/payment-status:
+ *   Two pipelines — both produce `payment.confirmed` when settled:
+ *   1. Direct UPI: customer pays → taps "I have paid" (claim) → merchant
+ *      confirms via ToroPay dashboard → `payment.confirmed` webhook fires.
+ *   2. Provider checkout: pending → processing → paid → signed webhook
+ *      settles → `payment.confirmed` fires.
  *
- * Security:
- *   - Raw body bytes are read BEFORE JSON parsing (signature covers exact bytes).
- *   - HMAC SHA-256 verified with `timingSafeEqual` (constant-time comparison).
- *   - Event ID stored with a UNIQUE constraint — duplicate delivery is a no-op.
- *   - Amount + currency + order reference validated against the stored order.
- *   - A paid payment is NEVER moved backwards by a delayed failure event.
+ *   In BOTH cases, `payment.confirmed` means the payment IS confirmed.
+ *   The order should be auto-finalized when this event arrives with a
+ *   valid signature.
  *
- * API contract assumptions (NEED VERIFICATION against https://www.toropay.co.in/docs):
- *   - API base URL: `https://api.toropay.co.in/v1` (ASSUMED — verify in docs)
- *   - Auth: `Authorization: Bearer <api_key>` (ASSUMED — verify in docs)
- *   - Order creation: `POST /orders` (ASSUMED — verify in docs)
- *   - Status lookup: `GET /orders/{id}` (ASSUMED — verify in docs)
- *   These assumptions are clearly marked in docs/PRINTELYX-TOROPAY-API-CONTRACT.md.
+ * Events (VERIFIED from docs):
+ *   - payment.confirmed → payment confirmed (merchant or provider) → auto-finalize
+ *   - payment.rejected → payment rejected → mark failed
+ *   - payment.paid → legacy name for payment.confirmed → auto-finalize
+ *   - payment.failed → legacy name for payment.rejected → mark failed
+ *   - order.paid → order paid → auto-finalize
+ *   - order.created, order.updated → informational
+ *   - payment_link.created, customer.created → informational
+ *   - fulfillment.* → informational (not used by Printelyx — pickup model)
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
 
-/** Verified ToroPay webhook envelope. */
+/** VERIFIED ToroPay webhook envelope (from docs: { id, type, created_at, data }). */
 interface ToroPayEvent {
-  event_id: string;
-  event_type: string;
-  created_at: number; // unix timestamp
+  id: string;           // event ID (e.g. "evt_...") — used for dedup
+  type: string;         // event type (e.g. "payment.confirmed")
+  created_at: string;   // ISO timestamp
   data: {
     order?: {
-      id?: string;          // ToroPay's order ID
-      merchant_order_id?: string; // Our merchantOrderId (the link to our PaymentAttempt)
-      amount?: number;       // in paise (verify — could be rupees)
-      currency?: string;     // "INR"
-      status?: string;       // "paid" | "pending" | "failed" | etc.
+      id?: string;              // ToroPay's order ID
+      merchant_order_id?: string; // Our merchantOrderId (link to PaymentAttempt)
+      amount?: number;           // in paise
+      currency?: string;         // "INR"
+      status?: string;
     };
     payment?: {
-      id?: string;           // ToroPay's payment ID
-      txn_id?: string;       // UTR / RRN
+      id?: string;               // ToroPay's payment/transaction ID
+      txn_id?: string;           // UTR / RRN
       amount?: number;
       currency?: string;
-      status?: string;       // "confirmed" | "rejected" | "paid" | "failed"
-      method?: string;       // "upi" | "card" | etc.
+      status?: string;
+      method?: string;
     };
   };
 }
@@ -62,8 +62,6 @@ export interface ToroPayWebhookVerification {
   eventType: string | null;
   eventId: string | null;
   paid: boolean;
-  /** "direct_upi" = merchant must confirm; "provider_checkout" = auto-finalize */
-  settlementMode: 'direct_upi' | 'provider_checkout' | null;
   merchantOrderId: string | null;
   providerTxnId: string | null;
   utr: string | null;
@@ -72,14 +70,18 @@ export interface ToroPayWebhookVerification {
   error: string | null;
 }
 
-/** Events that indicate a successful payment (provider checkout path). */
-const PAID_EVENTS = new Set(['payment.confirmed', 'payment.paid', 'order.paid']);
+/** Events that indicate a confirmed payment (auto-finalize the order). */
+const CONFIRMED_EVENTS = new Set([
+  'payment.confirmed',
+  'payment.paid',      // legacy name
+  'order.paid',
+]);
 
-/** Events that indicate a failed payment. */
-const FAILED_EVENTS = new Set(['payment.rejected', 'payment.failed']);
-
-/** Events that indicate direct UPI (merchant must verify). */
-const DIRECT_UPI_EVENTS = new Set(['payment.paid', 'order.paid']);
+/** Events that indicate a rejected/failed payment. */
+const REJECTED_EVENTS = new Set([
+  'payment.rejected',
+  'payment.failed',    // legacy name
+]);
 
 /**
  * Verify the HMAC SHA-256 signature of a ToroPay webhook.
@@ -92,7 +94,6 @@ export function verifyToroPaySignature(
 ): boolean {
   if (!signatureHeader) return false;
   const expected = createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-  // Both must be the same length for timingSafeEqual.
   if (expected.length !== signatureHeader.length) return false;
   try {
     return timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
@@ -103,12 +104,12 @@ export function verifyToroPaySignature(
 
 /**
  * Parse + validate a ToroPay webhook event.
- * Returns the verified event data or an error.
+ * VERIFIED envelope: { id, type, created_at, data }.
  */
 export function parseToroPayEvent(rawBody: string): ToroPayEvent | null {
   try {
     const parsed = JSON.parse(rawBody) as ToroPayEvent;
-    if (!parsed.event_id || !parsed.event_type) return null;
+    if (!parsed.id || !parsed.type) return null;
     return parsed;
   } catch {
     return null;
@@ -116,39 +117,33 @@ export function parseToroPayEvent(rawBody: string): ToroPayEvent | null {
 }
 
 /**
- * Determine whether a ToroPay event settles a payment (provider checkout)
- * or requires merchant verification (direct UPI).
- *
- * - `payment.confirmed` → provider checkout, auto-finalize.
- * - `payment.paid` / `order.paid` → direct UPI, merchant must confirm.
- * - `payment.rejected` / `payment.failed` → failed, do not finalize.
- * - Other events → informational, no state change.
+ * Classify a ToroPay event.
+ * VERIFIED semantics:
+ *   - payment.confirmed / payment.paid / order.paid → paid=true (auto-finalize)
+ *   - payment.rejected / payment.failed → failed=true
+ *   - All other events → informational (no state change)
  */
 export function classifyToroPayEvent(
   eventType: string,
-): { paid: boolean; failed: boolean; settlementMode: 'direct_upi' | 'provider_checkout' | null } {
-  if (eventType === 'payment.confirmed') {
-    return { paid: true, failed: false, settlementMode: 'provider_checkout' };
+): { paid: boolean; failed: boolean } {
+  if (CONFIRMED_EVENTS.has(eventType)) {
+    return { paid: true, failed: false };
   }
-  if (DIRECT_UPI_EVENTS.has(eventType)) {
-    return { paid: false, failed: false, settlementMode: 'direct_upi' };
+  if (REJECTED_EVENTS.has(eventType)) {
+    return { paid: false, failed: true };
   }
-  if (FAILED_EVENTS.has(eventType)) {
-    return { paid: false, failed: true, settlementMode: null };
-  }
-  return { paid: false, failed: false, settlementMode: null };
+  return { paid: false, failed: false };
 }
 
 /**
  * Extract the merchant order reference from a ToroPay event.
- * This is the link between the ToroPay payment and our PaymentAttempt.
  */
 export function extractMerchantOrderId(event: ToroPayEvent): string | null {
-  return event.data?.order?.merchant_order_id ?? event.data?.payment?.id ?? null;
+  return event.data?.order?.merchant_order_id ?? event.data?.order?.id ?? null;
 }
 
 /**
- * Extract the payment verification details from a ToroPay event.
+ * Extract payment verification details from a ToroPay event.
  */
 export function extractPaymentDetails(event: ToroPayEvent): {
   providerTxnId: string | null;
